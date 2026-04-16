@@ -1,0 +1,119 @@
+#include <catch2/catch_test_macros.hpp>
+#include <map>
+#include <utility>
+#include <juce_audio_basics/juce_audio_basics.h>
+#include "midi/MidiPatternLibrary.h"
+#include "midi/PatternPlayer.h"
+
+TEST_CASE("PatternPlayer emits MIDI for non-silent pattern", "[midi]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.setBpm(120.0f);
+    player.setPatternIndex(1);
+    player.setStructureSilent(false);
+
+    juce::MidiBuffer midi;
+    player.process(midi, 4800, 0);
+
+    REQUIRE(midi.getNumEvents() > 0);
+}
+
+TEST_CASE("PatternPlayer humanization velocity stays within +/-10 of base", "[midi]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.setBpm(120.0f);
+    player.setPatternIndex(1);  // VerseSlow
+    player.setStructureSilent(false);
+
+    for (int trial = 0; trial < 200; ++trial)
+    {
+        juce::MidiBuffer midi;
+        player.process(midi, 512, static_cast<int64_t>(trial) * 512);
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn())
+            {
+                const int vel = msg.getVelocity();
+                REQUIRE(vel >= 1);
+                REQUIRE(vel <= 127);
+                // VerseSlow base velocities are 78-110; humanization delta in [-10, +10].
+                // Bounds: min = 78-10=68, max = 110+10=120.
+                REQUIRE(vel >= 68);
+                REQUIRE(vel <= 120);
+            }
+        }
+    }
+}
+
+TEST_CASE("PatternPlayer timing offsets fit within the block (+/-2ms humanization bounded)", "[midi]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+
+    const double sr = 48000.0;
+    player.prepare(sr, 512);
+    player.setBpm(120.0f);
+    player.setPatternIndex(1);
+    player.setStructureSilent(false);
+
+    // One bar at 120 BPM = 4 beats * 0.5s/beat * 48000 Hz = 96000 samples
+    const int blockSamples = 96000;
+    juce::MidiBuffer midi;
+    player.process(midi, blockSamples, 0);
+
+    REQUIRE(midi.getNumEvents() > 0);
+    for (const auto meta : midi)
+    {
+        REQUIRE(meta.samplePosition >= 0);
+        REQUIRE(meta.samplePosition < blockSamples);
+    }
+}
+
+TEST_CASE("PatternPlayer notes do not overlap at BPM extremes", "[midi]")
+{
+    for (float bpm : { 80.0f, 220.0f })
+    {
+        MidiPatternLibrary lib;
+        PatternPlayer player;
+        player.setPatternLibrary(&lib);
+        player.prepare(48000.0, 512);
+        player.setBpm(bpm);
+        player.setPatternIndex(1);  // VerseSlow
+        player.setStructureSilent(false);
+
+        // 8 bars at this BPM
+        const double samplesPerBar = (60.0 / static_cast<double>(bpm)) * 4.0 * 48000.0;
+        const int blockSamples = static_cast<int>(samplesPerBar * 8);
+
+        juce::MidiBuffer midi;
+        player.process(midi, blockSamples, 0);
+
+        // Track (channel, note) → is-active; if NoteOn arrives while active, flag overlap.
+        std::map<std::pair<int, int>, bool> activeNotes;
+        bool anyOverlap = false;
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            const auto key = std::make_pair(msg.getChannel(), msg.getNoteNumber());
+            if (msg.isNoteOn())
+            {
+                if (activeNotes[key])
+                    anyOverlap = true;
+                activeNotes[key] = true;
+            }
+            else if (msg.isNoteOff())
+            {
+                activeNotes[key] = false;
+            }
+        }
+        REQUIRE_FALSE(anyOverlap);
+    }
+}
