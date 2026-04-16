@@ -141,3 +141,38 @@ Plans:
 | 2.4 | Generative bass line model (transformer → ONNX) |
 | 2.5 | Plugin UI with genre/intensity controls |
 | 2.6 | Python training pipeline + metal MIDI dataset |
+
+> **Note (2026-04-16):** M2 direction is under revision — see Backlog 999.1. Likely shift from on-device ONNX to cloud inference with a fine-tuned Anticipatory Music Transformer. The table above will be re-scoped when M2 is opened.
+
+---
+
+## Backlog
+
+### Phase 999.1: ML training data feasibility research (BACKLOG)
+
+**Goal:** Identify and license-audit candidate training datasets for a fine-tuned metal drum/bass accompaniment model (M2 precursor). Produce a go/no-go feasibility memo recommending the primary dataset path.
+
+**Requirements:** TBD
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with `/gsd-review-backlog` when ready)
+
+**Captured context (from discussion 2026-04-16):**
+
+- **Base model candidate:** Anticipatory Music Transformer (Thickstun et al., Stanford) — pretrained on Lakh MIDI, designed for symbolic accompaniment / infilling with partial-track conditioning. Fine-tuning on a metal-weighted subset looks tractable on a single A100.
+- **Deployment target:** cloud GPU inference (on-device not a requirement). Rate-limit cloud calls to 2–5 Hz without perceptible UX loss.
+- **Dataset shortlist to evaluate:**
+  - Lakh MIDI Dataset (~170k files, free, clean licensing, AMT's pretraining set)
+  - GuitarPro tab scrapes (huge volume, legally gray — TOS violations common)
+  - Groove MIDI Dataset (Magenta — paired drum performances, not metal but teaches groove)
+  - Slakh2100 (synthetic multi-track from MIDI, genre-limited)
+  - Commissioned recordings (20–50 hrs of drummers accompanying guitar tracks — expensive but cleanest signal)
+- **Experience decisions already made:**
+  - Pure audio-reactive + optional **session seed** (preset dropdown for subgenre/tempo); no in-session chatbot
+  - Reactive **fill-cue detection** on a 2-bar rolling window, not long-horizon structure prediction (real drummers sense the windup, don't predict sections)
+  - **Session-adaptive style embedding** first (typical IOI, RMS envelope, chord-root histogram); persisted per-user LoRA deferred
+  - Avoid audio-generative models (MusicGen, Riffusion, Suno) — they emit waveforms, not MIDI, and don't fit the `IInference` contract
+- **Remaining M2 scope** (context for planning, *not* this phase): preprocessing pipeline (MIDI → AMT token format), fine-tuning pipeline + eval harness, cloud inference service (latency budget, rate-limiting, cost model), plugin `CloudInference` class implementing `IInference` with graceful fallback to rule-based, eval & iteration (listening tests, fill-cue accuracy, seed adherence, per-user style embedding).
+- **Open questions for this phase:** which datasets clear license audit, how much paired guitar→drums coverage exists vs. needs commissioning, tokenization compatibility with AMT's vocabulary.
