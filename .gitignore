@@ -1,0 +1,34 @@
+# Build
+build/
+cmake-build-*/
+out/
+compile_commands.json
+
+# IDE
+.idea/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+
+# JUCE / plugin binaries
+*.vst3
+*.component
+*.a
+*.dylib
+*.so
+
+# FetchContent
+_deps/
+
+# GSD planning (local only)
+.planning/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+Testing/
