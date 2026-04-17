@@ -64,6 +64,8 @@ cmake --build build-onnx --parallel
 
 If `tryLoadModel()` fails at runtime, the processor falls back to `RuleBasedInference` (same as `MA_ENABLE_ONNX=OFF`).
 
+Before running **`scripts/build_minimal_*.py`**, Phase 15 training scripts, or export helpers, set up the **locked** Python environment described in **`training/README.md`** (venv + `pip install -r training/requirements.txt`). **`training/requirements.txt`** is the **single source of truth** for pinned prep/training Python dependencies.
+
 **Generative bass (Phase 13):** When the bass ONNX bundle is present, the inference thread performs an extra `Run` per drained feature (same cadence as other inference heads). If the bass ONNX fails to load or confidence gating rejects the proposal, playback uses **library pattern bass only** — see the **Generative bass** subsection in the **[README](README.md)** for performance and fallback behavior.
 
 Example with tests off:

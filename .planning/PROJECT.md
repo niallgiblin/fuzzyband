@@ -54,10 +54,11 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - ✓ DATA-01–03: dataset audit (`docs/DATASET_AUDIT.md`), event tokenization (`docs/TOKENIZATION.md`), reproducible MIDI prep stub (`training/prep_midi.py`) + CI smoke — v0.2.0 Phase 9
 - ✓ PUI-01–03: APVTS policy (`genre`, `intensity`, `variation`, `structureBlend`, `generativeBassMode`), `PolicyPatternMapper`, editor attachments, README/CONTRIBUTING parameter docs — v0.2.0 Phase 14
 - ✓ CLOUD-01–02: Terraform S3 + GitHub OIDC IAM (`infra/`), bootstrap tfstate script, `promote-model.sh` / `download-model.sh`, optional CI download — v0.2.0 Phase 16
+- ✓ PYTR-01–03: pinned `training/requirements.txt`, stub train + `metrics.jsonl`, ONNX export + `scripts/validate_onnx_contract.py` — v0.2.0 Phase 15
 
 ### Active (v0.2.0)
 
-See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. High level: DATA ✓ → ONNX → PITCH → STRUC → GBASS → PUI ✓ → **PYTR** → **CLOUD ✓** (remaining: **PYTR** Phase 15).
+See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. **v0.2.0 milestone scope (Phases 9–16) is complete** — carryover items below are release/ops only.
 
 **Operational (carryover from v0.1.0):**
 
@@ -76,7 +77,7 @@ See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. High level: DA
 - **Target DAW**: Reaper primary, Ableton + Logic secondary
 - **Platform**: macOS first (Apple Silicon + Intel universal); Windows later
 - **JUCE version**: 8 (required for macOS 15+ / juceaide build; roadmap originally wrote JUCE 7 but JUCE 8 was used)
-- **Codebase state**: **v0.1.0 shipped**; **v0.2.0 in progress** — requirements and roadmap in `.planning/REQUIREMENTS.md` / `.planning/ROADMAP.md`. Backlog **999.1** strategy memo remains under `.planning/phases/999.1-ml-phase-2-data-feasibility-research/`.
+- **Codebase state**: **v0.1.0 shipped**; **v0.2.0 milestone (Phases 9–16) complete** — requirements and roadmap in `.planning/REQUIREMENTS.md` / `.planning/ROADMAP.md`. Backlog **999.1** strategy memo remains under `.planning/phases/999.1-ml-phase-2-data-feasibility-research/`.
 
 ## Constraints
 
@@ -97,7 +98,7 @@ See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. High level: DA
 | constexpr pattern arrays (no file I/O) | Plugin must not do file I/O in the audio path | ✓ Good |
 
 ---
-*Last updated: 2026-04-17 after Phase 16 (Terraform model storage) execution*
+*Last updated: 2026-04-17 after Phase 15 (Python training pipeline) execution*
 
 ## Evolution
 

@@ -47,9 +47,9 @@
 
 ### Python training (PYTR)
 
-- [ ] **PYTR-01**: Python project with locked dependencies (`requirements.txt`, `uv.lock`, or equivalent) reproducible on macOS
-- [ ] **PYTR-02**: Metal MIDI dataset pipeline: ingest + at least one training run with logged metrics
-- [ ] **PYTR-03**: Export path from training to ONNX/checkpoint used by ONNX inference path
+- [x] **PYTR-01**: Python project with locked dependencies (`requirements.txt`, `uv.lock`, or equivalent) reproducible on macOS
+- [x] **PYTR-02**: Metal MIDI dataset pipeline: ingest + at least one training run with logged metrics
+- [x] **PYTR-03**: Export path from training to ONNX/checkpoint used by ONNX inference path
 
 ### Cloud & model storage (CLOUD)
 
