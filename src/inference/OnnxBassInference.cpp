@@ -3,6 +3,7 @@
 #if defined(MA_ENABLE_ONNX)
 #include "BinaryData.h"
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <onnxruntime_cxx_api.h>
 #endif
@@ -119,6 +120,12 @@ void OnnxBassInference::propose(const FeatureVector& f)
         }
 
         const float* out = outputs[0].GetTensorData<float>();
+        if (!std::isfinite(out[0]) || !std::isfinite(out[1]) || !std::isfinite(out[2])
+            || !std::isfinite(out[3]))
+        {
+            last = {};
+            return;
+        }
         last.confidence = out[0];
         last.rootMidi = out[1];
         last.durationBeats = out[2];
