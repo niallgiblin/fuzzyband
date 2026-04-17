@@ -4,6 +4,41 @@ Living document; append new milestone sections at the top of the milestone histo
 
 ---
 
+## Milestone: v0.2.0 — Phase 2 ML + Generative
+
+**Shipped:** 2026-04-17  
+**Phases:** 8 (numbered 9–16) | **Plans with summaries:** 18
+
+### What was built
+
+- DATA/ONNX groundwork (`DATASET_AUDIT`, `TOKENIZATION`, `prep_midi`, `ONNX_IO`, threading guardrails); pitch + ML structure + generative bass paths; APVTS UI; Python training stub + ONNX validation; Terraform model bucket and promotion scripts.
+
+### What worked
+
+- Reusing `IInference` kept one contract across rule-based, ONNX, and generative bass.
+- Frozen tensor contract (`docs/ONNX_IO.md`) aligned C++ and Python export.
+- Phases 9–16 produced parallel SUMMARY artifacts for traceability.
+
+### What was inefficient
+
+- `gsd-sdk` / `milestone.complete` CLI not available locally — milestone close done manually.
+- Sidecar `15-onset-robustness` vs roadmap Phase 15 (PYTR) naming collision required explicit roadmap notes.
+
+### Patterns established
+
+- Shell-based CI guard to keep ORT off the audio thread without downloading ORT in default CI.
+- Pointer manifest + checksum promotion for model artifacts.
+
+### Key lessons
+
+- Archive living `REQUIREMENTS.md` at milestone boundary so the next milestone starts with a clean sheet.
+
+### Cost observations
+
+Not tracked for this milestone.
+
+---
+
 ## Milestone: v0.1.0 — Phase 1 rule-based MVP
 
 **Shipped:** 2026-04-17  
@@ -44,7 +79,8 @@ Not tracked for this milestone.
 
 | Milestone | Duration (calendar) | Phases | Notes |
 |-----------|---------------------|--------|-------|
-| v0.1.0 | 2026-04-16 — 2026-04-17 | 8 | Import + close in two calendar days of recorded GSD history |
+| v0.2.0 | 2026-04-16 — 2026-04-17 | 8 (9–16) | Phase 2 ML + generative stack; 18 plan summaries |
+| v0.1.0 | 2026-04-16 — 2026-04-17 | 8 (1–8) | Import + close in two calendar days of recorded GSD history |
 
 ---
 

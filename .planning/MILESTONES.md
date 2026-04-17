@@ -1,5 +1,38 @@
 # Milestones — Metal Accompaniment
 
+## v0.2.0 — Phase 2 ML + Generative
+
+**Shipped:** 2026-04-17  
+**Phases:** 9–16 (8 phases)  
+**Plans with summaries:** 18
+
+### Summary
+
+Shipped optional ONNX inference with a frozen I/O contract and CI guardrails, YIN-based pitch and adaptive bass routing, ML structure with rule fallback, generative bass with validation and rank/select, APVTS-backed plugin UI, a reproducible Python training stub with ONNX export validation, and Terraform + scripts for versioned model storage and promotion.
+
+### Key accomplishments
+
+1. **Data & ONNX foundation** — Dataset audit and tokenization docs; `training/prep_midi.py`; `docs/ONNX_IO.md` and audio-thread checks (Phase 9–10).
+2. **Realtime intelligence** — Pitch/harmony, ML structure, generative bass integration without blocking the audio thread (Phase 11–13).
+3. **Product surface** — Policy parameters and editor layout with documentation (Phase 14).
+4. **Train → ship loop** — Pinned Python deps, stub training, dual ONNX export, contract validation script (Phase 15).
+5. **Ops** — S3 + GitHub OIDC Terraform, promote/download scripts, optional CI model fetch (Phase 16).
+
+### Stats (approximate)
+
+- **Window:** 2026-04-16 — 2026-04-17 (GSD-recorded execution)
+- **Plans:** 18 with summaries (phases 9–16)
+
+### Pre-flight note
+
+No `.planning/v0.2.0-MILESTONE-AUDIT.md` on file — optional `/gsd-audit-milestone` next time for a formal audit trail. Open-artifact audit (`audit-open`) was clear at close.
+
+### Known deferred items at close
+
+Same operational follow-ups as v0.1.0 where still pending: push legacy tag, GitHub issues checklist, optional DAW smoke. See `STATE.md` → **Deferred Items**.
+
+---
+
 ## v0.1.0 — Phase 1 rule-based MVP
 
 **Shipped:** 2026-04-17  

@@ -2,32 +2,26 @@
 
 ## What This Is
 
-A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and outputs rhythmically appropriate drum and bass MIDI in real time. Phase 1 uses a rule-based signal analysis pipeline (onset detection, tempo tracking, energy/structure classification) with no ML. The interface is designed so Phase 2 can drop in an ONNX ML model without changing the threading model or plugin architecture.
+A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and outputs rhythmically appropriate drum and bass MIDI in real time. **v0.1.0** shipped a rule-based analysis pipeline; **v0.2.0** adds optional ONNX inference (patterns and generative bass), ML structure, pitch-aware bass, APVTS UI, training/export tooling, and Terraform model storage — still on the same `IInference` contract and non-blocking audio path.
 
 ## Core Value
 
 A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.
 
-## Current Milestone: v0.2.0 — Phase 2 (ML + Generative)
+## Shipped: v0.2.0 — Phase 2 (ML + Generative)
 
-**Goal:** Evolve the Phase 1 plugin with ONNX-capable inference, real-time pitch/harmony features, ML-based structure, generative bass, user-facing controls, a Python training loop, and versioned cloud model storage — without breaking the `IInference` contract or blocking the audio thread.
+**Closed:** 2026-04-17 — Phases 9–16. ONNX optional path + frozen `docs/ONNX_IO.md` contract; YIN pitch and adaptive bass root; ML structure with rule fallback; generative bass with validation and degradation; APVTS/editor policy UI; Python stub training + ONNX export validation; Terraform S3 + promotion runbook.
 
-**Target features:**
+**Archived requirements:** `.planning/milestones/v0.2.0-REQUIREMENTS.md`  
+**Archived roadmap:** `.planning/milestones/v0.2.0-ROADMAP.md`
 
-- Dataset/tokenization strategy and training data prep (closes themes from backlog **999.1**; see `PHASE2_ML_DATA_STRATEGY.md`)
-- ONNX Runtime + `OnnxInference` with fallback to `RuleBasedInference`
-- Pitch/chord path for adaptive bass root (replacing fixed E2 where active)
-- ML structure classifier with rule-based fallback
-- Generative bass model (train → export → runtime constraints)
-- APVTS-backed UI: genre, intensity, pattern variation
-- Python training pipeline + metal MIDI dataset ingestion
-- Terraform for model artifact storage and promotion runbook
+## Next milestone
 
-**Requirements:** Scoped in `.planning/REQUIREMENTS.md` (REQ-IDs **DATA-**, **ONNX-**, **PITCH-**, **STRUC-**, **GBASS-**, **PUI-**, **PYTR-**, **CLOUD-**).
+**Not started.** Use `/gsd-new-milestone` to capture goals, a fresh `.planning/REQUIREMENTS.md`, and phased roadmap work.
 
-## Prior milestone (shipped)
+## Prior milestones (shipped)
 
-**v0.1.0** (Phase 1 rule-based MVP) closed 2026-04-17: JUCE 8 VST3/AU, rule-based pipeline → `IInference` → `PatternPlayer`, lock-free handoff, macOS CI, docs handoff. Details: `.planning/MILESTONES.md`, `.planning/milestones/v0.1.0-ROADMAP.md`.
+**v0.1.0** (Phase 1 rule-based MVP) — 2026-04-17: JUCE 8 VST3/AU, rule-based pipeline → `IInference` → `PatternPlayer`, lock-free handoff, macOS CI, docs handoff. `.planning/milestones/v0.1.0-ROADMAP.md`, `.planning/milestones/v0.1.0-REQUIREMENTS.md`.
 
 ## Requirements
 
@@ -55,21 +49,23 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - ✓ PUI-01–03: APVTS policy (`genre`, `intensity`, `variation`, `structureBlend`, `generativeBassMode`), `PolicyPatternMapper`, editor attachments, README/CONTRIBUTING parameter docs — v0.2.0 Phase 14
 - ✓ CLOUD-01–02: Terraform S3 + GitHub OIDC IAM (`infra/`), bootstrap tfstate script, `promote-model.sh` / `download-model.sh`, optional CI download — v0.2.0 Phase 16
 - ✓ PYTR-01–03: pinned `training/requirements.txt`, stub train + `metrics.jsonl`, ONNX export + `scripts/validate_onnx_contract.py` — v0.2.0 Phase 15
+- ✓ ONNX-01–03: optional ORT build, `OnnxInference` + rule fallback, `docs/ONNX_IO.md` + audio-thread CI guard — v0.2.0 Phase 10
+- ✓ STRUC-01–03: ML structure path + fallback + bar-quantized transitions — v0.2.0 Phase 12
+- ✓ GBASS-01–03: generative bass ONNX path, `BassMidiValidator`, rank/select + degradation docs — v0.2.0 Phase 13
 
-### Active (v0.2.0)
+### Active (release / ops)
 
-See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. **v0.2.0 milestone scope (Phases 9–16) is complete** — carryover items below are release/ops only.
-
-**Operational (carryover from v0.1.0):**
+**Operational (carryover):**
 
 - [ ] Push `v0.1.0-phase1` to GitHub (`git push origin v0.1.0-phase1`)
+- [ ] Push `v0.2.0` tag to GitHub (`git push origin v0.2.0`)
 - [ ] Open Phase 2 GitHub issues from `docs/PHASE2_GITHUB_ISSUES.md`
 - [ ] (Optional) Confirm plugin + drum VSTi routing in Reaper for your setup
 
 ### Out of Scope
 
 - Waveform music generation (does not produce MIDI; out of product contract)
-- Windows plugin build in v0.2.0 (macOS first; revisit after Milestone 2 stabilizes)
+- Windows plugin build (macOS first; revisit in a future milestone)
 
 ## Context
 
@@ -77,7 +73,7 @@ See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. **v0.2.0 miles
 - **Target DAW**: Reaper primary, Ableton + Logic secondary
 - **Platform**: macOS first (Apple Silicon + Intel universal); Windows later
 - **JUCE version**: 8 (required for macOS 15+ / juceaide build; roadmap originally wrote JUCE 7 but JUCE 8 was used)
-- **Codebase state**: **v0.1.0 shipped**; **v0.2.0 milestone (Phases 9–16) complete** — requirements and roadmap in `.planning/REQUIREMENTS.md` / `.planning/ROADMAP.md`. Backlog **999.1** strategy memo remains under `.planning/phases/999.1-ml-phase-2-data-feasibility-research/`.
+- **Codebase state**: **v0.1.0** and **v0.2.0** shipped — planning history in `.planning/milestones/`; current roadmap `.planning/ROADMAP.md`. Backlog **999.1** strategy memo: `.planning/phases/999.1-ml-phase-2-data-feasibility-research/`.
 
 ## Constraints
 
@@ -94,11 +90,11 @@ See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. **v0.2.0 miles
 | JUCE 8 over JUCE 7 | Required for macOS 15+ / juceaide build compatibility | ✓ Good |
 | Rule-based Phase 1, ONNX Phase 2 | Ships a working product fast; IInference interface abstracts the swap | ✓ Good — v0.2.0 implements ONNX path |
 | Lock-free inference pipeline (atomic + ReaderWriterQueue) | Audio thread must never block | ✓ Good |
-| Bass fixed to root E2 until pitch tracking | Pitch detection deferred to Phase 2; avoids wrong notes | ⚠️ Revisit in v0.2.0 (PITCH-*) |
+| Bass fixed to root E2 until pitch tracking | Pitch detection deferred to Phase 2; avoids wrong notes | ✓ Good — v0.2.0 PITCH path + tests |
 | constexpr pattern arrays (no file I/O) | Plugin must not do file I/O in the audio path | ✓ Good |
 
 ---
-*Last updated: 2026-04-17 after Phase 15 (Python training pipeline) execution*
+*Last updated: 2026-04-17 after v0.2.0 milestone close (`/gsd-complete-milestone`)*
 
 ## Evolution
 

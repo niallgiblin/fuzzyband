@@ -119,7 +119,7 @@ The plugin applies **softmax** in C++ and applies confidence / margin gates befo
 Any training or export pipeline landing in Phase 15 **must** emit a graph whose
 input `X` / output `Y` names, shapes, dtypes, and value ranges match the table
 above. Changing this contract requires a breaking-phase update to
-`.planning/REQUIREMENTS.md` (ONNX-02).
+`.planning/milestones/v0.2.0-REQUIREMENTS.md` (ONNX-02).
 
 ---
 

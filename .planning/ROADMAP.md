@@ -3,7 +3,8 @@
 ## Milestones
 
 - ✅ **v0.1.0 — Phase 1 rule-based MVP** — Phases 1–8 (shipped 2026-04-17)
-- 🚧 **v0.2.0 — Phase 2 ML + Generative** — Phases 9–16 (in progress)
+- ✅ **v0.2.0 — Phase 2 ML + Generative** — Phases 9–16 (shipped 2026-04-17)
+- 📋 **Next milestone** — TBD (start with `/gsd-new-milestone`)
 
 ## Phases
 
@@ -29,121 +30,35 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 
 </details>
 
-### v0.2.0 — Phases 9–16 (active)
+<details>
+<summary>✅ v0.2.0 Phase 2 ML + Generative (Phases 9–16) — SHIPPED 2026-04-17</summary>
 
 | # | Phase | Goal | Requirements | Status |
 |---|-------|------|--------------|--------|
 | 9 | Data & training strategy | Dataset audit, tokenization, data-prep stub; absorbs backlog **999.1** themes | DATA-01–03 | ✓ Complete 2026-04-17 |
-| 10 | ONNX runtime & IInference | 1/1 | Complete   | 2026-04-17 |
-| 11 | Pitch & harmony | 3/3 | Complete    | 2026-04-17 |
-| 12 | ML structure | 3/3 | Complete    | 2026-04-17 |
-| 13 | Generative bass | 3/3 | Complete    | 2026-04-17 |
-| 14 | Plugin UI | 3/3 | Complete    | 2026-04-17 |
-| 15 | Python training pipeline | Repro env, dataset ingest, training export | PYTR-01–03 | ✓ Complete 2026-04-17 |
-| 16 | Terraform model storage | Versioned artifacts + promotion runbook | CLOUD-01–02 | ✓ Complete 2026-04-17 |
+| 10 | ONNX runtime & IInference | Optional ORT; frozen I/O contract; audio-thread guardrails | ONNX-01–03 | ✓ Complete 2026-04-17 |
+| 11 | Pitch & harmony | YIN + bass root routing; tests + pitch testing doc | PITCH-01–04 | ✓ Complete 2026-04-17 |
+| 12 | ML structure | ML path + rule fallback; integration tests | STRUC-01–03 | ✓ Complete 2026-04-17 |
+| 13 | Generative bass | Train/export; rank/select; validation + degradation | GBASS-01–03 | ✓ Complete 2026-04-17 |
+| 14 | Plugin UI | APVTS policy + editor; README/CONTRIBUTING | PUI-01–03 | ✓ Complete 2026-04-17 |
+| 15 | Python training pipeline | Pinned deps; stub train; ONNX export + contract validation | PYTR-01–03 | ✓ Complete 2026-04-17 |
+| 16 | Terraform model storage | Versioned S3 + OIDC; promote/download scripts; runbook | CLOUD-01–02 | ✓ Complete 2026-04-17 |
 
-**Phase numbering note:** The folder `.planning/phases/15-onset-robustness/` is **not** this table’s Phase 15. It documents a **sidecar** iteration (distortion / adaptive onset robustness) that reused a `15-*` directory name before PYTR was scheduled here. **Roadmap Phase 15** in this table is only **Python training pipeline** (PYTR-01–03). Onset sidecar is historical; **PYTR** is **complete** (plans `15-01`, `15-02`; verification `15-VERIFICATION.md`).
+**Phase numbering note:** The folder `.planning/phases/15-onset-robustness/` is **not** this table’s Phase 15. It documents a **sidecar** iteration (distortion / adaptive onset robustness). **Roadmap Phase 15** is **Python training pipeline** (PYTR-01–03).
 
-**Next:** v0.2.0 milestone phases **9–16** are complete. Operational: push `v0.1.0-phase1`; GitHub issues from `docs/PHASE2_GITHUB_ISSUES.md`.
+**Operational follow-ups:** Push `v0.1.0-phase1` if pending; GitHub issues from `docs/PHASE2_GITHUB_ISSUES.md`; optional Reaper routing smoke (OUT-05).
 
 **Strategy context:** `.planning/phases/999.1-ml-phase-2-data-feasibility-research/PHASE2_ML_DATA_STRATEGY.md` (hybrid rank/select, ~1 bar reaction, Groove/GMD vs E-GMD).
 
----
+### Phase details (historical)
 
-## Phase details (current milestone)
+Full narratives and success criteria: `.planning/milestones/v0.2.0-ROADMAP.md`.
 
-### Phase 9: Data & training strategy
+</details>
 
-**Goal:** Close the planning gap between symbolic MIDI corpora and plugin `FeatureVector` policy. Deliver audit memo, tokenization choice, and reproducible prep stub.  
-**Requirements:** DATA-01, DATA-02, DATA-03  
-**Success criteria:**
+## Current focus
 
-1. Written go/no-go on primary training data path with license notes
-2. Tokenization documented and referenced by prep code
-3. One runnable prep path from representative MIDI to model input tensors (or agreed format)
-
----
-
-### Phase 10: ONNX runtime & IInference
-
-**Goal:** Load ONNX models off the audio thread; keep `RuleBasedInference` as fallback.  
-**Requirements:** ONNX-01, ONNX-02, ONNX-03  
-**Success criteria:**
-
-1. CMake builds with ONNX optional; docs list env vars
-2. Swapping `IInference` implementation selects ONNX model when present
-3. Stress test: no audio-thread blocking; inference cadence ~50 Hz preserved
-
----
-
-### Phase 11: Pitch & harmony
-
-**Goal:** Replace fixed bass root with pitch-informed routing when enabled.  
-**Requirements:** PITCH-01, PITCH-02, PITCH-03, PITCH-04  
-**Success criteria:**
-
-1. Pitch estimate stable enough for metal guitar input in test harness
-2. Bass notes follow policy from detected root (within documented latency)
-3. Automated tests on synthetic sine / known MIDI ground truth
-
----
-
-### Phase 12: ML structure
-
-**Goal:** ML-based section/energy classification with safe fallback to thresholds.  
-**Requirements:** STRUC-01, STRUC-02, STRUC-03  
-**Success criteria:**
-
-1. Offline metric vs. reference labels or shadow comparison to `StructureTagger`
-2. Fallback path verified when model missing
-3. No regression in bar-quantized pattern switches in integration test
-
----
-
-### Phase 13: Generative bass
-
-**Goal:** Train a small model; export to runtime; constrain outputs to valid bass MIDI.  
-**Requirements:** GBASS-01, GBASS-02, GBASS-03  
-**Success criteria:**
-
-1. Checkpoint/ONNX loads in plugin test build
-2. Output MIDI passes validation (range, channel, timing bounds)
-3. CPU/latency documented; degradation path tested
-
----
-
-### Phase 14: Plugin UI
-
-**Goal:** User-facing controls wired to policy/inference.  
-**Requirements:** PUI-01, PUI-02, PUI-03  
-**Success criteria:**
-
-1. APVTS parameters created and saved with project
-2. Editor shows controls; layout acceptable for Reaper/AU hosting smoke test
-3. README or CONTRIBUTING section for parameter semantics
-
----
-
-### Phase 15: Python training pipeline
-
-**Goal:** Reproducible training on macOS; export for plugin.  
-**Requirements:** PYTR-01, PYTR-02, PYTR-03  
-**Success criteria:**
-
-1. Clean install from lockfile succeeds on fresh machine
-2. At least one training run with logged loss/metrics
-3. Export artifact consumed by Phase 10 path
-
----
-
-### Phase 16: Terraform model storage
-
-**Goal:** Versioned cloud storage for models; clear promotion process.  
-**Requirements:** CLOUD-01, CLOUD-02  
-**Success criteria:**
-
-1. `terraform apply` (or workspace) creates bucket/storage with versioning
-2. Runbook: tag → checksum → path used by release/build
+No active GSD phase. Define the next milestone (requirements + roadmap) with `/gsd-new-milestone`.
 
 ---
 
@@ -169,14 +84,12 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 
 **Goal:** Identify and license-audit candidate training datasets for a fine-tuned metal drum/bass accompaniment model (M2 precursor). Produce a go/no-go feasibility memo recommending the primary dataset path.
 
-> **Superseded for execution:** Core themes are **Phase 9** (DATA-*) in v0.2.0. Keep this backlog entry for narrative context until Phase 9 ships, then archive or remove via `/gsd-review-backlog`.
-
-**Requirements:** Covered by DATA-01–03 in `.planning/REQUIREMENTS.md`
+> **Superseded for execution:** Core themes shipped as **Phase 9** (DATA-*) in v0.2.0. Traceability: `.planning/milestones/v0.2.0-REQUIREMENTS.md`.
 
 **Plans:** 3/3 plans complete
 
 Plans:
-- [ ] TBD — use `/gsd-plan-phase 9` to create plans
+- [x] Executed under Phase 9 / v0.2.0 (see phase 9 plans and `docs/DATASET_AUDIT.md`)
 
 **Captured context (from discussion 2026-04-16):**
 
@@ -196,4 +109,4 @@ Plans:
 - **Remaining M2 scope** (context for planning, *not* this phase): preprocessing pipeline (MIDI → AMT token format), fine-tuning pipeline + eval harness, cloud inference service (latency budget, rate-limiting, cost model), plugin `CloudInference` class implementing `IInference` with graceful fallback to rule-based, eval & iteration (listening tests, fill-cue accuracy, seed adherence, per-user style embedding).
 - **Open questions for this phase:** which datasets clear license audit, how much paired guitar→drums coverage exists vs. needs commissioning, tokenization compatibility with AMT's vocabulary.
 
-**Strategy memo (2026-04-17):** Consolidated ML data + integration direction (Groove/GMD vs E-GMD, rank vs replace vs hybrid, guitar bridge, ~1-bar reaction / anticipation) lives in `.planning/phases/999.1-ml-phase-2-data-feasibility-research/PHASE2_ML_DATA_STRATEGY.md`. Use it when promoting 999.1 or opening Milestone 2.
+**Strategy memo (2026-04-17):** Consolidated ML data + integration direction (Groove/GMD vs E-GMD, rank vs replace vs hybrid, guitar bridge, ~1-bar reaction / anticipation) lives in `.planning/phases/999.1-ml-phase-2-data-feasibility-research/PHASE2_ML_DATA_STRATEGY.md`. Use it when promoting 999.1 or opening the next milestone.
