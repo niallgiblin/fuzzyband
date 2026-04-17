@@ -3,6 +3,8 @@ build/
 cmake-build-*/
 out/
 compile_commands.json
+# CMake-built Catch2 binary (do not commit; rebuild with `cmake --build build-release --target MetalAccompanimentTests`)
+build-release/MetalAccompanimentTests
 
 # IDE
 .idea/
