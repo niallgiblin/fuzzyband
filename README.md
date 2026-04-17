@@ -2,6 +2,12 @@
 
 JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + bass MIDI** in real time using rule-based tempo, energy, and structure detection (Phase 1 — no ML). Bass patterns use a **fixed root (E2)** until pitch tracking lands in a later phase.
 
+## Phase 2 data & training (prep)
+
+- **[Dataset audit & go/no-go](docs/DATASET_AUDIT.md)** — symbolic corpus shortlist and license checklist
+- **[Tokenization](docs/TOKENIZATION.md)** — event JSON/JSONL contract for offline prep
+- **[Training / prep tooling](training/README.md)** — Python venv, `prep_midi.py` CLI
+
 ## Pattern MIDI export (offline)
 
 After building the `MetalAccompanimentExportPatterns` target, run:
