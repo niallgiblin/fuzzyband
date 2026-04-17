@@ -34,15 +34,20 @@ std::unique_ptr<IStructureInference> makeStructureInference()
     return std::make_unique<RuleStructureInference>();
 }
 
+#if defined(MA_ENABLE_ONNX)
 std::unique_ptr<OnnxBassInference> makeBassInference()
 {
-#if defined(MA_ENABLE_ONNX)
     auto onnx = std::make_unique<OnnxBassInference>();
     if (onnx->tryLoadModel())
         return onnx;
-#endif
     return nullptr;
 }
+#else
+std::unique_ptr<OnnxBassInference> makeBassInference()
+{
+    return nullptr;
+}
+#endif
 } // namespace
 
 juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::createParameterLayout()
