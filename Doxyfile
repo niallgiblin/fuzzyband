@@ -1,0 +1,28 @@
+# Doxygen for Metal Accompaniment — public C++ headers only (see CONTRIBUTING.md)
+# Generate: cmake --build build --target doxygen-docs   OR   doxygen Doxyfile
+
+PROJECT_NAME           = "Metal Accompaniment"
+PROJECT_BRIEF          = "JUCE guitar-triggered drum/bass MIDI accompaniment"
+OUTPUT_DIRECTORY       = docs/doxygen
+CREATE_SUBDIRS         = NO
+ALLOW_UNICODE_NAMES    = YES
+
+INPUT                  = src
+INPUT_ENCODING         = UTF-8
+FILE_PATTERNS          = *.h
+RECURSIVE              = YES
+EXCLUDE                =
+EXCLUDE_PATTERNS       =
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+GENERATE_LATEX         = NO
+
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO

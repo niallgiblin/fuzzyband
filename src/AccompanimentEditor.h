@@ -1,9 +1,17 @@
 #pragma once
 
+/**
+ * @file
+ * @brief Debug-oriented plugin editor (BPM, state, pattern, raw features).
+ */
+
 #include <JuceHeader.h>
 
 class AccompanimentProcessor;
 
+/**
+ * @brief Minimal UI: labels for BPM, structure, pattern index, and analyser diagnostics.
+ */
 class AccompanimentEditor final : public juce::AudioProcessorEditor,
                                   private juce::Timer
 {
