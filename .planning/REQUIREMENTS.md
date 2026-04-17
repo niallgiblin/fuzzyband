@@ -16,9 +16,9 @@
 
 ### ONNX & inference runtime (ONNX)
 
-- [ ] **ONNX-01**: ONNX Runtime integrated in CMake (`MA_ENABLE_ONNX` or equivalent; `ONNXRUNTIME_ROOT` documented)
-- [ ] **ONNX-02**: `OnnxInference` (or equivalent) implements `IInference`; falls back to `RuleBasedInference` when model missing or load fails
-- [ ] **ONNX-03**: Inference remains on background thread (~50 Hz target); audio thread never blocks on model I/O
+- [x] **ONNX-01**: ONNX Runtime integrated in CMake (`MA_ENABLE_ONNX` or equivalent; `ONNXRUNTIME_ROOT` documented)
+- [x] **ONNX-02**: `OnnxInference` (or equivalent) implements `IInference`; falls back to `RuleBasedInference` when model missing or load fails
+- [x] **ONNX-03**: Inference remains on background thread (~50 Hz target); audio thread never blocks on model I/O
 
 ### Pitch & harmony (PITCH)
 
