@@ -23,7 +23,7 @@ All notable changes to this project are documented here. For architecture and th
 After documentation and CI are green on `main`:
 
 ```bash
-git tag -a v0.1.0-phase1 -m "Phase 1 rule-based MVP — IInference stable for Phase 2 swap-in"
+git tag -a v0.1.0-phase1 -m "Phase 1 rule-based MVP; see CHANGELOG.md"
 git push origin v0.1.0-phase1
 ```
 
