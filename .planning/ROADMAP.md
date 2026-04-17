@@ -48,7 +48,7 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 
 ---
 
-## Phase details (v0.2.0)
+## Phase details (current milestone)
 
 ### Phase 9: Data & training strategy
 
