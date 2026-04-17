@@ -200,15 +200,15 @@ BREAKDOWN → pattern 6  (half-time, heavy ghost notes)
 
 ---
 
-### `OnnxInference` (Phase 2 — stub only in Phase 1)
+### `OnnxInference` (Phase 2 — active when `MA_ENABLE_ONNX=ON`)
 
 **File:** `src/inference/OnnxInference.h/.cpp`  
 **Thread:** Background inference thread  
-**Purpose:** Implements `IInference` using a model loaded from an ONNX file
-bundled as `BinaryData`. Same interface, zero changes to the audio thread.
+**Purpose:** Implements `IInference` using ONNX Runtime against `assets/accompaniment_model.onnx`
+bundled as JUCE `BinaryData` when `MA_ENABLE_ONNX` is enabled at build time.
 
-In Phase 1, this file exists as a stub with a `TODO` comment. It is compiled
-but never instantiated.
+`AccompanimentProcessor` constructs `OnnxInference` and calls `tryLoadModel()`. If loading fails
+(or the option is off), it uses `RuleBasedInference` instead — no audio-thread change either way.
 
 ---
 

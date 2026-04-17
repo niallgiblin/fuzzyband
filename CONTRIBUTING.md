@@ -32,6 +32,25 @@ ctest --test-dir build --output-on-failure --config Release
 | `MA_ENABLE_ONNX` | OFF | Phase 2 — ONNX Runtime |
 | `ONNXRUNTIME_ROOT` | — | Required when `MA_ENABLE_ONNX=ON` (path to ONNX Runtime root with `include/` and `lib/`) |
 
+### ONNX Runtime (optional — Phase 10)
+
+1. Download a **macOS** ONNX Runtime archive from [onnxruntime releases](https://github.com/microsoft/onnxruntime/releases) (CPU, matching your architecture).
+2. Extract and set `ONNXRUNTIME_ROOT` to the folder that contains `include/onnxruntime_cxx_api.h` and `lib/libonnxruntime.dylib`.
+3. The bundled model is `assets/accompaniment_model.onnx` (minimal pattern stub). Regenerate with:
+   ```bash
+   training/.venv/bin/python scripts/build_minimal_pattern_onnx.py
+   ```
+4. Configure and build:
+
+```bash
+cmake -B build-onnx -DCMAKE_BUILD_TYPE=Release \
+  -DMA_ENABLE_ONNX=ON \
+  -DONNXRUNTIME_ROOT=/path/to/onnxruntime-osx-arm64-1.20.1
+cmake --build build-onnx --parallel
+```
+
+If `tryLoadModel()` fails at runtime, the processor falls back to `RuleBasedInference` (same as `MA_ENABLE_ONNX=OFF`).
+
 Example with tests off:
 
 ```bash
