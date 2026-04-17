@@ -138,11 +138,14 @@ target_sources(MetalAccompaniment PRIVATE
     src/analysis/OnsetDetector.cpp
     src/analysis/EnergyAnalyser.cpp
     src/analysis/StructureTagger.cpp
+    src/analysis/StructureHoldSmoother.cpp
     src/analysis/PitchEstimator.cpp
 
     # Inference
     src/inference/RuleBasedInference.cpp
     src/inference/OnnxInference.cpp        # stub in Phase 1
+    src/inference/RuleStructureInference.cpp
+    src/inference/OnnxStructureInference.cpp
 
     # MIDI
     src/midi/MidiPatternLibrary.cpp
@@ -243,13 +246,17 @@ if(MA_BUILD_TESTS)
         tests/test_pattern_player.cpp
         tests/test_pitch_estimator.cpp
         tests/test_rule_based_inference.cpp
+        tests/test_structure_hold_smoother.cpp
+        tests/test_structure_rule_agreement.cpp
 
         # Include plugin sources needed by tests (not the plugin target itself)
         src/analysis/OnsetDetector.cpp
         src/analysis/EnergyAnalyser.cpp
         src/analysis/StructureTagger.cpp
+        src/analysis/StructureHoldSmoother.cpp
         src/analysis/PitchEstimator.cpp
         src/inference/RuleBasedInference.cpp
+        src/inference/RuleStructureInference.cpp
         src/midi/MidiPatternLibrary.cpp
         src/midi/PatternPlayer.cpp
     )
@@ -269,9 +276,36 @@ if(MA_BUILD_TESTS)
         ${JUCE_MODULES}
     )
 
+    # STRUC-03: links the plugin static lib (avoids compiling AccompanimentProcessor twice) + module includes only.
+    set(MA_JUCE_MODULES_DIR "${CMAKE_BINARY_DIR}/_deps/juce-src/modules")
+    add_executable(MetalAccompanimentIntegrationTests
+        tests/test_structure_shadow_integration.cpp
+    )
+    target_include_directories(MetalAccompanimentIntegrationTests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src"
+        "${moodycamel_SOURCE_DIR}"
+        "${CMAKE_BINARY_DIR}/MetalAccompaniment_artefacts/JuceLibraryCode"
+        "${MA_JUCE_MODULES_DIR}"
+    )
+    target_compile_definitions(MetalAccompanimentIntegrationTests PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        "MA_REPO_ROOT=\"${CMAKE_SOURCE_DIR}\""
+    )
+    target_link_libraries(MetalAccompanimentIntegrationTests PRIVATE
+        Catch2::Catch2WithMain
+        MetalAccompaniment
+    )
+
     include(CTest)
     include(Catch)
     catch_discover_tests(MetalAccompanimentTests)
+
+    add_test(
+        NAME integration_structure_shadow_fixture
+        COMMAND MetalAccompanimentIntegrationTests "[structure][shadow]"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
 endif()
 
 # ─────────────────────────────────────────────────────────────────
