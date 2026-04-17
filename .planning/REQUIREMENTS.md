@@ -29,9 +29,9 @@
 
 ### ML structure (STRUC)
 
-- [ ] **STRUC-01**: ML structure classifier or head replaces or shadows threshold `StructureTagger` with eval metrics vs. labels/gold
-- [ ] **STRUC-02**: Fallback to rule-based structure when model unavailable or confidence low
-- [ ] **STRUC-03**: Pattern transitions remain bar-quantized and consistent with `PatternPlayer` semantics
+- [x] **STRUC-01**: ML structure classifier or head replaces or shadows threshold `StructureTagger` with eval metrics vs. labels/gold
+- [x] **STRUC-02**: Fallback to rule-based structure when model unavailable or confidence low
+- [x] **STRUC-03**: Pattern transitions remain bar-quantized and consistent with `PatternPlayer` semantics
 
 ### Generative bass (GBASS)
 
