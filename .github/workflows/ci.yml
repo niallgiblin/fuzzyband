@@ -9,8 +9,24 @@ on:
 jobs:
   macos:
     runs-on: macos-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC, optional)
+        if: github.event.repository.fork == false && vars.AWS_MODEL_BUCKET != '' && secrets.AWS_CI_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Download model from S3 (optional)
+        if: github.event.repository.fork == false && vars.AWS_MODEL_BUCKET != '' && secrets.AWS_CI_ROLE_ARN != ''
+        env:
+          MODEL_BUCKET: ${{ vars.AWS_MODEL_BUCKET }}
+        run: ./scripts/download-model.sh
 
       - name: ONNX audio-thread guardrail (ONNX-03)
         run: ./scripts/check_onnx_audio_thread.sh
