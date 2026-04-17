@@ -83,6 +83,7 @@ set(BINARY_DATA_SOURCES "")
 if(MA_ENABLE_ONNX)
     list(APPEND BINARY_DATA_SOURCES
         "${CMAKE_SOURCE_DIR}/assets/accompaniment_model.onnx"
+        "${CMAKE_SOURCE_DIR}/assets/structure_model.onnx"
     )
 endif()
 

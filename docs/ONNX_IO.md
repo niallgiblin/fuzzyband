@@ -68,6 +68,50 @@ If load fails or `Run()` throws, the processor falls back to
 
 ---
 
+## Structure model (Phase 12)
+
+> **Independent graph:** This head is **not** the pattern selector above. Tensor names **`X` / `Y`** and their tables remain frozen (**D-10-06**). Structure classification uses **`X_struct` / `Y_struct`** only.
+
+| Property | Value |
+|----------|-------|
+| Name | `X_struct` |
+| Dtype | `float32` |
+| Shape | `[1, 12, 7]` (batch **N**=12 snapshots, **K**=7 features per snapshot) |
+
+**Layout:** Row-major with dimension order `[batch][snapshot_index][feature]`. **`snapshot_index` 0 is the oldest** sample in the 12-frame window; index **11** is the **newest** (most recent `FeatureVector` pushed before the run).
+
+### Feature order per snapshot (K = 7)
+
+| Index | Field | Source (`FeatureVector`) |
+|-------|-------|--------------------------|
+| 0 | `bpm` | `FeatureVector::bpm` |
+| 1 | `rmsEnergy` | `FeatureVector::rmsEnergy` |
+| 2 | `spectralCentroid` | `FeatureVector::spectralCentroid` |
+| 3 | `highFreqFlux` | `FeatureVector::highFreqFlux` |
+| 4 | `float(static_cast<int>(state))` | Numeric cast of `StructureState` (`SILENT=0` … `BREAKDOWN=3`) |
+| 5 | `pitchRootMidi` | `FeatureVector::pitchRootMidi` |
+| 6 | `pitchConfidence` | `FeatureVector::pitchConfidence` |
+
+### Output tensor (structure head)
+
+| Property | Value |
+|----------|-------|
+| Name | `Y_struct` |
+| Dtype | `float32` |
+| Shape | `[1, 4]` **logits** (pre-softmax) |
+
+**Class order (logits index → label):** `SILENT`, `VERSE`, `CHORUS`, `BREAKDOWN` — same order as `enum class StructureState` in `src/analysis/StructureTagger.h`.
+
+The plugin applies **softmax** in C++ and applies confidence / margin gates before hold smoothing. Phase 15 training export **must** emit logits consistent with this head (not probabilities).
+
+| Property | Value |
+|----------|-------|
+| Asset path | `assets/structure_model.onnx` |
+| Delivery | JUCE `BinaryData` symbol `BinaryData::structure_model_onnx` (and `structure_model_onnxSize`) when `MA_ENABLE_ONNX=ON` |
+| Regeneration | `training/.venv/bin/python scripts/build_minimal_structure_onnx.py` (see `CONTRIBUTING.md` §ONNX Runtime) |
+
+---
+
 ## Handoff to Phase 15 (PYTR-03)
 
 Any training or export pipeline landing in Phase 15 **must** emit a graph whose
