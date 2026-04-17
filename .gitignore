@@ -33,6 +33,11 @@ training/.venv/
 # Doxygen (optional local HTML — see Doxyfile / doxygen-docs target)
 docs/doxygen/html/
 
+# Terraform (Phase 16 — local state backend config + plugin dir)
+.terraform/
+backend.hcl
+infra/.terraform/
+
 # CMake
 CMakeCache.txt
 CMakeFiles/
