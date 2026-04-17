@@ -1,7 +1,10 @@
 #include "AccompanimentProcessor.h"
 #include "AccompanimentEditor.h"
+#include "inference/IStructureInference.h"
+#include "inference/RuleStructureInference.h"
 #if defined(MA_ENABLE_ONNX)
 #include "inference/OnnxInference.h"
+#include "inference/OnnxStructureInference.h"
 #endif
 #include <chrono>
 #include <cmath>
@@ -18,6 +21,16 @@ std::unique_ptr<IInference> makeInference()
         return onnx;
 #endif
     return std::make_unique<RuleBasedInference>();
+}
+
+std::unique_ptr<IStructureInference> makeStructureInference()
+{
+#if defined(MA_ENABLE_ONNX)
+    auto onnx = std::make_unique<OnnxStructureInference>();
+    if (onnx->tryLoadModel())
+        return onnx;
+#endif
+    return std::make_unique<RuleStructureInference>();
 }
 } // namespace
 
@@ -38,6 +51,7 @@ AccompanimentProcessor::AccompanimentProcessor()
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true))
     , apvts(*this, nullptr, "PARAMETERS", createParameterLayout())
     , inference(makeInference())
+    , structureInference(makeStructureInference())
 {
     patternPlayer.setPatternLibrary(&patternLibrary);
     inferenceRunning.store(true, std::memory_order_release);
@@ -80,6 +94,10 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     if (inference)
         inference->prepare(sr);
 
+    lastFeatureSampleTs = -1;
+    if (structureInference)
+        structureInference->prepare(sr);
+
     hostSampleTime = 0;
     latestPatternIndex.store(0, std::memory_order_relaxed);
 
@@ -118,6 +136,16 @@ void AccompanimentProcessor::inferenceLoop()
         {
             const int idx = inference->selectPattern(latest);
             latestPatternIndex.store(idx, std::memory_order_release);
+
+            if (structureInference)
+            {
+                double dtSec = 0.02;
+                const double sr = cachedSampleRate.load(std::memory_order_acquire);
+                if (lastFeatureSampleTs >= 0 && latest.sampleTimestamp >= lastFeatureSampleTs && sr > 0.0)
+                    dtSec = static_cast<double>(latest.sampleTimestamp - lastFeatureSampleTs) / sr;
+                structureInference->process(latest, dtSec);
+                lastFeatureSampleTs = latest.sampleTimestamp;
+            }
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(20));

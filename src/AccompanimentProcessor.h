@@ -12,6 +12,7 @@
 #include "analysis/PitchEstimator.h"
 #include "analysis/FeatureVector.h"
 #include "inference/IInference.h"
+#include "inference/IStructureInference.h"
 #include "inference/RuleBasedInference.h"
 #include "midi/MidiPatternLibrary.h"
 #include "midi/PatternPlayer.h"
@@ -83,6 +84,7 @@ private:
     PatternPlayer patternPlayer;
 
     std::unique_ptr<IInference> inference;
+    std::unique_ptr<IStructureInference> structureInference;
 
     moodycamel::ReaderWriterQueue<FeatureVector> featureQueue{ 4096 };
     std::atomic<int> latestPatternIndex{ 0 };
@@ -101,6 +103,7 @@ private:
     std::thread inferenceThread;
 
     int64_t hostSampleTime = 0;
+    int64_t lastFeatureSampleTs = -1;
 
     float heldPitchRootMidi = 40.0f;
     float heldPitchConfidence = 0.0f;
