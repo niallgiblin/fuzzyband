@@ -251,6 +251,7 @@ if(MA_BUILD_TESTS)
         tests/test_rule_based_inference.cpp
         tests/test_structure_hold_smoother.cpp
         tests/test_structure_rule_agreement.cpp
+        tests/test_bass_generative.cpp
 
         # Include plugin sources needed by tests (not the plugin target itself)
         src/analysis/OnsetDetector.cpp
@@ -262,6 +263,7 @@ if(MA_BUILD_TESTS)
         src/inference/RuleStructureInference.cpp
         src/midi/MidiPatternLibrary.cpp
         src/midi/PatternPlayer.cpp
+        src/midi/BassMidiValidator.cpp
     )
 
     target_include_directories(MetalAccompanimentTests PRIVATE
