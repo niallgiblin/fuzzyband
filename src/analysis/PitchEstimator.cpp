@@ -148,15 +148,19 @@ void PitchEstimator::runYin(const float* x, int n)
         return;
     }
 
-    // Parabolic interpolation around bestTau for sub-sample period
+    // Parabolic interpolation on d(tau) (same curve as fundamental pick). Skip fractional
+    // refinement at band edges so d_[t±1] are always from this frame's YIN loop (see phase 11 review).
     const int t = bestTau;
-    float y0 = cmndf_[static_cast<size_t>(t - 1)];
-    float y1 = cmndf_[static_cast<size_t>(t)];
-    float y2 = cmndf_[static_cast<size_t>(t + 1)];
     float offset = 0.0f;
-    const float denom = y0 - 2.0f * y1 + y2;
-    if (std::abs(denom) > 1.0e-8f)
-        offset = 0.5f * (y0 - y2) / denom;
+    if (t >= tauMin + 1 && t <= tauMax - 1)
+    {
+        const float y0 = d_[static_cast<size_t>(t - 1)];
+        const float y1 = d_[static_cast<size_t>(t)];
+        const float y2 = d_[static_cast<size_t>(t + 1)];
+        const float denom = y0 - 2.0f * y1 + y2;
+        if (std::abs(denom) > 1.0e-8f)
+            offset = 0.5f * (y0 - y2) / denom;
+    }
 
     const float tauInterp = static_cast<float>(t) + std::clamp(offset, -0.5f, 0.5f);
     const double hz = static_cast<double>(sampleRate_) / static_cast<double>(tauInterp);
