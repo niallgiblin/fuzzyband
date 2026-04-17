@@ -54,8 +54,9 @@ void OnsetDetector::prepare(double newSampleRate, int maxBlockSize)
 
 void OnsetDetector::pushIoi(float ioiSamples)
 {
-    ioiHistory[static_cast<size_t>(ioiRingWrite % 16)] = ioiSamples;
-    ++ioiRingWrite;
+    const int slot = ioiRingWrite;                   // already in [0,15]
+    ioiHistory[static_cast<size_t>(slot)] = ioiSamples;
+    ioiRingWrite = (ioiRingWrite + 1) & 15;          // keep in [0,15], no signed overflow
     ioiRingCount = juce::jmin(16, ioiRingCount + 1);
 }
 
@@ -67,8 +68,8 @@ float OnsetDetector::medianIoiBpm() const
     std::array<float, 16> sorted{};
     for (int i = 0; i < ioiRingCount; ++i)
     {
-        int idx = ioiRingWrite - ioiRingCount + i;
-        idx = (idx % 16 + 16) % 16;
+        // ioiRingWrite is always in [0,15]; use large multiple of 16 to keep result positive
+        const int idx = (ioiRingWrite - ioiRingCount + i + 16 * 16) % 16;
         sorted[static_cast<size_t>(i)] = ioiHistory[static_cast<size_t>(idx)];
     }
 
