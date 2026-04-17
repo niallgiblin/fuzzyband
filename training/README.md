@@ -1,29 +1,29 @@
-# Training — data prep (Phase 9)
+# Training / data prep (Phase 9)
 
-Offline tooling for **DATA-03**: MIDI → event JSON aligned with `docs/TOKENIZATION.md`.
+Offline tooling to turn **symbolic MIDI** into a **JSON or JSONL** event stream aligned with `docs/TOKENIZATION.md`. Model training, tensor batching, and export live in later phases (see roadmap).
 
-The plugin (C++/JUCE) does **not** depend on this directory; Phase 15 may add full training.
+## Environment
 
-## Setup (macOS)
+- **Python 3.10+** recommended (3.x on macOS CI).
 
 ```bash
-cd training
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Prep stub
+## Prep CLI (`prep_midi.py`)
 
-Convert a MIDI file to the Phase 9 event JSON schema:
+Convert a single `.mid` file to events:
 
 ```bash
-python prep_midi.py --input /path/to/file.mid --output /path/to/out.json
+python3 training/prep_midi.py --input training/fixtures/minimal.mid --output /tmp/prep_out.json
 ```
 
-If `--output` is omitted, prints JSON to stdout.
+- Default output is a **JSON array** of event objects.
+- Add `--jsonl` for **one JSON object per line** (streaming-friendly).
 
-## See also
+## References
 
-- `docs/TOKENIZATION.md` — field definitions
-- `docs/DATASET_AUDIT.md` — dataset go/no-go
+- `docs/TOKENIZATION.md` — field names and event types
+- `docs/DATASET_AUDIT.md` — dataset go/no-go and shortlist

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MIDI → event JSON per docs/TOKENIZATION.md (Phase 9 DATA-03)."""
+"""Convert a Standard MIDI file to JSON or JSONL event records (see docs/TOKENIZATION.md)."""
 
 from __future__ import annotations
 
@@ -11,71 +11,86 @@ from pathlib import Path
 import mido
 
 
-def _first_tempo_us(mid: mido.MidiFile) -> int:
-    """Microseconds per quarter note; default 500000 (~120 BPM)."""
-    for track in mid.tracks:
-        for msg in track:
-            if msg.type == "set_tempo":
-                return int(msg.tempo)
-    return 500_000
-
-
-def midi_to_events(path: Path) -> dict:
+def _events_from_file(path: Path) -> list[dict]:
     mid = mido.MidiFile(str(path))
-    tempo = _first_tempo_us(mid)
-    merged = mido.merge_tracks(mid.tracks)
+    ticks_per_beat = mid.ticks_per_beat
+    tempo = 500_000  # default 120 BPM until first set_tempo
+    sec = 0.0
+    out: list[dict] = []
 
-    events: list[dict] = []
-    tick = 0
-    for msg in merged:
-        tick += msg.time
-        t = float(mido.tick2second(tick, mid.ticks_per_beat, tempo))
-        if msg.type == "note_on" and msg.velocity > 0:
-            events.append(
-                {
-                    "type": "note_on",
-                    "t": t,
-                    "pitch": int(msg.note),
-                    "velocity": int(msg.velocity),
-                    "channel": int(msg.channel),
-                }
-            )
-        elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
-            events.append(
+    for msg in mido.merge_tracks(mid.tracks):
+        delta = msg.time
+        sec += delta * (tempo / (ticks_per_beat * 1_000_000.0))
+
+        if msg.type == "set_tempo":
+            tempo = msg.tempo
+        elif msg.type == "note_on":
+            if msg.velocity == 0:
+                out.append(
+                    {
+                        "type": "note_off",
+                        "time_sec": sec,
+                        "channel": msg.channel + 1,
+                        "note": msg.note,
+                        "velocity": 0,
+                    }
+                )
+            else:
+                out.append(
+                    {
+                        "type": "note_on",
+                        "time_sec": sec,
+                        "channel": msg.channel + 1,
+                        "note": msg.note,
+                        "velocity": msg.velocity,
+                    }
+                )
+        elif msg.type == "note_off":
+            out.append(
                 {
                     "type": "note_off",
-                    "t": t,
-                    "pitch": int(msg.note),
-                    "channel": int(msg.channel),
+                    "time_sec": sec,
+                    "channel": msg.channel + 1,
+                    "note": msg.note,
+                    "velocity": msg.velocity,
                 }
             )
 
-    events.sort(key=lambda e: (e["t"], e["type"] == "note_off"))
-
-    return {
-        "schema_version": 1,
-        "source": str(path.resolve()),
-        "events": events,
-    }
+    return out
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="MIDI → event JSON (TOKENIZATION.md schema v1)")
-    p.add_argument("--input", "-i", type=Path, required=True, help="Path to .mid / .midi")
-    p.add_argument("--output", "-o", type=Path, help="Write JSON here (default: stdout)")
+    p = argparse.ArgumentParser(description="MIDI → JSON/JSONL event stream (Phase 9 prep stub).")
+    p.add_argument("--input", "-i", required=True, type=Path, help="Path to a .mid file")
+    p.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
+        help="Output file (default: stdout)",
+    )
+    p.add_argument(
+        "--jsonl",
+        action="store_true",
+        help="Write JSON Lines (one object per line) instead of a JSON array",
+    )
     args = p.parse_args()
 
     if not args.input.is_file():
-        print(f"Error: not a file: {args.input}", file=sys.stderr)
+        print(f"error: input not found: {args.input}", file=sys.stderr)
         return 1
 
-    payload = midi_to_events(args.input)
-    text = json.dumps(payload, indent=2)
+    events = _events_from_file(args.input)
 
-    if args.output:
-        args.output.write_text(text, encoding="utf-8")
+    if args.jsonl:
+        body = "".join(json.dumps(e, sort_keys=True) + "\n" for e in events)
     else:
-        print(text)
+        body = json.dumps(events, indent=2, sort_keys=True) + "\n"
+
+    if args.output is None:
+        sys.stdout.write(body)
+    else:
+        args.output.write_text(body, encoding="utf-8")
 
     return 0
 
