@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: — Phase 2 ML + Generative
 status: Ready to plan
-last_updated: "2026-04-17T21:30:00.000Z"
+last_updated: "2026-04-17T22:00:00.000Z"
 last_activity: 2026-04-17
 progress:
   total_phases: 8
@@ -32,7 +32,7 @@ Phase: 15
 Plan: Not started  
 **Milestone:** v0.2.0 — Phase 2: ML + Generative  
 **Last completed:** Phase 16 — Terraform model storage (2026-04-17)  
-**Next:** `/gsd-discuss-phase 15` or `/gsd-plan-phase 15` — Python training pipeline (PYTR-01–03)  
+**Next:** `/gsd-plan-phase 15` — Python training pipeline (PYTR-01–03); context: `.planning/phases/15-python-training-pipeline/15-CONTEXT.md`  
 **Last activity:** 2026-04-17
 
 ---
@@ -65,6 +65,7 @@ Plan: Not started
 
 ## Decisions Log
 
+- **2026-04-17 — Phase 15 discuss (Python training pipeline):** **PYTR-01** — **pip** + pinned **`requirements.txt`**. **Layout / dataset scale / metal filter / export paths / Phase 13 consolidation** — **Claude's discretion** with README clarity and single export-contract source of truth. **Training** — **PyTorch**; **first run** — **tiny/stub both** pattern (`ONNX_IO`) and bass (`BASS_ONNX_IO`) in one session for wiring + metrics. **ONNX validation** — **local/dev + docs**; **default CI light**. Context: `.planning/phases/15-python-training-pipeline/15-CONTEXT.md`.
 - **2026-04-17 — Planning clarity:** **Onset robustness** work is finished and lives under `.planning/phases/15-onset-robustness/` (plans/summary/review). That directory name collides with the roadmap number but is **not** **Phase 15 (Python training / PYTR)** on `.planning/ROADMAP.md`. Next scheduled v0.2.0 gap is **PYTR** — `/gsd-discuss-phase 15` or `/gsd-plan-phase 15` for the training pipeline.
 - **2026-04-17 — Phase 16 (Terraform model storage) executed:** `infra/` Terraform (versioned S3, GitHub OIDC IAM), `scripts/bootstrap-tfstate.sh`, `scripts/promote-model.sh`, `scripts/download-model.sh`, optional CI OIDC + model download; verification `.planning/phases/16-terraform-model-storage/16-VERIFICATION.md`. `gsd-sdk` unavailable — execution inline.
 - **2026-04-17 — Phase 14 (Plugin UI) executed:** APVTS policy + `PolicyPatternMapper` + structure blend drain + editor attachments + README/CONTRIBUTING; verification `.planning/phases/14-plugin-ui/14-VERIFICATION.md`.
@@ -82,7 +83,7 @@ Plan: Not started
 ## Session Continuity
 
 Last session: 2026-04-17T20:00:00.000Z  
-Resume: `/gsd-discuss-phase 15` — Python training pipeline; Phase 16 complete
+Resume: `/gsd-plan-phase 15` — Python training pipeline (PYTR); context gathered 2026-04-17
 
 ---
 
