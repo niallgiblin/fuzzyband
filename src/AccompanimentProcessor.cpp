@@ -53,6 +53,47 @@ juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::crea
         "Output Gain",
         juce::NormalisableRange<float>{ 0.0f, 2.0f, 0.01f },
         1.0f));
+
+    juce::StringArray genreChoices;
+    genreChoices.add("Metal");
+    genreChoices.add("Metalcore");
+    genreChoices.add("Death");
+    genreChoices.add("Progressive");
+    genreChoices.add("Black");
+    layout.add(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID{ "genre", 1 },
+        "Genre",
+        genreChoices,
+        0));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{ "intensity", 1 },
+        "Intensity",
+        juce::NormalisableRange<float>{ 0.0f, 1.0f, 0.001f },
+        0.5f));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{ "variation", 1 },
+        "Variation",
+        juce::NormalisableRange<float>{ 0.0f, 1.0f, 0.001f },
+        0.5f));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{ "structureBlend", 1 },
+        "Structure: blend ML vs rules",
+        juce::NormalisableRange<float>{ 0.0f, 1.0f, 0.001f },
+        0.5f));
+
+    juce::StringArray bassModeChoices;
+    bassModeChoices.add("Auto");
+    bassModeChoices.add("On");
+    bassModeChoices.add("Off");
+    layout.add(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID{ "generativeBassMode", 1 },
+        "Generative bass",
+        bassModeChoices,
+        0));
+
     return layout;
 }
 
@@ -142,18 +183,41 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
 
     if (got && inference && debugPreviewSamplesRemaining.load(std::memory_order_acquire) <= 0)
     {
-        const int idx = inference->selectPattern(latest);
-        latestPatternIndex.store(idx, std::memory_order_release);
+        double dtSec = 0.02;
+        const double sr = cachedSampleRate.load(std::memory_order_acquire);
+        if (lastFeatureSampleTs >= 0 && latest.sampleTimestamp >= lastFeatureSampleTs && sr > 0.0)
+            dtSec = static_cast<double>(latest.sampleTimestamp - lastFeatureSampleTs) / sr;
 
         if (structureInference)
         {
-            double dtSec = 0.02;
-            const double sr = cachedSampleRate.load(std::memory_order_acquire);
-            if (lastFeatureSampleTs >= 0 && latest.sampleTimestamp >= lastFeatureSampleTs && sr > 0.0)
-                dtSec = static_cast<double>(latest.sampleTimestamp - lastFeatureSampleTs) / sr;
             structureInference->process(latest, dtSec);
             lastFeatureSampleTs = latest.sampleTimestamp;
         }
+
+        FeatureVector patternFeatures = latest;
+        float structureBlend = 0.5f;
+        if (auto* rawBlend = apvts.getRawParameterValue("structureBlend"))
+            structureBlend = rawBlend->load();
+
+        const StructureState rule = latest.state;
+        StructureState effective = rule;
+        if (structureInference)
+        {
+            const auto& m = structureInference->getLastShadowMetrics();
+            // Midpoint blend (PUI-01): when ML is invalid, follow rules only; else t>=0.5 uses ML shadow state.
+            if (!m.mlValid)
+                effective = rule;
+            else
+                effective = (structureBlend >= 0.5f) ? m.smoothedState : rule;
+        }
+        patternFeatures.state = effective;
+
+        const int idx = inference->selectPattern(patternFeatures);
+        latestPatternIndex.store(idx, std::memory_order_release);
+
+        int generativeMode = 0;
+        if (auto* modeParam = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("generativeBassMode")))
+            generativeMode = modeParam->getIndex();
 
         if (bassInference)
         {
@@ -173,14 +237,35 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             float scoreGen = 0.f;
             if (valid && p.margin >= 0.f && p.confidence >= kMinGenerativeConfidence)
                 scoreGen = p.confidence;
-            const bool useGen = scoreGen > kLibraryBassScore;
-            useGenerativeBass.store(useGen, std::memory_order_release);
-            if (useGen)
+
+            bool useGen = false;
+            if (generativeMode == 2)
             {
-                generativeBassRootNote.store(
-                    static_cast<int>(std::lround(static_cast<double>(p.rootMidi))),
-                    std::memory_order_release);
-                generativeBassDurationBeats.store(p.durationBeats, std::memory_order_release);
+                useGenerativeBass.store(false, std::memory_order_release);
+            }
+            else if (generativeMode == 1)
+            {
+                useGen = valid;
+                useGenerativeBass.store(useGen, std::memory_order_release);
+                if (useGen)
+                {
+                    generativeBassRootNote.store(
+                        static_cast<int>(std::lround(static_cast<double>(p.rootMidi))),
+                        std::memory_order_release);
+                    generativeBassDurationBeats.store(p.durationBeats, std::memory_order_release);
+                }
+            }
+            else
+            {
+                useGen = scoreGen > kLibraryBassScore;
+                useGenerativeBass.store(useGen, std::memory_order_release);
+                if (useGen)
+                {
+                    generativeBassRootNote.store(
+                        static_cast<int>(std::lround(static_cast<double>(p.rootMidi))),
+                        std::memory_order_release);
+                    generativeBassDurationBeats.store(p.durationBeats, std::memory_order_release);
+                }
             }
         }
         else
@@ -297,6 +382,13 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     fv.sampleTimestamp = hostSampleTime;
     fv.pitchRootMidi = heldPitchRootMidi;
     fv.pitchConfidence = heldPitchConfidence;
+
+    if (auto* rawIntensity = apvts.getRawParameterValue("intensity"))
+        fv.policyIntensity = rawIntensity->load();
+    if (auto* rawVariation = apvts.getRawParameterValue("variation"))
+        fv.policyVariation = rawVariation->load();
+    if (auto* genreParam = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("genre")))
+        fv.policyGenreIndex = genreParam->getIndex();
 
     if (fv.pitchConfidence <= 0.0f || fv.pitchConfidence < kMinPitchConfidence)
         patternPlayer.setBassSemitoneOffset(0);
