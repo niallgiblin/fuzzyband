@@ -3,6 +3,7 @@
 
 #if defined(MA_ENABLE_ONNX)
 #include "BinaryData.h"
+#include "PolicyPatternMapper.h"
 #include <algorithm>
 #include <array>
 #include <onnxruntime_cxx_api.h>
@@ -103,7 +104,7 @@ int OnnxInference::selectPattern(const FeatureVector& f)
         const int64_t* out = outputs[0].GetTensorData<int64_t>();
         const int64_t raw = out[0];
         const int clamped = static_cast<int>(std::clamp(raw, static_cast<int64_t>(0), static_cast<int64_t>(6)));
-        return clamped;
+        return PolicyPatternMapper::applyPatternPolicy(clamped, f);
     }
     catch (...)
     {

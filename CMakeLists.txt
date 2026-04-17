@@ -144,6 +144,7 @@ target_sources(MetalAccompaniment PRIVATE
 
     # Inference
     src/inference/RuleBasedInference.cpp
+    src/inference/PolicyPatternMapper.cpp
     src/inference/OnnxInference.cpp        # stub in Phase 1
     src/inference/RuleStructureInference.cpp
     src/inference/OnnxStructureInference.cpp
@@ -252,6 +253,7 @@ if(MA_BUILD_TESTS)
         tests/test_structure_hold_smoother.cpp
         tests/test_structure_rule_agreement.cpp
         tests/test_bass_generative.cpp
+        tests/PolicyPatternMapperTests.cpp
 
         # Include plugin sources needed by tests (not the plugin target itself)
         src/analysis/OnsetDetector.cpp
@@ -260,6 +262,7 @@ if(MA_BUILD_TESTS)
         src/analysis/StructureHoldSmoother.cpp
         src/analysis/PitchEstimator.cpp
         src/inference/RuleBasedInference.cpp
+        src/inference/PolicyPatternMapper.cpp
         src/inference/RuleStructureInference.cpp
         src/midi/MidiPatternLibrary.cpp
         src/midi/PatternPlayer.cpp

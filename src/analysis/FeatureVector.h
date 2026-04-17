@@ -26,4 +26,11 @@ struct FeatureVector
     float pitchRootMidi = 40.0f;
     /** PITCH-02: [0,1] pitch reliability; 0 triggers D-11-04 hold/snap and zero bass offset. */
     float pitchConfidence = 0.0f;
+
+    /** PUI-01: genre choice index [0,4] from APVTS (audio thread snapshot). */
+    int policyGenreIndex = 0;
+    /** PUI-01: intensity [0,1] — rule path uses BPM adjustment; ONNX tensor unchanged. */
+    float policyIntensity = 0.5f;
+    /** PUI-01: variation [0,1] — shifts pattern index after genre. */
+    float policyVariation = 0.5f;
 };

@@ -1,4 +1,5 @@
 #include "RuleBasedInference.h"
+#include "PolicyPatternMapper.h"
 
 void RuleBasedInference::prepare(double newSampleRate)
 {
@@ -9,23 +10,32 @@ int RuleBasedInference::selectPattern(const FeatureVector& f)
 {
     (void)sampleRate;
 
+    const float bpmAdj = f.bpm + (f.policyIntensity - 0.5f) * 40.f;
+
+    int base = 0;
     switch (f.state)
     {
         case StructureState::SILENT:
-            return 0;
+            base = 0;
+            break;
         case StructureState::VERSE:
-            if (f.bpm < 120.0f)
-                return 1;
-            if (f.bpm < 160.0f)
-                return 2;
-            return 3;
+            if (bpmAdj < 120.0f)
+                base = 1;
+            else if (bpmAdj < 160.0f)
+                base = 2;
+            else
+                base = 3;
+            break;
         case StructureState::CHORUS:
-            if (f.bpm < 160.0f)
-                return 4;
-            return 5;
+            if (bpmAdj < 160.0f)
+                base = 4;
+            else
+                base = 5;
+            break;
         case StructureState::BREAKDOWN:
-            return 6;
+            base = 6;
+            break;
     }
 
-    return 0;
+    return PolicyPatternMapper::applyPatternPolicy(base, f);
 }
