@@ -23,6 +23,16 @@ cmake --build build --config Release --parallel
 ctest --test-dir build --output-on-failure --config Release
 ```
 
+## Plugin development
+
+### Plugin parameters (APVTS)
+
+User-facing IDs match `AccompanimentProcessor::createParameterLayout()`:
+
+`outputGain`, `genre`, `intensity`, `variation`, `structureBlend`, `generativeBassMode`.
+
+On the audio thread, **`FeatureVector`** carries **`policyGenreIndex`**, **`policyIntensity`**, and **`policyVariation`** from APVTS before enqueue. **`PolicyPatternMapper::applyPatternPolicy`** applies shared genre/variation remapping after rule selection or ONNX output. **`docs/ONNX_IO.md`** tensor **`X`** is unchanged; user policy is applied **after** the pattern ONNX run, and structure trust is expressed via **blended** **`FeatureVector::state`** fed into **`selectPattern`** when ML structure is valid (see `AccompanimentProcessor::drainFeatureQueueAndRunInference`).
+
 ## Build options
 
 | CMake option | Default | Notes |
