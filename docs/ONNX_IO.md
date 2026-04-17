@@ -8,6 +8,8 @@ This document defines the **exact** ONNX graph inputs and outputs that the plugi
 expects when built with `-DMA_ENABLE_ONNX=ON`. Training and export pipelines
 (Phase 15) **must** produce a model that matches this contract byte-for-byte.
 
+**See also:** Phase 13 generative bass uses a separate graph and tensor names **`X_bass` / `Y_bass`** — [`docs/BASS_ONNX_IO.md`](BASS_ONNX_IO.md). The **`X` / `Y` pattern-selector tables below are frozen** and are not modified for bass.
+
 ---
 
 ## Input tensor

@@ -36,12 +36,13 @@ ctest --test-dir build --output-on-failure --config Release
 
 1. Download a **macOS** ONNX Runtime archive from [onnxruntime releases](https://github.com/microsoft/onnxruntime/releases) (CPU, matching your architecture).
 2. Extract and set `ONNXRUNTIME_ROOT` to the folder that contains `include/onnxruntime_cxx_api.h` and `lib/libonnxruntime.dylib`.
-3. The bundled models are `assets/accompaniment_model.onnx` (minimal pattern stub) and `assets/structure_model.onnx` (Phase 12 structure head). Regenerate with:
+3. The bundled models are `assets/accompaniment_model.onnx` (minimal pattern stub), `assets/structure_model.onnx` (Phase 12 structure head), and `assets/bass_model.onnx` (Phase 13 generative bass stub). Regenerate with:
    ```bash
    training/.venv/bin/python scripts/build_minimal_pattern_onnx.py
    training/.venv/bin/python scripts/build_minimal_structure_onnx.py
+   training/.venv/bin/python scripts/build_minimal_bass_onnx.py
    ```
-   JUCE `BinaryData` exposes `accompaniment_model_onnx` / `structure_model_onnx` (plus `*Size` length symbols) when `MA_ENABLE_ONNX=ON`.
+   JUCE `BinaryData` exposes `accompaniment_model_onnx` / `structure_model_onnx` / `bass_model_onnx` (plus `*Size` length symbols) when `MA_ENABLE_ONNX=ON`.
 4. Configure and build:
 
 ```bash
