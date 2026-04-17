@@ -120,17 +120,16 @@ void OnsetDetector::runFftFrame()
         prevMagnitudes[static_cast<size_t>(i)] = m;
     }
 
-    // Update rolling mean and compute adaptive threshold
-    const float oldest = fluxRollingBuf[static_cast<size_t>(fluxRollingIdx)];
-    fluxRollingBuf[static_cast<size_t>(fluxRollingIdx)] = flux;
-    fluxRollingIdx = (fluxRollingIdx + 1) % kRollingWindow;
-    if (fluxRollingN < kRollingWindow)
-        ++fluxRollingN;
+    // Update rolling mean and compute adaptive threshold (evict-first canonical pattern)
+    if (fluxRollingN == kRollingWindow)
+        fluxRollingSum -= fluxRollingBuf[static_cast<size_t>(fluxRollingIdx)];
     else
-        fluxRollingSum -= oldest;
+        ++fluxRollingN;
+    fluxRollingBuf[static_cast<size_t>(fluxRollingIdx)] = flux;
     fluxRollingSum += flux;
+    fluxRollingIdx = (fluxRollingIdx + 1) % kRollingWindow;
 
-    const float mean = (fluxRollingN > 0) ? fluxRollingSum / static_cast<float>(fluxRollingN) : 0.0f;
+    const float mean = fluxRollingSum / static_cast<float>(fluxRollingN);
     const float threshold = std::max(kFluxFloor, kAdaptiveK * mean);
 
     if (flux <= threshold)
