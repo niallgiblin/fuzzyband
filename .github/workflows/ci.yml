@@ -12,6 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: ONNX audio-thread guardrail (ONNX-03)
+        run: ./scripts/check_onnx_audio_thread.sh
+
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DMA_BUILD_STANDALONE=ON
 
