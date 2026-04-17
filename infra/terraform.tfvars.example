@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (not committed) and adjust. No secrets belong here.
+
+aws_region         = "us-east-1"
+project_name       = "fuzzyband"
+github_repository  = "niallgiblin/fuzzyband"
+environment_name   = "prod"
