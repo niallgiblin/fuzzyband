@@ -18,7 +18,9 @@ def _dims(vi) -> list:
     t = vi.type.tensor_type
     out: list = []
     for d in t.shape.dim:
-        if d.dim_value:
+        # Dimension uses oneof { dim_value, dim_param }; do not use truthiness on dim_value (0 is valid).
+        which = d.WhichOneof("value")
+        if which == "dim_value":
             out.append(int(d.dim_value))
         else:
             out.append(None)
