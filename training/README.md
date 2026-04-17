@@ -6,11 +6,23 @@ Offline tooling to turn **symbolic MIDI** into a **JSON or JSONL** event stream 
 
 - **Python 3.10+** recommended (3.x on macOS CI).
 
+### Phase 15 (PYTR) — locked Python stack (macOS)
+
+Use a **venv under `training/`** and install **all** prep + training + export dependencies from one file:
+
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+cd /path/to/repo
+python3 -m venv training/.venv
+source training/.venv/bin/activate
+pip install --upgrade pip
+pip install -r training/requirements.txt
 ```
+
+This single `training/requirements.txt` installs **prep** (`mido`) and **training/export** stacks (**torch**, **onnx**, **onnxruntime**, **numpy**).
+
+**Artifacts:** training runs write under **`training/artifacts/`** (gitignored) unless you pass **`--out-dir`** to a training script (see Phase 15 stub training below).
+
+For Phase 9 prep only (lighter install), you can still use a venv and `pip install -r training/requirements.txt` — the same pins apply.
 
 ## Prep CLI (`prep_midi.py`)
 
@@ -23,7 +35,28 @@ python3 training/prep_midi.py --input training/fixtures/minimal.mid --output /tm
 - Default output is a **JSON array** of event objects.
 - Add `--jsonl` for **one JSON object per line** (streaming-friendly).
 
+## Stub training (PYTR-02/03)
+
+End-to-end **stub** train + ONNX export (synthetic data; no bulk dataset):
+
+```bash
+source training/.venv/bin/activate
+python3 training/train_pytr_stub.py --epochs 3
+```
+
+Validate exported graphs against frozen I/O docs:
+
+```bash
+python3 scripts/validate_onnx_contract.py --pattern training/artifacts/<run>/pattern_trained.onnx --bass training/artifacts/<run>/bass_trained.onnx
+```
+
+Replace `<run>` with the timestamped directory printed when the script starts (under `training/artifacts/`).
+
+**Note:** Phase 10 consumes **`pattern_trained.onnx`** when copied to **`assets/accompaniment_model.onnx`** (optional dev workflow).
+
 ## References
 
 - `docs/TOKENIZATION.md` — field names and event types
 - `docs/DATASET_AUDIT.md` — dataset go/no-go and shortlist
+- `docs/ONNX_IO.md` — pattern selector **X** / **Y** export contract
+- `docs/BASS_ONNX_IO.md` — generative bass **X_bass** / **Y_bass** export contract
