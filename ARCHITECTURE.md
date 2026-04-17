@@ -210,6 +210,9 @@ bundled as JUCE `BinaryData` when `MA_ENABLE_ONNX` is enabled at build time.
 `AccompanimentProcessor` constructs `OnnxInference` and calls `tryLoadModel()`. If loading fails
 (or the option is off), it uses `RuleBasedInference` instead — no audio-thread change either way.
 
+Tensor details (input `X` float32 `[1,5]`, output `Y` int64 clamped 0–6) are frozen in
+[`docs/ONNX_IO.md`](docs/ONNX_IO.md); Phase 15 export must target that contract.
+
 ---
 
 ### `MidiPatternLibrary`
