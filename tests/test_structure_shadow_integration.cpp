@@ -3,15 +3,13 @@
  * to tests/expected_structure_shadow_pattern_transitions.txt (MA_ENABLE_ONNX=OFF path).
  *
  * Regenerate golden (from repo root):
- *   MA_WRITE_STRUCTURE_GOLDEN=1 ./build/MetalAccompanimentTests "Structure shadow fixture"
+ *   MA_WRITE_STRUCTURE_GOLDEN=1 ./build/MetalAccompanimentIntegrationTests "Structure shadow fixture"
  */
 
 #include <catch2/catch_test_macros.hpp>
-#include <chrono>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
-#include <thread>
 
 #include <JuceHeader.h>
 #include "AccompanimentProcessor.h"
@@ -41,6 +39,7 @@ TEST_CASE("Structure shadow fixture replay matches golden pattern transitions", 
 
     AccompanimentProcessor proc;
     proc.prepareToPlay(48000.0, 512);
+    proc.pauseBackgroundInferenceForTests();
 
     const int block = 512;
     int lastPat = -999999;
@@ -62,7 +61,7 @@ TEST_CASE("Structure shadow fixture replay matches golden pattern transitions", 
             oss << acc << " " << p << "\n";
             lastPat = p;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(21));
+        proc.flushBackgroundInferenceForTests();
     }
 
     proc.releaseResources();

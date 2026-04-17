@@ -110,6 +110,37 @@ void AccompanimentProcessor::releaseResources()
     inferencePaused.store(true, std::memory_order_release);
 }
 
+void AccompanimentProcessor::drainFeatureQueueAndRunInference()
+{
+    FeatureVector latest{};
+    bool got = false;
+
+    while (true)
+    {
+        FeatureVector tmp{};
+        if (!featureQueue.try_dequeue(tmp))
+            break;
+        latest = tmp;
+        got = true;
+    }
+
+    if (got && inference && debugPreviewSamplesRemaining.load(std::memory_order_acquire) <= 0)
+    {
+        const int idx = inference->selectPattern(latest);
+        latestPatternIndex.store(idx, std::memory_order_release);
+
+        if (structureInference)
+        {
+            double dtSec = 0.02;
+            const double sr = cachedSampleRate.load(std::memory_order_acquire);
+            if (lastFeatureSampleTs >= 0 && latest.sampleTimestamp >= lastFeatureSampleTs && sr > 0.0)
+                dtSec = static_cast<double>(latest.sampleTimestamp - lastFeatureSampleTs) / sr;
+            structureInference->process(latest, dtSec);
+            lastFeatureSampleTs = latest.sampleTimestamp;
+        }
+    }
+}
+
 void AccompanimentProcessor::inferenceLoop()
 {
     while (inferenceRunning.load(std::memory_order_acquire))
@@ -120,36 +151,29 @@ void AccompanimentProcessor::inferenceLoop()
             continue;
         }
 
-        FeatureVector latest{};
-        bool got = false;
-
-        while (true)
         {
-            FeatureVector tmp{};
-            if (!featureQueue.try_dequeue(tmp))
-                break;
-            latest = tmp;
-            got = true;
-        }
-
-        if (got && inference && debugPreviewSamplesRemaining.load(std::memory_order_acquire) <= 0)
-        {
-            const int idx = inference->selectPattern(latest);
-            latestPatternIndex.store(idx, std::memory_order_release);
-
-            if (structureInference)
-            {
-                double dtSec = 0.02;
-                const double sr = cachedSampleRate.load(std::memory_order_acquire);
-                if (lastFeatureSampleTs >= 0 && latest.sampleTimestamp >= lastFeatureSampleTs && sr > 0.0)
-                    dtSec = static_cast<double>(latest.sampleTimestamp - lastFeatureSampleTs) / sr;
-                structureInference->process(latest, dtSec);
-                lastFeatureSampleTs = latest.sampleTimestamp;
-            }
+            std::lock_guard<std::mutex> lock(inferenceDrainMutex);
+            drainFeatureQueueAndRunInference();
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
+}
+
+void AccompanimentProcessor::pauseBackgroundInferenceForTests()
+{
+    inferencePaused.store(true, std::memory_order_release);
+}
+
+void AccompanimentProcessor::flushBackgroundInferenceForTests()
+{
+    std::lock_guard<std::mutex> lock(inferenceDrainMutex);
+    drainFeatureQueueAndRunInference();
+}
+
+void AccompanimentProcessor::resumeBackgroundInferenceForTests()
+{
+    inferencePaused.store(false, std::memory_order_release);
 }
 
 void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)

@@ -19,6 +19,7 @@
 #include "readerwriterqueue.h"
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <thread>
 
 /**
@@ -69,10 +70,18 @@ public:
 
     void bumpDebugPattern();
 
+    /** @brief Test-only: stop the background thread from draining @a featureQueue (integration tests). */
+    void pauseBackgroundInferenceForTests();
+    /** @brief Test-only: run one inference drain synchronously (call while paused). */
+    void flushBackgroundInferenceForTests();
+    /** @brief Test-only: allow the background inference thread to drain again. */
+    void resumeBackgroundInferenceForTests();
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     void inferenceLoop();
+    void drainFeatureQueueAndRunInference();
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -101,6 +110,7 @@ private:
     /** Starts true so inference does not run until prepareToPlay() completes. */
     std::atomic<bool> inferencePaused{ true };
     std::thread inferenceThread;
+    std::mutex inferenceDrainMutex;
 
     int64_t hostSampleTime = 0;
     int64_t lastFeatureSampleTs = -1;
