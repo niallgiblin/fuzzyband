@@ -286,10 +286,20 @@ AccompanimentProcessor
 ├── std::unique_ptr<IInference>    ← RuleBasedInference or OnnxInference
 ├── MidiPatternLibrary
 ├── PatternPlayer
-├── std::atomic<int>               ← pattern index handoff
+├── std::atomic<int>               ← pattern index handoff (acquire/release with inference/UI)
+├── std::atomic<int>               ← debug preview sample countdown (paired with pattern index)
+├── std::atomic<double>            ← cached sample rate (UI thread reads for debug pattern length)
 ├── moodycamel::ReaderWriterQueue  ← feature handoff
 └── std::thread                    ← inference loop
 ```
+
+**Lifecycle:** The inference thread is created in the constructor but stays idle (`inferencePaused == true`) until `prepareToPlay()` finishes, so `IInference::prepare(sampleRate)` always runs before the loop calls `selectPattern()`.
+
+**Input path:** Non-finite samples are cleared to 0, then the buffer is clipped to `[-2, 2]` (SIMD `clip` alone is not sufficient for NaN on all targets).
+
+**Sample rate:** `prepareToPlay` clamps a non-positive rate to 44100 Hz before wiring components; `OnsetDetector`, `EnergyAnalyser`, and `StructureTagger` each guard again if `prepare()` is ever called with an invalid rate.
+
+**Soft bypass:** `processBlockBypassed()` clears MIDI, sends all-notes-off, resets the pattern player, and copies mono input to the right channel so the dry guitar still reaches the output.
 
 ---
 
@@ -309,11 +319,13 @@ Runs in `processBlock()`. Has a hard real-time deadline (~5ms at 256 samples /
 - Call ONNX Runtime directly
 
 **What it does:**
-1. Calls `OnsetDetector::process()` and `EnergyAnalyser::process()`
-2. Calls `StructureTagger::update()` to get current state
-3. Pushes a `FeatureVector` onto the lock-free queue (non-blocking, always succeeds)
-4. Reads `latestPatternIndex` via `std::atomic::load(memory_order_relaxed)`
-5. Calls `PatternPlayer::process()` to fill `MidiBuffer`
+1. Scrubs non-finite input samples, then clips to `[-2, 2]`
+2. Calls `OnsetDetector::process()` and `EnergyAnalyser::process()`
+3. Calls `StructureTagger::update()` to get current state
+4. Pushes a `FeatureVector` onto the lock-free queue (non-blocking, always succeeds)
+5. Reads `latestPatternIndex` via `std::atomic::load(memory_order_acquire)` (pairs with inference/UI stores)
+6. Decrements `debugPreviewSamplesRemaining` with acquire load / release store when the debug pattern preview is active
+7. Calls `PatternPlayer::process()` to fill `MidiBuffer`
 
 ### Background inference thread
 
@@ -321,14 +333,16 @@ Runs in a `std::thread` at ~50Hz (20ms sleep between iterations).
 **Responsibilities:**
 1. Pop `FeatureVector` from the lock-free queue
 2. Call `IInference::selectPattern()` (may take 1–10ms, that's fine here)
-3. Write result to `latestPatternIndex` via `std::atomic::store(memory_order_relaxed)`
+3. If the debug preview countdown is not active, write result to `latestPatternIndex` via `std::atomic::store(memory_order_release)`
 
 ### Handoff primitives
 
 | Data | Mechanism | Rationale |
 |---|---|---|
 | Feature vector (audio → inference) | `moodycamel::ReaderWriterQueue` | Single-producer single-consumer, wait-free, no allocation |
-| Pattern index (inference → audio) | `std::atomic<int>` | Single integer, relaxed ordering sufficient |
+| Pattern index (inference/UI → audio) | `std::atomic<int>` with acquire/release | Coordinates with UI-driven debug pattern + preview countdown |
+| Preview countdown (UI ↔ audio ↔ inference) | `std::atomic<int>` with acquire/release | Prevents inference from overwriting the pattern while preview is active |
+| Sample rate (audio → UI) | `std::atomic<double>` | `bumpDebugPattern()` runs on the message thread |
 
 ### Why not a mutex?
 
@@ -344,6 +358,8 @@ thread.
 ```
 processBlock() called by host
         │
+        ├─► scrub non-finite samples; clip to [-2, 2]
+        │
         ├─► OnsetDetector::process(audioData)
         │       └─► updates internal BPM estimate
         │
@@ -357,7 +373,7 @@ processBlock() called by host
         │
         ├─► featureQueue.try_enqueue(featureVector)   [non-blocking]
         │
-        ├─► int pattern = latestPatternIndex.load()   [atomic, no-wait]
+        ├─► int pattern = latestPatternIndex.load(acquire)
         │
         └─► PatternPlayer::process(midiBuffer, numSamples, hostPosition)
                 └─► fills MidiBuffer with drum + bass MIDI events
@@ -367,9 +383,9 @@ processBlock() called by host
         │
         ├─► featureQueue.try_dequeue(featureVector)
         │
-        ├─► int pattern = inference->selectPattern(featureVector)
+        ├─► if preview inactive: int pattern = inference->selectPattern(featureVector)
         │
-        └─► latestPatternIndex.store(pattern)
+        └─► latestPatternIndex.store(pattern, release)   [when preview countdown == 0]
 ```
 
 ---

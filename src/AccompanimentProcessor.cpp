@@ -45,15 +45,16 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     // D-03: Pause inference so it doesn't read components mid-reprepare.
     inferencePaused.store(true, std::memory_order_release);
 
-    cachedSampleRate = sampleRate;
-    onsetDetector.prepare(sampleRate, samplesPerBlock);
-    energyAnalyser.prepare(sampleRate, samplesPerBlock);
-    structureTagger.prepare(sampleRate);
-    patternPlayer.prepare(sampleRate, samplesPerBlock);
+    const double sr = (sampleRate > 0.0) ? sampleRate : 44100.0;
+    cachedSampleRate.store(sr, std::memory_order_release);
+    onsetDetector.prepare(sr, samplesPerBlock);
+    energyAnalyser.prepare(sr, samplesPerBlock);
+    structureTagger.prepare(sr);
+    patternPlayer.prepare(sr, samplesPerBlock);
     patternPlayer.reset();
 
     if (inference)
-        inference->prepare(sampleRate);
+        inference->prepare(sr);
 
     hostSampleTime = 0;
     latestPatternIndex.store(0, std::memory_order_relaxed);
@@ -89,10 +90,10 @@ void AccompanimentProcessor::inferenceLoop()
             got = true;
         }
 
-        if (got && inference && debugPreviewSamplesRemaining.load(std::memory_order_relaxed) <= 0)
+        if (got && inference && debugPreviewSamplesRemaining.load(std::memory_order_acquire) <= 0)
         {
             const int idx = inference->selectPattern(latest);
-            latestPatternIndex.store(idx, std::memory_order_relaxed);
+            latestPatternIndex.store(idx, std::memory_order_release);
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -113,9 +114,16 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     if (in == nullptr)
         return;
 
-    // D-03: NaN/inf clip guard on the input buffer before feature extraction.
+    // Scrub non-finite samples first; SIMD clip() alone does not reliably remove NaN.
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const float s = in[i];
+        if (!std::isfinite(s))
+            in[i] = 0.0f;
+    }
     juce::FloatVectorOperations::clip(in, in, -2.0f, 2.0f, numSamples);
 
+    // in and outL alias channel 0; gain pass-through reads/writes the same buffer.
     float* outL = buffer.getWritePointer(0);
     float* outR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : outL;
 
@@ -136,14 +144,14 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     fv.sampleTimestamp = hostSampleTime;
     (void)featureQueue.try_enqueue(fv);
 
-    const int patternIdx = latestPatternIndex.load(std::memory_order_relaxed);
+    const int patternIdx = latestPatternIndex.load(std::memory_order_acquire);
     patternPlayer.setBpm(onsetDetector.getCurrentBpm());
     patternPlayer.setPatternIndex(patternIdx);
 
-    int previewRem = debugPreviewSamplesRemaining.load(std::memory_order_relaxed);
+    int previewRem = debugPreviewSamplesRemaining.load(std::memory_order_acquire);
     const bool previewAudible = previewRem > 0;
     if (previewAudible)
-        debugPreviewSamplesRemaining.store(juce::jmax(0, previewRem - numSamples), std::memory_order_relaxed);
+        debugPreviewSamplesRemaining.store(juce::jmax(0, previewRem - numSamples), std::memory_order_release);
 
     patternPlayer.setStructureSilent(st == StructureState::SILENT && !previewAudible);
 
@@ -184,9 +192,9 @@ void AccompanimentProcessor::bumpDebugPattern()
 {
     const int n = patternLibrary.patternCount();
     const int next = (latestPatternIndex.load(std::memory_order_relaxed) + 1) % n;
-    latestPatternIndex.store(next, std::memory_order_relaxed);
-    const int dur = juce::jmax(1, static_cast<int>(std::round(5.0 * cachedSampleRate)));
-    debugPreviewSamplesRemaining.store(dur, std::memory_order_relaxed);
+    const int dur = juce::jmax(1, static_cast<int>(std::round(5.0 * cachedSampleRate.load(std::memory_order_acquire))));
+    debugPreviewSamplesRemaining.store(dur, std::memory_order_release);
+    latestPatternIndex.store(next, std::memory_order_release);
 }
 
 void AccompanimentProcessor::getStateInformation(juce::MemoryBlock& destData)
@@ -203,13 +211,21 @@ void AccompanimentProcessor::setStateInformation(const void* data, int sizeInByt
 }
 
 void AccompanimentProcessor::processBlockBypassed(
-    juce::AudioBuffer<float>& /*buffer*/, juce::MidiBuffer& midi)
+    juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
-    // D-04: Flush all pending and active MIDI on bypass. Plugin goes fully quiet.
+    // D-04: Flush MIDI on soft bypass; pass dry guitar through like processBlock.
     midi.clear();
     for (int ch = 1; ch <= 16; ++ch)
         midi.addEvent(juce::MidiMessage::allNotesOff(ch), 0);
     patternPlayer.reset();
+
+    const int n = buffer.getNumSamples();
+    if (buffer.getNumChannels() >= 2 && n > 0)
+    {
+        const float* l = buffer.getReadPointer(0);
+        float* r = buffer.getWritePointer(1);
+        juce::FloatVectorOperations::copy(r, l, n);
+    }
 }
 
 juce::AudioProcessorEditor* AccompanimentProcessor::createEditor()

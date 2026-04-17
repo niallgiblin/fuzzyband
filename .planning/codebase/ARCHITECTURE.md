@@ -1,6 +1,6 @@
 # Architecture
 
-**Analysis Date:** 2026-04-16
+**Analysis Date:** 2026-04-17 (threading details aligned with repo `ARCHITECTURE.md`)
 
 ## Pattern Overview
 
@@ -55,26 +55,27 @@
 **Per-Block Audio Processing:**
 
 1. DAW calls `processBlock(AudioBuffer, MidiBuffer)` on audio thread
-2. `OnsetDetector::process()` analyzes spectral flux and updates BPM estimate
-3. `EnergyAnalyser::process()` computes RMS, spectral centroid, high-frequency flux
-4. `StructureTagger::update()` maps features to discrete state (SILENT/VERSE/CHORUS/BREAKDOWN)
-5. `FeatureVector` constructed with current audio metrics
-6. `featureQueue.try_enqueue()` pushes feature vector (non-blocking, lock-free)
-7. `latestPatternIndex.load()` reads current pattern from inference thread (atomic, relaxed)
-8. `PatternPlayer::process()` fills MIDI buffer with drum/bass events based on pattern index
-9. MIDI buffer returned to DAW
+2. Non-finite input samples cleared to 0; buffer clipped to `[-2, 2]`
+3. `OnsetDetector::process()` analyzes spectral flux and updates BPM estimate
+4. `EnergyAnalyser::process()` computes RMS, spectral centroid, high-frequency flux
+5. `StructureTagger::update()` maps features to discrete state (SILENT/VERSE/CHORUS/BREAKDOWN)
+6. `FeatureVector` constructed with current audio metrics
+7. `featureQueue.try_enqueue()` pushes feature vector (non-blocking, lock-free)
+8. `latestPatternIndex.load(memory_order_acquire)` reads pattern (coordinates with inference/UI)
+9. `PatternPlayer::process()` fills MIDI buffer with drum/bass events based on pattern index
+10. MIDI buffer returned to DAW
 
 **Background Inference Loop:**
 
-1. Background thread sleeps for ~20ms
+1. Background thread sleeps for ~20ms (skipped while `inferencePaused` after construction until `prepareToPlay` completes)
 2. `featureQueue.try_dequeue()` pops most recent feature vector (drops older ones if queue full)
-3. `IInference::selectPattern()` runs decision logic (1-10ms typical)
-4. `latestPatternIndex.store()` updates pattern index atomically (relaxed ordering)
+3. If debug preview countdown is zero: `IInference::selectPattern()` runs decision logic (1-10ms typical)
+4. `latestPatternIndex.store(memory_order_release)` updates pattern index when preview is inactive
 5. Loop repeats at ~50Hz
 
 **State Management:**
 
-- **Atomic variables:** `latestPatternIndex` (pattern selection), `currentBpm` (BPM display), `displayStateIndex` (structural state display), `displayPatternIndex` (pattern display)
+- **Atomic variables:** `latestPatternIndex` (pattern selection; acquire/release with inference and debug UI), `debugPreviewSamplesRemaining` (preview countdown), `cachedSampleRate` (UI-driven debug pattern length), `currentBpm` (BPM display), `displayStateIndex` (structural state display), `displayPatternIndex` (pattern display)
 - **Lock-free queue:** Feature vector handoff (`moodycamel::ReaderWriterQueue`)
 - **Local mutable state:** BPM history, FFT buffers, beat position tracking in `PatternPlayer`
 - **JUCE APVTS:** Plugin parameter state (saved/loaded with session)

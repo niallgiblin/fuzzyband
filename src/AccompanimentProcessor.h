@@ -83,12 +83,13 @@ private:
     std::atomic<float> displayHfFlux{ 0.0f };
 
     std::atomic<bool> inferenceRunning{ false };
-    std::atomic<bool> inferencePaused{ false };
+    /** Starts true so inference does not run until prepareToPlay() completes. */
+    std::atomic<bool> inferencePaused{ true };
     std::thread inferenceThread;
 
     int64_t hostSampleTime = 0;
 
-    double cachedSampleRate = 44100.0;
+    std::atomic<double> cachedSampleRate{ 44100.0 };
     std::atomic<int> debugPreviewSamplesRemaining{ 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AccompanimentProcessor)
