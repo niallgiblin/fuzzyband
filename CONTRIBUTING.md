@@ -49,9 +49,17 @@ cmake --build build --target doxygen-docs
 
 HTML output is written to `docs/doxygen/html/` (ignored by git). You can also run `doxygen Doxyfile` from the repo root.
 
-## Linux (unsupported stretch)
+## Linux (unsupported / best-effort)
 
-The same CMake flags may work with a suitable compiler and JUCE’s Linux dependencies; this path is not regularly validated. Expect to install distro packages for ALSA, X11, and OpenGL as required by JUCE.
+Use the **same three commands as CI** (not regularly validated on Linux):
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DMA_BUILD_STANDALONE=ON
+cmake --build build --config Release --parallel
+ctest --test-dir build --output-on-failure --config Release
+```
+
+Expect to install distro packages for ALSA, X11, and OpenGL as required by JUCE. Phase 1 ONNX (`MA_ENABLE_ONNX`) remains off by default; set `ONNXRUNTIME_ROOT` when you enable it for Phase 2 work.
 
 ## Windows
 
