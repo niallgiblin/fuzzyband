@@ -30,7 +30,8 @@ public:
     /** @brief Semitone transpose for bass (ch @c kBassChannel) only; clamped [-24,24]. Audio thread. */
     void setBassSemitoneOffset(int semitones);
 
-    /** @brief Generative bass (Phase 13): when active, library bass events are not emitted. Audio thread. */
+    /** @brief Generative bass (Phase 13): when active, library bass events are not emitted. Audio thread.
+        @p rootMidi is absolute (matches ONNX `Y_bass`); not summed with @ref setBassSemitoneOffset. */
     void setGenerativeBassActive(bool active, int rootMidi, float durationBeats);
 
     /** @brief Fill @p midi for this audio block using host sample position for timing. */
@@ -76,6 +77,10 @@ private:
     bool generativeBassActive = false;
     int generativeBassRootMidi = 40;
     float generativeBassDurationBeats = 1.0f;
+
+    /** Absolute sample index (exclusive) for generative bass note-off; -1 = no held note. */
+    int64_t genBassAbsNoteOffSample = -1;
+    int genBassLastMidiNote = 40;
 
     static constexpr int kDrumChannel = 10;
 };

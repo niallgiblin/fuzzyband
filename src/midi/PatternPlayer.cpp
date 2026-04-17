@@ -20,6 +20,8 @@ void PatternPlayer::reset()
     generativeBassActive = false;
     generativeBassRootMidi = 40;
     generativeBassDurationBeats = 1.0f;
+    genBassAbsNoteOffSample = -1;
+    genBassLastMidiNote = 40;
 }
 
 void PatternPlayer::setBassSemitoneOffset(int semitones)
@@ -124,26 +126,58 @@ void PatternPlayer::emitGenerativeBassForWindow(juce::MidiBuffer& midi,
     if (beatEnd <= beatStart + 1.0e-9)
         return;
 
+    const int64_t blockStart = sampleCounter;
+    const int64_t blockEnd = blockStart + static_cast<int64_t>(numSamples);
+
+    if (genBassAbsNoteOffSample >= 0 && genBassAbsNoteOffSample <= blockStart)
+        genBassAbsNoteOffSample = -1;
+
+    const bool noteHeld = genBassAbsNoteOffSample > blockStart;
+
+    if (noteHeld)
+    {
+        if (genBassAbsNoteOffSample > blockEnd)
+            return;
+
+        const int off = static_cast<int>(genBassAbsNoteOffSample - blockStart);
+        const int clamped = juce::jlimit(0, numSamples - 1, off);
+        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, genBassLastMidiNote),
+                      sampleOffsetBase + clamped);
+        genBassAbsNoteOffSample = -1;
+        return;
+    }
+
     const double rel = 0.0;
     int off = static_cast<int>(std::round(rel * (sampleRate * 60.0 / static_cast<double>(bpm))));
     off += humanSamples();
     off = juce::jlimit(0, numSamples - 1, off);
 
     const int vel = humanVel(100);
-    const int outNote = juce::jlimit(
-        0,
-        127,
-        generativeBassRootMidi + bassSemitoneOffset);
+    // Y_bass root is absolute (see docs/BASS_ONNX_IO.md); do not add bassSemitoneOffset — pitch is in X_bass.
+    const int outNote = juce::jlimit(0, 127, generativeBassRootMidi);
+    genBassLastMidiNote = outNote;
 
     midi.addEvent(juce::MidiMessage::noteOn(kBassChannel, outNote, static_cast<float>(vel) / 127.0f),
                   sampleOffsetBase + off);
 
+    const int64_t noteOnSample = blockStart + static_cast<int64_t>(off);
     const int durSamps = juce::jmax(
         1,
         static_cast<int>(std::round(static_cast<double>(generativeBassDurationBeats)
                                     * (60.0 / static_cast<double>(bpm)) * sampleRate)));
-    const int noteOffOffset = juce::jmin(numSamples - 1, off + durSamps);
-    midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, outNote), sampleOffsetBase + noteOffOffset);
+    const int64_t noteOffSample = noteOnSample + static_cast<int64_t>(durSamps);
+
+    if (noteOffSample <= blockEnd)
+    {
+        const int noteOffOff = static_cast<int>(noteOffSample - blockStart);
+        const int clampedOff = juce::jlimit(0, numSamples - 1, noteOffOff);
+        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, outNote), sampleOffsetBase + clampedOff);
+        genBassAbsNoteOffSample = -1;
+    }
+    else
+    {
+        genBassAbsNoteOffSample = noteOffSample;
+    }
 }
 
 void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition)
@@ -167,12 +201,19 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
             }
         }
         wasSilent = true;
+        genBassAbsNoteOffSample = -1;
         beatPosition += static_cast<double>(numSamples) * bpm / (60.0 * sampleRate);
         sampleCounter += static_cast<int64_t>(numSamples);
         return;
     }
 
     wasSilent = false;
+
+    if (!generativeBassActive && genBassAbsNoteOffSample > sampleCounter)
+    {
+        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, genBassLastMidiNote), 0);
+        genBassAbsNoteOffSample = -1;
+    }
 
     if (pendingPatternIndex >= 0)
     {

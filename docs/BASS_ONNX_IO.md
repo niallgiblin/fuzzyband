@@ -1,7 +1,9 @@
 # ONNX I/O Contract — Generative Bass (Phase 13)
 
 > **Status:** Phase 13 generative bass graph — **separate** from the frozen pattern selector (`X` / `Y` in this repo’s pattern contract) and from structure (`X_struct` / `Y_struct`).
-> **Scope:** Plugin-side tensor contract for `assets/bass_model.onnx` and `src/inference/OnnxBassInference.cpp` (when implemented).
+> **Scope:** Plugin-side tensor contract for `assets/bass_model.onnx` and `src/inference/OnnxBassInference.cpp` (implemented in the plugin).
+
+`Y_bass` column `root_midi` is an **absolute** MIDI note (the model is conditioned on `pitchRootMidi` in `X_bass`). The plugin does **not** apply the library pattern’s `bassSemitoneOffset` on top of `root_midi` — that offset only applies to E2-relative **library** bass events from `MidiPatternLibrary`.
 > Requirement refs: **GBASS-01** (contract + asset), **PYTR-03** (Phase 15 export must match).
 
 Training and export pipelines (Phase 15) **must** produce a model that matches this contract. Changing names, shapes, dtypes, or column semantics requires a requirements update.
