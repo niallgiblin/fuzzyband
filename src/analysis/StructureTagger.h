@@ -26,13 +26,13 @@ class StructureTagger
 public:
     void prepare(double sampleRate);
 
-    /** @brief Advance state from latest RMS, centroid, and HF flux for this block. */
-    StructureState update(float rms, float centroid, float highFreqFlux, int numSamples);
+    /** @brief Advance state from latest RMS, centroid, HF flux, and peak RMS for this block. */
+    StructureState update(float rms, float centroid, float highFreqFlux, int numSamples, float peakRms = 0.0f);
 
     StructureState getCurrentState() const { return currentState; }
 
 private:
-    StructureState computeDesiredState(float rms, float centroid) const;
+    StructureState computeDesiredState(float rms, float centroid, float peakRms) const;
 
     double sampleRate = 44100.0;
     double timeInStateSec = 0.0;
