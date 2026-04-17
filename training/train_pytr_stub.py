@@ -23,6 +23,13 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 
+def _positive_epochs(x: str) -> int:
+    v = int(x)
+    if v < 1:
+        raise argparse.ArgumentTypeError("must be an integer >= 1")
+    return v
+
+
 class PatternStub(nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -80,7 +87,7 @@ def synthetic_tensors(
 
 def main() -> int:
     p = argparse.ArgumentParser(description="PYTR stub train + ONNX export (synthetic data)")
-    p.add_argument("--epochs", type=int, default=3)
+    p.add_argument("--epochs", type=_positive_epochs, default=3)
     p.add_argument(
         "--out-dir",
         type=Path,
