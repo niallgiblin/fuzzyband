@@ -50,6 +50,7 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - ✓ Background inference ~50Hz; lock-free feature queue; atomic pattern index — Phase 1 Milestone 6
 - ✓ Integration & stability (jam profile, CPU, edge cases, 20-min session) — v0.1.0 Phase 7
 - ✓ Doxygen + CONTRIBUTING + CHANGELOG/tag instructions + Phase 2 issue checklist — v0.1.0 Phase 8
+- ✓ YIN pitch estimator; `FeatureVector` root + confidence; D-11-04 hold/snap; bass semitone offset at `PatternPlayer` emit; tests + `docs/PHASE11_PITCH_TESTING.md` — v0.2.0 Phase 11 (PITCH-01–04)
 
 ### Active (v0.2.0)
 

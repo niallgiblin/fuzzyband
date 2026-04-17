@@ -22,10 +22,10 @@
 
 ### Pitch & harmony (PITCH)
 
-- [ ] **PITCH-01**: Real-time monophonic pitch estimate (YIN or CREPE-via-ONNX or agreed alternative) feeding the feature pipeline
-- [ ] **PITCH-02**: Chord/root or harmony hints sufficient for bass routing (minimal: stable root per window)
-- [ ] **PITCH-03**: Bass MIDI uses detected root where applicable (no longer fixed E2-only when pitch path is active)
-- [ ] **PITCH-04**: Tests on synthetic pitch signals (regression thresholds documented)
+- [x] **PITCH-01**: Real-time monophonic pitch estimate (YIN or CREPE-via-ONNX or agreed alternative) feeding the feature pipeline
+- [x] **PITCH-02**: Chord/root or harmony hints sufficient for bass routing (minimal: stable root per window)
+- [x] **PITCH-03**: Bass MIDI uses detected root where applicable (no longer fixed E2-only when pitch path is active)
+- [x] **PITCH-04**: Tests on synthetic pitch signals (regression thresholds documented)
 
 ### ML structure (STRUC)
 
