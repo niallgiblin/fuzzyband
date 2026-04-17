@@ -22,12 +22,61 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     : AudioProcessorEditor(&p)
     , audioProcessorRef(p)
 {
-    setSize(500, 440);
+    setSize(520, 600);
 
     titleLabel.setText("Metal Accompaniment", juce::dontSendNotification);
     titleLabel.setJustificationType(juce::Justification::centredLeft);
     titleLabel.setFont(juce::FontOptions(18.0f, juce::Font::bold));
     addAndMakeVisible(titleLabel);
+
+    userPolicyHeading.setText("Accompaniment style", juce::dontSendNotification);
+    userPolicyHeading.setFont(juce::FontOptions(12.0f));
+    userPolicyHeading.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(userPolicyHeading);
+
+    for (auto* l : { &genreLabel, &intensityLabel, &variationLabel, &structureBlendLabel, &generativeBassLabel })
+    {
+        l->setJustificationType(juce::Justification::centredLeft);
+        l->setFont(juce::FontOptions(14.0f, juce::Font::bold));
+    }
+
+    genreCombo.setTooltip("Style preset for pattern policy (saved with project).");
+    addAndMakeVisible(genreLabel);
+    addAndMakeVisible(genreCombo);
+
+    intensitySlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    intensitySlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 18);
+    intensitySlider.setRange(0.0, 1.0, 0.001);
+    addAndMakeVisible(intensityLabel);
+    addAndMakeVisible(intensitySlider);
+
+    variationSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    variationSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 18);
+    variationSlider.setRange(0.0, 1.0, 0.001);
+    addAndMakeVisible(variationLabel);
+    addAndMakeVisible(variationSlider);
+
+    structureBlendSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    structureBlendSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 18);
+    structureBlendSlider.setRange(0.0, 1.0, 0.001);
+    addAndMakeVisible(structureBlendLabel);
+    addAndMakeVisible(structureBlendSlider);
+
+    generativeBassModeCombo.setTooltip("Auto: score-based. On: force when valid. Off: library bass only.");
+    addAndMakeVisible(generativeBassLabel);
+    addAndMakeVisible(generativeBassModeCombo);
+
+    auto& apvts = audioProcessorRef.getApvts();
+    genreAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        apvts, "genre", genreCombo);
+    intensityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "intensity", intensitySlider);
+    variationAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "variation", variationSlider);
+    structureBlendAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "structureBlend", structureBlendSlider);
+    generativeBassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        apvts, "generativeBassMode", generativeBassModeCombo);
 
     bpmLabel.setJustificationType(juce::Justification::centredLeft);
     stateLabel.setJustificationType(juce::Justification::centredLeft);
@@ -48,21 +97,13 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     debugPatternButton.onClick = [this] { audioProcessorRef.bumpDebugPattern(); };
     addAndMakeVisible(debugPatternButton);
 
-    helpLabel.setText(
-        "This plug-in does not make sound by itself — it outputs MIDI (drums ch.10, bass ch.2).\n"
-        "\n"
-        "In Reaper: add a second track with a drum instrument; route MIDI from this track to that "
-        "track (track routing / MIDI send).\n"
-        "\n"
-        "Play guitar here so tempo and structure update. While input is quiet, state stays SILENT "
-        "and MIDI stops — use the button above for a 5s preview of the current pattern.\n"
-        "\n"
-        "Output Gain (Reaper / host parameters) only affects your guitar pass-through, not the drums.",
+    helpCaptionLabel.setText(
+        "MIDI outputs on drum (ch.10) and bass (ch.2) — route this track in your DAW; full steps in README.md and CONTRIBUTING.md.",
         juce::dontSendNotification);
-    helpLabel.setFont(juce::FontOptions(13.0f));
-    helpLabel.setJustificationType(juce::Justification::topLeft);
-    helpLabel.setMinimumHorizontalScale(1.0f);
-    addAndMakeVisible(helpLabel);
+    helpCaptionLabel.setFont(juce::FontOptions(12.0f));
+    helpCaptionLabel.setJustificationType(juce::Justification::topLeft);
+    helpCaptionLabel.setMinimumHorizontalScale(1.0f);
+    addAndMakeVisible(helpCaptionLabel);
 
     startTimerHz(20);
 }
@@ -83,6 +124,8 @@ void AccompanimentEditor::timerCallback()
 void AccompanimentEditor::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colours::darkgrey.darker(0.2f));
+    g.setColour(juce::Colour(0xff323232));
+    g.fillRect(userPolicyArea);
 }
 
 void AccompanimentEditor::resized()
@@ -90,14 +133,48 @@ void AccompanimentEditor::resized()
     auto r = getLocalBounds().reduced(12);
     titleLabel.setBounds(r.removeFromTop(28));
     r.removeFromTop(8);
-    bpmLabel.setBounds(r.removeFromTop(22));
-    stateLabel.setBounds(r.removeFromTop(22));
-    patternLabel.setBounds(r.removeFromTop(22));
-    rmsLabel.setBounds(r.removeFromTop(22));
-    centroidLabel.setBounds(r.removeFromTop(22));
-    hfFluxLabel.setBounds(r.removeFromTop(22));
-    r.removeFromTop(12);
+
+    const int userTop = r.getY();
+    userPolicyHeading.setBounds(r.removeFromTop(20));
+    r.removeFromTop(8);
+
+    auto row = r.removeFromTop(32);
+    genreLabel.setBounds(row.removeFromLeft(140));
+    genreCombo.setBounds(row);
+    r.removeFromTop(8);
+
+    row = r.removeFromTop(28);
+    intensityLabel.setBounds(row.removeFromLeft(140));
+    intensitySlider.setBounds(row);
+    r.removeFromTop(8);
+
+    row = r.removeFromTop(28);
+    variationLabel.setBounds(row.removeFromLeft(140));
+    variationSlider.setBounds(row);
+    r.removeFromTop(8);
+
+    row = r.removeFromTop(28);
+    structureBlendLabel.setBounds(row.removeFromLeft(140));
+    structureBlendSlider.setBounds(row);
+    r.removeFromTop(8);
+
+    row = r.removeFromTop(32);
+    generativeBassLabel.setBounds(row.removeFromLeft(140));
+    generativeBassModeCombo.setBounds(row);
+
+    const int userBottom = r.getY();
+    userPolicyArea = juce::Rectangle<int>(12, userTop, getWidth() - 24, juce::jmax(1, userBottom - userTop));
+
+    r.removeFromTop(16);
+
+    bpmLabel.setBounds(r.removeFromTop(24));
+    stateLabel.setBounds(r.removeFromTop(24));
+    patternLabel.setBounds(r.removeFromTop(24));
+    rmsLabel.setBounds(r.removeFromTop(24));
+    centroidLabel.setBounds(r.removeFromTop(24));
+    hfFluxLabel.setBounds(r.removeFromTop(24));
+    r.removeFromTop(8);
     debugPatternButton.setBounds(r.removeFromTop(32));
-    r.removeFromTop(10);
-    helpLabel.setBounds(r);
+    r.removeFromTop(8);
+    helpCaptionLabel.setBounds(r);
 }
