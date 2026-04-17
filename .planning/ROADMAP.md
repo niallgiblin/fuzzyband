@@ -34,7 +34,7 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 | # | Phase | Goal | Requirements | Status |
 |---|-------|------|--------------|--------|
 | 9 | Data & training strategy | Dataset audit, tokenization, data-prep stub; absorbs backlog **999.1** themes | DATA-01–03 | ✓ Complete 2026-04-17 |
-| 10 | ONNX runtime & IInference | ONNX Runtime in CMake; `OnnxInference` + fallback | ONNX-01–03 | Not started |
+| 10 | ONNX runtime & IInference | 1/1 | Complete   | 2026-04-17 |
 | 11 | Pitch & harmony | 3/3 | Complete    | 2026-04-17 |
 | 12 | ML structure | Classifier/head vs. `StructureTagger`; rule fallback | STRUC-01–03 | Not started |
 | 13 | Generative bass | Train → ONNX; constrained MIDI bass | GBASS-01–03 | Not started |
@@ -171,7 +171,7 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 
 **Requirements:** Covered by DATA-01–03 in `.planning/REQUIREMENTS.md`
 
-**Plans:** 3/3 plans complete
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] TBD — use `/gsd-plan-phase 9` to create plans
