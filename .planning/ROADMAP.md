@@ -37,7 +37,7 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 | 10 | ONNX runtime & IInference | 1/1 | Complete   | 2026-04-17 |
 | 11 | Pitch & harmony | 3/3 | Complete    | 2026-04-17 |
 | 12 | ML structure | 3/3 | Complete    | 2026-04-17 |
-| 13 | Generative bass | 1/3 | In Progress|  |
+| 13 | Generative bass | 3/3 | Complete    | 2026-04-17 |
 | 14 | Plugin UI | Genre, intensity, variation via APVTS | PUI-01–03 | Not started |
 | 15 | Python training pipeline | Repro env, dataset ingest, training export | PYTR-01–03 | Not started |
 | 16 | Terraform model storage | Versioned artifacts + promotion runbook | CLOUD-01–02 | Not started |
@@ -171,7 +171,7 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 
 **Requirements:** Covered by DATA-01–03 in `.planning/REQUIREMENTS.md`
 
-**Plans:** 1/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD — use `/gsd-plan-phase 9` to create plans

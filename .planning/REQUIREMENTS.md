@@ -35,9 +35,9 @@
 
 ### Generative bass (GBASS)
 
-- [ ] **GBASS-01**: Small transformer (or agreed architecture) trained; exports to ONNX or approved runtime consumed by plugin
-- [ ] **GBASS-02**: Generated bass constrained to valid MIDI on bass channel; integrates with existing clock/boundary semantics
-- [ ] **GBASS-03**: CPU/latency budget documented; safe degradation (e.g. revert to static patterns)
+- [x] **GBASS-01**: Small transformer (or agreed architecture) trained; exports to ONNX or approved runtime consumed by plugin
+- [x] **GBASS-02**: Generated bass constrained to valid MIDI on bass channel; integrates with existing clock/boundary semantics
+- [x] **GBASS-03**: CPU/latency budget documented; safe degradation (e.g. revert to static patterns)
 
 ### Plugin UI (PUI)
 
