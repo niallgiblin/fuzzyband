@@ -20,3 +20,14 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure --config Release
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Prep MIDI smoke (Phase 9)
+        run: |
+          python3 -m pip install -r training/requirements.txt
+          python3 training/prep_midi.py --input training/fixtures/minimal.mid --output /tmp/ci_prep_out.json
+          test -s /tmp/ci_prep_out.json
