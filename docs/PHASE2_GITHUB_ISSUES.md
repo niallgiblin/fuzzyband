@@ -4,6 +4,8 @@ Use this list to open issues on GitHub after `v0.1.0-phase1`. Labels: suggest **
 
 Link **`ARCHITECTURE.md`** and **`src/inference/IInference.h`** on any inference-related ticket.
 
+**Training data strategy (Groove/GMD vs E-GMD, rank vs hybrid, guitar bridge):** `.planning/phases/999.1-ml-phase-2-data-feasibility-research/PHASE2_ML_DATA_STRATEGY.md`
+
 | # | Topic (from roadmap) | Goal summary | Notes |
 |---|----------------------|--------------|--------|
 | Meta | M2 scope vs backlog | Reconcile Milestone 2 Preview with **Backlog 999.1** (ML data feasibility, cloud vs ONNX). | Single umbrella issue; link `.planning/ROADMAP.md` Backlog section |
