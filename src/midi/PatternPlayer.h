@@ -30,8 +30,13 @@ public:
     /** @brief Semitone transpose for bass (ch @c kBassChannel) only; clamped [-24,24]. Audio thread. */
     void setBassSemitoneOffset(int semitones);
 
+    /** @brief Generative bass (Phase 13): when active, library bass events are not emitted. Audio thread. */
+    void setGenerativeBassActive(bool active, int rootMidi, float durationBeats);
+
     /** @brief Fill @p midi for this audio block using host sample position for timing. */
     void process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition);
+
+    static constexpr int kBassChannel = 2;
 
 private:
     void emitEventsForRange(juce::MidiBuffer& midi,
@@ -40,6 +45,12 @@ private:
                             double beatEnd,
                             const MidiPattern& pattern,
                             int sampleOffsetBase);
+
+    void emitGenerativeBassForWindow(juce::MidiBuffer& midi,
+                                     int numSamples,
+                                     double beatStart,
+                                     double beatEnd,
+                                     int sampleOffsetBase);
 
     int humanVel(int base) const;
     int humanSamples() const;
@@ -62,6 +73,9 @@ private:
 
     int bassSemitoneOffset = 0;
 
+    bool generativeBassActive = false;
+    int generativeBassRootMidi = 40;
+    float generativeBassDurationBeats = 1.0f;
+
     static constexpr int kDrumChannel = 10;
-    static constexpr int kBassChannel = 2;
 };

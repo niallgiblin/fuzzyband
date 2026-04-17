@@ -2,6 +2,7 @@
 #include "AccompanimentEditor.h"
 #include "inference/IStructureInference.h"
 #include "inference/RuleStructureInference.h"
+#include "midi/BassMidiValidator.h"
 #if defined(MA_ENABLE_ONNX)
 #include "inference/OnnxInference.h"
 #include "inference/OnnxStructureInference.h"
@@ -32,6 +33,16 @@ std::unique_ptr<IStructureInference> makeStructureInference()
 #endif
     return std::make_unique<RuleStructureInference>();
 }
+
+std::unique_ptr<OnnxBassInference> makeBassInference()
+{
+#if defined(MA_ENABLE_ONNX)
+    auto onnx = std::make_unique<OnnxBassInference>();
+    if (onnx->tryLoadModel())
+        return onnx;
+#endif
+    return nullptr;
+}
 } // namespace
 
 juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::createParameterLayout()
@@ -52,6 +63,7 @@ AccompanimentProcessor::AccompanimentProcessor()
     , apvts(*this, nullptr, "PARAMETERS", createParameterLayout())
     , inference(makeInference())
     , structureInference(makeStructureInference())
+    , bassInference(makeBassInference())
 {
     patternPlayer.setPatternLibrary(&patternLibrary);
     inferenceRunning.store(true, std::memory_order_release);
@@ -98,6 +110,10 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     if (structureInference)
         structureInference->prepare(sr);
 
+    if (bassInference)
+        bassInference->prepare(sr);
+    useGenerativeBass.store(false, std::memory_order_release);
+
     hostSampleTime = 0;
     latestPatternIndex.store(0, std::memory_order_relaxed);
 
@@ -137,6 +153,39 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
                 dtSec = static_cast<double>(latest.sampleTimestamp - lastFeatureSampleTs) / sr;
             structureInference->process(latest, dtSec);
             lastFeatureSampleTs = latest.sampleTimestamp;
+        }
+
+        if (bassInference)
+        {
+            bassInference->propose(latest);
+
+            const bool silencePolicy =
+                (latest.state == StructureState::SILENT) || (latest.rmsEnergy < 1.0e-6f);
+            const auto& p = bassInference->getLastProposal();
+            const bool valid = BassMidiValidator::validateBassProposal(
+                p.rootMidi,
+                p.durationBeats,
+                latest.state,
+                silencePolicy);
+
+            constexpr float kMinGenerativeConfidence = 0.5f;
+            constexpr float kLibraryBassScore = 0.45f;
+            float scoreGen = 0.f;
+            if (valid && p.margin >= 0.f && p.confidence >= kMinGenerativeConfidence)
+                scoreGen = p.confidence;
+            const bool useGen = scoreGen > kLibraryBassScore;
+            useGenerativeBass.store(useGen, std::memory_order_release);
+            if (useGen)
+            {
+                generativeBassRootNote.store(
+                    static_cast<int>(std::lround(static_cast<double>(p.rootMidi))),
+                    std::memory_order_release);
+                generativeBassDurationBeats.store(p.durationBeats, std::memory_order_release);
+            }
+        }
+        else
+        {
+            useGenerativeBass.store(false, std::memory_order_release);
         }
     }
 }
@@ -269,6 +318,16 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         debugPreviewSamplesRemaining.store(juce::jmax(0, previewRem - numSamples), std::memory_order_release);
 
     patternPlayer.setStructureSilent(st == StructureState::SILENT && !previewAudible);
+
+    if (silencePolicy)
+        patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
+    else if (useGenerativeBass.load(std::memory_order_relaxed))
+        patternPlayer.setGenerativeBassActive(
+            true,
+            generativeBassRootNote.load(std::memory_order_relaxed),
+            generativeBassDurationBeats.load(std::memory_order_relaxed));
+    else
+        patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
 
     int64_t hostPos = hostSampleTime;
     if (auto* ph = getPlayHead())

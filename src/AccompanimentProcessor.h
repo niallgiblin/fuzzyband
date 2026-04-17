@@ -13,6 +13,7 @@
 #include "analysis/FeatureVector.h"
 #include "inference/IInference.h"
 #include "inference/IStructureInference.h"
+#include "inference/OnnxBassInference.h"
 #include "inference/RuleBasedInference.h"
 #include "midi/MidiPatternLibrary.h"
 #include "midi/PatternPlayer.h"
@@ -94,9 +95,14 @@ private:
 
     std::unique_ptr<IInference> inference;
     std::unique_ptr<IStructureInference> structureInference;
+    std::unique_ptr<OnnxBassInference> bassInference;
 
     moodycamel::ReaderWriterQueue<FeatureVector> featureQueue{ 4096 };
     std::atomic<int> latestPatternIndex{ 0 };
+
+    std::atomic<bool> useGenerativeBass{ false };
+    std::atomic<int> generativeBassRootNote{ 40 };
+    std::atomic<float> generativeBassDurationBeats{ 1.0f };
 
     std::atomic<float> displayBpm{ 120.0f };
     std::atomic<int> displayStateIndex{ 0 };
