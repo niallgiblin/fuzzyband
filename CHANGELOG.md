@@ -4,6 +4,7 @@ All notable changes to this project are documented here. For architecture and th
 
 ## [Unreleased]
 
+- Phase 16 (Terraform model storage): `infra/` Terraform for versioned S3 model bucket + GitHub OIDC IAM; `scripts/bootstrap-tfstate.sh`; `scripts/promote-model.sh` and `scripts/download-model.sh` with `current.json` pointer; optional GitHub Actions OIDC + pre-build download (CLOUD-01–02).
 - Phase 9 (data & training strategy): `docs/DATASET_AUDIT.md`, `docs/TOKENIZATION.md`, and `training/prep_midi.py` stub (DATA-01–03).
 - Phase 10 (ONNX): `OnnxInference` loads bundled `assets/accompaniment_model.onnx` when `MA_ENABLE_ONNX=ON`; otherwise or on load failure, `RuleBasedInference` is used. Added `scripts/build_minimal_pattern_onnx.py`.
 

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: — Phase 2 ML + Generative
 status: Ready to plan
-last_updated: "2026-04-17T18:48:29.509Z"
+last_updated: "2026-04-17T20:00:00.000Z"
 last_activity: 2026-04-17
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 14
-  completed_plans: 14
+  total_plans: 16
+  completed_plans: 16
   percent: 88
 ---
 
@@ -22,16 +22,16 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-04-17)
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** Phase 15 — Python training pipeline
+**Current focus:** Phase 15 — Python training pipeline (last open scope in v0.2.0 phase list)
 
 ---
 
 ## Current Position
 
-Phase: 15
-Plan: Not started
+Phase: 15  
+Plan: Not started  
 **Milestone:** v0.2.0 — Phase 2: ML + Generative  
-**Last completed:** Phase 14 — Plugin UI (2026-04-17)  
+**Last completed:** Phase 16 — Terraform model storage (2026-04-17)  
 **Next:** `/gsd-discuss-phase 15` or `/gsd-plan-phase 15` — Python training pipeline (PYTR-01–03)  
 **Last activity:** 2026-04-17
 
@@ -49,7 +49,7 @@ Plan: Not started
 | 13 | Generative bass | ✓ Complete 2026-04-17 |
 | 14 | Plugin UI | ✓ Complete 2026-04-17 |
 | 15 | Python training pipeline | Not started |
-| 16 | Terraform model storage | Not started |
+| 16 | Terraform model storage | ✓ Complete 2026-04-17 |
 
 ---
 
@@ -65,6 +65,7 @@ Plan: Not started
 
 ## Decisions Log
 
+- **2026-04-17 — Phase 16 (Terraform model storage) executed:** `infra/` Terraform (versioned S3, GitHub OIDC IAM), `scripts/bootstrap-tfstate.sh`, `scripts/promote-model.sh`, `scripts/download-model.sh`, optional CI OIDC + model download; verification `.planning/phases/16-terraform-model-storage/16-VERIFICATION.md`. `gsd-sdk` unavailable — execution inline.
 - **2026-04-17 — Phase 14 (Plugin UI) executed:** APVTS policy + `PolicyPatternMapper` + structure blend drain + editor attachments + README/CONTRIBUTING; verification `.planning/phases/14-plugin-ui/14-VERIFICATION.md`.
 - **2026-04-17 — Phase 14 (Plugin UI) planned:** `14-RESEARCH.md` + three plans (`14-01`–`14-03`); status **Ready to execute** — `/gsd-execute-phase 14`.
 - **2026-04-17 — Phase 14 (Plugin UI) discuss:** **Outcome-first** PUI knobs (planner implements); **genre** = discrete choice, **intensity/variation** = continuous mid-defaults; **all diagnostics stay visible** + **PUI-03** docs; **short help + link**; **generative bass** + **structure trust** exposed in APVTS/editor this phase. Context: `.planning/phases/14-plugin-ui/14-CONTEXT.md`.
@@ -79,8 +80,8 @@ Plan: Not started
 
 ## Session Continuity
 
-Last session: 2026-04-17T19:00:00.000Z  
-Resume: `/gsd-discuss-phase 15` — Python training pipeline; plans TBD under `.planning/phases/15-python-training-pipeline/` when created
+Last session: 2026-04-17T20:00:00.000Z  
+Resume: `/gsd-discuss-phase 15` — Python training pipeline; Phase 16 complete
 
 ---
 

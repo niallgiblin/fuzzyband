@@ -53,10 +53,11 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - ✓ YIN pitch estimator; `FeatureVector` root + confidence; D-11-04 hold/snap; bass semitone offset at `PatternPlayer` emit; tests + `docs/PHASE11_PITCH_TESTING.md` — v0.2.0 Phase 11 (PITCH-01–04)
 - ✓ DATA-01–03: dataset audit (`docs/DATASET_AUDIT.md`), event tokenization (`docs/TOKENIZATION.md`), reproducible MIDI prep stub (`training/prep_midi.py`) + CI smoke — v0.2.0 Phase 9
 - ✓ PUI-01–03: APVTS policy (`genre`, `intensity`, `variation`, `structureBlend`, `generativeBassMode`), `PolicyPatternMapper`, editor attachments, README/CONTRIBUTING parameter docs — v0.2.0 Phase 14
+- ✓ CLOUD-01–02: Terraform S3 + GitHub OIDC IAM (`infra/`), bootstrap tfstate script, `promote-model.sh` / `download-model.sh`, optional CI download — v0.2.0 Phase 16
 
 ### Active (v0.2.0)
 
-See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. High level: DATA ✓ → ONNX → PITCH → STRUC → GBASS → PUI ✓ → PYTR → CLOUD (DATA done in Phase 9; pitch Phase 11 already shipped; plugin UI Phase 14 complete).
+See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. High level: DATA ✓ → ONNX → PITCH → STRUC → GBASS → PUI ✓ → **PYTR** → **CLOUD ✓** (remaining: **PYTR** Phase 15).
 
 **Operational (carryover from v0.1.0):**
 
@@ -96,7 +97,7 @@ See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. High level: DA
 | constexpr pattern arrays (no file I/O) | Plugin must not do file I/O in the audio path | ✓ Good |
 
 ---
-*Last updated: 2026-04-17 after Phase 14 (Plugin UI) execution*
+*Last updated: 2026-04-17 after Phase 16 (Terraform model storage) execution*
 
 ## Evolution
 

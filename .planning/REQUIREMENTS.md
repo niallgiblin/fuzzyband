@@ -53,8 +53,8 @@
 
 ### Cloud & model storage (CLOUD)
 
-- [ ] **CLOUD-01**: Terraform provisions cloud storage for versioned model artifacts
-- [ ] **CLOUD-02**: Runbook for promoting a model version from training to plugin consumption (paths, checksums, or tags)
+- [x] **CLOUD-01**: Terraform provisions cloud storage for versioned model artifacts — `infra/` + `scripts/bootstrap-tfstate.sh` (Phase 16)
+- [x] **CLOUD-02**: Runbook for promoting a model version from training to plugin consumption (paths, checksums, or tags) — `scripts/promote-model.sh`, `scripts/download-model.sh`, `infra/README.md` (Phase 16)
 
 ---
 
