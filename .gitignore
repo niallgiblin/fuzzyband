@@ -27,6 +27,9 @@ _deps/
 # GSD planning (local only)
 .planning/
 
+# Python training venv (Phase 9+)
+training/.venv/
+
 # Doxygen (optional local HTML — see Doxyfile / doxygen-docs target)
 docs/doxygen/html/
 

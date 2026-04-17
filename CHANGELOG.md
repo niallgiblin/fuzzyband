@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
+## [Unreleased]
+
+- Phase 9 (data & training strategy): `docs/DATASET_AUDIT.md`, `docs/TOKENIZATION.md`, and `training/prep_midi.py` stub (DATA-01–03).
+
 ## [v0.1.0-phase1] — Phase 1 rule-based MVP
 
 **Summary:** Real-time guitar onset/tempo tracking, energy/structure classification, rule-based `IInference` → drum/bass MIDI via `PatternPlayer`. Phase 2 can replace inference with ONNX or other backends behind the same `IInference` interface.
