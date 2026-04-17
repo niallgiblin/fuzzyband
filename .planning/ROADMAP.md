@@ -2,7 +2,7 @@
 
 > **Milestone 1**: Phase 1 — Rule-Based MVP  
 > **Goal**: A playable JUCE VST3/AU plugin that listens to a guitarist and triggers rhythmically appropriate drum and bass MIDI in real time — no ML required.  
-> **Status**: In progress — Phases 1–6 complete, Phase 7 in progress, Phase 8 pending.
+> **Status**: In progress — Phases 1–8 complete for Milestone 1 docs handoff; Phase 7 integration items may still need user verification in DAW.
 
 ---
 
@@ -17,7 +17,7 @@
 | 5 | MIDI Output & DAW Routing | Wire PatternPlayer to MidiBuffer; verify in Reaper | OUT-01–05 | ✓ Complete* |
 | 6 | Feature→Pattern Inference | Connect analysis to pattern selector via IInference | INFER-01–04 | ✓ Complete |
 | 7 | Integration & Stability | Profile, tune, fix edge cases; 20-min session clean | STAB-01–04 | 🔄 In Progress |
-| 8 | Docs & Phase 2 Handoff | Doxygen, CONTRIBUTING.md, v0.1.0 tag, Phase 2 issues | DOCS-01–05 | ⬜ Pending |
+| 8 | Docs & Phase 2 Handoff | Doxygen, CONTRIBUTING.md, v0.1.0 tag, Phase 2 issues | DOCS-01–05 | ✓ Complete 2026-04-17 |
 
 *Phase 5 code complete; DAW session setup is user verification step.
 
@@ -107,9 +107,14 @@ Plans:
 
 ---
 
-### Phase 8: Docs & Phase 2 Handoff ⬜
+### Phase 8: Docs & Phase 2 Handoff ✓
 **Goal**: Leave Phase 1 in a state that makes Phase 2 straightforward to begin.  
 **Requirements**: DOCS-01 (done), DOCS-02, DOCS-03, DOCS-04, DOCS-05  
+**Plans:** 1 plan
+
+Plans:
+- [x] 08-01-PLAN.md — Doxygen + CONTRIBUTING + CHANGELOG/tag + Phase 2 GitHub checklist
+
 **Success criteria**:
 1. Doxygen comments on all public class interfaces
 2. CONTRIBUTING.md covers macOS build instructions
