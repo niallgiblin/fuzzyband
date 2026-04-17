@@ -8,6 +8,12 @@ JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + ba
 - **[Tokenization](docs/TOKENIZATION.md)** — event JSON/JSONL contract for offline prep
 - **[Training / prep tooling](training/README.md)** — Python venv, `prep_midi.py` CLI
 
+## ONNX inference (Phase 10)
+
+- **[ONNX I/O contract](docs/ONNX_IO.md)** — frozen tensor names / shapes consumed by the plugin; Phase 15 export must match
+- Optional ONNX Runtime builds are enabled with `-DMA_ENABLE_ONNX=ON` and `-DONNXRUNTIME_ROOT=/path/to/onnxruntime` — full setup is in **[CONTRIBUTING.md](CONTRIBUTING.md)** (§ONNX Runtime)
+- Default builds (and CI) leave `MA_ENABLE_ONNX=OFF`; the plugin falls back to `RuleBasedInference` when ONNX is disabled or model load fails
+
 ## Pattern MIDI export (offline)
 
 After building the `MetalAccompanimentExportPatterns` target, run:
