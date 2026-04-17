@@ -97,7 +97,7 @@ Plans:
 - [x] 07-02-PLAN.md — BPM-adaptive note durations + D-09 humanization/overlap tests
 - [x] 07-03-PLAN.md — AccompanimentProcessor hardening: NaN guard, thread pause/resume, bypass flush, debug atomics
 - [x] 07-04-PLAN.md — Editor debug UI: RMS / Centroid / HF Flux labels
-- [ ] 07-05-PLAN.md — Release build, jam session tuning, CPU profile, TSan, edge cases, 20-minute stability
+- [x] 07-05-PLAN.md — Release build, jam session tuning, CPU profile, TSan, edge cases, 20-minute stability
 
 **Success criteria**:
 1. 10-minute metal jam session recorded and profiled
