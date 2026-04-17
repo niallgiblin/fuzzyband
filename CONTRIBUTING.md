@@ -54,6 +54,8 @@ cmake --build build-onnx --parallel
 
 If `tryLoadModel()` fails at runtime, the processor falls back to `RuleBasedInference` (same as `MA_ENABLE_ONNX=OFF`).
 
+**Generative bass (Phase 13):** When the bass ONNX bundle is present, the inference thread performs an extra `Run` per drained feature (same cadence as other inference heads). If the bass ONNX fails to load or confidence gating rejects the proposal, playback uses **library pattern bass only** — see the **Generative bass** subsection in the **[README](README.md)** for performance and fallback behavior.
+
 Example with tests off:
 
 ```bash

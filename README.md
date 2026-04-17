@@ -14,6 +14,14 @@ JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + ba
 - Optional ONNX Runtime builds are enabled with `-DMA_ENABLE_ONNX=ON` and `-DONNXRUNTIME_ROOT=/path/to/onnxruntime` — full setup is in **[CONTRIBUTING.md](CONTRIBUTING.md)** (§ONNX Runtime)
 - Default builds (and CI) leave `MA_ENABLE_ONNX=OFF`; the plugin falls back to `RuleBasedInference` when ONNX is disabled or model load fails
 
+## Generative bass (Phase 13)
+
+When `MA_ENABLE_ONNX=ON` and `bass_model.onnx` loads successfully, the background inference thread runs an **additional** ONNX `Run` on each feature drain (same ~50 Hz cadence as pattern/structure inference — order of magnitude, not a hard guarantee). **CPU / latency:** expect roughly one extra small-session inference per drain versus ONNX builds without the bass head; for exact numbers, profile the plugin locally with your buffer size and DAW.
+
+**Degradation:** If the bass model is missing, fails to load, or the proposal’s confidence is below `kMinGenerativeConfidence` in `AccompanimentProcessor.cpp`, the plugin falls back to **static pattern bass only** (no generative rank/select). See `docs/BASS_ONNX_IO.md` for the tensor contract.
+
+Contributor setup for the bass asset is in **[CONTRIBUTING.md](CONTRIBUTING.md)** (§ONNX Runtime).
+
 ## Pattern MIDI export (offline)
 
 After building the `MetalAccompanimentExportPatterns` target, run:
