@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: — Phase 2 ML + Generative
-status: Ready to plan
-last_updated: "2026-04-17T17:13:50.683Z"
+status: Executing Phase 13
+last_updated: "2026-04-17T17:17:08.105Z"
 last_activity: 2026-04-17
 progress:
   total_phases: 9
   completed_phases: 4
-  total_plans: 8
+  total_plans: 11
   completed_plans: 8
-  percent: 100
+  percent: 73
 ---
 
 # STATE — Metal Accompaniment
@@ -22,14 +22,14 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-04-17)
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** Phase 13 — generative bass
+**Current focus:** Phase 13 — generative-bass
 
 ---
 
 ## Current Position
 
-Phase: 13 (generative-bass) — Ready to plan
-Plan: Not started
+Phase: 13 (generative-bass) — EXECUTING
+Plan: 1 of 3
 **Milestone:** v0.2.0 — Phase 2: ML + Generative  
 **Last completed:** Phase 12 — ML structure (2026-04-17)  
 **Next:** Phase 13 — Generative bass  
@@ -65,6 +65,7 @@ Plan: Not started
 
 ## Decisions Log
 
+- **2026-04-17 — Phase 13 (Generative bass) discuss:** Hybrid **rank/select** for bass; **separate ONNX** from pattern `X`/`Y`; **transpose** generated bass like static patterns; **degradation** aligned with load + confidence gates; **training depth** and **merge point** at Claude discretion within GBASS-01–03. Context: `.planning/phases/13-generative-bass/13-CONTEXT.md`.
 - **2026-04-17 — Phase 10 (ONNX runtime & IInference) 10-01 executed:** Froze ONNX I/O contract in `docs/ONNX_IO.md` (input `X` float32 `[1,5]`, output `Y` int64 clamped 0–6); linked from README + ARCHITECTURE; added `scripts/check_onnx_audio_thread.sh` + CI step guarding against ORT API leaking into `AccompanimentProcessor`. Default CI stays `MA_ENABLE_ONNX=OFF` (D-10-01). Closes ONNX-01/02/03.
 - **2026-04-17 — Phase 9 (Data & training strategy) executed:** Dataset audit (`docs/DATASET_AUDIT.md`), tokenization (`docs/TOKENIZATION.md`), `training/prep_midi.py` + `mido`, CI prep smoke on `training/fixtures/minimal.mid`. Context: `.planning/phases/09-data-training-strategy/09-CONTEXT.md`.
 - **2026-04-17 — Phase 11 (Pitch & harmony) discuss:** Hybrid **YIN** + optional **ONNX** pitch model; **root-only** (+ confidence) per window; **transpose bass at playback** vs nominal E2; **hold last good root** when noisy, E2 on silence/cold start; **unit tests + macOS CI**. Context: `.planning/phases/11-pitch-harmony/11-CONTEXT.md`.
@@ -76,7 +77,7 @@ Plan: Not started
 ## Session Continuity
 
 Last session: 2026-04-17T17:13:50.680Z
-Resume: `/gsd-discuss-phase 13` or `/gsd-plan-phase 13` for v0.2.0 Phase 13 (Generative bass); Phases 9–12 complete in milestone
+Resume: `/gsd-plan-phase 13` for v0.2.0 Phase 13 (Generative bass); context in `.planning/phases/13-generative-bass/13-CONTEXT.md`; Phases 9–12 complete in milestone
 
 ---
 

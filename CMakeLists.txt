@@ -147,10 +147,12 @@ target_sources(MetalAccompaniment PRIVATE
     src/inference/OnnxInference.cpp        # stub in Phase 1
     src/inference/RuleStructureInference.cpp
     src/inference/OnnxStructureInference.cpp
+    src/inference/OnnxBassInference.cpp
 
     # MIDI
     src/midi/MidiPatternLibrary.cpp
     src/midi/PatternPlayer.cpp
+    src/midi/BassMidiValidator.cpp
 )
 
 # ─────────────────────────────────────────────────────────────────
