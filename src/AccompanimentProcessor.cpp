@@ -1,7 +1,23 @@
 #include "AccompanimentProcessor.h"
 #include "AccompanimentEditor.h"
+#if defined(MA_ENABLE_ONNX)
+#include "inference/OnnxInference.h"
+#endif
 #include <chrono>
 #include <cmath>
+
+namespace
+{
+std::unique_ptr<IInference> makeInference()
+{
+#if defined(MA_ENABLE_ONNX)
+    auto onnx = std::make_unique<OnnxInference>();
+    if (onnx->tryLoadModel())
+        return onnx;
+#endif
+    return std::make_unique<RuleBasedInference>();
+}
+} // namespace
 
 juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::createParameterLayout()
 {
@@ -19,7 +35,7 @@ AccompanimentProcessor::AccompanimentProcessor()
                          .withInput("Input", juce::AudioChannelSet::mono(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true))
     , apvts(*this, nullptr, "PARAMETERS", createParameterLayout())
-    , inference(std::make_unique<RuleBasedInference>())
+    , inference(makeInference())
 {
     patternPlayer.setPatternLibrary(&patternLibrary);
     inferenceRunning.store(true, std::memory_order_release);
