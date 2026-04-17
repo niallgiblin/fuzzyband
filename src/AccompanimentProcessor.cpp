@@ -8,6 +8,8 @@
 
 namespace
 {
+constexpr float kMinPitchConfidence = 0.35f;
+
 std::unique_ptr<IInference> makeInference()
 {
 #if defined(MA_ENABLE_ONNX)
@@ -66,6 +68,12 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     onsetDetector.prepare(sr, samplesPerBlock);
     energyAnalyser.prepare(sr, samplesPerBlock);
     structureTagger.prepare(sr);
+    pitchEstimator.prepare(sr, samplesPerBlock);
+    pitchEstimator.reset();
+    heldPitchRootMidi = 40.0f;
+    heldPitchConfidence = 0.0f;
+    pitchHoldValid = false;
+
     patternPlayer.prepare(sr, samplesPerBlock);
     patternPlayer.reset();
 
@@ -151,6 +159,34 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const float hfFlux = energyAnalyser.getHighFreqFlux();
     const StructureState st = structureTagger.update(rms, centroid, hfFlux, numSamples);
 
+    pitchEstimator.process(in, numSamples);
+    const float rawMidi = pitchEstimator.getMidiNote();
+    const float rawConf = pitchEstimator.getConfidence();
+
+    const bool digitalSilence = (rms < 1.0e-6f);
+    const bool silencePolicy = (st == StructureState::SILENT) || digitalSilence;
+
+    if (silencePolicy)
+    {
+        heldPitchRootMidi = 40.0f;
+        heldPitchConfidence = 0.0f;
+        pitchHoldValid = false;
+    }
+    else if (rawConf < kMinPitchConfidence)
+    {
+        if (!pitchHoldValid)
+        {
+            heldPitchRootMidi = 40.0f;
+            heldPitchConfidence = 0.0f;
+        }
+    }
+    else
+    {
+        heldPitchRootMidi = rawMidi;
+        heldPitchConfidence = rawConf;
+        pitchHoldValid = true;
+    }
+
     FeatureVector fv;
     fv.bpm = onsetDetector.getCurrentBpm();
     fv.rmsEnergy = rms;
@@ -158,6 +194,17 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     fv.highFreqFlux = hfFlux;
     fv.state = st;
     fv.sampleTimestamp = hostSampleTime;
+    fv.pitchRootMidi = heldPitchRootMidi;
+    fv.pitchConfidence = heldPitchConfidence;
+
+    if (fv.pitchConfidence <= 0.0f || fv.pitchConfidence < kMinPitchConfidence)
+        patternPlayer.setBassSemitoneOffset(0);
+    else
+    {
+        const int rounded = static_cast<int>(std::lround(static_cast<double>(fv.pitchRootMidi)));
+        patternPlayer.setBassSemitoneOffset(rounded - 40);
+    }
+
     (void)featureQueue.try_enqueue(fv);
 
     const int patternIdx = latestPatternIndex.load(std::memory_order_acquire);

@@ -16,6 +16,12 @@ void PatternPlayer::reset()
     activePatternIndex = patternIndex.load(std::memory_order_relaxed);
     pendingPatternIndex = -1;
     wasSilent = false;
+    bassSemitoneOffset = 0;
+}
+
+void PatternPlayer::setBassSemitoneOffset(int semitones)
+{
+    bassSemitoneOffset = juce::jlimit(-24, 24, semitones);
 }
 
 void PatternPlayer::setBpm(float newBpm)
@@ -72,16 +78,20 @@ void PatternPlayer::emitEventsForRange(juce::MidiBuffer& midi,
                 off = juce::jlimit(0, numSamples - 1, off);
 
                 const int vel = humanVel(static_cast<int>(ev.velocity));
-                const int note = static_cast<int>(ev.note);
+                const int baseNote = static_cast<int>(ev.note);
+                const int outNote = juce::jlimit(
+                    0,
+                    127,
+                    baseNote + (channel == kBassChannel ? bassSemitoneOffset : 0));
 
-                midi.addEvent(juce::MidiMessage::noteOn(channel, note, static_cast<float>(vel) / 127.0f),
+                midi.addEvent(juce::MidiMessage::noteOn(channel, outNote, static_cast<float>(vel) / 127.0f),
                                 sampleOffsetBase + off);
 
                 const int durSamps = juce::jmax(
                     1,
                     static_cast<int>(std::round(static_cast<double>(ev.durationBeats) * (60.0 / static_cast<double>(bpm)) * sampleRate)));
                 const int noteOffOffset = juce::jmin(numSamples - 1, off + durSamps);
-                midi.addEvent(juce::MidiMessage::noteOff(channel, note), sampleOffsetBase + noteOffOffset);
+                midi.addEvent(juce::MidiMessage::noteOff(channel, outNote), sampleOffsetBase + noteOffOffset);
 
                 t += patternLenBeats;
             }

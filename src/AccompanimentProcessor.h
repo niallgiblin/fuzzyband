@@ -9,6 +9,7 @@
 #include "analysis/OnsetDetector.h"
 #include "analysis/EnergyAnalyser.h"
 #include "analysis/StructureTagger.h"
+#include "analysis/PitchEstimator.h"
 #include "analysis/FeatureVector.h"
 #include "inference/IInference.h"
 #include "inference/RuleBasedInference.h"
@@ -77,6 +78,7 @@ private:
     OnsetDetector onsetDetector;
     EnergyAnalyser energyAnalyser;
     StructureTagger structureTagger;
+    PitchEstimator pitchEstimator;
     MidiPatternLibrary patternLibrary;
     PatternPlayer patternPlayer;
 
@@ -99,6 +101,10 @@ private:
     std::thread inferenceThread;
 
     int64_t hostSampleTime = 0;
+
+    float heldPitchRootMidi = 40.0f;
+    float heldPitchConfidence = 0.0f;
+    bool pitchHoldValid = false;
 
     std::atomic<double> cachedSampleRate{ 44100.0 };
     std::atomic<int> debugPreviewSamplesRemaining{ 0 };
