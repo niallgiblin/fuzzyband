@@ -2,7 +2,7 @@
 
 void StructureTagger::prepare(double newSampleRate)
 {
-    sampleRate = newSampleRate;
+    sampleRate = (newSampleRate > 0.0) ? newSampleRate : 44100.0;
     timeInStateSec = 0.0;
     currentState = StructureState::SILENT;
 }

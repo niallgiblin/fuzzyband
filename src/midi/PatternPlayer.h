@@ -10,6 +10,8 @@ public:
     void setPatternLibrary(const MidiPatternLibrary* lib) { library = lib; }
 
     void prepare(double sampleRate, int blockSize);
+
+    /** Resets beat clock state; no heap — safe from the audio thread. */
     void reset();
 
     void setBpm(float bpm);

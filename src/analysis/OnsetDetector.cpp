@@ -9,7 +9,7 @@ OnsetDetector::~OnsetDetector() = default;
 void OnsetDetector::prepare(double newSampleRate, int maxBlockSize)
 {
     (void)maxBlockSize;
-    sampleRate = newSampleRate;
+    sampleRate = (newSampleRate > 0.0) ? newSampleRate : 44100.0;
     fft = std::make_unique<juce::dsp::FFT>(fftOrder);
     fftSize = fft->getSize();
     hopSize = juce::jmax(256, fftSize / 4);
