@@ -71,8 +71,8 @@ Derived from `ROADMAP_PHASE_1.md`. Update this file as work completes.
 
 ## Milestone 7 — Integration + stability
 
-- [ ] 10-minute jam profile / tune thresholds *(ongoing)*
-- [ ] CPU &lt; 15% M-series @ 256 samples *(profile later)*
+- [x] 10-minute jam profile / tune thresholds *(see `07-05-JAM-NOTES.md` + `StructureTagger.h`)*
+- [ ] CPU &lt; 15% M-series @ 256 samples *(STAB-02 **fail** 2026-04-16 — see `07-05-CPU-PROFILE.md`; optimize + re-profile)*
 - [ ] TSan / edge cases: bypass, SR change, buffer change, transport *(partial — prepare resets)*
 - [ ] Demo video *(optional)*
 
