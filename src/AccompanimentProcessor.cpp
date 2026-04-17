@@ -321,11 +321,11 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     if (silencePolicy)
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
-    else if (useGenerativeBass.load(std::memory_order_relaxed))
+    else if (useGenerativeBass.load(std::memory_order_acquire))
         patternPlayer.setGenerativeBassActive(
             true,
-            generativeBassRootNote.load(std::memory_order_relaxed),
-            generativeBassDurationBeats.load(std::memory_order_relaxed));
+            generativeBassRootNote.load(std::memory_order_acquire),
+            generativeBassDurationBeats.load(std::memory_order_acquire));
     else
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
 
