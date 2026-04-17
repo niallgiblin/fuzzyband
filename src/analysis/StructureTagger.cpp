@@ -1,4 +1,5 @@
 #include "StructureTagger.h"
+#include <algorithm>
 
 void StructureTagger::prepare(double newSampleRate)
 {
@@ -7,9 +8,10 @@ void StructureTagger::prepare(double newSampleRate)
     currentState = StructureState::SILENT;
 }
 
-StructureState StructureTagger::computeDesiredState(float rms, float centroid) const
+StructureState StructureTagger::computeDesiredState(float rms, float centroid, float peakRms) const
 {
-    if (rms < kSilentRms)
+    const float silentFloor = std::max(kSilentRms, peakRms * 0.15f);
+    if (rms < silentFloor)
         return StructureState::SILENT;
 
     if (centroid < kBreakdownCentroidHz)
@@ -21,12 +23,12 @@ StructureState StructureTagger::computeDesiredState(float rms, float centroid) c
     return StructureState::CHORUS;
 }
 
-StructureState StructureTagger::update(float rms, float centroid, float /*highFreqFlux*/, int numSamples)
+StructureState StructureTagger::update(float rms, float centroid, float /*highFreqFlux*/, int numSamples, float peakRms)
 {
     const double blockSec = static_cast<double>(numSamples) / sampleRate;
     timeInStateSec += blockSec;
 
-    const StructureState desired = computeDesiredState(rms, centroid);
+    const StructureState desired = computeDesiredState(rms, centroid, peakRms);
 
     if (desired == currentState)
         return currentState;
