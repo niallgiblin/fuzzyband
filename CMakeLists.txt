@@ -292,10 +292,10 @@ target_link_libraries(MetalAccompanimentExportPatterns PRIVATE
 # API docs (optional — requires Doxygen on PATH)
 # ─────────────────────────────────────────────────────────────────
 
-find_program(MA_DOXYGEN_EXECUTABLE NAMES doxygen)
-if(MA_DOXYGEN_EXECUTABLE)
+find_program(DOXYGEN_EXECUTABLE NAMES doxygen)
+if(DOXYGEN_EXECUTABLE)
     add_custom_target(doxygen-docs
-        COMMAND "${MA_DOXYGEN_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/Doxyfile"
+        COMMAND "${DOXYGEN_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/Doxyfile"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         COMMENT "Generating Doxygen HTML API documentation (docs/doxygen/html/)"
         VERBATIM
