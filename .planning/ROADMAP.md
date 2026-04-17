@@ -3,6 +3,7 @@
 ## Milestones
 
 - ✅ **v0.1.0 — Phase 1 rule-based MVP** — Phases 1–8 (shipped 2026-04-17)
+- 🚧 **v0.2.0 — Phase 2 ML + Generative** — Phases 9–16 (in progress)
 
 ## Phases
 
@@ -28,10 +29,119 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 
 </details>
 
-### Next focus
+### v0.2.0 — Phases 9–16 (active)
 
-- **Operational:** Push `v0.1.0-phase1` to the remote; open Phase 2 GitHub issues using `docs/PHASE2_GITHUB_ISSUES.md`.
-- **Planning:** `/gsd-new-milestone` to define the next milestone requirements and roadmap; backlog **999.1** remains the ML data/strategy precursor.
+| # | Phase | Goal | Requirements | Status |
+|---|-------|------|--------------|--------|
+| 9 | Data & training strategy | Dataset audit, tokenization, data-prep stub; absorbs backlog **999.1** themes | DATA-01–03 | Not started |
+| 10 | ONNX runtime & IInference | ONNX Runtime in CMake; `OnnxInference` + fallback | ONNX-01–03 | Not started |
+| 11 | Pitch & harmony | YIN/CREPE/ONNX pitch path; chord/root hints; adaptive bass root | PITCH-01–04 | Not started |
+| 12 | ML structure | Classifier/head vs. `StructureTagger`; rule fallback | STRUC-01–03 | Not started |
+| 13 | Generative bass | Train → ONNX; constrained MIDI bass | GBASS-01–03 | Not started |
+| 14 | Plugin UI | Genre, intensity, variation via APVTS | PUI-01–03 | Not started |
+| 15 | Python training pipeline | Repro env, dataset ingest, training export | PYTR-01–03 | Not started |
+| 16 | Terraform model storage | Versioned artifacts + promotion runbook | CLOUD-01–02 | Not started |
+
+**Next:** `/gsd-discuss-phase 9` or `/gsd-plan-phase 9`. Operational: push `v0.1.0-phase1`; GitHub issues from `docs/PHASE2_GITHUB_ISSUES.md`.
+
+**Strategy context:** `.planning/phases/999.1-ml-phase-2-data-feasibility-research/PHASE2_ML_DATA_STRATEGY.md` (hybrid rank/select, ~1 bar reaction, Groove/GMD vs E-GMD).
+
+---
+
+## Phase details (v0.2.0)
+
+### Phase 9: Data & training strategy
+
+**Goal:** Close the planning gap between symbolic MIDI corpora and plugin `FeatureVector` policy. Deliver audit memo, tokenization choice, and reproducible prep stub.  
+**Requirements:** DATA-01, DATA-02, DATA-03  
+**Success criteria:**
+
+1. Written go/no-go on primary training data path with license notes
+2. Tokenization documented and referenced by prep code
+3. One runnable prep path from representative MIDI to model input tensors (or agreed format)
+
+---
+
+### Phase 10: ONNX runtime & IInference
+
+**Goal:** Load ONNX models off the audio thread; keep `RuleBasedInference` as fallback.  
+**Requirements:** ONNX-01, ONNX-02, ONNX-03  
+**Success criteria:**
+
+1. CMake builds with ONNX optional; docs list env vars
+2. Swapping `IInference` implementation selects ONNX model when present
+3. Stress test: no audio-thread blocking; inference cadence ~50 Hz preserved
+
+---
+
+### Phase 11: Pitch & harmony
+
+**Goal:** Replace fixed bass root with pitch-informed routing when enabled.  
+**Requirements:** PITCH-01, PITCH-02, PITCH-03, PITCH-04  
+**Success criteria:**
+
+1. Pitch estimate stable enough for metal guitar input in test harness
+2. Bass notes follow policy from detected root (within documented latency)
+3. Automated tests on synthetic sine / known MIDI ground truth
+
+---
+
+### Phase 12: ML structure
+
+**Goal:** ML-based section/energy classification with safe fallback to thresholds.  
+**Requirements:** STRUC-01, STRUC-02, STRUC-03  
+**Success criteria:**
+
+1. Offline metric vs. reference labels or shadow comparison to `StructureTagger`
+2. Fallback path verified when model missing
+3. No regression in bar-quantized pattern switches in integration test
+
+---
+
+### Phase 13: Generative bass
+
+**Goal:** Train a small model; export to runtime; constrain outputs to valid bass MIDI.  
+**Requirements:** GBASS-01, GBASS-02, GBASS-03  
+**Success criteria:**
+
+1. Checkpoint/ONNX loads in plugin test build
+2. Output MIDI passes validation (range, channel, timing bounds)
+3. CPU/latency documented; degradation path tested
+
+---
+
+### Phase 14: Plugin UI
+
+**Goal:** User-facing controls wired to policy/inference.  
+**Requirements:** PUI-01, PUI-02, PUI-03  
+**Success criteria:**
+
+1. APVTS parameters created and saved with project
+2. Editor shows controls; layout acceptable for Reaper/AU hosting smoke test
+3. README or CONTRIBUTING section for parameter semantics
+
+---
+
+### Phase 15: Python training pipeline
+
+**Goal:** Reproducible training on macOS; export for plugin.  
+**Requirements:** PYTR-01, PYTR-02, PYTR-03  
+**Success criteria:**
+
+1. Clean install from lockfile succeeds on fresh machine
+2. At least one training run with logged loss/metrics
+3. Export artifact consumed by Phase 10 path
+
+---
+
+### Phase 16: Terraform model storage
+
+**Goal:** Versioned cloud storage for models; clear promotion process.  
+**Requirements:** CLOUD-01, CLOUD-02  
+**Success criteria:**
+
+1. `terraform apply` (or workspace) creates bucket/storage with versioning
+2. Runbook: tag → checksum → path used by release/build
 
 ---
 
@@ -45,21 +155,9 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 | Pattern transitions sound jarring | Low-Medium | Quantise transitions to bar boundaries |
 | Plugin crashes on buffer size change | Low | Reset all state in `prepareToPlay()` |
 | Latency too high | Low | Background thread inference keeps audio thread unblocked |
-
----
-
-## Milestone 2 Preview — Phase 2: ML + Generative
-
-| Phase | Goal |
-|-------|------|
-| 2.1 | ONNX Runtime integration + OnnxInference drop-in |
-| 2.2 | Pitch/chord detection (YIN or CREPE) |
-| 2.3 | ML structure classifier |
-| 2.4 | Generative bass line model (transformer → ONNX) |
-| 2.5 | Plugin UI with genre/intensity controls |
-| 2.6 | Python training pipeline + metal MIDI dataset |
-
-> **Note (2026-04-16):** M2 direction is under revision — see Backlog 999.1. Likely shift from on-device ONNX to cloud inference with a fine-tuned Anticipatory Music Transformer. The table above will be re-scoped when M2 is opened.
+| ONNX model too heavy for realtime | Medium | Quantization, smaller graphs, or hybrid rank/select only |
+| Training data license unclear | Medium | DATA-01 audit before fine-tune; prefer GMD/Lakh per strategy memo |
+| Generative bass musically unstable | Medium | Constraints + GBASS degradation to static patterns |
 
 ---
 
@@ -69,12 +167,14 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 
 **Goal:** Identify and license-audit candidate training datasets for a fine-tuned metal drum/bass accompaniment model (M2 precursor). Produce a go/no-go feasibility memo recommending the primary dataset path.
 
-**Requirements:** TBD
+> **Superseded for execution:** Core themes are **Phase 9** (DATA-*) in v0.2.0. Keep this backlog entry for narrative context until Phase 9 ships, then archive or remove via `/gsd-review-backlog`.
 
-**Plans:** 0 plans
+**Requirements:** Covered by DATA-01–03 in `.planning/REQUIREMENTS.md`
+
+**Plans:** 0 plans (promote to Phase 9 plans via `/gsd-plan-phase 9`)
 
 Plans:
-- [ ] TBD (promote with `/gsd-review-backlog` when ready)
+- [ ] TBD — use `/gsd-plan-phase 9` to create plans
 
 **Captured context (from discussion 2026-04-16):**
 

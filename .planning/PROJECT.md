@@ -8,15 +8,26 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 
 A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.
 
-## Current state
+## Current Milestone: v0.2.0 — Phase 2 (ML + Generative)
 
-**v0.1.0** (Phase 1 rule-based MVP) closed 2026-04-17: JUCE 8 VST3/AU, rule-based onset/tempo/structure → `IInference` → `PatternPlayer`, lock-free handoff, macOS CI, Doxygen + CONTRIBUTING + CHANGELOG handoff, Phase 2 issue checklist in `docs/PHASE2_GITHUB_ISSUES.md`. Next: define Milestone 2 (`/gsd-new-milestone`); optional ops — `git push origin v0.1.0-phase1`, open Phase 2 issues on GitHub.
+**Goal:** Evolve the Phase 1 plugin with ONNX-capable inference, real-time pitch/harmony features, ML-based structure, generative bass, user-facing controls, a Python training loop, and versioned cloud model storage — without breaking the `IInference` contract or blocking the audio thread.
 
-## Next milestone goals
+**Target features:**
 
-- Run `/gsd-new-milestone` to author a fresh `.planning/REQUIREMENTS.md` and roadmap for Phase 2 (ML + generative / cloud inference — direction TBD).
-- Promote or schedule backlog **999.1** using `PHASE2_ML_DATA_STRATEGY.md` when opening Milestone 2.
-- Complete operational handoff: push `v0.1.0-phase1`, create GitHub issues from the Phase 2 checklist.
+- Dataset/tokenization strategy and training data prep (closes themes from backlog **999.1**; see `PHASE2_ML_DATA_STRATEGY.md`)
+- ONNX Runtime + `OnnxInference` with fallback to `RuleBasedInference`
+- Pitch/chord path for adaptive bass root (replacing fixed E2 where active)
+- ML structure classifier with rule-based fallback
+- Generative bass model (train → export → runtime constraints)
+- APVTS-backed UI: genre, intensity, pattern variation
+- Python training pipeline + metal MIDI dataset ingestion
+- Terraform for model artifact storage and promotion runbook
+
+**Requirements:** Scoped in `.planning/REQUIREMENTS.md` (REQ-IDs **DATA-**, **ONNX-**, **PITCH-**, **STRUC-**, **GBASS-**, **PUI-**, **PYTR-**, **CLOUD-**).
+
+## Prior milestone (shipped)
+
+**v0.1.0** (Phase 1 rule-based MVP) closed 2026-04-17: JUCE 8 VST3/AU, rule-based pipeline → `IInference` → `PatternPlayer`, lock-free handoff, macOS CI, docs handoff. Details: `.planning/MILESTONES.md`, `.planning/milestones/v0.1.0-ROADMAP.md`.
 
 ## Requirements
 
@@ -40,7 +51,11 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - ✓ Integration & stability (jam profile, CPU, edge cases, 20-min session) — v0.1.0 Phase 7
 - ✓ Doxygen + CONTRIBUTING + CHANGELOG/tag instructions + Phase 2 issue checklist — v0.1.0 Phase 8
 
-### Active
+### Active (v0.2.0)
+
+See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. High level: DATA → ONNX → PITCH → STRUC → GBASS → PUI → PYTR → CLOUD.
+
+**Operational (carryover from v0.1.0):**
 
 - [ ] Push `v0.1.0-phase1` to GitHub (`git push origin v0.1.0-phase1`)
 - [ ] Open Phase 2 GitHub issues from `docs/PHASE2_GITHUB_ISSUES.md`
@@ -48,13 +63,8 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 
 ### Out of Scope
 
-- ML-based inference (Phase 1) — deliberately deferred; IInference interface keeps Phase 2 as a drop-in replacement
-- Pitch/chord detection for root note tracking — Phase 2
-- Generative bass lines — Phase 2
-- Plugin UI with parameter controls — Phase 2
-- Python training pipeline — Phase 2
-- Windows support — macOS first; Windows after Phase 1 stable
-- Generative or adaptive patterns — rule-based selection only in Phase 1
+- Waveform music generation (does not produce MIDI; out of product contract)
+- Windows plugin build in v0.2.0 (macOS first; revisit after Milestone 2 stabilizes)
 
 ## Context
 
@@ -62,8 +72,7 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - **Target DAW**: Reaper primary, Ableton + Logic secondary
 - **Platform**: macOS first (Apple Silicon + Intel universal); Windows later
 - **JUCE version**: 8 (required for macOS 15+ / juceaide build; roadmap originally wrote JUCE 7 but JUCE 8 was used)
-- **Codebase state**: **v0.1.0 shipped** (2026-04-17) — Phases 1–8 complete; rule-based MVP + docs handoff. See `.planning/MILESTONES.md`.
-- **Next:** Define Milestone 2 with `/gsd-new-milestone`; backlog 999.1 holds ML data strategy memo.
+- **Codebase state**: **v0.1.0 shipped**; **v0.2.0 in progress** — requirements and roadmap in `.planning/REQUIREMENTS.md` / `.planning/ROADMAP.md`. Backlog **999.1** strategy memo remains under `.planning/phases/999.1-ml-phase-2-data-feasibility-research/`.
 
 ## Constraints
 
@@ -71,20 +80,20 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - **Threading**: Audio thread must never block — lock-free queue + atomics only
 - **Stability**: 20-minute session with no crashes or xruns
 - **Accuracy**: Tempo within ±5 BPM; pattern switching within ~200ms of energy change
-- **Interface**: IInference must remain stable — Phase 2 ONNX model is a drop-in
+- **Interface**: `IInference` remains stable — new backends (`OnnxInference`, future cloud) implement the same contract
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | JUCE 8 over JUCE 7 | Required for macOS 15+ / juceaide build compatibility | ✓ Good |
-| Rule-based Phase 1, ONNX Phase 2 | Ships a working product fast; IInference interface abstracts the swap | ✓ Good (Phase 1 shipped; swap still Phase 2) |
+| Rule-based Phase 1, ONNX Phase 2 | Ships a working product fast; IInference interface abstracts the swap | ✓ Good — v0.2.0 implements ONNX path |
 | Lock-free inference pipeline (atomic + ReaderWriterQueue) | Audio thread must never block | ✓ Good |
-| Bass fixed to root E2 until pitch tracking | Pitch detection deferred to Phase 2; avoids wrong notes | — Pending |
+| Bass fixed to root E2 until pitch tracking | Pitch detection deferred to Phase 2; avoids wrong notes | ⚠️ Revisit in v0.2.0 (PITCH-*) |
 | constexpr pattern arrays (no file I/O) | Plugin must not do file I/O in the audio path | ✓ Good |
 
 ---
-*Last updated: 2026-04-17 after v0.1.0 milestone close*
+*Last updated: 2026-04-17 after starting milestone v0.2.0 (`/gsd-new-milestone`)*
 
 ## Evolution
 

@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.1.0
-milestone_name: Phase 1 rule-based MVP
-status: Shipped
-stopped_at: Milestone v0.1.0 archived; REQUIREMENTS.md removed for next milestone
-last_updated: "2026-04-17T23:59:59.000Z"
+milestone: v0.2.0
+milestone_name: Phase 2 ML + Generative
+status: Defining requirements complete — ready to plan Phase 9
+stopped_at: "Milestone v0.2.0 initialized via /gsd-new-milestone"
+last_updated: "2026-04-17T12:00:00.000Z"
 progress:
-  total_phases: 9
+  total_phases: 16
   completed_phases: 8
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # STATE — Metal Accompaniment
@@ -22,36 +22,37 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-04-17)
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** Planning next milestone — `/gsd-new-milestone`; optional GitHub handoff (push tag, open Phase 2 issues)
+**Current focus:** Milestone **v0.2.0** — Phase **9** next (data & training strategy)
+
+---
+
+## Current Position
+
+**Milestone:** v0.2.0 — Phase 2: ML + Generative  
+**Phase:** Not started (next: 9 — Data & training strategy)  
+**Plan:** —  
+**Status:** Roadmap defined — use `/gsd-discuss-phase 9` or `/gsd-plan-phase 9`  
+**Last activity:** 2026-04-17 — Milestone v0.2.0 started
 
 ---
 
 ## Current Status
 
-**Milestone**: v0.1.0 — Phase 1 rule-based MVP — **shipped** 2026-04-17  
-**Active phase**: Backlog 999.1 (optional precursor to Milestone 2)  
-**Last shipped**: Phases 1–8 (development phases; 999.1 is backlog)
-
-### Phases (v0.1.0)
-
 | Phase | Name | Status |
 |-------|------|--------|
-| 1 | Project Scaffold | ✓ Complete |
-| 2 | Onset & Tempo | ✓ Complete |
-| 3 | Energy & Structure | ✓ Complete |
-| 4 | MIDI Pattern Library | ✓ Complete |
-| 5 | MIDI Output & DAW Routing | ✓ Complete* |
-| 6 | Feature→Pattern Inference | ✓ Complete |
-| 7 | Integration & Stability | ✓ Complete |
-| 8 | Docs & Phase 2 Handoff | ✓ Complete |
-
-\*Optional maintainer DAW confirmation remains if desired.
+| 1–8 | Phase 1 (v0.1.0) | ✓ Shipped |
+| 9 | Data & training strategy | Not started |
+| 10 | ONNX runtime & IInference | Not started |
+| 11 | Pitch & harmony | Not started |
+| 12 | ML structure | Not started |
+| 13 | Generative bass | Not started |
+| 14 | Plugin UI | Not started |
+| 15 | Python training pipeline | Not started |
+| 16 | Terraform model storage | Not started |
 
 ---
 
-## Deferred Items
-
-Items acknowledged at milestone close on 2026-04-17 (operational / optional):
+## Deferred Items (from v0.1.0)
 
 | Category | Item | Status |
 |----------|------|--------|
@@ -63,14 +64,14 @@ Items acknowledged at milestone close on 2026-04-17 (operational / optional):
 
 ## Decisions Log
 
-- **2026-04-17 — Phase 2 ML data strategy (backlog 999.1):** Pretrain **symbolic drum** behavior from **Groove MIDI (GMD)** for pure MIDI; **E-GMD** only if audio+aligned MIDI is needed. Use **Lakh** (drum-filtered) for scale. **Bridge** MIDI pretrain to the plugin via a **policy** on `FeatureVector` (+ time history for anticipation), or generative MIDI with constraints — see `.planning/phases/999.1-ml-phase-2-data-feasibility-research/PHASE2_ML_DATA_STRATEGY.md`. **Hybrid** (offline MIDI pool + runtime rank/select) preferred over pure replace for safety. **~1 measure** reaction aligns with bar quantization in `PatternPlayer`; anticipation needs **feature trajectory**, not Groove alone.
+- **2026-04-17 — Phase 2 ML data strategy (backlog 999.1):** Pretrain **symbolic drum** behavior from **Groove MIDI (GMD)** for pure MIDI; **E-GMD** only if audio+aligned MIDI is needed. Use **Lakh** (drum-filtered) for scale. **Bridge** MIDI pretrain to the plugin via a **policy** on `FeatureVector` (+ time history for anticipation), or generative MIDI with constraints — see `.planning/phases/999.1-ml-phase-2-data-feasibility-research/PHASE2_ML_DATA_STRATEGY.md`. **Hybrid** (offline MIDI pool + runtime rank/select) preferred over pure replace for safety.
 
 ---
 
 ## Session Continuity
 
-Last session: milestone close v0.1.0  
-Resume: `/gsd-new-milestone` for fresh REQUIREMENTS + roadmap; or complete Deferred Items (push tag, GitHub issues)
+Last session: `/gsd-new-milestone` — v0.2.0 requirements + roadmap written  
+Resume: `/gsd-discuss-phase 9` or `/gsd-plan-phase 9`
 
 ---
 
