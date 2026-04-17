@@ -12,7 +12,7 @@ TEST_CASE("StructureTagger hysteresis holds state", "[structure]")
     s = tagger.update(0.01f, 900.0f, 0.0f, 512);
     REQUIRE(s == StructureState::BREAKDOWN);
 
-    // kHoldBreakdownSec is 3.0s; need enough 512-sample blocks at 44.1 kHz to exceed hold.
+    // kHoldBreakdownSec is 2.5s; need enough 512-sample blocks at 44.1 kHz to exceed hold.
     for (int i = 0; i < 260; ++i)
         s = tagger.update(0.01f, 1500.0f, 0.0f, 512);
 
