@@ -32,6 +32,29 @@ After building the `MetalAccompanimentExportPatterns` target, run:
 
 This writes `metal_accompaniment_patterns.mid` next to the executable (useful for checking patterns in Reaper before relying on the live plugin).
 
+## Plugin parameters
+
+### User parameters (saved with project)
+
+These are exposed through the custom editor and the host’s generic parameter list (where applicable):
+
+- **`outputGain`** — Guitar pass-through level at the plugin output (does not scale MIDI).
+- **`genre`** — Style preset (`Metal`, `Metalcore`, `Death`, `Progressive`, `Black`) for pattern policy remapping.
+- **`intensity`** — Shifts effective BPM tier on the **rule-based** path ( ONNX pattern tensor still uses analyzed BPM).
+- **`variation`** — Small pattern-index nudge after genre mapping (shared rule/ONNX post-processing).
+- **`structureBlend`** — When ML structure is valid, values **≥ 0.5** use the ML shadow structure for pattern selection; values **below 0.5** follow rule structure.
+- **`generativeBassMode`** — **`Auto`** (score vs library), **`On`** (force when proposal validates), **`Off`** (library bass only).
+
+### On-screen diagnostics (not separate automation targets)
+
+Live analysis readouts: **BPM**, **State**, **Pattern**, **RMS**, **Centroid**, **HF Flux**.
+
+### Debug
+
+**Next pattern (preview 5s)** — advances the pattern index and plays a short preview window.
+
+The host may still show **Output Gain** and other parameters even if they are not drawn in the custom editor.
+
 ## Build (macOS)
 
 Requirements: **CMake 3.22+**, **Xcode** or **Ninja**, **Git** (for FetchContent).
