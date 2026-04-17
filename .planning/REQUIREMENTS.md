@@ -41,9 +41,9 @@
 
 ### Plugin UI (PUI)
 
-- [ ] **PUI-01**: APVTS parameters for genre, intensity, and pattern variation (or agreed names) wired to inference/policy
-- [ ] **PUI-02**: Editor UI exposes controls; state persists across sessions
-- [ ] **PUI-03**: Documentation of debug vs. user-facing controls
+- [x] **PUI-01**: APVTS parameters for genre, intensity, and pattern variation (or agreed names) wired to inference/policy
+- [x] **PUI-02**: Editor UI exposes controls; state persists across sessions
+- [x] **PUI-03**: Documentation of debug vs. user-facing controls
 
 ### Python training (PYTR)
 

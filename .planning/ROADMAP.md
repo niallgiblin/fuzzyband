@@ -38,11 +38,11 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 | 11 | Pitch & harmony | 3/3 | Complete    | 2026-04-17 |
 | 12 | ML structure | 3/3 | Complete    | 2026-04-17 |
 | 13 | Generative bass | 3/3 | Complete    | 2026-04-17 |
-| 14 | Plugin UI | Genre, intensity, variation via APVTS | PUI-01–03 | Not started |
+| 14 | Plugin UI | 3/3 | Complete    | 2026-04-17 |
 | 15 | Python training pipeline | Repro env, dataset ingest, training export | PYTR-01–03 | Not started |
 | 16 | Terraform model storage | Versioned artifacts + promotion runbook | CLOUD-01–02 | Not started |
 
-**Next:** `/gsd-discuss-phase 10` or `/gsd-plan-phase 10` (ONNX runtime & IInference). Operational: push `v0.1.0-phase1`; GitHub issues from `docs/PHASE2_GITHUB_ISSUES.md`.
+**Next:** `/gsd-discuss-phase 15` or `/gsd-plan-phase 15` (Python training pipeline — PYTR-01–03). Operational: push `v0.1.0-phase1`; GitHub issues from `docs/PHASE2_GITHUB_ISSUES.md`.
 
 **Strategy context:** `.planning/phases/999.1-ml-phase-2-data-feasibility-research/PHASE2_ML_DATA_STRATEGY.md` (hybrid rank/select, ~1 bar reaction, Groove/GMD vs E-GMD).
 

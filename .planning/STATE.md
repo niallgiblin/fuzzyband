@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: — Phase 2 ML + Generative
 status: Ready to plan
-last_updated: "2026-04-17T17:22:18.059Z"
+last_updated: "2026-04-17T18:48:29.509Z"
 last_activity: 2026-04-17
 progress:
-  total_phases: 9
-  completed_phases: 5
-  total_plans: 11
-  completed_plans: 11
-  percent: 100
+  total_phases: 8
+  completed_phases: 7
+  total_plans: 14
+  completed_plans: 14
+  percent: 88
 ---
 
 # STATE — Metal Accompaniment
@@ -22,17 +22,17 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-04-17)
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** Phase 13 — generative-bass
+**Current focus:** Phase 15 — Python training pipeline
 
 ---
 
 ## Current Position
 
-Phase: 14
+Phase: 15
 Plan: Not started
 **Milestone:** v0.2.0 — Phase 2: ML + Generative  
-**Last completed:** Phase 12 — ML structure (2026-04-17)  
-**Next:** Phase 13 — Generative bass  
+**Last completed:** Phase 14 — Plugin UI (2026-04-17)  
+**Next:** `/gsd-discuss-phase 15` or `/gsd-plan-phase 15` — Python training pipeline (PYTR-01–03)  
 **Last activity:** 2026-04-17
 
 ---
@@ -46,8 +46,8 @@ Plan: Not started
 | 10 | ONNX runtime & IInference | ✓ Complete 2026-04-17 |
 | 11 | Pitch & harmony | ✓ Complete 2026-04-17 |
 | 12 | ML structure | ✓ Complete 2026-04-17 |
-| 13 | Generative bass | Not started |
-| 14 | Plugin UI | Not started |
+| 13 | Generative bass | ✓ Complete 2026-04-17 |
+| 14 | Plugin UI | ✓ Complete 2026-04-17 |
 | 15 | Python training pipeline | Not started |
 | 16 | Terraform model storage | Not started |
 
@@ -65,6 +65,9 @@ Plan: Not started
 
 ## Decisions Log
 
+- **2026-04-17 — Phase 14 (Plugin UI) executed:** APVTS policy + `PolicyPatternMapper` + structure blend drain + editor attachments + README/CONTRIBUTING; verification `.planning/phases/14-plugin-ui/14-VERIFICATION.md`.
+- **2026-04-17 — Phase 14 (Plugin UI) planned:** `14-RESEARCH.md` + three plans (`14-01`–`14-03`); status **Ready to execute** — `/gsd-execute-phase 14`.
+- **2026-04-17 — Phase 14 (Plugin UI) discuss:** **Outcome-first** PUI knobs (planner implements); **genre** = discrete choice, **intensity/variation** = continuous mid-defaults; **all diagnostics stay visible** + **PUI-03** docs; **short help + link**; **generative bass** + **structure trust** exposed in APVTS/editor this phase. Context: `.planning/phases/14-plugin-ui/14-CONTEXT.md`.
 - **2026-04-17 — Phase 13 (Generative bass) discuss:** Hybrid **rank/select** for bass; **separate ONNX** from pattern `X`/`Y`; **transpose** generated bass like static patterns; **degradation** aligned with load + confidence gates; **training depth** and **merge point** at Claude discretion within GBASS-01–03. Context: `.planning/phases/13-generative-bass/13-CONTEXT.md`.
 - **2026-04-17 — Phase 10 (ONNX runtime & IInference) 10-01 executed:** Froze ONNX I/O contract in `docs/ONNX_IO.md` (input `X` float32 `[1,5]`, output `Y` int64 clamped 0–6); linked from README + ARCHITECTURE; added `scripts/check_onnx_audio_thread.sh` + CI step guarding against ORT API leaking into `AccompanimentProcessor`. Default CI stays `MA_ENABLE_ONNX=OFF` (D-10-01). Closes ONNX-01/02/03.
 - **2026-04-17 — Phase 9 (Data & training strategy) executed:** Dataset audit (`docs/DATASET_AUDIT.md`), tokenization (`docs/TOKENIZATION.md`), `training/prep_midi.py` + `mido`, CI prep smoke on `training/fixtures/minimal.mid`. Context: `.planning/phases/09-data-training-strategy/09-CONTEXT.md`.
@@ -76,8 +79,8 @@ Plan: Not started
 
 ## Session Continuity
 
-Last session: 2026-04-17T17:13:50.680Z
-Resume: `/gsd-plan-phase 13` for v0.2.0 Phase 13 (Generative bass); context in `.planning/phases/13-generative-bass/13-CONTEXT.md`; Phases 9–12 complete in milestone
+Last session: 2026-04-17T19:00:00.000Z  
+Resume: `/gsd-discuss-phase 15` — Python training pipeline; plans TBD under `.planning/phases/15-python-training-pipeline/` when created
 
 ---
 
