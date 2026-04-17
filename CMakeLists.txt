@@ -287,3 +287,17 @@ target_link_libraries(MetalAccompanimentExportPatterns PRIVATE
     juce::juce_audio_basics
     juce::juce_core
 )
+
+# ─────────────────────────────────────────────────────────────────
+# API docs (optional — requires Doxygen on PATH)
+# ─────────────────────────────────────────────────────────────────
+
+find_program(MA_DOXYGEN_EXECUTABLE NAMES doxygen)
+if(MA_DOXYGEN_EXECUTABLE)
+    add_custom_target(doxygen-docs
+        COMMAND "${MA_DOXYGEN_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/Doxyfile"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Generating Doxygen HTML API documentation (docs/doxygen/html/)"
+        VERBATIM
+    )
+endif()

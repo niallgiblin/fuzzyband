@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file
+ * @brief JUCE @c AudioProcessor: guitar analysis, inference, and MIDI pattern output.
+ */
+
 #include <JuceHeader.h>
 #include "analysis/OnsetDetector.h"
 #include "analysis/EnergyAnalyser.h"
@@ -14,6 +19,12 @@
 #include <memory>
 #include <thread>
 
+/**
+ * @brief Main plugin processor: onset/tempo, energy/structure, rule-based inference, @ref PatternPlayer.
+ *
+ * Real-time work happens in @ref processBlock; inference runs on a dedicated background thread with a
+ * lock-free feature queue (see `ARCHITECTURE.md`).
+ */
 class AccompanimentProcessor final : public juce::AudioProcessor
 {
 public:

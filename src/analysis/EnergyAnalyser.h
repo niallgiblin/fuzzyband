@@ -1,9 +1,19 @@
 #pragma once
 
+/**
+ * @file
+ * @brief RMS, spectral centroid, and high-frequency flux for structure classification.
+ */
+
 #include <juce_dsp/juce_dsp.h>
 #include <memory>
 #include <vector>
 
+/**
+ * @brief Per-block spectral features used by @ref StructureTagger.
+ *
+ * Call `prepare` once, then `process` for each audio block on the audio thread.
+ */
 class EnergyAnalyser
 {
 public:

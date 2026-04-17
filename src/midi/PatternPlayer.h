@@ -1,9 +1,19 @@
 #pragma once
 
+/**
+ * @file
+ * @brief Beat-synchronised MIDI drum/bass rendering from @ref MidiPatternLibrary data.
+ */
+
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "MidiPatternLibrary.h"
 #include <atomic>
 
+/**
+ * @brief Emits humanised drum (ch 10) and bass (ch 2) MIDI from the active pattern.
+ *
+ * Call @ref process from the audio thread; methods are real-time safe when documented.
+ */
 class PatternPlayer
 {
 public:
@@ -11,13 +21,14 @@ public:
 
     void prepare(double sampleRate, int blockSize);
 
-    /** Resets beat clock state; no heap — safe from the audio thread. */
+    /** @brief Resets beat clock state; no heap — safe from the audio thread. */
     void reset();
 
     void setBpm(float bpm);
     void setPatternIndex(int index);
     void setStructureSilent(bool silent);
 
+    /** @brief Fill @p midi for this audio block using host sample position for timing. */
     void process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition);
 
 private:

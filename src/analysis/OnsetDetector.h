@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file
+ * @brief Spectral-flux onset detector and IOI-based tempo estimate.
+ */
+
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <atomic>
@@ -7,6 +12,11 @@
 #include <memory>
 #include <vector>
 
+/**
+ * @brief Detects note onsets and tracks BPM (80–220) from inter-onset intervals.
+ *
+ * Intended to run from the audio processing path; methods called from @ref AccompanimentProcessor::processBlock.
+ */
 class OnsetDetector
 {
 public:
@@ -16,7 +26,10 @@ public:
     void prepare(double sampleRate, int maxBlockSize);
     void process(const float* audioData, int numSamples);
 
+    /** @brief Median-filtered BPM estimate from recent IOIs. */
     float getCurrentBpm() const { return currentBpm.load(std::memory_order_relaxed); }
+
+    /** @brief True if a new onset was detected in the current process() call. */
     bool onsetDetectedThisBlock() const { return onsetThisBlock; }
 
 private:
