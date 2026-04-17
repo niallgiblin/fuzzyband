@@ -117,3 +117,30 @@ TEST_CASE("PatternPlayer notes do not overlap at BPM extremes", "[midi]")
         REQUIRE_FALSE(anyOverlap);
     }
 }
+
+TEST_CASE("PatternPlayer applies bass semitone offset", "[midi]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.setBpm(120.0f);
+    player.setPatternIndex(1); // VerseSlow — first bass note is kBassRoot (40)
+    player.setStructureSilent(false);
+    player.setBassSemitoneOffset(2);
+
+    juce::MidiBuffer midi;
+    player.process(midi, 96000, 0);
+
+    bool sawShiftedRoot = false;
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOn() && msg.getChannel() == 2) // kBassChannel
+        {
+            if (msg.getNoteNumber() == 42)
+                sawShiftedRoot = true;
+        }
+    }
+    REQUIRE(sawShiftedRoot);
+}

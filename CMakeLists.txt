@@ -137,6 +137,7 @@ target_sources(MetalAccompaniment PRIVATE
     src/analysis/OnsetDetector.cpp
     src/analysis/EnergyAnalyser.cpp
     src/analysis/StructureTagger.cpp
+    src/analysis/PitchEstimator.cpp
 
     # Inference
     src/inference/RuleBasedInference.cpp
@@ -239,12 +240,14 @@ if(MA_BUILD_TESTS)
         tests/test_onset_detector.cpp
         tests/test_structure_tagger.cpp
         tests/test_pattern_player.cpp
+        tests/test_pitch_estimator.cpp
         tests/test_rule_based_inference.cpp
 
         # Include plugin sources needed by tests (not the plugin target itself)
         src/analysis/OnsetDetector.cpp
         src/analysis/EnergyAnalyser.cpp
         src/analysis/StructureTagger.cpp
+        src/analysis/PitchEstimator.cpp
         src/inference/RuleBasedInference.cpp
         src/midi/MidiPatternLibrary.cpp
         src/midi/PatternPlayer.cpp

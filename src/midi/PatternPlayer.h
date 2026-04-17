@@ -27,6 +27,8 @@ public:
     void setBpm(float bpm);
     void setPatternIndex(int index);
     void setStructureSilent(bool silent);
+    /** @brief Semitone transpose for bass (ch @c kBassChannel) only; clamped [-24,24]. Audio thread. */
+    void setBassSemitoneOffset(int semitones);
 
     /** @brief Fill @p midi for this audio block using host sample position for timing. */
     void process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition);
@@ -57,6 +59,8 @@ private:
 
     bool structureSilent = false;
     bool wasSilent = false;
+
+    int bassSemitoneOffset = 0;
 
     static constexpr int kDrumChannel = 10;
     static constexpr int kBassChannel = 2;
