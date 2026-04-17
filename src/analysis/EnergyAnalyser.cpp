@@ -120,10 +120,9 @@ void EnergyAnalyser::process(const float* audioData, int numSamples)
     }
 
     // Slow-decay peak envelope tracking for relative SILENT detection
-    static constexpr float kAttack  = 0.99f;    // fast rise
     static constexpr float kRelease = 0.9995f;  // slow fall (~10 s to -20 dB at 50 Hz block rate)
     if (rmsEnergy > peakRmsEnvelope)
-        peakRmsEnvelope = kAttack * peakRmsEnvelope + (1.0f - kAttack) * rmsEnergy;
+        peakRmsEnvelope = rmsEnergy;          // instantaneous attack: snap to true peak
     else
         peakRmsEnvelope = kRelease * peakRmsEnvelope;
     peakRmsEnvelope = std::max(peakRmsEnvelope, kSilentRmsFloor);
