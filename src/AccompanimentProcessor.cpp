@@ -343,7 +343,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const float rms = energyAnalyser.getRmsEnergy();
     const float centroid = energyAnalyser.getSpectralCentroid();
     const float hfFlux = energyAnalyser.getHighFreqFlux();
-    const StructureState st = structureTagger.update(rms, centroid, hfFlux, numSamples);
+    const StructureState st = structureTagger.update(rms, centroid, hfFlux, numSamples, energyAnalyser.getPeakRms());
 
     pitchEstimator.process(in, numSamples);
     const float rawMidi = pitchEstimator.getMidiNote();

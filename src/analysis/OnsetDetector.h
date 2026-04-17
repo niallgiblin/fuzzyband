@@ -53,7 +53,7 @@ private:
     double sampleRate = 44100.0;
     int64_t totalSamples = 0;
 
-    std::array<float, 8> ioiHistory{};
+    std::array<float, 16> ioiHistory{};
     int ioiRingWrite = 0;
     int ioiRingCount = 0;
 
@@ -62,7 +62,19 @@ private:
 
     bool onsetThisBlock = false;
 
-    float fluxThreshold = 0.35f;
+    // Band-limited flux: precomputed bin range for 100 Hz – 4000 Hz
+    int fluxBinLo = 0;
+    int fluxBinHi = 0;
+
+    // Adaptive threshold: rolling mean over ~0.5 s at 512-sample hop / 44100 Hz
+    static constexpr float kAdaptiveK     = 1.5f;  // multiplier above mean
+    static constexpr float kFluxFloor     = 0.05f; // absolute minimum threshold
+    static constexpr int   kRollingWindow = 43;    // ~0.5 s at hop/sr
+    float fluxRollingSum = 0.0f;
+    int   fluxRollingN   = 0;
+    int   fluxRollingIdx = 0;
+    std::array<float, 43> fluxRollingBuf{};
+
     static constexpr float kMinBpm = 80.0f;
     static constexpr float kMaxBpm = 220.0f;
 
