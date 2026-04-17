@@ -10,9 +10,9 @@
 
 ### Data & training strategy (DATA)
 
-- [ ] **DATA-01**: Dataset/license audit memo with go/no-go for primary symbolic drum training path (e.g. Groove/GMD vs E-GMD vs Lakh), per strategy doc
-- [ ] **DATA-02**: Tokenization decision recorded (beat-grid vs event) for symbolic models and training
-- [ ] **DATA-03**: Reproducible data-prep stub: MIDI → model input format, aligned with chosen tokenization
+- [x] **DATA-01**: Dataset/license audit memo with go/no-go for primary symbolic drum training path (e.g. Groove/GMD vs E-GMD vs Lakh), per strategy doc — `docs/DATASET_AUDIT.md` (Phase 9)
+- [x] **DATA-02**: Tokenization decision recorded (beat-grid vs event) for symbolic models and training — `docs/TOKENIZATION.md` (Phase 9)
+- [x] **DATA-03**: Reproducible data-prep stub: MIDI → model input format, aligned with chosen tokenization — `training/prep_midi.py` (Phase 9)
 
 ### ONNX & inference runtime (ONNX)
 

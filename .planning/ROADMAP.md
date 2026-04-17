@@ -33,7 +33,7 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 
 | # | Phase | Goal | Requirements | Status |
 |---|-------|------|--------------|--------|
-| 9 | Data & training strategy | Dataset audit, tokenization, data-prep stub; absorbs backlog **999.1** themes | DATA-01–03 | Not started |
+| 9 | Data & training strategy | Dataset audit, tokenization, data-prep stub; absorbs backlog **999.1** themes | DATA-01–03 | ✓ Complete 2026-04-17 |
 | 10 | ONNX runtime & IInference | ONNX Runtime in CMake; `OnnxInference` + fallback | ONNX-01–03 | Not started |
 | 11 | Pitch & harmony | 3/3 | Complete    | 2026-04-17 |
 | 12 | ML structure | Classifier/head vs. `StructureTagger`; rule fallback | STRUC-01–03 | Not started |
@@ -42,7 +42,7 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 | 15 | Python training pipeline | Repro env, dataset ingest, training export | PYTR-01–03 | Not started |
 | 16 | Terraform model storage | Versioned artifacts + promotion runbook | CLOUD-01–02 | Not started |
 
-**Next:** `/gsd-discuss-phase 9` or `/gsd-plan-phase 9`. Operational: push `v0.1.0-phase1`; GitHub issues from `docs/PHASE2_GITHUB_ISSUES.md`.
+**Next:** `/gsd-discuss-phase 10` or `/gsd-plan-phase 10` (ONNX runtime & IInference). Operational: push `v0.1.0-phase1`; GitHub issues from `docs/PHASE2_GITHUB_ISSUES.md`.
 
 **Strategy context:** `.planning/phases/999.1-ml-phase-2-data-feasibility-research/PHASE2_ML_DATA_STRATEGY.md` (hybrid rank/select, ~1 bar reaction, Groove/GMD vs E-GMD).
 

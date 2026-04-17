@@ -51,10 +51,11 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - ✓ Integration & stability (jam profile, CPU, edge cases, 20-min session) — v0.1.0 Phase 7
 - ✓ Doxygen + CONTRIBUTING + CHANGELOG/tag instructions + Phase 2 issue checklist — v0.1.0 Phase 8
 - ✓ YIN pitch estimator; `FeatureVector` root + confidence; D-11-04 hold/snap; bass semitone offset at `PatternPlayer` emit; tests + `docs/PHASE11_PITCH_TESTING.md` — v0.2.0 Phase 11 (PITCH-01–04)
+- ✓ DATA-01–03: dataset audit (`docs/DATASET_AUDIT.md`), event tokenization (`docs/TOKENIZATION.md`), reproducible MIDI prep stub (`training/prep_midi.py`) + CI smoke — v0.2.0 Phase 9
 
 ### Active (v0.2.0)
 
-See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. High level: DATA → ONNX → PITCH → STRUC → GBASS → PUI → PYTR → CLOUD.
+See `.planning/REQUIREMENTS.md` for numbered acceptance criteria. High level: DATA ✓ → ONNX → PITCH → STRUC → GBASS → PUI → PYTR → CLOUD (DATA done in Phase 9; pitch Phase 11 already shipped).
 
 **Operational (carryover from v0.1.0):**
 
