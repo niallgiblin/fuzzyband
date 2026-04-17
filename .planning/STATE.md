@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: — Phase 2 ML + Generative
 status: Ready to plan
-last_updated: "2026-04-17T20:00:00.000Z"
+last_updated: "2026-04-17T21:30:00.000Z"
 last_activity: 2026-04-17
 progress:
   total_phases: 8
@@ -22,7 +22,7 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-04-17)
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** Phase 15 — Python training pipeline (last open scope in v0.2.0 phase list)
+**Current focus:** Phase 15 — Python training pipeline (PYTR). Onset robustness sidecar is complete (see `.planning/phases/15-onset-robustness/` — not the same as roadmap Phase 15).
 
 ---
 
@@ -65,6 +65,7 @@ Plan: Not started
 
 ## Decisions Log
 
+- **2026-04-17 — Planning clarity:** **Onset robustness** work is finished and lives under `.planning/phases/15-onset-robustness/` (plans/summary/review). That directory name collides with the roadmap number but is **not** **Phase 15 (Python training / PYTR)** on `.planning/ROADMAP.md`. Next scheduled v0.2.0 gap is **PYTR** — `/gsd-discuss-phase 15` or `/gsd-plan-phase 15` for the training pipeline.
 - **2026-04-17 — Phase 16 (Terraform model storage) executed:** `infra/` Terraform (versioned S3, GitHub OIDC IAM), `scripts/bootstrap-tfstate.sh`, `scripts/promote-model.sh`, `scripts/download-model.sh`, optional CI OIDC + model download; verification `.planning/phases/16-terraform-model-storage/16-VERIFICATION.md`. `gsd-sdk` unavailable — execution inline.
 - **2026-04-17 — Phase 14 (Plugin UI) executed:** APVTS policy + `PolicyPatternMapper` + structure blend drain + editor attachments + README/CONTRIBUTING; verification `.planning/phases/14-plugin-ui/14-VERIFICATION.md`.
 - **2026-04-17 — Phase 14 (Plugin UI) planned:** `14-RESEARCH.md` + three plans (`14-01`–`14-03`); status **Ready to execute** — `/gsd-execute-phase 14`.

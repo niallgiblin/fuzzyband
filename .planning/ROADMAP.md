@@ -42,6 +42,8 @@ See archived roadmap for full phase narratives, success criteria, and plan lists
 | 15 | Python training pipeline | Repro env, dataset ingest, training export | PYTR-01–03 | Not started |
 | 16 | Terraform model storage | Versioned artifacts + promotion runbook | CLOUD-01–02 | ✓ Complete 2026-04-17 |
 
+**Phase numbering note:** The folder `.planning/phases/15-onset-robustness/` is **not** this table’s Phase 15. It documents a **sidecar** iteration (distortion / adaptive onset robustness) that reused a `15-*` directory name before PYTR was scheduled here. **Roadmap Phase 15** in this table is only **Python training pipeline** (PYTR-01–03). Onset work is done; PYTR is still **Not started**.
+
 **Next:** `/gsd-discuss-phase 15` or `/gsd-plan-phase 15` (Python training pipeline — PYTR-01–03). Phase 16 (Terraform + promotion runbook) complete. Operational: push `v0.1.0-phase1`; GitHub issues from `docs/PHASE2_GITHUB_ISSUES.md`.
 
 **Strategy context:** `.planning/phases/999.1-ml-phase-2-data-feasibility-research/PHASE2_ML_DATA_STRATEGY.md` (hybrid rank/select, ~1 bar reaction, Groove/GMD vs E-GMD).
