@@ -4,6 +4,7 @@
 #include "BinaryData.h"
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cmath>
 #include <onnxruntime_cxx_api.h>
 #endif
@@ -113,6 +114,12 @@ bool OnnxStructureInference::tryLoadModel()
             reinterpret_cast<const char*>(data),
             static_cast<size_t>(size),
             opts);
+    }
+    catch (const Ort::Exception& e)
+    {
+        std::fprintf(stderr, "[OnnxStructureInference] ORT load failed: %s\n", e.what());
+        impl.reset();
+        return false;
     }
     catch (...)
     {
@@ -245,6 +252,13 @@ void OnnxStructureInference::process(const FeatureVector& fv, double dtSec)
         metrics.softmaxTop1 = pMax;
         metrics.margin = margin;
         metrics.agreeRule = (smoothed == fv.state);
+    }
+    catch (const Ort::Exception& e)
+    {
+        std::fprintf(stderr, "[OnnxStructureInference] ORT Run failed: %s\n", e.what());
+        runRuleFallback(fv, useDt);
+        lastSampleTimestamp = fv.sampleTimestamp;
+        return;
     }
     catch (...)
     {
