@@ -23,6 +23,7 @@ public:
     float getRmsEnergy() const { return rmsEnergy; }
     float getSpectralCentroid() const { return spectralCentroid; }
     float getHighFreqFlux() const { return highFreqFlux; }
+    float getPeakRms() const noexcept { return peakRmsEnvelope; }
 
 private:
     void runSpectrum();
@@ -43,6 +44,9 @@ private:
     float rmsEnergy = 0.0f;
     float spectralCentroid = 0.0f;
     float highFreqFlux = 0.0f;
+    float peakRmsEnvelope = 0.0f;     // slow-decay peak of rmsEnergy
+
+    static constexpr float kSilentRmsFloor = 0.01f;  // prevents divide-by-zero in genuinely silent input
 
     std::vector<float> fifo;
     int fifoWrite = 0;
