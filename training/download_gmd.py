@@ -14,6 +14,7 @@ _DATASET_SPEC = "groove/full-midionly:2.0.1"
 _EXPECTED_ZIP_SHA256 = (
     "651cbc524ffb891be1a3e46d89dc82a1cecb09a57c748c7b45b844c4841dcc1e"
 )
+# Upstream archive name in TFDS checksums.tsv; on disk TFDS may rename to a hashed filename.
 _ZIP_NAME = "groove-v1.0.0-midionly.zip"
 
 
@@ -37,10 +38,28 @@ def _validate_data_dir(data_dir: Path, repo_root: Path) -> Path:
 
 
 def _find_midionly_zip(data_dir: Path) -> Path | None:
+    """Locate the MIDI-only zip. TFDS may store it under a checksum-prefixed name (see `downloads/groove/*.zip`)."""
     for p in data_dir.rglob(_ZIP_NAME):
         if p.is_file():
             return p
-    return None
+
+    candidates = sorted(
+        p
+        for p in data_dir.rglob("*.zip")
+        if p.is_file()
+        and (
+            "midionly" in p.name.lower()
+            or "midion" in p.name.lower()  # TFDS truncates: ...-midionZRy8Uk_....zip
+        )
+    )
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    for p in candidates:
+        if _sha256_file(p) == _EXPECTED_ZIP_SHA256:
+            return p
+    return candidates[0]
 
 
 def _sha256_file(path: Path) -> str:
