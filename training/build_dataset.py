@@ -21,7 +21,6 @@ from prep_midi import _events_from_file  # noqa: E402
 _DATASET_SPEC = "groove/full-midionly:2.0.1"
 _DEFAULT_DATA_DIR = _TRAINING_DIR / "data/tfds"
 _DEFAULT_OUT = _TRAINING_DIR / "data/processed"
-_ALPHA = 0.5
 _EPS = 1e-8
 _FEATURE_ORDER = [
     "bpm",
@@ -92,128 +91,23 @@ def _compute_proxy_row(events: list[dict], bpm_raw: float) -> np.ndarray:
     return np.array([bpm, rms, cent, hf, state], dtype=np.float64)
 
 
-def _heuristic_class_guess(events: list[dict], row: np.ndarray) -> int:
-    ons = [e for e in events if e.get("type") == "note_on"]
-    n = len(ons)
+def _activity_score(row: np.ndarray, events: list[dict]) -> float:
+    """Scalar “groove intensity” for binning: low → class 0, high → class 6 (ordinal, not exact pattern names)."""
     bpm = float(row[0])
+    ons = [e for e in events if e.get("type") == "note_on"]
+    dens = len(ons) / _duration_beats(events, bpm)
     rms = float(row[1])
     hf = float(row[3])
-    dens = n / _duration_beats(events, bpm)
-
-    if n < 3 or rms < 0.02:
-        return 0
-    if dens < 5.5:
-        return 1
-    if dens < 10.5:
-        return 2
-    if dens < 16.0:
-        return 3
-    if dens < 24.0:
-        return 4 if hf < 0.45 else 5
-    if hf < 0.4 and dens < 30.0:
-        return 6
-    return 5
+    st = float(row[4])
+    return 0.5 * dens + 2.0 * rms + 0.5 * hf + 0.2 * st
 
 
-def _l2_normalize(v: np.ndarray) -> np.ndarray:
-    n = float(np.linalg.norm(v))
-    if n < _EPS:
-        return v * 0.0
-    return v / max(n, _EPS)
-
-
-def _cosine(a: np.ndarray, b: np.ndarray) -> float:
-    return float(np.dot(a, b) / (max(np.linalg.norm(a), _EPS) * max(np.linalg.norm(b), _EPS)))
-
-
-def _build_seed_midi_bytes(seed_idx: int) -> bytes:
-    import io
-
-    import mido
-
-    mid = mido.MidiFile(type=0)
-    mid.ticks_per_beat = 480
-    tr = mido.MidiTrack()
-    mid.tracks.append(tr)
-    tr.append(mido.MetaMessage("set_tempo", tempo=500000, time=0))
-    tp = 480
-
-    def add_note(on_delta: int, pitch: int, vel: int, hold: int) -> None:
-        tr.append(mido.Message("note_on", channel=9, note=pitch, velocity=vel, time=on_delta))
-        tr.append(mido.Message("note_off", channel=9, note=pitch, velocity=0, time=hold))
-
-    if seed_idx == 0:
-        pass
-    elif seed_idx == 1:
-        add_note(0, 36, 110, tp)
-        add_note(0, 38, 105, tp)
-        add_note(0, 42, 80, tp)
-        add_note(0, 38, 98, tp)
-    elif seed_idx == 2:
-        for i in range(8):
-            pitch = [36, 42, 38, 42][i % 4]
-            vel = 105 if pitch == 38 else 100
-            add_note(0, pitch, vel, tp // 2)
-    elif seed_idx == 3:
-        for i in range(16):
-            pitch = [36, 42, 38, 42][i % 4]
-            add_note(0, pitch, 105 - (i % 3), tp // 4)
-    elif seed_idx == 4:
-        for i in range(8):
-            pitch = [36, 46, 38, 46][i % 4]
-            add_note(0, pitch, 118, tp // 2)
-    elif seed_idx == 5:
-        for i in range(32):
-            pitch = 36 if i % 2 == 0 else (38 if (i // 2) % 4 == 1 else 46)
-            add_note(0, pitch, 120, tp // 4)
-    else:
-        add_note(0, 36, 118, tp)
-        add_note(0, 38, 72, tp * 3 // 4)
-        add_note(0, 38, 74, tp * 5 // 4)
-        add_note(0, 36, 112, tp)
-        add_note(0, 38, 70, tp)
-
-    bio = io.BytesIO()
-    mid.save(file=bio)
-    return bio.getvalue()
-
-
-def _seed_matrix() -> np.ndarray:
-    seeds: list[np.ndarray] = []
-    tmp_root = _validate_under_training(_TRAINING_DIR / "data/tmp")
-    tmp_root.mkdir(parents=True, exist_ok=True)
-    for i in range(7):
-        data = _build_seed_midi_bytes(i)
-        path = tmp_root / f"seed_{i}.mid"
-        path.write_bytes(data)
-        ev = _events_from_file(path)
-        row = _compute_proxy_row(ev, 120.0)
-        seeds.append(row)
-    return np.stack(seeds, axis=0)
-
-
-_SEED_ROWS = None
-
-
-def _get_seed_rows() -> np.ndarray:
-    global _SEED_ROWS
-    if _SEED_ROWS is None:
-        _SEED_ROWS = _seed_matrix()
-    return _SEED_ROWS
-
-
-def _hybrid_label(row: np.ndarray, events: list[dict]) -> int:
-    seeds = _get_seed_rows()
-    xh = _l2_normalize(row.astype(np.float64))
-    sh = np.stack([_l2_normalize(seeds[i]) for i in range(7)], axis=0)
-    cos = np.array([_cosine(xh, sh[i]) for i in range(7)], dtype=np.float64)
-    h = _heuristic_class_guess(events, row)
-    one = np.zeros(7, dtype=np.float64)
-    one[h] = 1.0
-    scores = (1.0 - _ALPHA) * cos + _ALPHA * one
-    if float(np.max(scores)) < 0.25:
-        return 2
-    return int(np.argmax(scores))
+def _labels_from_train_quantiles(scores_train: np.ndarray, scores_query: np.ndarray) -> np.ndarray:
+    """Map scores to 0..6 using train-split quantile edges (stable under GroupShuffleSplit)."""
+    if scores_train.size == 0:
+        return np.zeros(0, dtype=np.int64)
+    qt = np.quantile(scores_train, [1 / 7, 2 / 7, 3 / 7, 4 / 7, 5 / 7, 6 / 7])
+    return np.searchsorted(qt, scores_query, side="right").astype(np.int64)
 
 
 def _midi_bytes_from_tfds(example: object) -> bytes:
@@ -286,7 +180,7 @@ def main() -> int:
     )
 
     xs: list[np.ndarray] = []
-    ys: list[int] = []
+    scores: list[float] = []
     groups: list[str] = []
     ids: list[str] = []
 
@@ -303,11 +197,10 @@ def main() -> int:
         tmp.write_bytes(raw)
         events = _events_from_file(tmp)
         row = _compute_proxy_row(events, bpm)
-        y = _hybrid_label(row, events)
+        scores.append(_activity_score(row, events))
         gid = eid.split(":", 1)[0] if ":" in eid else eid
 
         xs.append(row)
-        ys.append(y)
         groups.append(gid)
         ids.append(eid)
 
@@ -316,7 +209,7 @@ def main() -> int:
             break
 
     X = np.stack(xs, axis=0).astype(np.float64)
-    Y = np.asarray(ys, dtype=np.int64)
+    scores_all = np.asarray(scores, dtype=np.float64)
     groups = np.asarray(groups, dtype=object)
 
     gss = GroupShuffleSplit(
@@ -324,12 +217,16 @@ def main() -> int:
         test_size=args.val_fraction,
         random_state=args.seed,
     )
-    tr_idx, va_idx = next(gss.split(X, Y, groups=groups))
+    # Placeholder Y for split API (labels depend on train quantiles only).
+    y_placeholder = np.zeros(len(X), dtype=np.int64)
+    tr_idx, va_idx = next(gss.split(X, y_placeholder, groups=groups))
 
+    scores_tr = scores_all[tr_idx]
+    scores_va = scores_all[va_idx]
     X_train = X[tr_idx]
-    Y_train = Y[tr_idx]
     X_val = X[va_idx]
-    Y_val = Y[va_idx]
+    Y_train = _labels_from_train_quantiles(scores_tr, scores_tr)
+    Y_val = _labels_from_train_quantiles(scores_tr, scores_va)
 
     mean = np.mean(X_train, axis=0)
     std = np.std(X_train, axis=0, ddof=0)
@@ -367,19 +264,19 @@ def main() -> int:
         out_dir / "val.pt",
     )
 
-    def _write_manifest(path: Path, idxs: np.ndarray, split: str) -> None:
+    def _write_manifest(path: Path, idxs: np.ndarray, y_part: np.ndarray, split: str) -> None:
         with path.open("w", encoding="utf-8") as f:
-            for i in idxs:
+            for j, i in enumerate(idxs):
                 rec = {
                     "example_id": ids[int(i)],
                     "group_id": str(groups[int(i)]),
-                    "label": int(Y[int(i)]),
+                    "label": int(y_part[j]),
                     "split": split,
                 }
                 f.write(json.dumps(rec, sort_keys=True) + "\n")
 
-    _write_manifest(out_dir / "manifest_train.jsonl", tr_idx, "train")
-    _write_manifest(out_dir / "manifest_val.jsonl", va_idx, "val")
+    _write_manifest(out_dir / "manifest_train.jsonl", tr_idx, Y_train, "train")
+    _write_manifest(out_dir / "manifest_val.jsonl", va_idx, Y_val, "val")
 
     counts = np.bincount(Y_train, minlength=7)
     print("HISTOGRAM (train split labels)")

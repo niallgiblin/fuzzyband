@@ -41,6 +41,10 @@ Constructor order in `MidiPatternLibrary.cpp` (`patterns.push_back`):
 `score_i = (1−α) · cosine_sim(x̂, ŝ_i) + α · one_hot(h)[i]`  
 **Label** = `argmax_i score_i` (NumPy **`argmax`** breaks ties by **lowest index**).
 
+### Implementation note — `build_dataset.py` (Phase 17)
+
+For **DATA-06** (histogram gate, grouped train/val split), **`build_dataset.py`** assigns **Y** using **train-split quantile binning** on a scalar **activity score** derived from the same events as the proxies: `0.5·dens + 2·rms + 0.5·hf + 0.2·state` (dens = note_on count / duration in beats; rms/hf/state from the five-float row). **Quantile thresholds** use **`np.quantile(scores_train, [1/7 … 6/7])`** so **train** rows are **approximately** evenly spread across **0–6**; **validation** labels use the **same** edges. **Ordinal** meaning: **0** = lowest activity, **6** = highest — a practical stand-in for the seven **MidiPatternLibrary** slots when **seed cosine** would collapse (synthetic seeds were ~identical in normalized proxy space). Phase **18** can treat **Y** as a **7-way** target; domain alignment with live audio remains **out of scope** for this doc.
+
 ## Heuristic detail (implementation-facing)
 
 - **BPM (index 0):** As above; always clamp **[80,220]** for training stability.
@@ -49,7 +53,7 @@ Constructor order in `MidiPatternLibrary.cpp` (`patterns.push_back`):
 - **HF flux proxy (index 3):** Standard deviation of **beat-scaled** inter-onset gaps for **high** drums, capped at **1.0**.
 - **`float(state)` (index 4):** Discrete **0–3** rules above; cast to float for the fifth column.
 
-**Heuristic class guess `h` (coarse):** Map continuous signals to **0–6** using **density / energy bands** consistent with pattern names: very low activity → **0**; low/medium “verse” bands → **1–3** by onset rate; high-energy “chorus” → **4–5** by combined density + HF flux; sparse/spacey → **6**. Exact thresholds are **implementation constants** in `build_dataset.py` and **must** stay consistent with this document’s **α** and seed vectors.
+**Heuristic class guess `h` (coarse):** For **Phase 17** tensors, see **Implementation note** above (quantile bins on activity score). The **density / energy band** story still describes how **Phase 18** may **interpret** classes **0–6** relative to pattern names.
 
 ## Tie-breaks and failure modes
 
