@@ -29,6 +29,8 @@ _deps/
 
 # Python training venv (Phase 9+)
 training/.venv/
+# GMD + TFDS cache (Phase 17)
+training/data/
 training/artifacts/
 training/**/*.pt
 training/**/*.pth
