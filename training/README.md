@@ -33,6 +33,15 @@ python3 training/download_gmd.py
 
 The first run downloads **large** files; after download, a **SHA-256** check validates the **MIDI-only** zip against the pinned TFDS checksum.
 
+After **`download_gmd.py`**, build **train/val tensors** (writes under **`training/data/processed/`**):
+
+```bash
+source training/.venv/bin/activate
+python3 training/build_dataset.py
+```
+
+`build_dataset.py` performs a **HISTOGRAM** audit on **train-split** labels: if any pattern class **0–6** has **fewer than 50** examples, it prints **`FAIL`** / **`below 50`** and exits with code **3** (DATA-06 gate — tune **`FEATURE_PROXY.md`** / oracle constants; do not silently oversample in code).
+
 For Phase 9 prep only (lighter install), you can still use a venv and `pip install -r training/requirements.txt` — the same pins apply.
 
 ## Prep CLI (`prep_midi.py`)
