@@ -33,6 +33,8 @@ python3 training/download_gmd.py
 
 The first run downloads **large** files; after download, a **SHA-256** check validates the **MIDI-only** zip against the pinned TFDS checksum.
 
+**Python 3.13 + TensorFlow 2.21 + protobuf 6.x:** TFDS 4.9.9 uses an older `FieldDescriptor` API; `training/tfds_compat.py` patches `DatasetInfo.read_from_directory` at import time so `tfds.load` works (no extra install).
+
 After **`download_gmd.py`**, build **train/val tensors** (writes under **`training/data/processed/`**):
 
 ```bash

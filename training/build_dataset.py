@@ -264,6 +264,10 @@ def main() -> int:
 
     try:
         import tensorflow_datasets as tfds  # noqa: PLC0415
+
+        from tfds_compat import apply_tfds_protobuf_patch  # noqa: PLC0415
+
+        apply_tfds_protobuf_patch()
     except ImportError as exc:
         print(f"error: tensorflow_datasets import failed: {exc}", file=sys.stderr)
         return 1
