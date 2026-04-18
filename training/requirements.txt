@@ -2,4 +2,8 @@ mido==1.3.2
 numpy==2.1.3
 onnx==1.16.2
 onnxruntime==1.20.1
+scikit-learn==1.8.0
+# Linux CI may substitute tensorflow-cpu==2.21.0 for the same API
+tensorflow==2.21.0
+tensorflow-datasets==4.9.9
 torch==2.6.0
