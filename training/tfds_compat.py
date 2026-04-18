@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import inspect
 import textwrap
+import warnings
 
 
 def apply_tfds_protobuf_patch() -> None:
@@ -24,6 +25,13 @@ def apply_tfds_protobuf_patch() -> None:
     src = inspect.getsource(fn)
     needle = "elif field.label == field.LABEL_REPEATED:"
     if needle not in src:
+        warnings.warn(
+            "tfds_compat: expected patch anchor not found in "
+            "DatasetInfo.read_from_directory; TFDS/protobuf 6+ failures may persist. "
+            "Pin tensorflow-datasets to training/requirements.txt.",
+            RuntimeWarning,
+            stacklevel=1,
+        )
         return
 
     src = src.replace(

@@ -192,7 +192,7 @@ def main() -> int:
         eid = _example_id(ex)
         bpm = _example_bpm(ex)
         raw = _midi_bytes_from_tfds(ex)
-        digest = hashlib.sha256(raw).hexdigest()[:16]
+        digest = hashlib.sha256(raw).hexdigest()
         tmp = tmp_root / f"ex_{digest}.mid"
         tmp.write_bytes(raw)
         events = _events_from_file(tmp)
@@ -207,6 +207,13 @@ def main() -> int:
         count += 1
         if args.max_examples is not None and count >= args.max_examples:
             break
+
+    if not xs:
+        print(
+            "error: no examples loaded (empty TFDS split, wrong --split, or --max-examples 0).",
+            file=sys.stderr,
+        )
+        return 1
 
     X = np.stack(xs, axis=0).astype(np.float64)
     scores_all = np.asarray(scores, dtype=np.float64)
