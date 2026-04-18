@@ -22,6 +22,17 @@ This single `training/requirements.txt` installs **prep** (`mido`) and **trainin
 
 **Artifacts:** training runs write under **`training/artifacts/`** (gitignored) unless you pass **`--out-dir`** to a training script (see Phase 15 stub training below).
 
+### Phase 17 (GMD) — bulk dataset download
+
+The full **Groove MIDI Dataset** is fetched via **`training/download_gmd.py`** into gitignored **`training/data/`** (TFDS cache + manifest).
+
+```bash
+source training/.venv/bin/activate
+python3 training/download_gmd.py
+```
+
+The first run downloads **large** files; after download, a **SHA-256** check validates the **MIDI-only** zip against the pinned TFDS checksum.
+
 For Phase 9 prep only (lighter install), you can still use a venv and `pip install -r training/requirements.txt` — the same pins apply.
 
 ## Prep CLI (`prep_midi.py`)
