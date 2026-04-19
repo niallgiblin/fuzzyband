@@ -38,7 +38,7 @@ Use this as a **solo-dev gate**, not counsel-ready due diligence. For each datas
 ## Official references (verify before use)
 
 - **Groove MIDI Dataset:** [TensorFlow Datasets — groove](https://www.tensorflow.org/datasets/catalog/groove) and Magenta [Groove](https://magenta.tensorflow.org/datasets/groove) documentation.
-- **Lakh MIDI Dataset:** [Magenta Lakh MIDI](https://magenta.tensorflow.org/datasets/lakh) (follow links to the dataset distribution and terms you actually use).
+- **Lakh MIDI Dataset:** [Magenta Lakh MIDI](https://colinraffel.com/projects/lmd/#get (follow links to the dataset distribution and terms you actually use).
 
 ---
 
