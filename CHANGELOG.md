@@ -4,6 +4,8 @@ All notable changes to this project are documented here. For architecture and th
 
 ## [Unreleased]
 
+- **Versioning:** `CMakeLists.txt` project version set to **0.3.0** to match the active **v0.3.0** GSD milestone (plugin editor shows `v0.3.0` after rebuild). Milestone/phase status: `.planning/STATE.md`, `.planning/ROADMAP.md`.
+- **v0.3.0 / Phase 17** (DATA-04, DATA-05, DATA-06): `training/download_gmd.py` (TFDS-pinned GMD + SHA-256 manifest), `training/FEATURE_PROXY.md`, `training/build_dataset.py` (train/val `.pt`, histogram gate), `training/tfds_compat.py`; `training/data/` gitignored; README/CONTRIBUTING alignment as needed.
 - Phase 15 (Python training pipeline): pinned `training/requirements.txt` (prep + train + export); `training/train_pytr_stub.py` synthetic train + dual ONNX export; `scripts/validate_onnx_contract.py` vs `docs/ONNX_IO.md` / `docs/BASS_ONNX_IO.md`; `training/README.md` + `CONTRIBUTING` pointers; gitignore `training/artifacts/` and checkpoints (PYTR-01–03).
 - Phase 16 (Terraform model storage): `infra/` Terraform for versioned S3 model bucket + GitHub OIDC IAM; `scripts/bootstrap-tfstate.sh`; `scripts/promote-model.sh` and `scripts/download-model.sh` with `current.json` pointer; optional GitHub Actions OIDC + pre-build download (CLOUD-01–02).
 - Phase 9 (data & training strategy): `docs/DATASET_AUDIT.md`, `docs/TOKENIZATION.md`, and `training/prep_midi.py` stub (DATA-01–03).

@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and outputs rhythmically appropriate drum and bass MIDI in real time. **v0.1.0** shipped a rule-based analysis pipeline; **v0.2.0** adds optional ONNX inference (patterns and generative bass), ML structure, pitch-aware bass, APVTS UI, training/export tooling, and Terraform model storage — still on the same `IInference` contract and non-blocking audio path.
+A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and outputs rhythmically appropriate drum and bass MIDI in real time. **v0.1.0** shipped a rule-based analysis pipeline; **v0.2.0** adds optional ONNX inference (patterns and generative bass), ML structure, pitch-aware bass, APVTS UI, training/export tooling, and Terraform model storage — still on the same `IInference` contract and non-blocking audio path. **Plugin build version** (editor UI): `CMakeLists.txt` `project(VERSION)`; **phase/milestone status**: `.planning/STATE.md` / `.planning/ROADMAP.md`.
 
 ## Core Value
 
@@ -18,6 +18,8 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 ## Current Milestone: v0.3.0 — Real ML Training Pipeline
 
 **Goal:** Replace the synthetic stub with a real data pipeline and trained models using Groove MIDI Dataset.
+
+**Progress:** Phase **17** (DATA-04/05/06 — GMD download, feature proxy doc, dataset build + histogram gate) **complete** (2026-04-18). Phases **18–20** (pattern model, bass model, export/promotion) **not started**. Canonical tables: `.planning/ROADMAP.md`, `.planning/STATE.md`.
 
 **Target features:**
 - GMD download + conversion to tokenized event format

@@ -1,6 +1,16 @@
 # Metal Accompaniment
 
-JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + bass MIDI** in real time using rule-based tempo, energy, and structure detection (Phase 1 — no ML). Bass patterns use a **fixed root (E2)** until pitch tracking lands in a later phase.
+JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + bass MIDI** in real time. **Default builds** use rule-based tempo, energy, and structure plus **optional ONNX** pattern/structure/bass when built with `MA_ENABLE_ONNX=ON` and models in `assets/` (see [CONTRIBUTING.md](CONTRIBUTING.md)). Pitch-aware bass routing is in the tree; generative bass needs ONNX + `bass_model.onnx`.
+
+## Version & roadmap (source of truth)
+
+| What | Where |
+|------|--------|
+| **GSD milestone & phase** (e.g. v0.3.0, Phase 17 done, Phase 18 next) | [`.planning/STATE.md`](.planning/STATE.md) and [`.planning/ROADMAP.md`](.planning/ROADMAP.md) |
+| **Shipped v0.2.0 narrative** (Phases 9–16, archived) | [`.planning/milestones/v0.2.0-ROADMAP.md`](.planning/milestones/v0.2.0-ROADMAP.md) |
+| **Plugin version string** in the editor (e.g. `v0.3.0`) | `CMakeLists.txt` → `project(MetalAccompaniment VERSION …)` — rebuild **`MetalAccompaniment_VST3`** / **`MetalAccompaniment_AU`** after changing it |
+
+**Milestone snapshot:** **v0.1.0** = Phases 1–8 (rule MVP). **v0.2.0** = Phases 9–16 (ML + generative stack, ONNX optional). **v0.3.0** = Phases 17–20 (real GMD pipeline + trained models → `assets/*.onnx`); **Phase 17** (data pipeline) is complete; **18–20** are next.
 
 ## Phase 2 data & training (prep)
 
@@ -105,8 +115,8 @@ ctest --test-dir build --output-on-failure
 3. Route **MIDI** from the guitar/plugin track to the drum track: use Reaper’s track routing so the drum track receives MIDI sent by the plugin (e.g. **MIDI Hardware Output** / virtual routing, or record-arm the drum track with input from the guitar track — exact clicks depend on your Reaper version).
 4. Play: the plugin outputs **channel 10** (drums) and **channel 2** (bass); point your drum instrument at the appropriate input.
 
-See **`ROADMAP_PHASE_1.md`** for milestones and **`ARCHITECTURE.md`** for threading and components.
+See **`ARCHITECTURE.md`** for threading and components. Historical Phase 1-only narrative: **`ROADMAP_PHASE_1.md`**. **Current** phased work: **`.planning/ROADMAP.md`**.
 
-## Phase 1 tracking
+## Phase 1 tracking (historical)
 
-Progress is tracked in **`Phase 1 TODO.md`**.
+Early Phase 1 notes live in **`Phase 1 TODO.md`**; active GSD work uses **`.planning/`**.

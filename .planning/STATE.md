@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: Real ML Training Pipeline
 status: In progress
-last_updated: "2026-04-18T12:00:00.000Z"
-last_activity: 2026-04-18
+last_updated: "2026-04-19T12:00:00.000Z"
+last_activity: 2026-04-19
 progress:
   total_phases: 4
   completed_phases: 1
@@ -19,7 +19,9 @@ progress:
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-04-17)
+See: `.planning/PROJECT.md` (updated 2026-04-19)
+
+**Version string in the plugin UI** comes from **`CMakeLists.txt`** `project(MetalAccompaniment VERSION …)` (JUCE `ProjectInfo::versionString`). It should move with milestone checkpoints; **GSD phase/milestone authority** is this file plus **`.planning/ROADMAP.md`** (not `ROADMAP_PHASE_1.md`, which is the historical Phase 1 doc only).
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
 **Current focus:** v0.3.0 — Real ML Training Pipeline. Replace synthetic stub with GMD-trained models. C++ plugin unchanged; artifacts slot into `assets/*.onnx`.
