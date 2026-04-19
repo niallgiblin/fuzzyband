@@ -4,7 +4,7 @@
 
 - ✅ **v0.1.0 — Phase 1 rule-based MVP** — Phases 1–8 (shipped 2026-04-17)
 - ✅ **v0.2.0 — Phase 2 ML + Generative** — Phases 9–16 (shipped 2026-04-17)
-- 🚧 **v0.3.0 — Real ML Training Pipeline** — Phases 17–20 (in progress)
+- ✅ **v0.3.0 — Real ML Training Pipeline** — Phases 17–20 (implementation complete 2026-04-19; run `20-VERIFICATION.md` in Reaper for EXP-02 before release tag)
 
 ## Phases
 
@@ -105,7 +105,11 @@ Plans:
   1. `scripts/install-model-local.sh` copies trained artifacts to `assets/*.onnx` and a subsequent `cmake --build` with `MA_ENABLE_ONNX=ON` succeeds without modification to any `src/` C++ file
   2. Plugin loaded in a DAW with `MA_ENABLE_ONNX=ON` selects non-degenerate pattern indices (not always the same index) across at least three distinct playing intensities
   3. `scripts/validate_onnx_contract.py` (both `--pattern` and `--bass` flags) passes on the final installed artifacts
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [x] 20-01-PLAN.md — `install-model-local.sh` + `training/README.md` (EXP-01)
+- [x] 20-02-PLAN.md — `20-VERIFICATION.md` Reaper DAW smoke (EXP-02)
 
 ---
 
@@ -132,7 +136,7 @@ Plans:
 | 17. Data Pipeline | v0.3.0 | 3/3 | Complete | 2026-04-18 |
 | 18. Pattern Model | v0.3.0 | 3/3 | Complete | 2026-04-19 |
 | 19. Bass Model | v0.3.0 | 2/2 | Complete | 2026-04-19 |
-| 20. Export & Promotion | v0.3.0 | 0/? | Not started | - |
+| 20. Export & Promotion | v0.3.0 | 2/2 | Complete | 2026-04-19 |
 
 ---
 

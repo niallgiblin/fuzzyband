@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: Real ML Training Pipeline
 status: In progress
-last_updated: "2026-04-19T22:30:00.000Z"
+last_updated: "2026-04-19T23:59:00.000Z"
 last_activity: 2026-04-19
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
-  percent: 75
+  completed_phases: 4
+  total_plans: 10
+  completed_plans: 10
+  percent: 100
 ---
 
 # STATE — Metal Accompaniment
@@ -31,14 +31,14 @@ See: `.planning/PROJECT.md` (updated 2026-04-19)
 ## Current Position
 
 **Phase:** 20 — Export & Promotion  
-**Plan:** TBD  
+**Plan:** Executed — `20-01-SUMMARY.md`, `20-02-SUMMARY.md`; human DAW smoke in `20-VERIFICATION.md`  
 **Milestone:** v0.3.0 — Real ML Training Pipeline  
 **Last shipped:** v0.2.0 — Phase 2 ML + Generative (Phases 9–16), 2026-04-17  
-**Status:** Phase 19 complete — Bass Model (`bass_model.py`, `train_bass.py`, BMODEL-01/02)  
-**Last activity:** 2026-04-19 — Phase 19 executed (synthetic bass training + ONNX contract)
+**Status:** Phase 20 code/docs complete — run `20-VERIFICATION.md` in Reaper to close EXP-02  
+**Last activity:** 2026-04-19 — `/gsd-execute-phase 20`
 
 ```
-Progress: [████████████        ] 75% (3/4 phases)
+Progress: [████████████████████] 100% (4/4 phases)
 ```
 
 ---
@@ -59,7 +59,7 @@ Progress: [████████████        ] 75% (3/4 phases)
 | 17 | Data Pipeline | DATA-04, DATA-05, DATA-06 | Complete |
 | 18 | Pattern Model | PMODEL-01, PMODEL-02, PMODEL-03 | Complete |
 | 19 | Bass Model | BMODEL-01, BMODEL-02 | Complete |
-| 20 | Export & Promotion | EXP-01, EXP-02 | Not started |
+| 20 | Export & Promotion | EXP-01, EXP-02 | Complete (pending human Reaper smoke per `20-VERIFICATION.md`) |
 
 **Parallelization note:** Phase 19 can run concurrently with Phase 18 — both depend only on Phase 17 tensors.
 
@@ -79,6 +79,7 @@ Progress: [████████████        ] 75% (3/4 phases)
 
 ### Decisions Log
 
+- **2026-04-19 — Phase 20 discuss-phase:** `install-model-local.sh` with `--pattern-dir` / `--bass-dir`, validate-then-copy to `assets/accompaniment_model.onnx` + `assets/bass_model.onnx`, optional `--copy-stats`; Reaper smoke via three `intensity` settings and **Pattern:** readout (≥2 distinct indices, non-stuck); milestone close local-only (no mandatory CI/S3). See `20-CONTEXT.md`.
 - **2026-04-19 — Phase 19 execute-phase:** Synthetic bass tensors (E2/A2/B1 balance), MSE + val early stop, `bass_trained.onnx` opset 17 with `X_bass`/`Y_bass`; contract check passes. See `19-CONTEXT.md`, `19-VERIFICATION.md`.
 - **2026-04-19 — Phase 18 discuss-phase:** Macro-F1 logging + early stopping on macro-F1; inverse-frequency class weights; bake `norm_stats.json` affine in `PatternOnnxExport` while keeping BatchNorm/Dropout in `PatternNet`; timestamped `training/artifacts/` runs with `pattern_trained.onnx`. See `18-CONTEXT.md`.
 - **2026-04-18 — Phase 17 discuss-phase:** Full GMD via TFDS (pinned); hybrid MIDI heuristic + pattern-seed similarity for labels 0–6; proxies match `ONNX_IO.md` numerically with documented MIDI vs audio gap; manifest + `.pt` shards + norm stats JSON; train/val split by performance/session. See `17-CONTEXT.md`.
@@ -102,8 +103,8 @@ Progress: [████████████        ] 75% (3/4 phases)
 
 ## Session Continuity
 
-Last session: 2026-04-19 — Phase 19 execute-phase (`train_bass.py`, `bass_model.py`, README + verification)  
-Resume: `/gsd-discuss-phase 20` or `/gsd-plan-phase 20` — Export & Promotion (EXP-01/02); bass artifacts under `training/artifacts/bass-synth-*/` (gitignored)
+Last session: 2026-04-19 — Phase 20 discuss-phase (`20-CONTEXT.md`, `20-DISCUSSION-LOG.md`)  
+Resume: `/gsd-plan-phase 20` — Export & Promotion (EXP-01/02); pattern/bass artifacts under `training/artifacts/*/` (gitignored)
 
 ---
 
