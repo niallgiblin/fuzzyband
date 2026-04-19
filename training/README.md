@@ -76,6 +76,25 @@ Replace `<run>` with the timestamped directory printed when the script starts (u
 
 **Note:** Phase 10 consumes **`pattern_trained.onnx`** when copied to **`assets/accompaniment_model.onnx`** (optional dev workflow).
 
+## Phase 18 — GMD pattern training (PMODEL-02)
+
+Prerequisite: **`build_dataset.py`** has produced **`train.pt`**, **`val.pt`**, and **`norm_stats.json`** under **`training/data/processed/`** (histogram gate passed).
+
+Train **`PatternNet`** on the normalized tensors, log **`metrics.jsonl`**, and export **`pattern_trained.onnx`** (opset 17, baked affine normalization) into a timestamped directory:
+
+```bash
+source training/.venv/bin/activate
+python3 training/train_gmd.py
+```
+
+The script prints **`Output directory:`** and **`Wrote …/pattern_trained.onnx`**. Use that absolute path with the contract checker:
+
+```bash
+python3 scripts/validate_onnx_contract.py --pattern /absolute/path/to/pattern_trained.onnx
+```
+
+Optional **`--data-dir`** defaults to **`training/data/processed`**. Runs outside **`training/`** are allowed but warned — only use trusted paths.
+
 ## References
 
 - `docs/TOKENIZATION.md` — field names and event types
