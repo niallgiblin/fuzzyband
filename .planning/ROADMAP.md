@@ -89,7 +89,12 @@ Full narratives and success criteria: `.planning/milestones/v0.2.0-ROADMAP.md`.
 **Success Criteria** (what must be TRUE):
   1. `training/models/bass_model.py` defines `BassNet` (7→32→16→4) trained on synthetic E2/A2/B1 metal-key pitch distributions; training script runs without external corpus dependency
   2. `scripts/validate_onnx_contract.py --bass` exits 0 for the trained artifact
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 19-01-PLAN.md — Define BassNet + BassOnnxExport model classes
+- [ ] 19-02-PLAN.md — Synthetic training, ONNX export, contract validation + README
+
 **Note**: Can run in parallel with Phase 18 — both depend on Phase 17 tensors only
 
 ### Phase 20: Export & Promotion
