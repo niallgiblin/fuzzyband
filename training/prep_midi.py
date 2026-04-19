@@ -59,7 +59,7 @@ def _events_from_file(path: Path) -> list[dict]:
     return out
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="MIDI → JSON/JSONL event stream (Phase 9 prep stub).")
     p.add_argument("--input", "-i", required=True, type=Path, help="Path to a .mid file")
     p.add_argument(
@@ -74,7 +74,7 @@ def main() -> int:
         action="store_true",
         help="Write JSON Lines (one object per line) instead of a JSON array",
     )
-    args = p.parse_args()
+    args = p.parse_args(argv)
 
     if not args.input.is_file():
         print(f"error: input not found: {args.input}", file=sys.stderr)

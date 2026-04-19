@@ -26,12 +26,15 @@ StructureState StructureTagger::computeDesiredState(float rms, float centroid, f
 StructureState StructureTagger::update(float rms, float centroid, float /*highFreqFlux*/, int numSamples, float peakRms)
 {
     const double blockSec = static_cast<double>(numSamples) / sampleRate;
-    timeInStateSec += blockSec;
-
     const StructureState desired = computeDesiredState(rms, centroid, peakRms);
 
     if (desired == currentState)
+    {
+        timeInStateSec = 0.0;
         return currentState;
+    }
+
+    timeInStateSec += blockSec;
 
     double holdRequired = 0.0;
     switch (currentState)

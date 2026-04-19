@@ -104,8 +104,46 @@ Reaper often lists this plugin under **category Tools**, not under EQ/Dynamics/R
 
 ## Tests
 
+### Quick run (all tests)
+
 ```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel
 ctest --test-dir build --output-on-failure
+```
+
+### Run by tier
+
+```bash
+# Unit tests only (fast, no plugin link)
+ctest --test-dir build --output-on-failure -L unit
+
+# Integration tests (full processor pipeline + shadow replay)
+ctest --test-dir build --output-on-failure -L integration
+
+# E2E tests (synthesised audio through the live plugin)
+ctest --test-dir build --output-on-failure -L e2e
+```
+
+### Python tests (training pipeline)
+
+```bash
+pip install -r training/requirements.txt pytest
+cd training && python3 -m pytest tests/ -v
+```
+
+### Generate WAV fixtures for manual inspection
+
+```bash
+pip install numpy soundfile
+python3 scripts/generate_test_fixtures.py        # writes to test/fixtures/
+```
+
+### Regenerate E2E structure-transition golden file
+
+Run the test binary with the env var set — it writes the golden and then fails; unset and re-run to verify:
+
+```bash
+MA_WRITE_E2E_GOLDEN=1 ./build/MetalAccompanimentIntegrationTests "[e2e][transitions]"
 ```
 
 ## Reaper setup

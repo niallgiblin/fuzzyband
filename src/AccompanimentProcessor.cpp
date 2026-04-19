@@ -219,6 +219,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
 
         const int idx = inference->selectPattern(patternFeatures);
         latestPatternIndex.store(idx, std::memory_order_release);
+        displayPatternIndex.store(idx, std::memory_order_relaxed);
 
         int generativeMode = 0;
         if (auto* modeParam = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("generativeBassMode")))
@@ -470,6 +471,12 @@ void AccompanimentProcessor::bumpDebugPattern()
 
 void AccompanimentProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
+    // Ensure parameters set via setValue() (e.g. by a host during automation) are
+    // reflected in the APVTS state tree. JUCE's APVTS only tracks changes made via
+    // setValueNotifyingHost(), so we re-notify here before serialising.
+    for (auto* param : getParameters())
+        param->setValueNotifyingHost(param->getValue());
+
     juce::MemoryOutputStream mos(destData, true);
     apvts.copyState().writeToStream(mos);
 }
