@@ -28,6 +28,7 @@ private:
     AccompanimentProcessor& audioProcessorRef;
 
     juce::Label titleLabel;
+    juce::Label versionLabel;
     juce::Label userPolicyHeading;
 
     juce::Label genreLabel{ {}, "Genre" };
