@@ -15,9 +15,15 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 **Archived requirements:** `.planning/milestones/v0.2.0-REQUIREMENTS.md`  
 **Archived roadmap:** `.planning/milestones/v0.2.0-ROADMAP.md`
 
-## Next milestone
+## Current Milestone: v0.3.0 — Real ML Training Pipeline
 
-**Not started.** Use `/gsd-new-milestone` to capture goals, a fresh `.planning/REQUIREMENTS.md`, and phased roadmap work.
+**Goal:** Replace the synthetic stub with a real data pipeline and trained models using Groove MIDI Dataset.
+
+**Target features:**
+- GMD download + conversion to tokenized event format
+- Real training loop with a proper model architecture (replacing single linear-layer stubs)
+- ONNX export + contract validation against frozen I/O spec
+- Smoke test: load trained model into the plugin and verify it produces musically sensible output
 
 ## Prior milestones (shipped)
 
