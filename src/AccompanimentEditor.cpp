@@ -29,6 +29,13 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     titleLabel.setFont(juce::FontOptions(18.0f, juce::Font::bold));
     addAndMakeVisible(titleLabel);
 
+    versionLabel.setText(juce::String("v") + ProjectInfo::versionString, juce::dontSendNotification);
+    versionLabel.setJustificationType(juce::Justification::centredRight);
+    versionLabel.setFont(juce::FontOptions(12.0f));
+    versionLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    versionLabel.setTooltip("Plugin version (CMake project VERSION). Rebuild after bumping it in CMakeLists.txt.");
+    addAndMakeVisible(versionLabel);
+
     userPolicyHeading.setText("Accompaniment style", juce::dontSendNotification);
     userPolicyHeading.setFont(juce::FontOptions(12.0f));
     userPolicyHeading.setJustificationType(juce::Justification::centredLeft);
@@ -131,7 +138,9 @@ void AccompanimentEditor::paint(juce::Graphics& g)
 void AccompanimentEditor::resized()
 {
     auto r = getLocalBounds().reduced(12);
-    titleLabel.setBounds(r.removeFromTop(28));
+    auto titleRow = r.removeFromTop(28);
+    versionLabel.setBounds(titleRow.removeFromRight(88));
+    titleLabel.setBounds(titleRow);
     r.removeFromTop(8);
 
     const int userTop = r.getY();
