@@ -114,6 +114,20 @@ python3 scripts/validate_onnx_contract.py --bass /absolute/path/to/bass_trained.
 
 Optional flags: `--seed 42`, `--batch-size 64`, `--max-epochs 200`, `--patience 8`, `--lr 1e-3`, `--out-dir /custom/path`.
 
+## Phase 20 — Local install to plugin (EXP-01)
+
+Copy validated Phase 18 / Phase 19 ONNX into `assets/` so `MA_ENABLE_ONNX=ON` builds bundle the trained graphs via `CMakeLists.txt` BinaryData (no `src/` changes).
+
+Example (replace dirs with your `training/artifacts/...` run folders):
+
+```bash
+./scripts/install-model-local.sh --pattern-dir /path/to/pattern/artifact --bass-dir /path/to/bass/artifact
+```
+
+The script always runs `scripts/validate_onnx_contract.py --pattern … --bass …` before copying. Optional **`--copy-stats`** copies `norm_stats.json` / `bass_norm_stats.json` from the artifact dirs into `assets/` when present; the plugin does not load these — they are audit-only reproducibility sidecars (see Phase 20 context).
+
+**Ops / cloud paths (not required for milestone close):** `scripts/promote-model.sh` uploads versioned artifacts and `current.json`; `scripts/download-model.sh` fetches into `assets/` when `MODEL_BUCKET` is set; see `infra/README.md` for bucket and OIDC wiring.
+
 ## References
 
 - `docs/TOKENIZATION.md` — field names and event types
