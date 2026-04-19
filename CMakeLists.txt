@@ -246,7 +246,9 @@ endif()
 # ─────────────────────────────────────────────────────────────────
 
 if(MA_BUILD_TESTS)
+    # ── Unit tests ─────────────────────────────────────────────────────────────
     add_executable(MetalAccompanimentTests
+        # Existing tests
         tests/test_onset_detector.cpp
         tests/test_structure_tagger.cpp
         tests/test_pattern_player.cpp
@@ -257,7 +259,16 @@ if(MA_BUILD_TESTS)
         tests/test_bass_generative.cpp
         tests/PolicyPatternMapperTests.cpp
 
-        # Include plugin sources needed by tests (not the plugin target itself)
+        # New unit tests
+        tests/test_energy_analyser.cpp
+        tests/test_structure_tagger_extended.cpp
+        tests/test_structure_hold_smoother_complete.cpp
+        tests/test_onset_detector_extended.cpp
+        tests/test_policy_pattern_mapper_full.cpp
+        tests/test_bass_validator_boundaries.cpp
+        tests/test_pattern_player_generative_bass.cpp
+
+        # Plugin sources compiled into the test executable
         src/analysis/OnsetDetector.cpp
         src/analysis/EnergyAnalyser.cpp
         src/analysis/StructureTagger.cpp
@@ -281,41 +292,99 @@ if(MA_BUILD_TESTS)
         JUCE_USE_CURL=0
     )
 
+    if(APPLE)
+        target_compile_options(MetalAccompanimentTests PRIVATE
+            -Wall -Wextra -Wno-unused-parameter -ffast-math)
+    elseif(UNIX)
+        target_compile_options(MetalAccompanimentTests PRIVATE
+            -Wall -Wextra -Wno-unused-parameter -ffast-math -march=native)
+    endif()
+
     target_link_libraries(MetalAccompanimentTests PRIVATE
         Catch2::Catch2WithMain
         ${JUCE_MODULES}
     )
 
-    # STRUC-03: links the plugin static lib (avoids compiling AccompanimentProcessor twice) + module includes only.
+    # ── Integration + E2E tests ────────────────────────────────────────────────
+    # Links the full MetalAccompaniment plugin target (avoids compiling
+    # AccompanimentProcessor twice) and adds JuceLibraryCode includes.
     set(MA_JUCE_MODULES_DIR "${CMAKE_BINARY_DIR}/_deps/juce-src/modules")
+
     add_executable(MetalAccompanimentIntegrationTests
+        # Existing shadow integration test
         tests/test_structure_shadow_integration.cpp
+        # New integration test (full processor pipeline)
+        tests/test_processor_pipeline.cpp
+        # E2E tests
+        tests/test_e2e_silent_section.cpp
+        tests/test_e2e_bpm_tracking.cpp
+        tests/test_e2e_structure_transitions.cpp
     )
+
     target_include_directories(MetalAccompanimentIntegrationTests PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
         "${moodycamel_SOURCE_DIR}"
         "${CMAKE_BINARY_DIR}/MetalAccompaniment_artefacts/JuceLibraryCode"
         "${MA_JUCE_MODULES_DIR}"
     )
+
     target_compile_definitions(MetalAccompanimentIntegrationTests PRIVATE
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         "MA_REPO_ROOT=\"${CMAKE_SOURCE_DIR}\""
     )
+
     target_link_libraries(MetalAccompanimentIntegrationTests PRIVATE
         Catch2::Catch2WithMain
         MetalAccompaniment
     )
 
+    # ── CTest registration ─────────────────────────────────────────────────────
     include(CTest)
     include(Catch)
-    catch_discover_tests(MetalAccompanimentTests)
 
+    # Unit tests — each TEST_CASE becomes an individual CTest entry with label "unit"
+    catch_discover_tests(MetalAccompanimentTests
+        PROPERTIES LABELS "unit"
+    )
+
+    # Integration: existing shadow fixture
     add_test(
         NAME integration_structure_shadow_fixture
         COMMAND MetalAccompanimentIntegrationTests "[structure][shadow]"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
+    set_tests_properties(integration_structure_shadow_fixture PROPERTIES LABELS "integration")
+
+    # Integration: processor pipeline tests
+    add_test(
+        NAME integration_processor_pipeline
+        COMMAND MetalAccompanimentIntegrationTests "[integration][pipeline]"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(integration_processor_pipeline PROPERTIES LABELS "integration")
+
+    # E2E tests
+    add_test(
+        NAME e2e_silent_section
+        COMMAND MetalAccompanimentIntegrationTests "[e2e][silent]"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(e2e_silent_section PROPERTIES LABELS "e2e")
+
+    add_test(
+        NAME e2e_bpm_tracking
+        COMMAND MetalAccompanimentIntegrationTests "[e2e][bpm]"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(e2e_bpm_tracking PROPERTIES LABELS "e2e")
+
+    add_test(
+        NAME e2e_structure_transitions
+        COMMAND MetalAccompanimentIntegrationTests "[e2e][transitions]"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(e2e_structure_transitions PROPERTIES LABELS "e2e")
 endif()
 
 # ─────────────────────────────────────────────────────────────────

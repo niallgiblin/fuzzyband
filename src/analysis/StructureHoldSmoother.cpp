@@ -8,11 +8,14 @@ void StructureHoldSmoother::reset()
 
 StructureState StructureHoldSmoother::advance(StructureState desired, double dtSec)
 {
+    if (desired == currentState)
+    {
+        timeInStateSec = 0.0;
+        return currentState;
+    }
+
     if (dtSec > 0.0)
         timeInStateSec += dtSec;
-
-    if (desired == currentState)
-        return currentState;
 
     double holdRequired = 0.0;
     switch (currentState)
@@ -31,7 +34,7 @@ StructureState StructureHoldSmoother::advance(StructureState desired, double dtS
             break;
     }
 
-    if (timeInStateSec < holdRequired)
+    if (timeInStateSec < holdRequired - 1e-9)
         return currentState;
 
     currentState = desired;

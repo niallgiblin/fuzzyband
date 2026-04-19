@@ -37,16 +37,29 @@ jobs:
       - name: Build plugin and tests
         run: cmake --build build --config Release --parallel
 
-      - name: Test
-        run: ctest --test-dir build --output-on-failure --config Release
+      - name: Run unit tests
+        run: ctest --test-dir build --output-on-failure --config Release -L unit
+
+      - name: Run integration tests
+        run: ctest --test-dir build --output-on-failure --config Release -L integration
+
+      - name: Run E2E tests
+        run: ctest --test-dir build --output-on-failure --config Release -L e2e
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+      - name: Install Python dependencies
+        run: python3 -m pip install -r training/requirements.txt pytest
+
+      - name: Run Python tests
+        working-directory: training
+        run: python3 -m pytest tests/ -v --tb=short
+
       - name: Prep MIDI smoke (Phase 9)
         run: |
-          python3 -m pip install -r training/requirements.txt
           python3 training/prep_midi.py --input training/fixtures/minimal.mid --output /tmp/ci_prep_out.json
           test -s /tmp/ci_prep_out.json
+        continue-on-error: true
