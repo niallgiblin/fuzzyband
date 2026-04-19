@@ -60,6 +60,7 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - ✓ ONNX-01–03: optional ORT build, `OnnxInference` + rule fallback, `docs/ONNX_IO.md` + audio-thread CI guard — v0.2.0 Phase 10
 - ✓ STRUC-01–03: ML structure path + fallback + bar-quantized transitions — v0.2.0 Phase 12
 - ✓ GBASS-01–03: generative bass ONNX path, `BassMidiValidator`, rank/select + degradation docs — v0.2.0 Phase 13
+- ✓ BMODEL-01/02: `BassNet` + `train_bass.py` synthetic pipeline, `bass_trained.onnx`, `validate_onnx_contract.py --bass` — v0.3.0 Phase 19
 
 ### Active (release / ops)
 
