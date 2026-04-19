@@ -69,11 +69,13 @@ class BassOnnxExport(nn.Module):
         return cls(bass_net, mean_t, std_t)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if x.shape[0] != 1:
-            raise ValueError(
-                "BassOnnxExport supports batch size 1 only (ONNX/plugin contract); "
-                f"got N={x.shape[0]}"
-            )
+        # Skip during ONNX/JIT trace — N is fixed for the dummy input; avoids TracerWarning on shape[0].
+        if not torch.jit.is_tracing() and not torch.jit.is_scripting():
+            if x.shape[0] != 1:
+                raise ValueError(
+                    "BassOnnxExport supports batch size 1 only (ONNX/plugin contract); "
+                    f"got N={x.shape[0]}"
+                )
         x_norm = (x - self.mean) / self.std
         y = self.bass_net(x_norm)  # [1, 4] float32 when N=1
         return y.reshape(1, 4)  # MUST be rank-2 [1,4] — NOT reshape(-1)
