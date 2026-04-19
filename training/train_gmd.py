@@ -172,7 +172,9 @@ def main() -> int:
                 bx = bx.to(device, dtype=torch.float32)
                 by = by.to(device)
                 logits = model(bx)
-                vloss = nn.functional.cross_entropy(logits, by, reduction="mean")
+                vloss = nn.functional.cross_entropy(
+                    logits, by, weight=weights, reduction="mean"
+                )
                 val_losses.append(float(vloss))
                 preds.extend(torch.argmax(logits, dim=-1).cpu().numpy().tolist())
                 labels.extend(by.cpu().numpy().tolist())
