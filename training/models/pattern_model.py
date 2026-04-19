@@ -10,25 +10,29 @@ import torch.nn as nn
 
 
 class PatternNet(nn.Module):
-    """5 → 32 → 16 → 7 logits; BatchNorm + Dropout on trunk (D-18-07)."""
+    """5 → 32 → 16 → 7 logits; LayerNorm + Dropout on trunk (D-18-07).
+
+    LayerNorm is used instead of BatchNorm so training stays valid when a batch
+    has N=1 (BatchNorm1d would raise in train mode).
+    """
 
     def __init__(self, dropout_p: float = 0.2) -> None:
         super().__init__()
         self.dropout_p = dropout_p
         self.fc1 = nn.Linear(5, 32)
-        self.bn1 = nn.BatchNorm1d(32)
+        self.ln1 = nn.LayerNorm(32)
         self.fc2 = nn.Linear(32, 16)
-        self.bn2 = nn.BatchNorm1d(16)
+        self.ln2 = nn.LayerNorm(16)
         self.fc3 = nn.Linear(16, 7)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.fc1(x)
-        x = self.bn1(x)
+        x = self.ln1(x)
         x = torch.relu(x)
         x = nn.functional.dropout(x, p=self.dropout_p, training=self.training)
 
         x = self.fc2(x)
-        x = self.bn2(x)
+        x = self.ln2(x)
         x = torch.relu(x)
         x = nn.functional.dropout(x, p=self.dropout_p, training=self.training)
 
