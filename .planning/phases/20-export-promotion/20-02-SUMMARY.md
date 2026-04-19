@@ -51,7 +51,7 @@ completed: 2026-04-19
 
 ## Task Commits
 
-1. **Task 1: Write 20-VERIFICATION.md** — (see git log for hash)
+1. **Task 1: Write 20-VERIFICATION.md** — `f906936` (docs)
 
 ## Files Created/Modified
 
