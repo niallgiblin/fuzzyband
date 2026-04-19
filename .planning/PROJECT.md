@@ -2,11 +2,18 @@
 
 ## What This Is
 
-A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and outputs rhythmically appropriate drum and bass MIDI in real time. **v0.1.0** shipped a rule-based analysis pipeline; **v0.2.0** adds optional ONNX inference (patterns and generative bass), ML structure, pitch-aware bass, APVTS UI, training/export tooling, and Terraform model storage — still on the same `IInference` contract and non-blocking audio path. **Plugin build version** (editor UI): `CMakeLists.txt` `project(VERSION)`; **phase/milestone status**: `.planning/STATE.md` / `.planning/ROADMAP.md`.
+A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and outputs rhythmically appropriate drum and bass MIDI in real time. **v0.1.0** shipped a rule-based analysis pipeline; **v0.2.0** adds optional ONNX inference (patterns and generative bass), ML structure, pitch-aware bass, APVTS UI, training/export tooling, and Terraform model storage — still on the same `IInference` contract and non-blocking audio path. **v0.3.0** adds a Groove-MIDI-based training pipeline (`download_gmd` → `build_dataset` → `train_gmd` / `train_bass`), ONNX exports with contract validation, and a local install script into `assets/*.onnx` without C++ changes. **Plugin build version** (editor UI): `CMakeLists.txt` `project(VERSION)`; **phase/milestone status**: `.planning/STATE.md` / `.planning/ROADMAP.md`.
 
 ## Core Value
 
 A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.
+
+## Shipped: v0.3.0 — Real ML Training Pipeline
+
+**Closed:** 2026-04-19 — Phases 17–20. GMD download + tensor pipeline + class histogram gate; `PatternNet` + `train_gmd.py` + `pattern_trained.onnx`; `BassNet` + `train_bass.py` + `bass_trained.onnx`; `install-model-local.sh` + Phase 20 README; Reaper verification procedure in `20-VERIFICATION.md` (human EXP-02).
+
+**Archived requirements:** `.planning/milestones/v0.3.0-REQUIREMENTS.md`  
+**Archived roadmap:** `.planning/milestones/v0.3.0-ROADMAP.md`
 
 ## Shipped: v0.2.0 — Phase 2 (ML + Generative)
 
@@ -15,17 +22,9 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 **Archived requirements:** `.planning/milestones/v0.2.0-REQUIREMENTS.md`  
 **Archived roadmap:** `.planning/milestones/v0.2.0-ROADMAP.md`
 
-## Current Milestone: v0.3.0 — Real ML Training Pipeline
+## Next milestone
 
-**Goal:** Replace the synthetic stub with a real data pipeline and trained models using Groove MIDI Dataset.
-
-**Progress:** Phase **17** **complete** (2026-04-18). Phase **18** (PMODEL-01–03 — `PatternNet` + `train_gmd.py` + contract validation) **complete** (2026-04-19). Phase **19** (BMODEL-01/02 — `bass_model.py`, `train_bass.py`, `--bass` contract) **complete** (2026-04-19). Phase **20** (EXP-01 `install-model-local.sh` + README; EXP-02 `20-VERIFICATION.md` Reaper smoke) **implementation complete** (2026-04-19) — run human checklist in Reaper before release tag. Canonical tables: `.planning/ROADMAP.md`, `.planning/STATE.md`.
-
-**Target features:**
-- GMD download + conversion to tokenized event format
-- Real training loop with a proper model architecture (replacing single linear-layer stubs)
-- ONNX export + contract validation against frozen I/O spec
-- Smoke test: load trained model into the plugin and verify it produces musically sensible output
+**Not defined.** Run `/gsd-new-milestone` to set version, requirements, and roadmap. `.planning/REQUIREMENTS.md` is reset to a placeholder until then.
 
 ## Prior milestones (shipped)
 
@@ -61,6 +60,8 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - ✓ STRUC-01–03: ML structure path + fallback + bar-quantized transitions — v0.2.0 Phase 12
 - ✓ GBASS-01–03: generative bass ONNX path, `BassMidiValidator`, rank/select + degradation docs — v0.2.0 Phase 13
 - ✓ BMODEL-01/02: `BassNet` + `train_bass.py` synthetic pipeline, `bass_trained.onnx`, `validate_onnx_contract.py --bass` — v0.3.0 Phase 19
+- ✓ DATA-04/05/06: GMD download, `FEATURE_PROXY.md`, `build_dataset.py` + histogram gate — v0.3.0 Phase 17
+- ✓ PMODEL-01/02/03: `PatternNet`, `train_gmd.py`, contract `--pattern` — v0.3.0 Phase 18
 - ✓ EXP-01: `scripts/install-model-local.sh` + `training/README.md` Phase 20 section — v0.3.0 Phase 20
 
 ### Active (release / ops)
@@ -69,6 +70,8 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 
 - [ ] Push `v0.1.0-phase1` to GitHub (`git push origin v0.1.0-phase1`)
 - [ ] Push `v0.2.0` tag to GitHub (`git push origin v0.2.0`)
+- [ ] Push `v0.3.0` tag to GitHub after optional EXP-02 human verification (`git push origin v0.3.0`)
+- [ ] Run EXP-02 Reaper checklist (`.planning/phases/20-export-promotion/20-VERIFICATION.md`) if gating the release tag on in-DAW behavior
 - [ ] Open Phase 2 GitHub issues from `docs/PHASE2_GITHUB_ISSUES.md`
 - [ ] (Optional) Confirm plugin + drum VSTi routing in Reaper for your setup
 
@@ -83,7 +86,7 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - **Target DAW**: Reaper primary, Ableton + Logic secondary
 - **Platform**: macOS first (Apple Silicon + Intel universal); Windows later
 - **JUCE version**: 8 (required for macOS 15+ / juceaide build; roadmap originally wrote JUCE 7 but JUCE 8 was used)
-- **Codebase state**: **v0.1.0** and **v0.2.0** shipped — planning history in `.planning/milestones/`; current roadmap `.planning/ROADMAP.md`. Backlog **999.1** strategy memo: `.planning/phases/999.1-ml-phase-2-data-feasibility-research/`.
+- **Codebase state**: **v0.1.0**, **v0.2.0**, and **v0.3.0** shipped — planning history in `.planning/milestones/`; active roadmap `.planning/ROADMAP.md` (next milestone TBD). Backlog **999.1** strategy memo: `.planning/phases/999.1-ml-phase-2-data-feasibility-research/`.
 
 ## Constraints
 
@@ -102,9 +105,10 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 | Lock-free inference pipeline (atomic + ReaderWriterQueue) | Audio thread must never block | ✓ Good |
 | Bass fixed to root E2 until pitch tracking | Pitch detection deferred to Phase 2; avoids wrong notes | ✓ Good — v0.2.0 PITCH path + tests |
 | constexpr pattern arrays (no file I/O) | Plugin must not do file I/O in the audio path | ✓ Good |
+| GMD + synthetic bass training before cloud/Lakh | Ship a reproducible local training loop; defer larger corpora | ✓ Good — v0.3.0 |
 
 ---
-*Last updated: 2026-04-17 after v0.2.0 milestone close (`/gsd-complete-milestone`)*
+*Last updated: 2026-04-19 after v0.3.0 milestone close (`/gsd-complete-milestone`)*
 
 ## Evolution
 

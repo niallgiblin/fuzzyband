@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.3.0
-milestone_name: Real ML Training Pipeline
-status: In progress
+milestone: pending
+milestone_name: Next milestone (undefined)
+status: between_milestones
 last_updated: "2026-04-19T23:59:00.000Z"
 last_activity: 2026-04-19
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # STATE — Metal Accompaniment
@@ -24,21 +24,20 @@ See: `.planning/PROJECT.md` (updated 2026-04-19)
 **Version string in the plugin UI** comes from **`CMakeLists.txt`** `project(MetalAccompaniment VERSION …)` (JUCE `ProjectInfo::versionString`). It should move with milestone checkpoints; **GSD phase/milestone authority** is this file plus **`.planning/ROADMAP.md`** (not `ROADMAP_PHASE_1.md`, which is the historical Phase 1 doc only).
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** v0.3.0 — Real ML Training Pipeline. Replace synthetic stub with GMD-trained models. C++ plugin unchanged; artifacts slot into `assets/*.onnx`.
+**Current focus:** Define the next milestone (`/gsd-new-milestone`). **Last shipped:** v0.3.0 — Real ML Training Pipeline (Phases 17–20), 2026-04-19.
 
 ---
 
 ## Current Position
 
-**Phase:** 20 — Export & Promotion  
-**Plan:** Executed — `20-01-SUMMARY.md`, `20-02-SUMMARY.md`; human DAW smoke in `20-VERIFICATION.md`  
-**Milestone:** v0.3.0 — Real ML Training Pipeline  
-**Last shipped:** v0.2.0 — Phase 2 ML + Generative (Phases 9–16), 2026-04-17  
-**Status:** Phase 20 code/docs complete — run `20-VERIFICATION.md` in Reaper to close EXP-02  
-**Last activity:** 2026-04-19 — `/gsd-execute-phase 20`
+**Phase:** — (milestone closed; phase history under `.planning/phases/` and milestone archives)  
+**Milestone:** Pending — run `/gsd-new-milestone`  
+**Last shipped:** v0.3.0 — Real ML Training Pipeline (Phases 17–20), 2026-04-19  
+**Status:** Between milestones — requirements reset; roadmap lists next milestone as TBD  
+**Last activity:** 2026-04-19 — `/gsd-complete-milestone` (v0.3.0)
 
 ```
-Progress: [████████████████████] 100% (4/4 phases)
+Progress: (no active milestone — start with /gsd-new-milestone)
 ```
 
 ---
@@ -49,19 +48,20 @@ Progress: [████████████████████] 100% (4
 |-----------|--------|---------|
 | v0.1.0 | 1–8 | `.planning/milestones/v0.1.0-ROADMAP.md` |
 | v0.2.0 | 9–16 | `.planning/milestones/v0.2.0-ROADMAP.md` |
+| v0.3.0 | 17–20 | `.planning/milestones/v0.3.0-ROADMAP.md` |
 
 ---
 
-## v0.3.0 Phase Map
+## v0.3.0 (archived reference)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 17 | Data Pipeline | DATA-04, DATA-05, DATA-06 | Complete |
 | 18 | Pattern Model | PMODEL-01, PMODEL-02, PMODEL-03 | Complete |
 | 19 | Bass Model | BMODEL-01, BMODEL-02 | Complete |
-| 20 | Export & Promotion | EXP-01, EXP-02 | Complete (pending human Reaper smoke per `20-VERIFICATION.md`) |
+| 20 | Export & Promotion | EXP-01, EXP-02 | EXP-01 complete; EXP-02 human checklist in `20-VERIFICATION.md` (optional pass before release tag) |
 
-**Parallelization note:** Phase 19 can run concurrently with Phase 18 — both depend only on Phase 17 tensors.
+**Parallelization note:** Phase 19 could run concurrently with Phase 18 — both depend only on Phase 17 tensors.
 
 ---
 
@@ -96,15 +96,17 @@ Progress: [████████████████████] 100% (4
 |----------|------|--------|
 | release | Push `v0.1.0-phase1` to `origin` | Pending |
 | release | Push `v0.2.0` to `origin` | Pending |
+| release | Push `v0.3.0` tag to `origin` (after EXP-02 human pass if gating release) | Pending |
 | release | Create Phase 2 GitHub issues from `docs/PHASE2_GITHUB_ISSUES.md` | Pending |
+| verification | EXP-02: Reaper smoke per `.planning/phases/20-export-promotion/20-VERIFICATION.md` | Pending (human) |
 | verification | Optional Reaper routing smoke-test (OUT-05) | Optional |
 
 ---
 
 ## Session Continuity
 
-Last session: 2026-04-19 — Phase 20 discuss-phase (`20-CONTEXT.md`, `20-DISCUSSION-LOG.md`)  
-Resume: `/gsd-plan-phase 20` — Export & Promotion (EXP-01/02); pattern/bass artifacts under `training/artifacts/*/` (gitignored)
+Last session: 2026-04-19 — v0.3.0 milestone archived (`/gsd-complete-milestone`)  
+Resume: `/gsd-new-milestone` — define next version, requirements, and roadmap
 
 ---
 

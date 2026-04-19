@@ -1,5 +1,31 @@
 # Milestones — Metal Accompaniment
 
+## v0.3.0 — Real ML Training Pipeline (Shipped: 2026-04-19)
+
+**Phases:** 17–20 (4 phases) | **Plans with summaries:** 10 | **Tasks (from summaries):** 13
+
+### Summary
+
+Shipped Groove MIDI Dataset ingestion and tensor pipeline with class histogram gate, trained `PatternNet` and `BassNet` with ONNX export at opset 17, contract validation for both graphs, local `install-model-local.sh` into `assets/*.onnx`, and a Reaper-first human verification doc for EXP-02.
+
+### Key accomplishments
+
+1. **Data pipeline** — `download_gmd.py`, `FEATURE_PROXY.md`, `build_dataset.py`, train/val shards + `norm_stats.json` (Phase 17).
+2. **Pattern model** — `train_gmd.py`, macro-F1 early stopping, `pattern_trained.onnx` (Phase 18).
+3. **Bass model** — Synthetic metal-key training, `bass_trained.onnx` (Phase 19).
+4. **Export** — Validate-then-copy installer + training README; `20-VERIFICATION.md` checklist (Phase 20).
+
+### Pre-flight
+
+- No `.planning/v0.3.0-MILESTONE-AUDIT.md` on file — optional `/gsd-audit-milestone` next time.
+- `audit-open` at close: **1** open item — EXP-02 human Reaper verification (`20-VERIFICATION.md`). Acknowledged; requirement **EXP-02** left unchecked in archived requirements until an operator completes the checklist.
+
+### Known gaps at close
+
+- **EXP-02** (non-degenerate pattern selection in a DAW): procedure documented; human pass pending. See `STATE.md` → **Deferred Items**.
+
+---
+
 ## v0.2.0 — Phase 2 ML + Generative
 
 **Shipped:** 2026-04-17  

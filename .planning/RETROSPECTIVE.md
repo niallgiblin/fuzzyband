@@ -4,6 +4,40 @@ Living document; append new milestone sections at the top of the milestone histo
 
 ---
 
+## Milestone: v0.3.0 — Real ML Training Pipeline
+
+**Shipped:** 2026-04-19  
+**Phases:** 4 (numbered 17–20) | **Plans with summaries:** 10
+
+### What was built
+
+- GMD download + tensor dataset with histogram gate; `PatternNet` / `train_gmd.py` / `pattern_trained.onnx`; `BassNet` / `train_bass.py` / `bass_trained.onnx`; `install-model-local.sh` + README; Reaper verification procedure for EXP-02.
+
+### What worked
+
+- `validate_onnx_contract.py` as a single gate across pattern and bass artifacts kept Python export aligned with frozen docs.
+- Phases 18 and 19 could proceed in parallel after Phase 17 tensors existed.
+
+### What was inefficient
+
+- `gsd-sdk query milestone.complete` is not the Homebrew `gsd-sdk`; milestone archival used `node .cursor/get-shit-done/bin/gsd-tools.cjs milestone complete` instead.
+- SUMMARY frontmatter sometimes lacked a clean `one-liner`, so `milestone complete` picked noisy “Outcome:” lines for MILESTONES.md until hand-edited.
+
+### Patterns established
+
+- Validate-then-copy shell installer for local `assets/*.onnx` without touching `src/`.
+- Human DAW checklist as the acceptance path for “musically sensible” behavior (EXP-02).
+
+### Key lessons
+
+- Reconcile `REQUIREMENTS.md` checkboxes against phase SUMMARYs before close — DATA-04/05/06 were implemented but boxes had lagged until `requirements mark-complete`.
+
+### Cost observations
+
+Not tracked for this milestone.
+
+---
+
 ## Milestone: v0.2.0 — Phase 2 ML + Generative
 
 **Shipped:** 2026-04-17  
@@ -79,6 +113,7 @@ Not tracked for this milestone.
 
 | Milestone | Duration (calendar) | Phases | Notes |
 |-----------|---------------------|--------|-------|
+| v0.3.0 | 2026-04-18 — 2026-04-19 | 4 (17–20) | Real training pipeline + export; EXP-02 human verification deferred |
 | v0.2.0 | 2026-04-16 — 2026-04-17 | 8 (9–16) | Phase 2 ML + generative stack; 18 plan summaries |
 | v0.1.0 | 2026-04-16 — 2026-04-17 | 8 (1–8) | Import + close in two calendar days of recorded GSD history |
 

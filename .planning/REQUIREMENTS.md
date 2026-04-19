@@ -1,77 +1,15 @@
-# Requirements — Metal Accompaniment v0.3.0
+# Requirements — Metal Accompaniment
 
-**Milestone:** v0.3.0 — Real ML Training Pipeline  
-**Status:** Active  
-**Last updated:** 2026-04-19
+**Status:** Awaiting next milestone — run `/gsd-new-milestone` to define version, goals, and checkable requirements.
 
----
-
-## v0.3.0 Requirements
-
-### Data Pipeline
-
-- [ ] **DATA-04**: User can download GMD via `training/download_gmd.py` (idempotent, SHA-256 verified, cached in gitignored `training/data/`)
-- [ ] **DATA-05**: `training/FEATURE_PROXY.md` documents heuristic mappings from MIDI-derived features to `FeatureVector` space (rmsEnergy, spectralCentroid, hfFlux proxies + label oracle logic)
-- [ ] **DATA-06**: User can run `training/build_dataset.py` to produce normalized `.pt` tensors with class histogram audit confirming ≥50 examples per pattern class
-
-### Pattern Model
-
-- [x] **PMODEL-01**: `PatternNet` (3-layer MLP 5→32→16→7, BatchNorm, Dropout) defined in `training/models/pattern_model.py` with normalization baked into `PatternOnnxExport` wrapper
-- [x] **PMODEL-02**: User can run `training/train_gmd.py` to train on real GMD tensors with class-weighted loss and early stopping, producing `pattern_trained.onnx` at opset 17
-- [x] **PMODEL-03**: `scripts/validate_onnx_contract.py --pattern` passes for every trained pattern artifact
-
-### Bass Model
-
-- [x] **BMODEL-01**: `BassNet` (3-layer MLP 7→32→16→4) defined in `training/models/bass_model.py`, trained on synthetic metal-key pitch distributions (E2/A2/B1)
-- [x] **BMODEL-02**: `scripts/validate_onnx_contract.py --bass` passes for every trained bass artifact
-
-### Export & Promotion
-
-- [x] **EXP-01**: User can run `scripts/install-model-local.sh` to copy trained artifacts to `assets/*.onnx` for a local plugin build (2026-04-19)
-- [ ] **EXP-02**: Plugin built with `MA_ENABLE_ONNX=ON` loads the trained model and produces non-degenerate pattern selection verifiable in a DAW — **human:** `.planning/phases/20-export-promotion/20-VERIFICATION.md`
+**Last shipped:** v0.3.0 — archived at `.planning/milestones/v0.3.0-REQUIREMENTS.md`.
 
 ---
 
-## Future Requirements (deferred)
+## Placeholder
 
-- Bass model trained from Lakh MIDI drum tracks (broader corpus, defer to v0.4.0)
-- Structure model (`X_struct [1,12,7]`) training — keep rule-based `StructureTagger` for now
-- Fine-tuning on real guitar session data (E-GMD or recorded sessions — v0.4.0+)
-- Sequence/transformer architecture for temporal drum pattern modeling
+No active requirement IDs until the next milestone is opened. Prior milestone traceability and checkboxes live in the archive file above.
 
 ---
 
-## Out of Scope
-
-- **Lakh MIDI in v0.3.0** — adds breadth but not quality; pipeline validation on GMD alone is the right first step
-- **Structure model training** — `OnnxStructureInference` exists but `StructureTagger` rule-based is sufficient; sequential feature windows require a different augmentation approach
-- **Real guitar session data** — required for fine-tuning but not available; heuristic proxies are the deliberate v0.3.0 tradeoff
-- **Cloud training** — S3 infra exists; training runs locally for this milestone
-
----
-
-## Archived (v0.2.0 — all validated)
-
-See `.planning/milestones/v0.2.0-REQUIREMENTS.md` for the full v0.2.0 requirement set (DATA-01–03, ONNX-01–03, PITCH-01–04, STRUC-01–03, GBASS-01–03, PUI-01–03, PYTR-01–03, CLOUD-01–02).
-
----
-
-## Traceability
-
-| REQ-ID | Phase | Status |
-|--------|-------|--------|
-| DATA-04 | Phase 17 | Pending |
-| DATA-05 | Phase 17 | Pending |
-| DATA-06 | Phase 17 | Pending |
-| PMODEL-01 | Phase 18 | Complete |
-| PMODEL-02 | Phase 18 | Complete |
-| PMODEL-03 | Phase 18 | Complete |
-| BMODEL-01 | Phase 19 | Complete |
-| BMODEL-02 | Phase 19 | Complete |
-| EXP-01 | Phase 20 | Complete |
-| EXP-02 | Phase 20 | Pending (human Reaper smoke) |
-
----
-
-*Requirements defined 2026-04-18 via `/gsd-new-milestone`*  
-*Traceability updated 2026-04-18 via `/gsd-new-project` roadmap creation*
+*Requirements reset 2026-04-19 at v0.3.0 milestone close (`/gsd-complete-milestone`).*
