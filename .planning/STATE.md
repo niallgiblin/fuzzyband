@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: Real ML Training Pipeline
 status: In progress
-last_updated: "2026-04-19T12:00:00.000Z"
+last_updated: "2026-04-19T18:00:00.000Z"
 last_activity: 2026-04-19
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 3
   completed_plans: 3
-  percent: 25
+  percent: 50
 ---
 
 # STATE — Metal Accompaniment
@@ -30,15 +30,15 @@ See: `.planning/PROJECT.md` (updated 2026-04-19)
 
 ## Current Position
 
-**Phase:** 18 — Pattern Model  
-**Plan:** TBD (next)  
+**Phase:** 19 — Bass Model  
+**Plan:** TBD (plan next phase)  
 **Milestone:** v0.3.0 — Real ML Training Pipeline  
 **Last shipped:** v0.2.0 — Phase 2 ML + Generative (Phases 9–16), 2026-04-17  
-**Status:** Phase 17 complete — Data Pipeline shipped (DATA-04/05/06)  
-**Last activity:** 2026-04-18 — Phase 17 executed (download + FEATURE_PROXY + build_dataset)
+**Status:** Phase 18 complete — Pattern Model (PMODEL-01–03); ONNX contract validated on trained artifact  
+**Last activity:** 2026-04-19 — Phase 18 executed (`train_gmd.py`, `pattern_model.py`, verification)
 
 ```
-Progress: [████                ] 25% (1/4 phases)
+Progress: [████████            ] 50% (2/4 phases)
 ```
 
 ---
@@ -57,7 +57,7 @@ Progress: [████                ] 25% (1/4 phases)
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 17 | Data Pipeline | DATA-04, DATA-05, DATA-06 | Complete |
-| 18 | Pattern Model | PMODEL-01, PMODEL-02, PMODEL-03 | Not started |
+| 18 | Pattern Model | PMODEL-01, PMODEL-02, PMODEL-03 | Complete |
 | 19 | Bass Model | BMODEL-01, BMODEL-02 | Not started |
 | 20 | Export & Promotion | EXP-01, EXP-02 | Not started |
 
@@ -79,6 +79,7 @@ Progress: [████                ] 25% (1/4 phases)
 
 ### Decisions Log
 
+- **2026-04-19 — Phase 18 discuss-phase:** Macro-F1 logging + early stopping on macro-F1; inverse-frequency class weights; bake `norm_stats.json` affine in `PatternOnnxExport` while keeping BatchNorm/Dropout in `PatternNet`; timestamped `training/artifacts/` runs with `pattern_trained.onnx`. See `18-CONTEXT.md`.
 - **2026-04-18 — Phase 17 discuss-phase:** Full GMD via TFDS (pinned); hybrid MIDI heuristic + pattern-seed similarity for labels 0–6; proxies match `ONNX_IO.md` numerically with documented MIDI vs audio gap; manifest + `.pt` shards + norm stats JSON; train/val split by performance/session. See `17-CONTEXT.md`.
 - **2026-04-18 — v0.3.0 roadmap created:** 4 phases (17–20), 10 requirements mapped, coarse granularity.
 - **2026-04-17 — v0.2.0 milestone archived:** `.planning/milestones/v0.2.0-ROADMAP.md`, `v0.2.0-REQUIREMENTS.md`; `STATE.md` reset between milestones.
@@ -100,8 +101,8 @@ Progress: [████                ] 25% (1/4 phases)
 
 ## Session Continuity
 
-Last session: 2026-04-18 — Phase 17 executed (code + docs)  
-Resume: `/gsd-discuss-phase 18` or `/gsd-plan-phase 18` — next: Pattern Model (PMODEL-*)
+Last session: 2026-04-19 — Phase 18 execute-phase (training + ONNX + contract check)  
+Resume: `/gsd-discuss-phase 19` or `/gsd-plan-phase 19` — Bass Model (BMODEL-01–02); Phase 18 artifacts under `training/artifacts/pattern-gmd-*/` (gitignored)
 
 ---
 

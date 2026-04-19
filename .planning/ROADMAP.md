@@ -80,7 +80,7 @@ Full narratives and success criteria: `.planning/milestones/v0.2.0-ROADMAP.md`.
   1. `training/models/pattern_model.py` defines `PatternNet` (5→32→16→7, BatchNorm, Dropout) and `PatternOnnxExport` wrapper with normalization embedded in the ONNX graph
   2. `training/train_gmd.py` runs to completion on real GMD tensors, logs per-class metrics to `metrics.jsonl`, and emits `pattern_trained.onnx` at opset 17
   3. `scripts/validate_onnx_contract.py --pattern` exits 0 for the trained artifact
-**Plans**: TBD
+**Plans**: `18-01-PLAN.md` (PMODEL-01), `18-02-PLAN.md` (PMODEL-02), `18-03-PLAN.md` (PMODEL-03)
 
 ### Phase 19: Bass Model
 **Goal**: A trained bass model is exported to ONNX and passes the frozen contract
@@ -125,7 +125,7 @@ Full narratives and success criteria: `.planning/milestones/v0.2.0-ROADMAP.md`.
 | 15. Python training pipeline | v0.2.0 | — | Complete | 2026-04-17 |
 | 16. Terraform model storage | v0.2.0 | — | Complete | 2026-04-17 |
 | 17. Data Pipeline | v0.3.0 | 3/3 | Complete | 2026-04-18 |
-| 18. Pattern Model | v0.3.0 | 0/? | Not started | - |
+| 18. Pattern Model | v0.3.0 | 3/3 | Complete | 2026-04-19 |
 | 19. Bass Model | v0.3.0 | 0/? | Not started | - |
 | 20. Export & Promotion | v0.3.0 | 0/? | Not started | - |
 

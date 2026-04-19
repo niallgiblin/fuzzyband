@@ -19,7 +19,7 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 
 **Goal:** Replace the synthetic stub with a real data pipeline and trained models using Groove MIDI Dataset.
 
-**Progress:** Phase **17** (DATA-04/05/06 — GMD download, feature proxy doc, dataset build + histogram gate) **complete** (2026-04-18). Phases **18–20** (pattern model, bass model, export/promotion) **not started**. Canonical tables: `.planning/ROADMAP.md`, `.planning/STATE.md`.
+**Progress:** Phase **17** **complete** (2026-04-18). Phase **18** (PMODEL-01–03 — `PatternNet` + `train_gmd.py` + contract validation) **complete** (2026-04-19). Phases **19–20** (bass model, export/promotion) **not started**. Canonical tables: `.planning/ROADMAP.md`, `.planning/STATE.md`.
 
 **Target features:**
 - GMD download + conversion to tokenized event format
