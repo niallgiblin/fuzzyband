@@ -38,7 +38,11 @@ class BassNet(nn.Module):
 
 
 class BassOnnxExport(nn.Module):
-    """Raw X_bass [N,7] → normalize with training stats → BassNet → Y_bass float32 [1,4]."""
+    """Raw X_bass → normalize with training stats → BassNet → Y_bass float32 [1,4].
+
+    **Batch size:** this wrapper is **N=1 only** (ONNX trace dummy and plugin contract).
+    `forward` rejects ``x`` with ``x.shape[0] != 1``.
+    """
 
     _EPS = 1e-8
 
@@ -65,6 +69,11 @@ class BassOnnxExport(nn.Module):
         return cls(bass_net, mean_t, std_t)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.shape[0] != 1:
+            raise ValueError(
+                "BassOnnxExport supports batch size 1 only (ONNX/plugin contract); "
+                f"got N={x.shape[0]}"
+            )
         x_norm = (x - self.mean) / self.std
-        y = self.bass_net(x_norm)  # [N, 4] float32
+        y = self.bass_net(x_norm)  # [1, 4] float32 when N=1
         return y.reshape(1, 4)  # MUST be rank-2 [1,4] — NOT reshape(-1)
