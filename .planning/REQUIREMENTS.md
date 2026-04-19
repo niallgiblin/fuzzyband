@@ -27,8 +27,8 @@
 
 ### Export & Promotion
 
-- [ ] **EXP-01**: User can run `scripts/install-model-local.sh` to copy trained artifacts to `assets/*.onnx` for a local plugin build
-- [ ] **EXP-02**: Plugin built with `MA_ENABLE_ONNX=ON` loads the trained model and produces non-degenerate pattern selection verifiable in a DAW
+- [x] **EXP-01**: User can run `scripts/install-model-local.sh` to copy trained artifacts to `assets/*.onnx` for a local plugin build (2026-04-19)
+- [ ] **EXP-02**: Plugin built with `MA_ENABLE_ONNX=ON` loads the trained model and produces non-degenerate pattern selection verifiable in a DAW — **human:** `.planning/phases/20-export-promotion/20-VERIFICATION.md`
 
 ---
 
@@ -68,8 +68,8 @@ See `.planning/milestones/v0.2.0-REQUIREMENTS.md` for the full v0.2.0 requiremen
 | PMODEL-03 | Phase 18 | Complete |
 | BMODEL-01 | Phase 19 | Complete |
 | BMODEL-02 | Phase 19 | Complete |
-| EXP-01 | Phase 20 | Pending |
-| EXP-02 | Phase 20 | Pending |
+| EXP-01 | Phase 20 | Complete |
+| EXP-02 | Phase 20 | Pending (human Reaper smoke) |
 
 ---
 

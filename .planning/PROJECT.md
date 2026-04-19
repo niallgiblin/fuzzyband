@@ -19,7 +19,7 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 
 **Goal:** Replace the synthetic stub with a real data pipeline and trained models using Groove MIDI Dataset.
 
-**Progress:** Phase **17** **complete** (2026-04-18). Phase **18** (PMODEL-01–03 — `PatternNet` + `train_gmd.py` + contract validation) **complete** (2026-04-19). Phase **19** (BMODEL-01/02 — `bass_model.py`, `train_bass.py`, `--bass` contract) **complete** (2026-04-19). Phase **20** (export & promotion) **not started**. Canonical tables: `.planning/ROADMAP.md`, `.planning/STATE.md`.
+**Progress:** Phase **17** **complete** (2026-04-18). Phase **18** (PMODEL-01–03 — `PatternNet` + `train_gmd.py` + contract validation) **complete** (2026-04-19). Phase **19** (BMODEL-01/02 — `bass_model.py`, `train_bass.py`, `--bass` contract) **complete** (2026-04-19). Phase **20** (EXP-01 `install-model-local.sh` + README; EXP-02 `20-VERIFICATION.md` Reaper smoke) **implementation complete** (2026-04-19) — run human checklist in Reaper before release tag. Canonical tables: `.planning/ROADMAP.md`, `.planning/STATE.md`.
 
 **Target features:**
 - GMD download + conversion to tokenized event format
@@ -61,6 +61,7 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - ✓ STRUC-01–03: ML structure path + fallback + bar-quantized transitions — v0.2.0 Phase 12
 - ✓ GBASS-01–03: generative bass ONNX path, `BassMidiValidator`, rank/select + degradation docs — v0.2.0 Phase 13
 - ✓ BMODEL-01/02: `BassNet` + `train_bass.py` synthetic pipeline, `bass_trained.onnx`, `validate_onnx_contract.py --bass` — v0.3.0 Phase 19
+- ✓ EXP-01: `scripts/install-model-local.sh` + `training/README.md` Phase 20 section — v0.3.0 Phase 20
 
 ### Active (release / ops)
 
