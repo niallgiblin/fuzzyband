@@ -95,6 +95,25 @@ python3 scripts/validate_onnx_contract.py --pattern /absolute/path/to/pattern_tr
 
 Optional **`--data-dir`** defaults to **`training/data/processed`**. Runs outside **`training/`** are allowed but warned — only use trusted paths.
 
+## Phase 19 — Bass model training (BMODEL-01/02)
+
+No prerequisite — synthetic data is generated in-script (no external corpus required).
+
+Train **`BassNet`** (7→32→16→4 MLP) on synthetic E2/A2/B1 metal-key pitch distributions, log **`metrics.jsonl`**, and export **`bass_trained.onnx`** (opset 17, baked affine normalization) into a timestamped directory:
+
+```bash
+source training/.venv/bin/activate
+python3 training/train_bass.py
+```
+
+The script prints **`Output directory:`** and **`Wrote …/bass_trained.onnx`**. Use that absolute path with the contract checker:
+
+```bash
+python3 scripts/validate_onnx_contract.py --bass /absolute/path/to/bass_trained.onnx
+```
+
+Optional flags: `--seed 42`, `--batch-size 64`, `--max-epochs 200`, `--patience 8`, `--lr 1e-3`, `--out-dir /custom/path`.
+
 ## References
 
 - `docs/TOKENIZATION.md` — field names and event types

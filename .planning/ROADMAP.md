@@ -92,8 +92,8 @@ Full narratives and success criteria: `.planning/milestones/v0.2.0-ROADMAP.md`.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 19-01-PLAN.md — Define BassNet + BassOnnxExport model classes
-- [ ] 19-02-PLAN.md — Synthetic training, ONNX export, contract validation + README
+- [x] 19-01-PLAN.md — Define BassNet + BassOnnxExport model classes
+- [x] 19-02-PLAN.md — Synthetic training, ONNX export, contract validation + README
 
 **Note**: Can run in parallel with Phase 18 — both depend on Phase 17 tensors only
 
@@ -131,7 +131,7 @@ Plans:
 | 16. Terraform model storage | v0.2.0 | — | Complete | 2026-04-17 |
 | 17. Data Pipeline | v0.3.0 | 3/3 | Complete | 2026-04-18 |
 | 18. Pattern Model | v0.3.0 | 3/3 | Complete | 2026-04-19 |
-| 19. Bass Model | v0.3.0 | 0/? | Not started | - |
+| 19. Bass Model | v0.3.0 | 2/2 | Complete | 2026-04-19 |
 | 20. Export & Promotion | v0.3.0 | 0/? | Not started | - |
 
 ---

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.3.0
 milestone_name: Real ML Training Pipeline
 status: In progress
-last_updated: "2026-04-19T18:00:00.000Z"
+last_updated: "2026-04-19T22:30:00.000Z"
 last_activity: 2026-04-19
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
-  percent: 50
+  completed_phases: 3
+  total_plans: 8
+  completed_plans: 8
+  percent: 75
 ---
 
 # STATE — Metal Accompaniment
@@ -30,15 +30,15 @@ See: `.planning/PROJECT.md` (updated 2026-04-19)
 
 ## Current Position
 
-**Phase:** 19 — Bass Model  
-**Plan:** TBD (plan next phase)  
+**Phase:** 20 — Export & Promotion  
+**Plan:** TBD  
 **Milestone:** v0.3.0 — Real ML Training Pipeline  
 **Last shipped:** v0.2.0 — Phase 2 ML + Generative (Phases 9–16), 2026-04-17  
-**Status:** Phase 18 complete — Pattern Model (PMODEL-01–03); ONNX contract validated on trained artifact  
-**Last activity:** 2026-04-19 — Phase 18 executed (`train_gmd.py`, `pattern_model.py`, verification)
+**Status:** Phase 19 complete — Bass Model (`bass_model.py`, `train_bass.py`, BMODEL-01/02)  
+**Last activity:** 2026-04-19 — Phase 19 executed (synthetic bass training + ONNX contract)
 
 ```
-Progress: [████████            ] 50% (2/4 phases)
+Progress: [████████████        ] 75% (3/4 phases)
 ```
 
 ---
@@ -58,7 +58,7 @@ Progress: [████████            ] 50% (2/4 phases)
 |-------|------|--------------|--------|
 | 17 | Data Pipeline | DATA-04, DATA-05, DATA-06 | Complete |
 | 18 | Pattern Model | PMODEL-01, PMODEL-02, PMODEL-03 | Complete |
-| 19 | Bass Model | BMODEL-01, BMODEL-02 | Not started |
+| 19 | Bass Model | BMODEL-01, BMODEL-02 | Complete |
 | 20 | Export & Promotion | EXP-01, EXP-02 | Not started |
 
 **Parallelization note:** Phase 19 can run concurrently with Phase 18 — both depend only on Phase 17 tensors.
@@ -79,6 +79,7 @@ Progress: [████████            ] 50% (2/4 phases)
 
 ### Decisions Log
 
+- **2026-04-19 — Phase 19 execute-phase:** Synthetic bass tensors (E2/A2/B1 balance), MSE + val early stop, `bass_trained.onnx` opset 17 with `X_bass`/`Y_bass`; contract check passes. See `19-CONTEXT.md`, `19-VERIFICATION.md`.
 - **2026-04-19 — Phase 18 discuss-phase:** Macro-F1 logging + early stopping on macro-F1; inverse-frequency class weights; bake `norm_stats.json` affine in `PatternOnnxExport` while keeping BatchNorm/Dropout in `PatternNet`; timestamped `training/artifacts/` runs with `pattern_trained.onnx`. See `18-CONTEXT.md`.
 - **2026-04-18 — Phase 17 discuss-phase:** Full GMD via TFDS (pinned); hybrid MIDI heuristic + pattern-seed similarity for labels 0–6; proxies match `ONNX_IO.md` numerically with documented MIDI vs audio gap; manifest + `.pt` shards + norm stats JSON; train/val split by performance/session. See `17-CONTEXT.md`.
 - **2026-04-18 — v0.3.0 roadmap created:** 4 phases (17–20), 10 requirements mapped, coarse granularity.
@@ -101,8 +102,8 @@ Progress: [████████            ] 50% (2/4 phases)
 
 ## Session Continuity
 
-Last session: 2026-04-19 — Phase 18 execute-phase (training + ONNX + contract check)  
-Resume: `/gsd-discuss-phase 19` or `/gsd-plan-phase 19` — Bass Model (BMODEL-01–02); Phase 18 artifacts under `training/artifacts/pattern-gmd-*/` (gitignored)
+Last session: 2026-04-19 — Phase 19 execute-phase (`train_bass.py`, `bass_model.py`, README + verification)  
+Resume: `/gsd-discuss-phase 20` or `/gsd-plan-phase 20` — Export & Promotion (EXP-01/02); bass artifacts under `training/artifacts/bass-synth-*/` (gitignored)
 
 ---
 
