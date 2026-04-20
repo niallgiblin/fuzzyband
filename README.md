@@ -155,6 +155,28 @@ MA_WRITE_E2E_GOLDEN=1 ./build/MetalAccompanimentIntegrationTests "[e2e][transiti
 
 See **`ARCHITECTURE.md`** for threading and components. Historical Phase 1-only narrative: **`ROADMAP_PHASE_1.md`**. **Current** phased work: **`.planning/ROADMAP.md`**.
 
-## Phase 1 tracking (historical)
+```bash
+cd /Users/ng/Desktop/fuzzyband
 
-Early Phase 1 notes live in **`Phase 1 TODO.md`**; active GSD work uses **`.planning/`**.
+export ONNXRUNTIME_ROOT="/Users/ng/Downloads/onnxruntime-osx-arm64-1.24.4"
+
+cmake -B build-onnx -DCMAKE_BUILD_TYPE=Release \
+  -DMA_BUILD_STANDALONE=ON \
+  -DMA_ENABLE_ONNX=ON \
+  -DONNXRUNTIME_ROOT="$ONNXRUNTIME_ROOT"
+
+cmake --build build-onnx --config Release --parallel
+```
+
+```bash
+DEST="$HOME/Desktop/MetalAccompaniment-onnx-build"
+rm -rf "$DEST"
+mkdir -p "$DEST"
+
+ART="/Users/ng/Desktop/fuzzyband/build-onnx/MetalAccompaniment_artefacts/Release"
+cp -R "$ART/VST3/Metal Accompaniment.vst3" "$DEST/"
+cp -R "$ART/AU/Metal Accompaniment.component" "$DEST/"
+
+/Users/ng/Desktop/fuzzyband/scripts/macos-adhoc-sign-plugin-bundle.sh "$DEST/Metal Accompaniment.vst3"
+/Users/ng/Desktop/fuzzyband/scripts/macos-adhoc-sign-plugin-bundle.sh "$DEST/Metal Accompaniment.component"
+```

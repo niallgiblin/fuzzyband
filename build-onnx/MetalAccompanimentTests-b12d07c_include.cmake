@@ -1,0 +1,5 @@
+if(EXISTS "/Users/ng/Desktop/fuzzyband/build-onnx/MetalAccompanimentTests-b12d07c_tests.cmake")
+  include("/Users/ng/Desktop/fuzzyband/build-onnx/MetalAccompanimentTests-b12d07c_tests.cmake")
+else()
+  add_test(MetalAccompanimentTests_NOT_BUILT-b12d07c MetalAccompanimentTests_NOT_BUILT-b12d07c)
+endif()
