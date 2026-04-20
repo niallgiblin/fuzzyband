@@ -47,6 +47,11 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
         l->setFont(juce::FontOptions(14.0f, juce::Font::bold));
     }
 
+    genreCombo.addItem("Metal",      1);
+    genreCombo.addItem("Metalcore",  2);
+    genreCombo.addItem("Death",      3);
+    genreCombo.addItem("Progressive",4);
+    genreCombo.addItem("Black",      5);
     genreCombo.setTooltip("Style preset for pattern policy (saved with project).");
     addAndMakeVisible(genreLabel);
     addAndMakeVisible(genreCombo);
@@ -69,6 +74,9 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(structureBlendLabel);
     addAndMakeVisible(structureBlendSlider);
 
+    generativeBassModeCombo.addItem("Auto", 1);
+    generativeBassModeCombo.addItem("On",   2);
+    generativeBassModeCombo.addItem("Off",  3);
     generativeBassModeCombo.setTooltip("Auto: score-based. On: force when valid. Off: library bass only.");
     addAndMakeVisible(generativeBassLabel);
     addAndMakeVisible(generativeBassModeCombo);
