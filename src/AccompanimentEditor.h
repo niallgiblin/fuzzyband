@@ -10,6 +10,111 @@
 class AccompanimentProcessor;
 
 /**
+ * @brief Pacific NW moss/forest dark theme for fuzzyband plugin UI.
+ */
+class FuzzybandLookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+    FuzzybandLookAndFeel()
+    {
+        // Background
+        setColour(juce::ResizableWindow::backgroundColourId, juce::Colour(0xff111a10));
+        // Slider
+        setColour(juce::Slider::thumbColourId,               juce::Colour(0xff6a9a50));
+        setColour(juce::Slider::trackColourId,               juce::Colour(0xff2a4028));
+        setColour(juce::Slider::backgroundColourId,          juce::Colour(0xff1a2a18));
+        setColour(juce::Slider::textBoxTextColourId,         juce::Colour(0xff8aaa80));
+        setColour(juce::Slider::textBoxBackgroundColourId,   juce::Colour(0xff1a2a18));
+        setColour(juce::Slider::textBoxOutlineColourId,      juce::Colour(0xff2a4028));
+        // ComboBox
+        setColour(juce::ComboBox::backgroundColourId,        juce::Colour(0xff1a2a18));
+        setColour(juce::ComboBox::textColourId,              juce::Colour(0xffc8d8c0));
+        setColour(juce::ComboBox::outlineColourId,           juce::Colour(0xff2a4028));
+        setColour(juce::ComboBox::arrowColourId,             juce::Colour(0xff6a9a50));
+        setColour(juce::ComboBox::focusedOutlineColourId,    juce::Colour(0xff6a9a50));
+        // Label
+        setColour(juce::Label::textColourId,                 juce::Colour(0xffc8d8c0));
+        // TextButton
+        setColour(juce::TextButton::buttonColourId,          juce::Colour(0xff1a2a18));
+        setColour(juce::TextButton::buttonOnColourId,        juce::Colour(0xff2a4028));
+        setColour(juce::TextButton::textColourOffId,         juce::Colour(0xffc8d8c0));
+        setColour(juce::TextButton::textColourOnId,          juce::Colour(0xff6a9a50));
+        // PopupMenu (for combo dropdowns)
+        setColour(juce::PopupMenu::backgroundColourId,       juce::Colour(0xff1a2a18));
+        setColour(juce::PopupMenu::textColourId,             juce::Colour(0xffc8d8c0));
+        setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xff2a4028));
+        setColour(juce::PopupMenu::highlightedTextColourId,  juce::Colour(0xff6a9a50));
+    }
+
+    void drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height,
+                          float sliderPos, float, float,
+                          const juce::Slider::SliderStyle style, juce::Slider& slider) override
+    {
+        if (style != juce::Slider::LinearHorizontal && style != juce::Slider::LinearVertical)
+        {
+            LookAndFeel_V4::drawLinearSlider(g, x, y, width, height, sliderPos, 0, 1, style, slider);
+            return;
+        }
+        const bool isHoriz = (style == juce::Slider::LinearHorizontal);
+        const float trackH = 3.0f;
+        juce::Rectangle<float> track;
+        if (isHoriz)
+            track = { (float)x, y + height * 0.5f - trackH * 0.5f, (float)width, trackH };
+        else
+            track = { x + width * 0.5f - trackH * 0.5f, (float)y, trackH, (float)height };
+        g.setColour(juce::Colour(0xff2a4028));
+        g.fillRoundedRectangle(track, trackH * 0.5f);
+        juce::Rectangle<float> filled;
+        if (isHoriz)
+            filled = { track.getX(), track.getY(), sliderPos - x, trackH };
+        else
+            filled = { track.getX(), sliderPos, trackH, track.getBottom() - sliderPos };
+        g.setColour(juce::Colour(0xff6a9a50));
+        g.fillRoundedRectangle(filled, trackH * 0.5f);
+        const float thumbR = 6.0f;
+        juce::Rectangle<float> thumb;
+        if (isHoriz)
+            thumb = { sliderPos - thumbR, y + height * 0.5f - thumbR, thumbR * 2, thumbR * 2 };
+        else
+            thumb = { x + width * 0.5f - thumbR, sliderPos - thumbR, thumbR * 2, thumbR * 2 };
+        g.setColour(juce::Colour(0xff6a9a50));
+        g.fillEllipse(thumb);
+        g.setColour(juce::Colour(0xff111a10));
+        g.drawEllipse(thumb.reduced(1.5f), 1.0f);
+    }
+
+    void drawComboBox(juce::Graphics& g, int width, int height, bool,
+                      int, int, int, int, juce::ComboBox& box) override
+    {
+        auto bounds = juce::Rectangle<float>(0, 0, width, height);
+        g.setColour(findColour(juce::ComboBox::backgroundColourId));
+        g.fillRoundedRectangle(bounds, 4.0f);
+        g.setColour(findColour(juce::ComboBox::outlineColourId));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 4.0f, 1.0f);
+        // Arrow
+        const float arrowX = width - 16.0f;
+        const float arrowY = height * 0.5f;
+        juce::Path arrow;
+        arrow.addTriangle(arrowX, arrowY - 3.0f, arrowX + 7.0f, arrowY - 3.0f, arrowX + 3.5f, arrowY + 3.0f);
+        g.setColour(findColour(juce::ComboBox::arrowColourId));
+        g.fillPath(arrow);
+    }
+
+    void drawButtonBackground(juce::Graphics& g, juce::Button& button,
+                              const juce::Colour&, bool isHighlighted, bool isDown) override
+    {
+        auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
+        auto baseColour = findColour(juce::TextButton::buttonColourId);
+        if (isDown || isHighlighted)
+            baseColour = baseColour.brighter(0.15f);
+        g.setColour(baseColour);
+        g.fillRoundedRectangle(bounds, 4.0f);
+        g.setColour(findColour(juce::ComboBox::outlineColourId));
+        g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
+    }
+};
+
+/**
  * @brief APVTS-backed controls, live diagnostics, and debug preview (PUI-02).
  */
 class AccompanimentEditor final : public juce::AudioProcessorEditor,
@@ -59,6 +164,8 @@ private:
 
     juce::TextButton debugPatternButton{ "Next pattern (preview 5s)" };
     juce::Label helpCaptionLabel;
+
+    FuzzybandLookAndFeel lookAndFeel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AccompanimentEditor)
 };
