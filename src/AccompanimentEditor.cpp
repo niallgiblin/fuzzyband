@@ -22,22 +22,26 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     : AudioProcessorEditor(&p)
     , audioProcessorRef(p)
 {
+    setLookAndFeel(&lookAndFeel);
+
     setSize(520, 600);
 
-    titleLabel.setText("Metal Accompaniment", juce::dontSendNotification);
+    titleLabel.setText("fuzzyband", juce::dontSendNotification);
     titleLabel.setJustificationType(juce::Justification::centredLeft);
-    titleLabel.setFont(juce::FontOptions(18.0f, juce::Font::bold));
+    titleLabel.setFont(juce::FontOptions(22.0f, juce::Font::bold));
+    titleLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
     addAndMakeVisible(titleLabel);
 
     versionLabel.setText(juce::String("v") + ProjectInfo::versionString, juce::dontSendNotification);
     versionLabel.setJustificationType(juce::Justification::centredRight);
     versionLabel.setFont(juce::FontOptions(12.0f));
-    versionLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    versionLabel.setColour(juce::Label::textColourId, juce::Colour(0xff8aaa80));
     versionLabel.setTooltip("Plugin version (CMake project VERSION). Rebuild after bumping it in CMakeLists.txt.");
     addAndMakeVisible(versionLabel);
 
-    userPolicyHeading.setText("Accompaniment style", juce::dontSendNotification);
-    userPolicyHeading.setFont(juce::FontOptions(12.0f));
+    userPolicyHeading.setText("style", juce::dontSendNotification);
+    userPolicyHeading.setFont(juce::FontOptions(11.0f));
+    userPolicyHeading.setColour(juce::Label::textColourId, juce::Colour(0xff8aaa80));
     userPolicyHeading.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(userPolicyHeading);
 
@@ -45,6 +49,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     {
         l->setJustificationType(juce::Justification::centredLeft);
         l->setFont(juce::FontOptions(14.0f, juce::Font::bold));
+        l->setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
     }
 
     genreCombo.addItem("Metal",      1);
@@ -93,18 +98,16 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     generativeBassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         apvts, "generativeBassMode", generativeBassModeCombo);
 
-    bpmLabel.setJustificationType(juce::Justification::centredLeft);
-    stateLabel.setJustificationType(juce::Justification::centredLeft);
-    patternLabel.setJustificationType(juce::Justification::centredLeft);
+    for (auto* l : { &bpmLabel, &stateLabel, &patternLabel, &rmsLabel, &centroidLabel, &hfFluxLabel })
+    {
+        l->setJustificationType(juce::Justification::centredLeft);
+        l->setFont(juce::FontOptions(11.0f));
+        l->setColour(juce::Label::textColourId, juce::Colour(0xff8aaa80));
+    }
 
     addAndMakeVisible(bpmLabel);
     addAndMakeVisible(stateLabel);
     addAndMakeVisible(patternLabel);
-
-    rmsLabel.setJustificationType(juce::Justification::centredLeft);
-    centroidLabel.setJustificationType(juce::Justification::centredLeft);
-    hfFluxLabel.setJustificationType(juce::Justification::centredLeft);
-
     addAndMakeVisible(rmsLabel);
     addAndMakeVisible(centroidLabel);
     addAndMakeVisible(hfFluxLabel);
@@ -115,7 +118,8 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     helpCaptionLabel.setText(
         "MIDI outputs on drum (ch.10) and bass (ch.2) — route this track in your DAW; full steps in README.md and CONTRIBUTING.md.",
         juce::dontSendNotification);
-    helpCaptionLabel.setFont(juce::FontOptions(12.0f));
+    helpCaptionLabel.setFont(juce::FontOptions(11.0f));
+    helpCaptionLabel.setColour(juce::Label::textColourId, juce::Colour(0xff4a6448));
     helpCaptionLabel.setJustificationType(juce::Justification::topLeft);
     helpCaptionLabel.setMinimumHorizontalScale(1.0f);
     addAndMakeVisible(helpCaptionLabel);
@@ -123,7 +127,10 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     startTimerHz(20);
 }
 
-AccompanimentEditor::~AccompanimentEditor() = default;
+AccompanimentEditor::~AccompanimentEditor()
+{
+    setLookAndFeel(nullptr);
+}
 
 void AccompanimentEditor::timerCallback()
 {
@@ -138,9 +145,19 @@ void AccompanimentEditor::timerCallback()
 
 void AccompanimentEditor::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colours::darkgrey.darker(0.2f));
-    g.setColour(juce::Colour(0xff323232));
-    g.fillRect(userPolicyArea);
+    // Background
+    g.fillAll(juce::Colour(0xff111a10));
+
+    // Control panel rounded rect
+    g.setColour(juce::Colour(0xff1a2a18));
+    g.fillRoundedRectangle(userPolicyArea.toFloat(), 6.0f);
+    g.setColour(juce::Colour(0xff2a4028));
+    g.drawRoundedRectangle(userPolicyArea.toFloat().reduced(0.5f), 6.0f, 1.0f);
+
+    // Separator between controls and diagnostics
+    const int sepY = userPolicyArea.getBottom() + 10;
+    g.setColour(juce::Colour(0xff2a4028));
+    g.drawLine(12.0f, (float)sepY, getWidth() - 12.0f, (float)sepY, 1.0f);
 }
 
 void AccompanimentEditor::resized()
