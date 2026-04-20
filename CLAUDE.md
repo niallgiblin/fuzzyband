@@ -271,6 +271,16 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, or `.github/skills/` with a `SKILL.md` index file.
 <!-- GSD:skills-end -->
 
+## Version Bumping Rule
+
+**Every time a new build is made for testing/debugging, bump the patch version in `CMakeLists.txt` line 4 before building.**
+
+- Format: `project(MetalAccompaniment VERSION X.Y.Z)`
+- Current: `0.3.1` — increment the patch number (Z) for each debug/test build
+- Milestone releases get a minor bump (Y) when a milestone is completed
+- The version shows in the plugin UI top-right as `vX.Y.Z` — this is the primary way to confirm the correct build is loaded in the DAW
+- **Always rebuild after bumping** so the new version string is baked into the plugin binary
+
 <!-- GSD:workflow-start source:GSD defaults -->
 ## GSD Workflow Enforcement
 

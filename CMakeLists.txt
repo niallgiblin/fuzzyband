@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.3.0)
+project(MetalAccompaniment VERSION 0.3.1)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -338,6 +338,13 @@ if(MA_BUILD_TESTS)
         Catch2::Catch2WithMain
         MetalAccompaniment
     )
+
+    # BinaryData headers live under juce_binarydata_* (INTERFACE on MetalAccompanimentData),
+    # not next to JuceHeader.h. Linking the data target pulls in that include path; PRIVATE
+    # linkage from the plugin alone does not propagate it to dependents.
+    if(BINARY_DATA_SOURCES)
+        target_link_libraries(MetalAccompanimentIntegrationTests PRIVATE MetalAccompanimentData)
+    endif()
 
     # ── CTest registration ─────────────────────────────────────────────────────
     include(CTest)
