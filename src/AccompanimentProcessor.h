@@ -124,6 +124,9 @@ private:
     float heldPitchRootMidi = 40.0f;
     float heldPitchConfidence = 0.0f;
     bool pitchHoldValid = false;
+    int pitchStableCounterSamples = 0;
+    float lastStablePitchMidi = 40.0f;
+    int64_t lastBassUpdateSample = -1;   // -1 = never committed
 
     std::atomic<double> cachedSampleRate{ 44100.0 };
     std::atomic<int> debugPreviewSamplesRemaining{ 0 };

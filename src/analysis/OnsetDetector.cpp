@@ -87,6 +87,16 @@ float OnsetDetector::medianIoiBpm() const
         return currentBpm.load(std::memory_order_relaxed);
 
     float bpm = 60.0f / ioiSec;
+
+    // Octave disambiguation: fold 2x/0.5x aliases back toward current estimate.
+    const float current = currentBpm.load(std::memory_order_relaxed);
+    if (current > 0.0f)
+    {
+        if (bpm / current > 1.7f)
+            bpm *= 0.5f;
+        else if (bpm / current < 0.6f)
+            bpm *= 2.0f;
+    }
     bpm = juce::jlimit(kMinBpm, kMaxBpm, bpm);
     return bpm;
 }
