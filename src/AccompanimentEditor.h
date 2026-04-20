@@ -59,14 +59,14 @@ public:
         const float trackH = 3.0f;
         juce::Rectangle<float> track;
         if (isHoriz)
-            track = { (float)x, y + height * 0.5f - trackH * 0.5f, (float)width, trackH };
+            track = { (float)x, (float)y + (float)height * 0.5f - trackH * 0.5f, (float)width, trackH };
         else
-            track = { x + width * 0.5f - trackH * 0.5f, (float)y, trackH, (float)height };
+            track = { (float)x + (float)width * 0.5f - trackH * 0.5f, (float)y, trackH, (float)height };
         g.setColour(juce::Colour(0xff2a4028));
         g.fillRoundedRectangle(track, trackH * 0.5f);
         juce::Rectangle<float> filled;
         if (isHoriz)
-            filled = { track.getX(), track.getY(), sliderPos - x, trackH };
+            filled = { track.getX(), track.getY(), sliderPos - (float)x, trackH };
         else
             filled = { track.getX(), sliderPos, trackH, track.getBottom() - sliderPos };
         g.setColour(juce::Colour(0xff6a9a50));
@@ -74,9 +74,9 @@ public:
         const float thumbR = 6.0f;
         juce::Rectangle<float> thumb;
         if (isHoriz)
-            thumb = { sliderPos - thumbR, y + height * 0.5f - thumbR, thumbR * 2, thumbR * 2 };
+            thumb = { sliderPos - thumbR, (float)y + (float)height * 0.5f - thumbR, thumbR * 2.0f, thumbR * 2.0f };
         else
-            thumb = { x + width * 0.5f - thumbR, sliderPos - thumbR, thumbR * 2, thumbR * 2 };
+            thumb = { (float)x + (float)width * 0.5f - thumbR, sliderPos - thumbR, thumbR * 2.0f, thumbR * 2.0f };
         g.setColour(juce::Colour(0xff6a9a50));
         g.fillEllipse(thumb);
         g.setColour(juce::Colour(0xff111a10));
@@ -84,16 +84,16 @@ public:
     }
 
     void drawComboBox(juce::Graphics& g, int width, int height, bool,
-                      int, int, int, int, juce::ComboBox& box) override
+                      int, int, int, int, juce::ComboBox&) override
     {
-        auto bounds = juce::Rectangle<float>(0, 0, width, height);
+        auto bounds = juce::Rectangle<float>(0.0f, 0.0f, (float)width, (float)height);
         g.setColour(findColour(juce::ComboBox::backgroundColourId));
         g.fillRoundedRectangle(bounds, 4.0f);
         g.setColour(findColour(juce::ComboBox::outlineColourId));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 4.0f, 1.0f);
         // Arrow
-        const float arrowX = width - 16.0f;
-        const float arrowY = height * 0.5f;
+        const float arrowX = (float)width - 16.0f;
+        const float arrowY = (float)height * 0.5f;
         juce::Path arrow;
         arrow.addTriangle(arrowX, arrowY - 3.0f, arrowX + 7.0f, arrowY - 3.0f, arrowX + 3.5f, arrowY + 3.0f);
         g.setColour(findColour(juce::ComboBox::arrowColourId));

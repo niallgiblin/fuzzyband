@@ -157,7 +157,7 @@ void AccompanimentEditor::paint(juce::Graphics& g)
     // Separator between controls and diagnostics
     const int sepY = userPolicyArea.getBottom() + 10;
     g.setColour(juce::Colour(0xff2a4028));
-    g.drawLine(12.0f, (float)sepY, getWidth() - 12.0f, (float)sepY, 1.0f);
+    g.drawLine(12.0f, (float)sepY, (float)getWidth() - 12.0f, (float)sepY, 1.0f);
 }
 
 void AccompanimentEditor::resized()
