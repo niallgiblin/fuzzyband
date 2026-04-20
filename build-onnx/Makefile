@@ -700,19 +700,6 @@ doxygen-docs/fast:
 .PHONY : doxygen-docs/fast
 
 #=============================================================================
-# Target rules for targets named deploy-to-user-plugins
-
-# Build rule for target.
-deploy-to-user-plugins: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 deploy-to-user-plugins
-.PHONY : deploy-to-user-plugins
-
-# fast build rule for target.
-deploy-to-user-plugins/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/deploy-to-user-plugins.dir/build.make CMakeFiles/deploy-to-user-plugins.dir/build
-.PHONY : deploy-to-user-plugins/fast
-
-#=============================================================================
 # Target rules for targets named Catch2
 
 # Build rule for target.
@@ -2624,7 +2611,6 @@ help:
 	@echo "... NightlySubmit"
 	@echo "... NightlyTest"
 	@echo "... NightlyUpdate"
-	@echo "... deploy-to-user-plugins"
 	@echo "... doxygen-docs"
 	@echo "... Catch2"
 	@echo "... Catch2WithMain"
