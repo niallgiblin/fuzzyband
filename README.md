@@ -4,11 +4,13 @@ JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + ba
 
 ## Version & roadmap (source of truth)
 
-| What | Where |
-|------|--------|
-| **GSD milestone & phase** (e.g. v0.3.0, Phase 17 done, Phase 18 next) | [`.planning/STATE.md`](.planning/STATE.md) and [`.planning/ROADMAP.md`](.planning/ROADMAP.md) |
-| **Shipped v0.2.0 narrative** (Phases 9–16, archived) | [`.planning/milestones/v0.2.0-ROADMAP.md`](.planning/milestones/v0.2.0-ROADMAP.md) |
-| **Plugin version string** in the editor (e.g. `v0.3.0`) | `CMakeLists.txt` → `project(MetalAccompaniment VERSION …)` — rebuild **`MetalAccompaniment_VST3`** / **`MetalAccompaniment_AU`** after changing it |
+
+| What                                                                  | Where                                                                                                                                              |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **GSD milestone & phase** (e.g. v0.3.0, Phase 17 done, Phase 18 next) | `[.planning/STATE.md](.planning/STATE.md)` and `[.planning/ROADMAP.md](.planning/ROADMAP.md)`                                                      |
+| **Shipped v0.2.0 narrative** (Phases 9–16, archived)                  | `[.planning/milestones/v0.2.0-ROADMAP.md](.planning/milestones/v0.2.0-ROADMAP.md)`                                                                 |
+| **Plugin version string** in the editor (e.g. `v0.3.0`)               | `CMakeLists.txt` → `project(MetalAccompaniment VERSION …)` — rebuild `**MetalAccompaniment_VST3`** / `**MetalAccompaniment_AU**` after changing it |
+
 
 **Milestone snapshot:** **v0.1.0** = Phases 1–8 (rule MVP). **v0.2.0** = Phases 9–16 (ML + generative stack, ONNX optional). **v0.3.0** = Phases 17–20 (real GMD pipeline + trained models → `assets/*.onnx`); **Phase 17** (data pipeline) is complete; **18–20** are next.
 
@@ -48,12 +50,12 @@ This writes `metal_accompaniment_patterns.mid` next to the executable (useful fo
 
 These are exposed through the custom editor and the host’s generic parameter list (where applicable):
 
-- **`outputGain`** — Guitar pass-through level at the plugin output (does not scale MIDI).
-- **`genre`** — Style preset (`Metal`, `Metalcore`, `Death`, `Progressive`, `Black`) for pattern policy remapping.
-- **`intensity`** — Shifts effective BPM tier on the **rule-based** path ( ONNX pattern tensor still uses analyzed BPM).
-- **`variation`** — Small pattern-index nudge after genre mapping (shared rule/ONNX post-processing).
-- **`structureBlend`** — When ML structure is valid, values **≥ 0.5** use the ML shadow structure for pattern selection; values **below 0.5** follow rule structure.
-- **`generativeBassMode`** — **`Auto`** (score vs library), **`On`** (force when proposal validates), **`Off`** (library bass only).
+- `**outputGain**` — Guitar pass-through level at the plugin output (does not scale MIDI).
+- `**genre**` — Style preset (`Metal`, `Metalcore`, `Death`, `Progressive`, `Black`) for pattern policy remapping.
+- `**intensity**` — Shifts effective BPM tier on the **rule-based** path ( ONNX pattern tensor still uses analyzed BPM).
+- `**variation`** — Small pattern-index nudge after genre mapping (shared rule/ONNX post-processing).
+- `**structureBlend**` — When ML structure is valid, values **≥ 0.5** use the ML shadow structure for pattern selection; values **below 0.5** follow rule structure.
+- `**generativeBassMode`** — `**Auto**` (score vs library), `**On**` (force when proposal validates), `**Off**` (library bass only).
 
 ### On-screen diagnostics (not separate automation targets)
 
@@ -91,14 +93,14 @@ Then in **Reaper**: **Options → Preferences → Plug-ins → VST → Re-scan**
 
 ### If it still “doesn’t show” in the FX window
 
-Reaper often lists this plugin under **category Tools**, not under EQ/Dynamics/Reverb. The scanned name is **`Metal Accompaniment (Niall Giblin)`**.
+Reaper often lists this plugin under **category Tools**, not under EQ/Dynamics/Reverb. The scanned name is `**Metal Accompaniment (Niall Giblin)`**.
 
-1. **Add FX** (or **FX** on a track) → click the **search** field and type **`Metal`**, **`Accompaniment`**, or **`Niall`**.
+1. **Add FX** (or **FX** on a track) → click the **search** field and type `**Metal`**, `**Accompaniment**`, or `**Niall**`.
 2. Or open the **Tools** category in the tree and look for **Metal Accompaniment**.
 3. Turn **off** any browser filters (e.g. “favorites only”, “JS only”, or a developer whitelist).
-4. Confirm **VST3** is enabled: **Preferences → Plug-ins → VST** — VST3 scanning should be on; **VST plug-in paths** should list **`~/Library/Audio/Plug-Ins/VST3`** as a **folder** (not the `.vst3` bundle path — that can confuse the scanner).
+4. Confirm **VST3** is enabled: **Preferences → Plug-ins → VST** — VST3 scanning should be on; **VST plug-in paths** should list `**~/Library/Audio/Plug-Ins/VST3`** as a **folder** (not the `.vst3` bundle path — that can confuse the scanner).
 
-**AU fallback (macOS):** copy the built **`Metal Accompaniment.component`** to **`~/Library/Audio/Plug-Ins/`** and choose **AU** in the FX browser (search the same name).
+**AU fallback (macOS):** copy the built `**Metal Accompaniment.component`** to `**~/Library/Audio/Plug-Ins/**` and choose **AU** in the FX browser (search the same name).
 
 **Still missing?** Ensure **Reaper is Apple Silicon native** if your build is `arm64` (Activity Monitor → Kind column). An Intel-only Reaper will not load an arm64 VST3.
 
@@ -153,7 +155,7 @@ MA_WRITE_E2E_GOLDEN=1 ./build/MetalAccompanimentIntegrationTests "[e2e][transiti
 3. Route **MIDI** from the guitar/plugin track to the drum track: use Reaper’s track routing so the drum track receives MIDI sent by the plugin (e.g. **MIDI Hardware Output** / virtual routing, or record-arm the drum track with input from the guitar track — exact clicks depend on your Reaper version).
 4. Play: the plugin outputs **channel 10** (drums) and **channel 2** (bass); point your drum instrument at the appropriate input.
 
-See **`ARCHITECTURE.md`** for threading and components. Historical Phase 1-only narrative: **`ROADMAP_PHASE_1.md`**. **Current** phased work: **`.planning/ROADMAP.md`**.
+See `**ARCHITECTURE.md`** for threading and components. Historical Phase 1-only narrative: `**ROADMAP_PHASE_1.md**`. **Current** phased work: `**.planning/ROADMAP.md`**.
 
 ```bash
 cd /Users/ng/Desktop/fuzzyband
@@ -171,12 +173,9 @@ cmake --build build-onnx --config Release --parallel
 ```bash
 DEST="$HOME/Desktop/MetalAccompaniment-onnx-build"
 rm -rf "$DEST"
-mkdir -p "$DEST"
+/Users/ng/Desktop/fuzzyband/scripts/stage-and-sign-macos-plugins.sh "$DEST"
 
-ART="/Users/ng/Desktop/fuzzyband/build-onnx/MetalAccompaniment_artefacts/Release"
-cp -R "$ART/VST3/Metal Accompaniment.vst3" "$DEST/"
-cp -R "$ART/AU/Metal Accompaniment.component" "$DEST/"
-
-/Users/ng/Desktop/fuzzyband/scripts/macos-adhoc-sign-plugin-bundle.sh "$DEST/Metal Accompaniment.vst3"
-/Users/ng/Desktop/fuzzyband/scripts/macos-adhoc-sign-plugin-bundle.sh "$DEST/Metal Accompaniment.component"
+mkdir -p "$HOME/Library/Audio/Plug-Ins/VST3"
+cp -R "$DEST/Metal Accompaniment.vst3" "$HOME/Library/Audio/Plug-Ins/VST3/"
 ```
+
