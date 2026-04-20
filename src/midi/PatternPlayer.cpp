@@ -38,7 +38,8 @@ void PatternPlayer::setGenerativeBassActive(bool active, int rootMidi, float dur
 
 void PatternPlayer::setBpm(float newBpm)
 {
-    bpm = juce::jlimit(40.0f, 320.0f, newBpm);
+    const float clamped = juce::jlimit(40.0f, 320.0f, newBpm);
+    bpm += 0.1f * (clamped - bpm);
 }
 
 void PatternPlayer::setPatternIndex(int index)
