@@ -145,6 +145,9 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     heldPitchRootMidi = 40.0f;
     heldPitchConfidence = 0.0f;
     pitchHoldValid = false;
+    pitchStableCounterSamples = 0;
+    lastStablePitchMidi = 40.0f;
+    lastBassUpdateSample = -1;
 
     patternPlayer.prepare(sr, samplesPerBlock);
     patternPlayer.reset();
@@ -244,6 +247,15 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             if (valid && p.margin >= 0.f && p.confidence >= kMinGenerativeConfidence)
                 scoreGen = p.confidence;
 
+            // 2-bar hold guard: 8 beats * 60/bpm * sampleRate samples.
+            const double sr2 = cachedSampleRate.load(std::memory_order_acquire);
+            const float bpmNow2 = latest.bpm > 0.0f ? latest.bpm : 120.0f;
+            const int64_t twoBarsInSamples =
+                static_cast<int64_t>(8.0 * 60.0 / static_cast<double>(bpmNow2) * sr2);
+            const bool bassHoldExpired =
+                (lastBassUpdateSample < 0) ||
+                (latest.sampleTimestamp - lastBassUpdateSample >= twoBarsInSamples);
+
             bool useGen = false;
             if (generativeMode == 2)
             {
@@ -253,24 +265,36 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             {
                 useGen = valid;
                 useGenerativeBass.store(useGen, std::memory_order_release);
-                if (useGen)
+                if (useGen && bassHoldExpired)
                 {
                     generativeBassRootNote.store(
                         static_cast<int>(std::lround(static_cast<double>(p.rootMidi))),
                         std::memory_order_release);
                     generativeBassDurationBeats.store(p.durationBeats, std::memory_order_release);
+                    lastBassUpdateSample = latest.sampleTimestamp;
+                }
+                else if (useGen)
+                {
+                    // Hold period not expired — keep existing root note.
+                    useGenerativeBass.store(true, std::memory_order_release);
                 }
             }
             else
             {
                 useGen = scoreGen > kLibraryBassScore;
                 useGenerativeBass.store(useGen, std::memory_order_release);
-                if (useGen)
+                if (useGen && bassHoldExpired)
                 {
                     generativeBassRootNote.store(
                         static_cast<int>(std::lround(static_cast<double>(p.rootMidi))),
                         std::memory_order_release);
                     generativeBassDurationBeats.store(p.durationBeats, std::memory_order_release);
+                    lastBassUpdateSample = latest.sampleTimestamp;
+                }
+                else if (useGen)
+                {
+                    // Hold period not expired — keep existing root note.
+                    useGenerativeBass.store(true, std::memory_order_release);
                 }
             }
         }
@@ -397,11 +421,37 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         fv.policyGenreIndex = genreParam->getIndex();
 
     if (fv.pitchConfidence <= 0.0f || fv.pitchConfidence < kMinPitchConfidence)
+    {
+        pitchStableCounterSamples = 0;
         patternPlayer.setBassSemitoneOffset(0);
+    }
     else
     {
-        const int rounded = static_cast<int>(std::lround(static_cast<double>(fv.pitchRootMidi)));
-        patternPlayer.setBassSemitoneOffset(rounded - 40);
+        const float currentMidi = fv.pitchRootMidi;
+        const float diff = std::abs(currentMidi - lastStablePitchMidi);
+        if (diff <= 0.5f)
+        {
+            pitchStableCounterSamples += numSamples;
+        }
+        else
+        {
+            // Pitch jumped — reset stability counter and update the reference.
+            pitchStableCounterSamples = 0;
+            lastStablePitchMidi = currentMidi;
+        }
+
+        // One beat duration in samples at current BPM.
+        const float bpmNow = onsetDetector.getCurrentBpm();
+        const int oneBeatSamples = (bpmNow > 0.0f)
+            ? static_cast<int>((60.0f / bpmNow) * static_cast<float>(cachedSampleRate.load(std::memory_order_relaxed)))
+            : static_cast<int>(cachedSampleRate.load(std::memory_order_relaxed) / 2);
+
+        if (pitchStableCounterSamples >= oneBeatSamples)
+        {
+            const int rounded = static_cast<int>(std::lround(static_cast<double>(currentMidi)));
+            patternPlayer.setBassSemitoneOffset(rounded - 40);
+        }
+        // else: hold the previous offset — do not call setBassSemitoneOffset.
     }
 
     (void)featureQueue.try_enqueue(fv);
