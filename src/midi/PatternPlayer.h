@@ -84,5 +84,9 @@ private:
     int64_t genBassAbsNoteOffSample = -1;
     int genBassLastMidiNote = 40;
 
+    /** Absolute sample index for library-pattern bass note-off; -1 = no held note. */
+    int64_t libBassAbsNoteOffSample = -1;
+    int libBassLastMidiNote = 40;
+
     static constexpr int kDrumChannel = 10;
 };
