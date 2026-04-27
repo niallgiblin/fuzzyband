@@ -52,6 +52,12 @@ void PatternPlayer::setStructureSilent(bool silent)
     structureSilent = silent;
 }
 
+void PatternPlayer::snapToBarStart()
+{
+    beatPosition = 0.0;
+    pendingPatternIndex = -1;
+}
+
 int PatternPlayer::humanVel(int base) const
 {
     const int delta = rng.nextInt(21) - 10;
