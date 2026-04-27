@@ -37,7 +37,8 @@ void OnsetDetector::prepare(double newSampleRate, int maxBlockSize)
     totalSamples = 0;
     onsetThisBlock = false;
 
-    minOnsetIntervalSamples = juce::jmax(1, static_cast<int>(0.05 * sampleRate));
+    minOnsetIntervalSamples = juce::jmax(1, static_cast<int>(0.08 * sampleRate));
+    tempoLocked = false;
 
     // Precompute band-limited flux bin range: 100 Hz – 4000 Hz (skip DC)
     const float binHz = static_cast<float>(sampleRate) / static_cast<float>(fftSize);
@@ -97,6 +98,8 @@ float OnsetDetector::medianIoiBpm() const
         else if (bpm / current < 0.6f)
             bpm *= 2.0f;
     }
+    bpm = juce::jlimit(kMinBpm, kMaxBpm, bpm);
+    bpm = std::round(bpm / 5.0f) * 5.0f;
     bpm = juce::jlimit(kMinBpm, kMaxBpm, bpm);
     return bpm;
 }
@@ -158,8 +161,34 @@ void OnsetDetector::runFftFrame()
         if (ioi >= minIoi && ioi <= maxIoi)
         {
             pushIoi(ioi);
-            const float bpm = medianIoiBpm();
-            currentBpm.store(bpm, std::memory_order_relaxed);
+
+            if (!tempoLocked)
+            {
+                const float bpm = medianIoiBpm();
+
+                if (ioiRingCount >= 8)
+                {
+                    float sum = 0.0f;
+                    for (int j = 0; j < ioiRingCount; ++j)
+                        sum += ioiHistory[static_cast<size_t>(j)];
+                    const float ioiMean = sum / static_cast<float>(ioiRingCount);
+                    const float band = ioiMean * 0.08f;
+
+                    bool allConsistent = true;
+                    for (int j = 0; j < ioiRingCount; ++j)
+                    {
+                        if (std::abs(ioiHistory[static_cast<size_t>(j)] - ioiMean) > band)
+                        {
+                            allConsistent = false;
+                            break;
+                        }
+                    }
+                    if (allConsistent)
+                        tempoLocked = true;
+                }
+
+                currentBpm.store(bpm, std::memory_order_relaxed);
+            }
         }
     }
 
@@ -184,4 +213,9 @@ void OnsetDetector::process(const float* audioData, int numSamples)
             runFftFrame();
         }
     }
+}
+
+void OnsetDetector::resetTempoLock() noexcept
+{
+    tempoLocked = false;
 }

@@ -427,6 +427,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // satisfy the count instantly — the guitarist has to establish tempo first.
     if (st == StructureState::SILENT)
     {
+        onsetDetector.resetTempoLock();
         countInOnsetCount = 0;
         countInComplete = false;
         countInLastBeatSample = -1;

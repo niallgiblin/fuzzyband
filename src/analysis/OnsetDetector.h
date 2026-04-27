@@ -15,6 +15,10 @@
 /**
  * @brief Detects note onsets and tracks BPM (80–220) from inter-onset intervals.
  *
+ * Locks BPM once 8+ consecutive IOIs agree within ±8%; lock clears on SILENT state.
+ * Onset refractory period is 80 ms to reject fuzz-guitar harmonic false-triggers.
+ * BPM is quantized to the nearest 5 BPM after median estimation.
+ *
  * Intended to run from the audio processing path; methods called from @ref AccompanimentProcessor::processBlock.
  */
 class OnsetDetector
@@ -31,6 +35,13 @@ public:
 
     /** @brief True if a new onset was detected in the current process() call. */
     bool onsetDetectedThisBlock() const { return onsetThisBlock; }
+
+    /** @brief Clear the tempo lock so BPM estimation resumes. Call when structural state
+     *         transitions to SILENT. Safe to call from the audio thread. */
+    void resetTempoLock() noexcept;
+
+    /** @brief True once 8+ consecutive IOIs are within ±8% of their mean. */
+    bool isTempoLocked() const noexcept { return tempoLocked; }
 
 private:
     void runFftFrame();
@@ -61,6 +72,7 @@ private:
     int minOnsetIntervalSamples = 2205;
 
     bool onsetThisBlock = false;
+    bool tempoLocked = false;
 
     // Band-limited flux: precomputed bin range for 100 Hz – 4000 Hz
     int fluxBinLo = 0;
