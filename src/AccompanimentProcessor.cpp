@@ -480,14 +480,15 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     else
     {
         const float currentMidi = fv.pitchRootMidi;
-        const float diff = std::abs(currentMidi - lastStablePitchMidi);
-        if (diff <= 0.5f)
+        // Compare pitch class so YIN octave flips (E2↔E3) don't reset the counter.
+        const int currentPc = (static_cast<int>(std::round(currentMidi)) % 12 + 12) % 12;
+        const int lastPc    = (static_cast<int>(std::round(lastStablePitchMidi)) % 12 + 12) % 12;
+        if (currentPc == lastPc)
         {
             pitchStableCounterSamples += numSamples;
         }
         else
         {
-            // Pitch jumped — reset stability counter and update the reference.
             pitchStableCounterSamples = 0;
             lastStablePitchMidi = currentMidi;
         }
@@ -500,8 +501,15 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
         if (pitchStableCounterSamples >= oneBeatSamples)
         {
-            const int rounded = static_cast<int>(std::lround(static_cast<double>(currentMidi)));
-            patternPlayer.setBassSemitoneOffset(rounded - 40);
+            // Map detected pitch class to nearest semitone offset from kBassRoot (MIDI 40 = E2),
+            // clamped to ±6 so bass stays in register regardless of which octave the guitar played.
+            const int rounded    = static_cast<int>(std::lround(static_cast<double>(currentMidi)));
+            const int pc         = (rounded % 12 + 12) % 12;
+            const int bassRootPc = 40 % 12; // 4 = E
+            int delta = pc - bassRootPc;
+            if (delta > 6)  delta -= 12;
+            if (delta < -6) delta += 12;
+            patternPlayer.setBassSemitoneOffset(delta);
         }
         // else: hold the previous offset — do not call setBassSemitoneOffset.
     }
