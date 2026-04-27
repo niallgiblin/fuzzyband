@@ -34,7 +34,7 @@ See: `.planning/PROJECT.md` (updated 2026-04-19)
 **Milestone:** Pending — run `/gsd-new-milestone`  
 **Last shipped:** v0.3.0 — Real ML Training Pipeline (Phases 17–20), 2026-04-19  
 **Status:** Between milestones — requirements reset; roadmap lists next milestone as TBD  
-**Last activity:** 2026-04-20 — Completed quick task 260420-422: fuzzyband UI rebrand
+**Last activity:** 2026-04-27 — Completed quick task 260427-t42: drum count-in gate and 2-bar pattern hold
 
 ```
 Progress: (no active milestone — start with /gsd-new-milestone)
@@ -116,6 +116,7 @@ Resume: `/gsd-new-milestone` — define next version, requirements, and roadmap
 |---|-------------|------|--------|-----------|
 | 260420-421 | Implement tempo and bass stability fixes | 2026-04-20 | b2d0f5d | [260420-421-tempo-bass-stability-fixes](./quick/260420-421-tempo-bass-stability-fixes/) |
 | 260420-422 | Rebrand UI to fuzzyband with Pacific NW mossy aesthetic | 2026-04-20 | 22ac48d | [260420-422-fuzzyband-ui-rebrand](./quick/260420-422-fuzzyband-ui-rebrand/) |
+| 260427-t42 | Drum count-in gate (4 onsets) and 2-bar pattern hold | 2026-04-27 | 09a92c4 | [260427-t42-drum-timing-countin-gate-2bar-hold](./quick/260427-t42-drum-timing-countin-gate-2bar-hold/) |
 
 ---
 

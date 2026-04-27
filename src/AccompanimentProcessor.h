@@ -128,8 +128,9 @@ private:
     float lastStablePitchMidi = 40.0f;
     int64_t lastBassUpdateSample = -1;   // -1 = never committed
     int64_t lastDrumPatternChangeSample = -1;  // -1 = never committed; inference thread
-    int     countInOnsetCount  = 0;            // audio thread
-    bool    countInComplete    = false;        // audio thread
+    int     countInOnsetCount   = 0;           // audio thread
+    bool    countInComplete     = false;       // audio thread
+    int64_t countInLastBeatSample = -1;        // sample time of last beat-spaced onset
 
     std::atomic<double> cachedSampleRate{ 44100.0 };
     std::atomic<int> debugPreviewSamplesRemaining{ 0 };
