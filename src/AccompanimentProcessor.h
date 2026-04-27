@@ -127,6 +127,9 @@ private:
     int pitchStableCounterSamples = 0;
     float lastStablePitchMidi = 40.0f;
     int64_t lastBassUpdateSample = -1;   // -1 = never committed
+    int64_t lastDrumPatternChangeSample = -1;  // -1 = never committed; inference thread
+    int     countInOnsetCount  = 0;            // audio thread
+    bool    countInComplete    = false;        // audio thread
 
     std::atomic<double> cachedSampleRate{ 44100.0 };
     std::atomic<int> debugPreviewSamplesRemaining{ 0 };

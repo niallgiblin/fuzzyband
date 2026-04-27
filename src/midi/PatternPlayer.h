@@ -27,6 +27,8 @@ public:
     void setBpm(float bpm);
     void setPatternIndex(int index);
     void setStructureSilent(bool silent);
+    /** @brief Resets beat clock to bar 1; call when count-in gate completes. Audio thread safe (no heap). */
+    void snapToBarStart();
     /** @brief Semitone transpose for bass (ch @c kBassChannel) only; clamped [-24,24]. Audio thread. */
     void setBassSemitoneOffset(int semitones);
 
