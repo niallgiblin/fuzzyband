@@ -151,6 +151,7 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     lastDrumPatternChangeSample = -1;
     countInOnsetCount = 0;
     countInComplete = false;
+    countInLastBeatSample = -1;
 
     patternPlayer.prepare(sr, samplesPerBlock);
     patternPlayer.reset();
@@ -421,17 +422,32 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         pitchHoldValid = true;
     }
 
-    // Count-in gate: reset on silence, accumulate onsets until 4 detected.
+    // Count-in gate: require 4 beat-spaced onsets before drums start.
+    // Onsets must be at least half a beat apart so rapid strumming doesn't
+    // satisfy the count instantly — the guitarist has to establish tempo first.
     if (st == StructureState::SILENT)
     {
         countInOnsetCount = 0;
         countInComplete = false;
+        countInLastBeatSample = -1;
         lastDrumPatternChangeSample = -1;
     }
     else if (!countInComplete)
     {
         if (onsetDetector.onsetDetectedThisBlock())
-            ++countInOnsetCount;
+        {
+            const float bpmEst = onsetDetector.getCurrentBpm();
+            const double sr = cachedSampleRate.load(std::memory_order_relaxed);
+            // Require at least half a beat between counted onsets (generous — allows early 2x speed detection)
+            const int64_t halfBeatSamples = static_cast<int64_t>(
+                0.5 * 60.0 / static_cast<double>(bpmEst > 0.f ? bpmEst : 120.f) * sr);
+            if (countInLastBeatSample < 0 ||
+                (hostSampleTime - countInLastBeatSample) >= halfBeatSamples)
+            {
+                ++countInOnsetCount;
+                countInLastBeatSample = hostSampleTime;
+            }
+        }
         if (countInOnsetCount >= 4)
         {
             countInComplete = true;
