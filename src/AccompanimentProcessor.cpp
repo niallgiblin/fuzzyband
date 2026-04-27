@@ -148,6 +148,9 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     pitchStableCounterSamples = 0;
     lastStablePitchMidi = 40.0f;
     lastBassUpdateSample = -1;
+    lastDrumPatternChangeSample = -1;
+    countInOnsetCount = 0;
+    countInComplete = false;
 
     patternPlayer.prepare(sr, samplesPerBlock);
     patternPlayer.reset();
@@ -221,7 +224,22 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         patternFeatures.state = effective;
 
         const int idx = inference->selectPattern(patternFeatures);
-        latestPatternIndex.store(idx, std::memory_order_release);
+
+        // 2-bar hold guard for drum pattern index: 8 beats * 60/bpm * sampleRate samples.
+        const double srDrum = cachedSampleRate.load(std::memory_order_acquire);
+        const float bpmNowDrum = latest.bpm > 0.0f ? latest.bpm : 120.0f;
+        const int64_t twoBarsInSamplesDrum =
+            static_cast<int64_t>(8.0 * 60.0 / static_cast<double>(bpmNowDrum) * srDrum);
+        const bool drumHoldExpired =
+            (lastDrumPatternChangeSample < 0) ||
+            (latest.sampleTimestamp - lastDrumPatternChangeSample >= twoBarsInSamplesDrum);
+
+        if (drumHoldExpired)
+        {
+            latestPatternIndex.store(idx, std::memory_order_release);
+            lastDrumPatternChangeSample = latest.sampleTimestamp;
+        }
+        // Always update display so UI shows inference intent even during hold.
         displayPatternIndex.store(idx, std::memory_order_relaxed);
 
         int generativeMode = 0;
@@ -403,6 +421,24 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         pitchHoldValid = true;
     }
 
+    // Count-in gate: reset on silence, accumulate onsets until 4 detected.
+    if (st == StructureState::SILENT)
+    {
+        countInOnsetCount = 0;
+        countInComplete = false;
+        lastDrumPatternChangeSample = -1;
+    }
+    else if (!countInComplete)
+    {
+        if (onsetDetector.onsetDetectedThisBlock())
+            ++countInOnsetCount;
+        if (countInOnsetCount >= 4)
+        {
+            countInComplete = true;
+            patternPlayer.snapToBarStart();
+        }
+    }
+
     FeatureVector fv;
     fv.bpm = onsetDetector.getCurrentBpm();
     fv.rmsEnergy = rms;
@@ -465,7 +501,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     if (previewAudible)
         debugPreviewSamplesRemaining.store(juce::jmax(0, previewRem - numSamples), std::memory_order_release);
 
-    patternPlayer.setStructureSilent(st == StructureState::SILENT && !previewAudible);
+    patternPlayer.setStructureSilent((st == StructureState::SILENT || !countInComplete) && !previewAudible);
 
     if (silencePolicy)
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
