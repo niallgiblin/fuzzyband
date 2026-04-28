@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.4.1)
+project(MetalAccompaniment VERSION 0.4.3)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -146,7 +146,6 @@ target_sources(MetalAccompaniment PRIVATE
 
     # Inference
     src/inference/RuleBasedInference.cpp
-    src/inference/PolicyPatternMapper.cpp
     src/inference/OnnxInference.cpp        # stub in Phase 1
     src/inference/RuleStructureInference.cpp
     src/inference/OnnxStructureInference.cpp
@@ -257,14 +256,12 @@ if(MA_BUILD_TESTS)
         tests/test_structure_hold_smoother.cpp
         tests/test_structure_rule_agreement.cpp
         tests/test_bass_generative.cpp
-        tests/PolicyPatternMapperTests.cpp
 
         # New unit tests
         tests/test_energy_analyser.cpp
         tests/test_structure_tagger_extended.cpp
         tests/test_structure_hold_smoother_complete.cpp
         tests/test_onset_detector_extended.cpp
-        tests/test_policy_pattern_mapper_full.cpp
         tests/test_bass_validator_boundaries.cpp
         tests/test_pattern_player_generative_bass.cpp
 
@@ -275,7 +272,6 @@ if(MA_BUILD_TESTS)
         src/analysis/StructureHoldSmoother.cpp
         src/analysis/PitchEstimator.cpp
         src/inference/RuleBasedInference.cpp
-        src/inference/PolicyPatternMapper.cpp
         src/inference/RuleStructureInference.cpp
         src/midi/MidiPatternLibrary.cpp
         src/midi/PatternPlayer.cpp

@@ -29,6 +29,4 @@ struct FeatureVector
 
     /** PUI-01: intensity [0,1] — rule path uses BPM adjustment; ONNX tensor unchanged. */
     float policyIntensity = 0.5f;
-    /** PUI-01: variation [0,1] — shifts pattern index after genre. */
-    float policyVariation = 0.5f;
 };

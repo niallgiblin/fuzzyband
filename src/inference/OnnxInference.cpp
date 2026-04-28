@@ -3,7 +3,6 @@
 
 #if defined(MA_ENABLE_ONNX)
 #include "BinaryData.h"
-#include "PolicyPatternMapper.h"
 #include <algorithm>
 #include <array>
 #include <onnxruntime_cxx_api.h>
@@ -49,6 +48,38 @@ bool OnnxInference::tryLoadModel()
             reinterpret_cast<const char*>(data),
             static_cast<size_t>(size),
             opts);
+
+        // Strict contract validation: D-23-01 / D-23-03
+        const auto inputTypeInfo = impl->session->GetInputTypeInfo(0);
+        const auto& inputShapeInfo = inputTypeInfo.GetTensorTypeAndShapeInfo();
+        const auto inputShape = inputShapeInfo.GetShape();
+        const auto inputElemType = inputShapeInfo.GetElementType();
+
+        if (inputElemType != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+            inputShape.size() != 2 || inputShape[0] != 1 || inputShape[1] != 7)
+        {
+            jassert(false); // D-23-01: contract mismatch — no silent fallback
+            impl.reset();
+            return false;
+        }
+
+        const auto outputTypeInfo = impl->session->GetOutputTypeInfo(0);
+        const auto& outputShapeInfo = outputTypeInfo.GetTensorTypeAndShapeInfo();
+        const auto outputShape = outputShapeInfo.GetShape();
+        const auto outputElemType = outputShapeInfo.GetElementType();
+
+        if (outputElemType != ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64 ||
+            outputShape.size() != 1 || outputShape[0] != 1)
+        {
+            jassert(false); // D-23-01: contract mismatch — no silent fallback
+            impl.reset();
+            return false;
+        }
+    }
+    catch (const Ort::Exception&)
+    {
+        impl.reset();
+        return false;
     }
     catch (...)
     {
@@ -64,19 +95,32 @@ void OnnxInference::prepare(double /*sampleRate*/)
     // Model has no sample-rate-dependent weights; session is ready after tryLoadModel().
 }
 
-int OnnxInference::selectPattern(const FeatureVector& f)
+int OnnxInference::selectPattern(const FeatureVector& f, int excludeIndex)
 {
     if (impl == nullptr || impl->session == nullptr)
         return 0;
 
-    std::array<float, 5> inputData = {
+    // Pack [1,7] one-hot per docs/ONNX_IO.md: indices 4-6 = SILENT/SOFT/LOUD
+    float stateSILENT = 0.0f;
+    float stateSOFT = 0.0f;
+    float stateLOUD = 0.0f;
+    switch (f.state)
+    {
+        case StructureState::SILENT: stateSILENT = 1.0f; break;
+        case StructureState::SOFT:   stateSOFT   = 1.0f; break;
+        case StructureState::LOUD:   stateLOUD   = 1.0f; break;
+    }
+
+    std::array<float, 7> inputData = {
         f.bpm,
         f.rmsEnergy,
         f.spectralCentroid,
         f.highFreqFlux,
-        static_cast<float>(static_cast<int>(f.state)),
+        stateSILENT,
+        stateSOFT,
+        stateLOUD,
     };
-    std::array<int64_t, 2> shape{ 1, 5 };
+    std::array<int64_t, 2> shape{ 1, 7 };
 
     try
     {
@@ -103,11 +147,20 @@ int OnnxInference::selectPattern(const FeatureVector& f)
 
         const int64_t* out = outputs[0].GetTensorData<int64_t>();
         const int64_t raw = out[0];
-        const int clamped = static_cast<int>(std::clamp(raw, static_cast<int64_t>(0), static_cast<int64_t>(6)));
-        return PolicyPatternMapper::applyPatternPolicy(clamped, f);
+        int clamped = static_cast<int>(std::clamp(raw, static_cast<int64_t>(0), static_cast<int64_t>(6)));
+        int result = clamped;
+
+        // D-23-04: single-shot exclusion — if result matches excludeIndex, return next
+        if (excludeIndex >= 0 && result == excludeIndex)
+            result = (excludeIndex + 1) % 7;
+
+        return result;
     }
     catch (...)
     {
+        // D-23-04: never return excluded index even on error
+        if (excludeIndex >= 0 && 0 == excludeIndex)
+            return 1;
         return 0;
     }
 }
@@ -133,7 +186,7 @@ bool OnnxInference::tryLoadModel()
 
 void OnnxInference::prepare(double /*sampleRate*/) {}
 
-int OnnxInference::selectPattern(const FeatureVector& /*features*/)
+int OnnxInference::selectPattern(const FeatureVector& /*features*/, int /*excludeIndex*/)
 {
     return 0;
 }

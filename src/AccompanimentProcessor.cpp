@@ -3,7 +3,6 @@
 #include "inference/IStructureInference.h"
 #include "inference/RuleBasedInference.h"
 #include "inference/RuleStructureInference.h"
-#include "midi/BassMidiValidator.h"
 #if defined(MA_ENABLE_ONNX)
 #include "inference/OnnxInference.h"
 #include "inference/OnnxStructureInference.h"
@@ -60,27 +59,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::crea
         juce::NormalisableRange<float>{ 0.0f, 2.0f, 0.01f },
         1.0f));
 
-    juce::StringArray genreChoices;
-    genreChoices.add("Metal");
-    genreChoices.add("Metalcore");
-    genreChoices.add("Death");
-    genreChoices.add("Progressive");
-    genreChoices.add("Black");
-    layout.add(std::make_unique<juce::AudioParameterChoice>(
-        juce::ParameterID{ "genre", 1 },
-        "Genre",
-        genreChoices,
-        0));
-
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{ "intensity", 1 },
         "Intensity",
-        juce::NormalisableRange<float>{ 0.0f, 1.0f, 0.001f },
-        0.5f));
-
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{ "variation", 1 },
-        "Variation",
         juce::NormalisableRange<float>{ 0.0f, 1.0f, 0.001f },
         0.5f));
 
@@ -225,7 +206,17 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         }
         patternFeatures.state = effective;
 
-        const int idx = inference->selectPattern(patternFeatures);
+        // D-23-04/D-23-05: Rejection signal — single-shot exclusion with hold-guard bypass
+        const int rejectionCount = patternRejectionCount.load(std::memory_order_acquire);
+        const int currentPat = latestPatternIndex.load(std::memory_order_acquire);
+        int excludeParam = -1;
+        if (rejectionCount > 0)
+        {
+            patternRejectionCount.store(rejectionCount - 1, std::memory_order_release);
+            excludeParam = currentPat;
+        }
+
+        const int idx = inference->selectPattern(patternFeatures, excludeParam);
 
         // 2-bar hold guard for drum pattern index: 8 beats * 60/bpm * sampleRate samples.
         const double srDrum = cachedSampleRate.load(std::memory_order_acquire);
@@ -236,7 +227,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             (lastDrumPatternChangeSample < 0) ||
             (latest.sampleTimestamp - lastDrumPatternChangeSample >= twoBarsInSamplesDrum);
 
-        if (drumHoldExpired)
+        if (drumHoldExpired || excludeParam >= 0)
         {
             latestPatternIndex.store(idx, std::memory_order_release);
             lastDrumPatternChangeSample = latest.sampleTimestamp;
@@ -251,23 +242,12 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         if (bassInference)
         {
             bassInference->propose(latest);
+            const auto& p = bassInference->getLastProposal();
 
             const bool silencePolicy =
                 (latest.state == StructureState::SILENT) || (latest.rmsEnergy < 1.0e-6f);
-            const auto& p = bassInference->getLastProposal();
-            const bool valid = BassMidiValidator::validateBassProposal(
-                p.rootMidi,
-                p.durationBeats,
-                latest.state,
-                silencePolicy);
 
-            constexpr float kMinGenerativeConfidence = 0.5f;
-            constexpr float kLibraryBassScore = 0.45f;
-            float scoreGen = 0.f;
-            if (valid && p.margin >= 0.f && p.confidence >= kMinGenerativeConfidence)
-                scoreGen = p.confidence;
-
-            // 2-bar hold guard: 8 beats * 60/bpm * sampleRate samples.
+            // 2-bar hold guard for bass: 8 beats * 60/bpm * sampleRate samples.
             const double sr2 = cachedSampleRate.load(std::memory_order_acquire);
             const float bpmNow2 = latest.bpm > 0.0f ? latest.bpm : 120.0f;
             const int64_t twoBarsInSamples =
@@ -277,50 +257,48 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
                 (latest.sampleTimestamp - lastBassUpdateSample >= twoBarsInSamples);
 
             bool useGen = false;
-            if (generativeMode == 2)
+            if (generativeMode == 2) // Off
             {
                 useGenerativeBass.store(false, std::memory_order_release);
+                genBassStepsReady.store(false, std::memory_order_release);
             }
-            else if (generativeMode == 1)
+            else if (p.valid && !silencePolicy && bassHoldExpired)
             {
-                useGen = valid;
-                useGenerativeBass.store(useGen, std::memory_order_release);
-                if (useGen && bassHoldExpired)
+                // Deliver piano-roll steps to audio thread
+                for (int i = 0; i < 16; ++i)
                 {
-                    generativeBassRootNote.store(
-                        static_cast<int>(std::lround(static_cast<double>(p.rootMidi))),
-                        std::memory_order_release);
-                    generativeBassDurationBeats.store(p.durationBeats, std::memory_order_release);
-                    lastBassUpdateSample = latest.sampleTimestamp;
+                    genBassPitchOffsets[i] = p.pitchOffset[i];
+                    genBassVelocities[i] = p.velocity[i];
                 }
-                else if (useGen)
-                {
-                    // Hold period not expired — keep existing root note.
-                    useGenerativeBass.store(true, std::memory_order_release);
-                }
+                genBassRootMidi = latest.pitchRootMidi;
+                genBassStepsReady.store(true, std::memory_order_release);
+                useGenerativeBass.store(true, std::memory_order_release);
+                lastBassUpdateSample = latest.sampleTimestamp;
+                useGen = true;
+            }
+            else if (p.valid && !silencePolicy)
+            {
+                // Hold period not expired — keep existing steps active
+                useGenerativeBass.store(true, std::memory_order_release);
+                useGen = true;
             }
             else
             {
-                useGen = scoreGen > kLibraryBassScore;
+                useGenerativeBass.store(false, std::memory_order_release);
+                genBassStepsReady.store(false, std::memory_order_release);
+            }
+
+            if (generativeMode == 1) // On — force on regardless of validity
+            {
                 useGenerativeBass.store(useGen, std::memory_order_release);
-                if (useGen && bassHoldExpired)
-                {
-                    generativeBassRootNote.store(
-                        static_cast<int>(std::lround(static_cast<double>(p.rootMidi))),
-                        std::memory_order_release);
-                    generativeBassDurationBeats.store(p.durationBeats, std::memory_order_release);
-                    lastBassUpdateSample = latest.sampleTimestamp;
-                }
-                else if (useGen)
-                {
-                    // Hold period not expired — keep existing root note.
-                    useGenerativeBass.store(true, std::memory_order_release);
-                }
+                if (!useGen)
+                    genBassStepsReady.store(false, std::memory_order_release);
             }
         }
         else
         {
             useGenerativeBass.store(false, std::memory_order_release);
+            genBassStepsReady.store(false, std::memory_order_release);
         }
     }
 }
@@ -469,8 +447,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     if (auto* rawIntensity = apvts.getRawParameterValue("intensity"))
         fv.policyIntensity = rawIntensity->load();
-    if (auto* rawVariation = apvts.getRawParameterValue("variation"))
-        fv.policyVariation = rawVariation->load();
 
     if (fv.pitchConfidence <= 0.0f || fv.pitchConfidence < kMinPitchConfidence)
     {
@@ -529,11 +505,18 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     if (silencePolicy)
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
+    else if (genBassStepsReady.load(std::memory_order_acquire))
+    {
+        patternPlayer.setGenerativeBassSteps(
+            genBassPitchOffsets,
+            genBassVelocities,
+            genBassRootMidi);
+        genBassStepsReady.store(false, std::memory_order_release);
+    }
     else if (useGenerativeBass.load(std::memory_order_acquire))
-        patternPlayer.setGenerativeBassActive(
-            true,
-            generativeBassRootNote.load(std::memory_order_acquire),
-            generativeBassDurationBeats.load(std::memory_order_acquire));
+        patternPlayer.setGenerativeBassActive(true,
+            genBassRootMidi > 0.0f ? static_cast<int>(std::lround(genBassRootMidi)) : 40,
+            1.0f);
     else
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
 
@@ -572,11 +555,10 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
 void AccompanimentProcessor::bumpDebugPattern()
 {
-    const int n = patternLibrary.patternCount();
-    const int next = (latestPatternIndex.load(std::memory_order_relaxed) + 1) % n;
     const int dur = juce::jmax(1, static_cast<int>(std::round(5.0 * cachedSampleRate.load(std::memory_order_acquire))));
     debugPreviewSamplesRemaining.store(dur, std::memory_order_release);
-    latestPatternIndex.store(next, std::memory_order_release);
+    // D-23-04: drive rejection signal instead of directly cycling index
+    patternRejectionCount.fetch_add(1, std::memory_order_release);
 }
 
 void AccompanimentProcessor::getStateInformation(juce::MemoryBlock& destData)
