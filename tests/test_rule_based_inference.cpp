@@ -12,7 +12,7 @@ TEST_CASE("RuleBasedInference maps states to pattern indices", "[inference]")
     f.state = StructureState::SILENT;
     REQUIRE(inf.selectPattern(f) == 0);
 
-    f.state = StructureState::VERSE;
+    f.state = StructureState::SOFT;
     f.bpm = 100.0f;
     REQUIRE(inf.selectPattern(f) == 1);
     f.bpm = 140.0f;
@@ -20,12 +20,9 @@ TEST_CASE("RuleBasedInference maps states to pattern indices", "[inference]")
     f.bpm = 170.0f;
     REQUIRE(inf.selectPattern(f) == 3);
 
-    f.state = StructureState::CHORUS;
+    f.state = StructureState::LOUD;
     f.bpm = 150.0f;
     REQUIRE(inf.selectPattern(f) == 4);
     f.bpm = 170.0f;
     REQUIRE(inf.selectPattern(f) == 5);
-
-    f.state = StructureState::BREAKDOWN;
-    REQUIRE(inf.selectPattern(f) == 6);
 }

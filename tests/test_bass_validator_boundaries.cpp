@@ -10,90 +10,85 @@
 
 TEST_CASE("BassMidiValidator: note 28 (minimum valid) is accepted", "[bass]")
 {
-    REQUIRE(BassMidiValidator::validateBassProposal(28.0f, 1.0f, StructureState::VERSE, false));
+    REQUIRE(BassMidiValidator::validateBassProposal(28.0f, 1.0f, StructureState::SOFT, false));
 }
 
 TEST_CASE("BassMidiValidator: note 27 (one below minimum) is rejected", "[bass]")
 {
-    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(27.0f, 1.0f, StructureState::VERSE, false));
+    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(27.0f, 1.0f, StructureState::SOFT, false));
 }
 
 TEST_CASE("BassMidiValidator: note 55 (maximum valid) is accepted", "[bass]")
 {
-    REQUIRE(BassMidiValidator::validateBassProposal(55.0f, 1.0f, StructureState::VERSE, false));
+    REQUIRE(BassMidiValidator::validateBassProposal(55.0f, 1.0f, StructureState::SOFT, false));
 }
 
 TEST_CASE("BassMidiValidator: note 56 (one above maximum) is rejected", "[bass]")
 {
-    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(56.0f, 1.0f, StructureState::VERSE, false));
+    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(56.0f, 1.0f, StructureState::SOFT, false));
 }
 
 TEST_CASE("BassMidiValidator: note well below range (0) is rejected", "[bass]")
 {
-    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(0.0f, 1.0f, StructureState::VERSE, false));
+    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(0.0f, 1.0f, StructureState::SOFT, false));
 }
 
 TEST_CASE("BassMidiValidator: note well above range (127) is rejected", "[bass]")
 {
-    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(127.0f, 1.0f, StructureState::VERSE, false));
+    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(127.0f, 1.0f, StructureState::SOFT, false));
 }
 
 // ─── Fractional MIDI note (should be evaluated by proximity to int range) ────
 
 TEST_CASE("BassMidiValidator: fractional note inside range (40.5) is accepted", "[bass]")
 {
-    REQUIRE(BassMidiValidator::validateBassProposal(40.5f, 1.0f, StructureState::VERSE, false));
+    REQUIRE(BassMidiValidator::validateBassProposal(40.5f, 1.0f, StructureState::SOFT, false));
 }
 
 // ─── Silent policy override ──────────────────────────────────────────────────
 
 TEST_CASE("BassMidiValidator: structureSilentPolicy overrides valid note", "[bass]")
 {
-    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(40.0f, 1.0f, StructureState::VERSE, true));
+    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(40.0f, 1.0f, StructureState::SOFT, true));
 }
 
 TEST_CASE("BassMidiValidator: structureSilentPolicy rejects even minimum-valid note", "[bass]")
 {
-    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(28.0f, 1.0f, StructureState::CHORUS, true));
+    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(28.0f, 1.0f, StructureState::LOUD, true));
 }
 
-// ─── All non-silent StructureState values ────────────────────────────────────
+// ─── Non-silent StructureState values ────────────────────────────────────────
 
-TEST_CASE("BassMidiValidator: valid note accepted in BREAKDOWN state", "[bass]")
+TEST_CASE("BassMidiValidator: valid note accepted in SOFT state", "[bass]")
 {
-    REQUIRE(BassMidiValidator::validateBassProposal(40.0f, 1.0f, StructureState::BREAKDOWN, false));
+    REQUIRE(BassMidiValidator::validateBassProposal(40.0f, 1.0f, StructureState::SOFT, false));
 }
 
-TEST_CASE("BassMidiValidator: valid note accepted in CHORUS state", "[bass]")
+TEST_CASE("BassMidiValidator: valid note accepted in LOUD state", "[bass]")
 {
-    REQUIRE(BassMidiValidator::validateBassProposal(40.0f, 1.0f, StructureState::CHORUS, false));
-}
-
-TEST_CASE("BassMidiValidator: valid note accepted in VERSE state", "[bass]")
-{
-    REQUIRE(BassMidiValidator::validateBassProposal(40.0f, 1.0f, StructureState::VERSE, false));
+    REQUIRE(BassMidiValidator::validateBassProposal(40.0f, 1.0f, StructureState::LOUD, false));
 }
 
 // ─── Duration boundaries ─────────────────────────────────────────────────────
 
 TEST_CASE("BassMidiValidator: minimum duration (0.0625 beats) is accepted", "[bass]")
 {
-    REQUIRE(BassMidiValidator::validateBassProposal(40.0f, 0.0625f, StructureState::VERSE, false));
+    REQUIRE(BassMidiValidator::validateBassProposal(40.0f, 0.0625f, StructureState::SOFT, false));
 }
 
 TEST_CASE("BassMidiValidator: duration below minimum is rejected", "[bass]")
 {
-    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(40.0f, 0.0f, StructureState::VERSE, false));
+    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(40.0f, 0.0f, StructureState::SOFT, false));
 }
 
 TEST_CASE("BassMidiValidator: maximum duration (4.0 beats) is accepted", "[bass]")
 {
-    REQUIRE(BassMidiValidator::validateBassProposal(40.0f, 4.0f, StructureState::VERSE, false));
+    REQUIRE(BassMidiValidator::validateBassProposal(40.0f, 4.0f, StructureState::SOFT, false));
 }
 
 TEST_CASE("BassMidiValidator: duration above maximum is rejected", "[bass]")
 {
-    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(40.0f, 5.0f, StructureState::VERSE, false));
+    REQUIRE_FALSE(BassMidiValidator::validateBassProposal(40.0f, 5.0f, StructureState::SOFT, false));
 }
 
 // ─── StructureState is informational only (not checked by validator) ──────────

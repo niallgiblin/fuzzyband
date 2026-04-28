@@ -14,7 +14,7 @@ TEST_CASE("RuleStructureInference agrees with steady rule state", "[structure][s
     fv.highFreqFlux = 0.1f;
     fv.pitchRootMidi = 40.f;
     fv.pitchConfidence = 0.9f;
-    fv.state = StructureState::VERSE;
+    fv.state = StructureState::SOFT;
     fv.sampleTimestamp = 0;
 
     for (int i = 0; i < 50; ++i)
