@@ -263,3 +263,59 @@ TEST_CASE("Processor rejection changes displayPatternIndex", "[integration][pipe
 
     proc.releaseResources();
 }
+
+// ─── Session backward-compat: pre-v0.4.0 XML with genre attribute ─────────────
+
+TEST_CASE("Session XML round-trip: pre-v0.4.0 genre attribute ignored", "[integration][pipeline]")
+{
+    // Step 1: Get real serialized state as a ValueTree, then inject pre-v0.4.0 params.
+    AccompanimentProcessor procSrc;
+    procSrc.prepareToPlay(48000.0, 512);
+    if (auto* p = procSrc.getApvts().getParameter("intensity"))
+        p->setValue(0.6f);
+    if (auto* p = procSrc.getApvts().getParameter("structureBlend"))
+        p->setValue(0.3f);
+
+    // Force APVTS state tree to reflect setValue before serialising
+    procSrc.getApvts().state.sendPropertyChangeMessage("intensity");
+
+    juce::MemoryBlock baseData;
+    procSrc.getStateInformation(baseData);
+    REQUIRE(baseData.getSize() > 0);
+
+    // Parse the baseline ValueTree and inject pre-v0.4.0 unknown properties.
+    // JUCE APVTS uses ValueTree::readFromData / writeToStream (binary, not XML).
+    auto tree = juce::ValueTree::readFromData(baseData.getData(), baseData.getSize());
+    REQUIRE(tree.isValid());
+
+    // Inject pre-v0.4.0 properties that no longer exist in the APVTS.
+    // JUCE silently ignores unknown ValueTree properties on deserialization.
+    tree.setProperty("genre", "0.75", nullptr);
+    tree.setProperty("variation", "0.2", nullptr);
+
+    // Step 2: Serialise the tampered ValueTree back to a MemoryBlock.
+    juce::MemoryBlock tamperedData;
+    juce::MemoryOutputStream tamperedStream(tamperedData, false);
+    tree.writeToStream(tamperedStream);
+
+    // Step 3: Load tampered state into a fresh processor — must not crash.
+    AccompanimentProcessor procDst;
+    procDst.prepareToPlay(48000.0, 512);
+    procDst.setStateInformation(tamperedData.getData(), static_cast<int>(tamperedData.getSize()));
+
+    // Step 4: Surviving parameters must load correctly.
+    if (auto* inten = dynamic_cast<juce::AudioParameterFloat*>(
+            procDst.getApvts().getParameter("intensity")))
+        REQUIRE(std::abs(inten->get() - 0.6f) < 0.01f);
+
+    if (auto* blend = dynamic_cast<juce::AudioParameterFloat*>(
+            procDst.getApvts().getParameter("structureBlend")))
+        REQUIRE(std::abs(blend->get() - 0.3f) < 0.01f);
+
+    // Step 5: Plugin must be in a consistent state (pattern index in valid range).
+    REQUIRE(procDst.getDisplayPatternIndex() >= 0);
+    REQUIRE(procDst.getDisplayPatternIndex() <= 6);
+
+    procSrc.releaseResources();
+    procDst.releaseResources();
+}
