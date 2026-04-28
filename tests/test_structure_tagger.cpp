@@ -1,20 +1,22 @@
 #include <catch2/catch_test_macros.hpp>
 #include "analysis/StructureTagger.h"
 
-TEST_CASE("StructureTagger hysteresis holds state", "[structure]")
+TEST_CASE("StructureTagger hysteresis holds SOFT state", "[structure]")
 {
     StructureTagger tagger;
     tagger.prepare(44100.0);
 
-    StructureState s = tagger.update(0.2f, 900.0f, 0.0f, 512);
-    REQUIRE(s == StructureState::BREAKDOWN);
+    // Drive into SOFT: rms 0.2 is above kSilentRms(0.05) and below kLoudRms(0.35)
+    StructureState s = tagger.update(0.2f, 0.0f, 0.0f, 512);
+    REQUIRE(s == StructureState::SOFT);
 
-    s = tagger.update(0.01f, 900.0f, 0.0f, 512);
-    REQUIRE(s == StructureState::BREAKDOWN);
+    // Still SOFT after one silent block (hold hasn't expired)
+    s = tagger.update(0.01f, 0.0f, 0.0f, 512);
+    REQUIRE(s == StructureState::SOFT);
 
-    // kHoldBreakdownSec is 2.5s; need enough 512-sample blocks at 44.1 kHz to exceed hold.
-    for (int i = 0; i < 260; ++i)
-        s = tagger.update(0.01f, 1500.0f, 0.0f, 512);
+    // Feed 173 silent blocks to exceed kHoldSoftSec=2.0s
+    for (int i = 0; i < 173; ++i)
+        s = tagger.update(0.01f, 0.0f, 0.0f, 512);
 
     REQUIRE(s == StructureState::SILENT);
 }
