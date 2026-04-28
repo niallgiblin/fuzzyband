@@ -8,19 +8,14 @@ void StructureTagger::prepare(double newSampleRate)
     currentState = StructureState::SILENT;
 }
 
-StructureState StructureTagger::computeDesiredState(float rms, float centroid, float peakRms) const
+StructureState StructureTagger::computeDesiredState(float rms, float /*centroid*/, float peakRms) const
 {
     const float silentFloor = std::max(kSilentRms, peakRms * 0.15f);
     if (rms < silentFloor)
         return StructureState::SILENT;
-
-    if (centroid < kBreakdownCentroidHz)
-        return StructureState::BREAKDOWN;
-
-    if (centroid < kVerseCentroidHz)
-        return StructureState::VERSE;
-
-    return StructureState::CHORUS;
+    if (rms >= kLoudRms)
+        return StructureState::LOUD;
+    return StructureState::SOFT;
 }
 
 StructureState StructureTagger::update(float rms, float centroid, float /*highFreqFlux*/, int numSamples, float peakRms)
@@ -39,10 +34,9 @@ StructureState StructureTagger::update(float rms, float centroid, float /*highFr
     double holdRequired = 0.0;
     switch (currentState)
     {
-        case StructureState::SILENT:    holdRequired = kHoldSilentSec;    break;
-        case StructureState::VERSE:     holdRequired = kHoldVerseSec;     break;
-        case StructureState::CHORUS:    holdRequired = kHoldChorusSec;    break;
-        case StructureState::BREAKDOWN: holdRequired = kHoldBreakdownSec; break;
+        case StructureState::SILENT: holdRequired = kHoldSilentSec; break;
+        case StructureState::SOFT:   holdRequired = kHoldSoftSec;   break;
+        case StructureState::LOUD:   holdRequired = kHoldLoudSec;   break;
     }
     if (timeInStateSec < holdRequired)
         return currentState;
