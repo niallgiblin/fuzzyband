@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: pending
-milestone_name: Next milestone (undefined)
-status: between_milestones
-last_updated: "2026-04-19T23:59:00.000Z"
-last_activity: 2026-04-19
+milestone: v0.4.0
+milestone_name: ML Playability & Simplification
+status: roadmapped
+last_updated: "2026-04-28T00:00:00.000Z"
+last_activity: 2026-04-28
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 6
+  completed_phases: 2
+  total_plans: 3
+  completed_plans: 3
+  percent: 33
 ---
 
 # STATE — Metal Accompaniment
@@ -19,26 +19,21 @@ progress:
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-04-19)
+See: `.planning/PROJECT.md` (updated 2026-04-28)
 
 **Version string in the plugin UI** comes from **`CMakeLists.txt`** `project(MetalAccompaniment VERSION …)` (JUCE `ProjectInfo::versionString`). It should move with milestone checkpoints; **GSD phase/milestone authority** is this file plus **`.planning/ROADMAP.md`** (not `ROADMAP_PHASE_1.md`, which is the historical Phase 1 doc only).
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** Define the next milestone (`/gsd-new-milestone`). **Last shipped:** v0.3.0 — Real ML Training Pipeline (Phases 17–20), 2026-04-19.
+**Current focus:** Phase 23 — C++ Inference Layer. Run `/gsd-plan-phase 23` to begin.
 
 ---
 
 ## Current Position
 
-**Phase:** — (milestone closed; phase history under `.planning/phases/` and milestone archives)  
-**Milestone:** Pending — run `/gsd-new-milestone`  
-**Last shipped:** v0.3.0 — Real ML Training Pipeline (Phases 17–20), 2026-04-19  
-**Status:** Between milestones — requirements reset; roadmap lists next milestone as TBD  
-**Last activity:** 2026-04-27 — Completed quick task 260427-t43: BPM lock-in, 5-BPM quantization, 80ms onset refractory (v0.3.8)
-
-```
-Progress: (no active milestone — start with /gsd-new-milestone)
-```
+Phase: 22 — ONNX Contract + Stubs (complete)
+Plan: 22-01
+Status: Complete — ONNX contract docs, stubs, validator, tests, CI gate all locked
+Last activity: 2026-04-28 — Phase 22 execution complete
 
 ---
 
@@ -49,6 +44,21 @@ Progress: (no active milestone — start with /gsd-new-milestone)
 | v0.1.0 | 1–8 | `.planning/milestones/v0.1.0-ROADMAP.md` |
 | v0.2.0 | 9–16 | `.planning/milestones/v0.2.0-ROADMAP.md` |
 | v0.3.0 | 17–20 | `.planning/milestones/v0.3.0-ROADMAP.md` |
+
+---
+
+## v0.4.0 — Current Milestone
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 21 | C++ Type Foundation | TYPE-01, TYPE-02 | Complete |
+| 22 | ONNX Contract + Stubs | ONNX-04, ONNX-05 | Complete |
+| 23 | C++ Inference Layer | INF-01, INF-02 | Not started |
+| 24 | UI Simplification | UI-01, UI-02 | Not started |
+| 25 | Training Data Pipeline | DATA-07, DATA-08, DATA-09 | Not started |
+| 26 | Retrain + Validate | PMODEL-04, BMODEL-03, STRUC-04, PVAL-01 | Not started |
+
+**Execution order:** 21 → 22 → 23 → 24 (sequential). Phase 25 depends on Phase 21 and can run in parallel with 22–24. Phase 26 depends on both Phase 23 and Phase 25.
 
 ---
 
@@ -67,7 +77,16 @@ Progress: (no active milestone — start with /gsd-new-milestone)
 
 ## Accumulated Context
 
-### Key architectural constraints (v0.3.0)
+### Key architectural constraints (v0.4.0)
+
+- TYPE-01 and TYPE-02 (Phase 21) must complete before any model retrain — all 3 ONNX models silently fail on shape mismatch if state encoding is wrong; shape assertions in INF-01 prevent silent catch fallback
+- Phase 21 + Phase 22 must be in the same execution window as model retrains (Phase 26) — running the plugin with ONNX enabled between them risks silent fallback
+- Genre APVTS removal (UI-01) must touch all 4 files atomically — partial removal crashes on session load; dedicated Phase 24 enforces this
+- `docs/ONNX_IO.md` (ONNX-04, ONNX-05) is the source of truth for all C++ inference changes — update contract docs before touching `OnnxInference` C++
+- Lakh data pipeline (Phase 25) depends on Phase 21 3-class label encoding but is otherwise independent of Phases 22–24
+- `validate_onnx_contract.py` (all three flags: `--pattern`, `--bass`, `--structure`) is a mandatory pass gate in Phase 26
+
+### Key architectural constraints (v0.3.0, preserved)
 
 - `training/prep_midi.py` must NOT be modified — Phase 17 imports `_events_from_file` from it
 - Normalization must be baked INTO the `PatternOnnxExport` ONNX wrapper — plugin sends raw `FeatureVector` values
@@ -79,6 +98,7 @@ Progress: (no active milestone — start with /gsd-new-milestone)
 
 ### Decisions Log
 
+- **2026-04-28 — v0.4.0 roadmap created:** 6 phases (21–26), 15 requirements mapped, all coverage validated. StructureState→3-value and genre removal sequenced ahead of data/retrain work to eliminate silent ONNX shape failures.
 - **2026-04-19 — Phase 20 discuss-phase:** `install-model-local.sh` with `--pattern-dir` / `--bass-dir`, validate-then-copy to `assets/accompaniment_model.onnx` + `assets/bass_model.onnx`, optional `--copy-stats`; Reaper smoke via three `intensity` settings and **Pattern:** readout (≥2 distinct indices, non-stuck); milestone close local-only (no mandatory CI/S3). See `20-CONTEXT.md`.
 - **2026-04-19 — Phase 19 execute-phase:** Synthetic bass tensors (E2/A2/B1 balance), MSE + val early stop, `bass_trained.onnx` opset 17 with `X_bass`/`Y_bass`; contract check passes. See `19-CONTEXT.md`, `19-VERIFICATION.md`.
 - **2026-04-19 — Phase 18 discuss-phase:** Macro-F1 logging + early stopping on macro-F1; inverse-frequency class weights; bake `norm_stats.json` affine in `PatternOnnxExport` while keeping BatchNorm/Dropout in `PatternNet`; timestamped `training/artifacts/` runs with `pattern_trained.onnx`. See `18-CONTEXT.md`.
@@ -105,8 +125,8 @@ Progress: (no active milestone — start with /gsd-new-milestone)
 
 ## Session Continuity
 
-Last session: 2026-04-19 — v0.3.0 milestone archived (`/gsd-complete-milestone`)  
-Resume: `/gsd-new-milestone` — define next version, requirements, and roadmap
+Last session: 2026-04-28 — v0.4.0 roadmap created (phases 21–26, 15/15 requirements mapped)  
+Resume: `/gsd-plan-phase 23` — C++ Inference Layer
 
 ---
 

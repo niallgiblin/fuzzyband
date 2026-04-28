@@ -124,7 +124,7 @@ Plans:
 **Dependency note:** Phases 21 → 22 → 23 must run in strict sequence (type foundation unlocks contract; contract unlocks inference). Phase 24 (UI) depends only on Phase 23. Phase 25 (data) depends on Phase 21 (3-class label encoding) and can run in parallel with Phases 22–24. Phase 26 (retrain) depends on both Phase 23 and Phase 25.
 
 - [ ] **Phase 21: C++ Type Foundation** — Reduce StructureState to 3 values and remove genre field; compiler enumerates all breakage
-- [ ] **Phase 22: ONNX Contract + Stubs** — Update I/O contract docs and regenerate stubs; unblocks CI and C++ inference work
+- [x] **Phase 22: ONNX Contract + Stubs** — Update I/O contract docs and regenerate stubs; unblocks CI and C++ inference work
 - [ ] **Phase 23: C++ Inference Layer** — Update OnnxInference packing for 3-class state and piano-roll bass; wire rejection signal
 - [ ] **Phase 24: UI Simplification** — Remove genre widget atomically; rewire Next Pattern to rejection signal
 - [ ] **Phase 25: Training Data Pipeline** — Download and merge Lakh MIDI with GMD into joint train/val tensors
@@ -154,7 +154,10 @@ Plans:
   2. `build_minimal_structure_onnx.py` regenerated stub passes `validate_onnx_contract.py --structure` with new `[1,3]` output shape
   3. `validate_onnx_contract.py --bass` passes against a `[1,32]` stub output — old `[1,4]` stub fails the check
   4. CI smoke (`MA_ENABLE_ONNX=ON` with updated stub models) passes without shape assertion errors
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 22-01-PLAN.md — Lock ONNX docs/contracts, regenerate deterministic stubs, enforce validator + ONNX CI smoke gate
 
 ### Phase 23: C++ Inference Layer
 **Goal**: `OnnxInference` asserts correct shapes at load time, packs 3-class state correctly, decodes `[1,32]` piano-roll bass output, and exposes a rejection signal that the message thread can trigger
@@ -227,8 +230,8 @@ Plans:
 | 18. Pattern Model | v0.3.0 | 3/3 | Complete | 2026-04-19 |
 | 19. Bass Model | v0.3.0 | 2/2 | Complete | 2026-04-19 |
 | 20. Export & Promotion | v0.3.0 | 2/2 | Complete | 2026-04-19 |
-| 21. C++ Type Foundation | v0.4.0 | 0/0 | Not started | - |
-| 22. ONNX Contract + Stubs | v0.4.0 | 0/0 | Not started | - |
+| 21. C++ Type Foundation | v0.4.0 | 2/2 | Complete | 2026-04-28 |
+| 22. ONNX Contract + Stubs | v0.4.0 | 1/1 | Complete | 2026-04-28 |
 | 23. C++ Inference Layer | v0.4.0 | 0/0 | Not started | - |
 | 24. UI Simplification | v0.4.0 | 0/0 | Not started | - |
 | 25. Training Data Pipeline | v0.4.0 | 0/0 | Not started | - |
