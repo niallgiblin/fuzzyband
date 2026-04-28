@@ -3,15 +3,18 @@
  *
  * Synthesises a composite audio signal:
  *   5 s  silence
- *  10 s  verse-like  (1500 Hz sine, amplitude 0.5 — centroid in VERSE range [1000,2200))
- *  10 s  chorus-like (3000 Hz sine, amplitude 0.5 — centroid in CHORUS range [2200+))
+ *  10 s  soft-like  (1500 Hz sine, amplitude 0.3 — RMS ≈ 0.212, below kLoudRms=0.35 → SOFT)
+ *  10 s  loud-like  (1500 Hz sine, amplitude 0.6 — RMS ≈ 0.424, above kLoudRms=0.35 → LOUD)
  *   5 s  silence
  *
  * Feeds it through AccompanimentProcessor in 512-sample blocks and verifies:
  *   - During silence, display state is SILENT (index 0) and pattern is 0.
- *   - After sustained verse section, display state transitions out of SILENT.
- *   - After sustained chorus section, pattern index is consistent with CHORUS.
+ *   - After sustained soft section, display state transitions out of SILENT.
+ *   - After sustained loud section, pattern index is consistent with LOUD.
  *   - After the final silence, display RMS drops back below the silent threshold.
+ *
+ * Classification uses pure RMS: below kSilentRms(0.05) → SILENT, above kLoudRms(0.35) → LOUD,
+ * in between → SOFT. Centroid is not used as a classifier axis.
  *
  * Note: state transitions are delayed by the 2 s / 2.5 s hold times in StructureTagger.
  * Tests sample state at the end of each section, not at the exact transition point.
@@ -94,12 +97,12 @@ TEST_CASE("E2E: verse-like section causes display state to leave SILENT", "[e2e]
         feedSection(proc, sil.data(), n, block);
     }
 
-    // 10 s of 1500 Hz sine — centroid in VERSE range (1000–2200 Hz), rms > 0.05
-    // After the 0.1 s RMS warmup and immediate SILENT exit, state should enter VERSE
+    // 10 s of 1500 Hz sine at amplitude 0.3 — RMS ≈ 0.212, safely below kLoudRms(0.35) → SOFT
+    // After the 0.1 s RMS warmup and immediate SILENT exit, state should enter SOFT
     {
         const int n = static_cast<int>(10.0 * sr);
-        auto verse = sineSection(n, 1500.0, sr, 0.5f);
-        feedSection(proc, verse.data(), n, block);
+        auto soft = sineSection(n, 1500.0, sr, 0.3f);
+        feedSection(proc, soft.data(), n, block);
     }
 
     // Display state must have left SILENT (0)
@@ -119,32 +122,32 @@ TEST_CASE("E2E: chorus-like section after verse drives pattern index to [4,5]", 
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
 
-    // Silence → verse (reach VERSE state; needs kHoldSilentSec=0 + 0.1 s RMS warmup)
+    // Silence → soft (reach SOFT state; needs kHoldSilentSec=0 + 0.1 s RMS warmup)
     {
         const int n = static_cast<int>(8.0 * sr);  // long enough for state to leave SILENT
-        auto verse = sineSection(n, 1500.0, sr, 0.5f);
-        feedSection(proc, verse.data(), n, block);
+        auto soft = sineSection(n, 1500.0, sr, 0.3f);  // RMS ≈ 0.212 → SOFT
+        feedSection(proc, soft.data(), n, block);
     }
 
-    // CHORUS section: 3000 Hz sine for 14 s.
-    // StructureTagger needs > 2 s of CHORUS input while in VERSE before transitioning.
-    // After 14 s the tagger has been in CHORUS for ~12 s.
+    // LOUD section: amplitude 0.6 for 14 s — RMS ≈ 0.424, safely above kLoudRms(0.35).
+    // StructureTagger needs > 2 s of LOUD input while in SOFT before transitioning.
+    // After 14 s the tagger has been in LOUD for ~12 s.
     {
         const int n = static_cast<int>(14.0 * sr);
-        auto cho = sineSection(n, 3000.0, sr, 0.5f);
-        feedSection(proc, cho.data(), n, block);
+        auto loud = sineSection(n, 1500.0, sr, 0.6f);  // RMS ≈ 0.424 → LOUD
+        feedSection(proc, loud.data(), n, block);
     }
 
-    // With default BPM ≈ 120 and CHORUS state:
+    // With default BPM ≈ 120 and LOUD state:
     //   RuleBasedInference: bpmAdj = 120, < 160 → base = 4
-    //   PolicyPatternMapper (genre=0, var=0.5, varShift=0): result = 4
+    //   PolicyPatternMapper (var=0.5, varShift=0): result = 4
     // Actual BPM from click-free sine may still be 120 (default), so expect pattern 4 or 5.
     const int pat = proc.getDisplayPatternIndex();
     REQUIRE(pat >= 4);
     REQUIRE(pat <= 5);
 
-    // Display state must be CHORUS (index 3)
-    REQUIRE(proc.getDisplayStateIndex() == static_cast<int>(StructureState::CHORUS));
+    // Display state must be LOUD (index 2)
+    REQUIRE(proc.getDisplayStateIndex() == static_cast<int>(StructureState::LOUD));
 
     proc.releaseResources();
 }
@@ -158,10 +161,10 @@ TEST_CASE("E2E: final silence after signal causes RMS to drop", "[e2e][transitio
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
 
-    // Sustained signal to raise RMS
+    // Sustained signal to raise RMS (amplitude 0.3 → RMS ≈ 0.212 → SOFT)
     {
         const int n = static_cast<int>(3.0 * sr);
-        auto sig = sineSection(n, 1500.0, sr, 0.5f);
+        auto sig = sineSection(n, 1500.0, sr, 0.3f);
         feedSection(proc, sig.data(), n, block);
     }
     const float rmsAfterSignal = proc.getDisplayRms();

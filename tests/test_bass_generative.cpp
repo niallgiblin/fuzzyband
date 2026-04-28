@@ -7,7 +7,7 @@ TEST_CASE("BassMidiValidator rejects when structureSilentPolicy is true", "[bass
     REQUIRE_FALSE(BassMidiValidator::validateBassProposal(
         40.f,
         1.0f,
-        StructureState::VERSE,
+        StructureState::SOFT,
         true));
 }
 
@@ -16,12 +16,12 @@ TEST_CASE("BassMidiValidator rejects notes outside [28, 55]", "[bass]")
     REQUIRE_FALSE(BassMidiValidator::validateBassProposal(
         27.f,
         1.0f,
-        StructureState::VERSE,
+        StructureState::SOFT,
         false));
     REQUIRE_FALSE(BassMidiValidator::validateBassProposal(
         56.f,
         1.0f,
-        StructureState::VERSE,
+        StructureState::SOFT,
         false));
 }
 
@@ -30,7 +30,7 @@ TEST_CASE("BassMidiValidator accepts nominal root and duration when not silent",
     REQUIRE(BassMidiValidator::validateBassProposal(
         40.f,
         1.0f,
-        StructureState::VERSE,
+        StructureState::SOFT,
         false));
 }
 
@@ -44,7 +44,7 @@ TEST_CASE("Degradation: failed validation yields no generative score", "[bass]")
     const bool valid = BassMidiValidator::validateBassProposal(
         27.f,
         1.0f,
-        StructureState::VERSE,
+        StructureState::SOFT,
         false);
     REQUIRE_FALSE(valid);
     float scoreGen = 0.f;
@@ -63,7 +63,7 @@ TEST_CASE("Degradation: sub-threshold confidence does not beat library baseline"
     const bool valid = BassMidiValidator::validateBassProposal(
         40.f,
         1.0f,
-        StructureState::VERSE,
+        StructureState::SOFT,
         false);
     REQUIRE(valid);
     float scoreGen = 0.f;

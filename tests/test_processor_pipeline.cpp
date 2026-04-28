@@ -128,7 +128,7 @@ TEST_CASE("Processor pipeline: sustained signal raises RMS and changes display s
     const int    block    = 512;
     const int    numBlocks = 300; // ~3.2 s of audio — enough for StructureTagger to leave SILENT
 
-    // 1500 Hz sine at amplitude 0.5: rmsEnergy ≈ 0.283 (> kSilentRms 0.05), centroid ≈ VERSE range
+    // 1500 Hz sine at amplitude 0.5: rmsEnergy ≈ 0.283 (> kSilentRms 0.05, < kLoudRms 0.35) → SOFT
     auto sigSrc = makeSineBuffer(block, 1500.0, sr, 0.5f);
     feedBlocks(proc, sigSrc, block, numBlocks);
 
