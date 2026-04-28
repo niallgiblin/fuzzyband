@@ -2,7 +2,7 @@
 """
 Build a tiny ONNX model for Phase 12 structure smoke tests:
   input  X_struct: float32 [1, 12, 7]  — windowed FeatureVector history (see docs/ONNX_IO.md)
-  output Y_struct: float32 [1, 4]     — logits over StructureState order
+  output Y_struct: float32 [1, 3]     — logits over StructureState order (SILENT/SOFT/LOUD)
 
 Run from repo root:
   training/.venv/bin/python scripts/build_minimal_structure_onnx.py
@@ -20,9 +20,9 @@ from onnx import TensorProto, helper
 
 def build_graph() -> onnx.ModelProto:
     # [1,12,7] -> ReduceMean axis=1 -> [1,7]
-    # MatMul [1,7] x [7,4] + bias -> [1,4] logits
+    # MatMul [1,7] x [7,3] + bias -> [1,3] logits
     x_info = helper.make_tensor_value_info("X_struct", TensorProto.FLOAT, [1, 12, 7])
-    y_info = helper.make_tensor_value_info("Y_struct", TensorProto.FLOAT, [1, 4])
+    y_info = helper.make_tensor_value_info("Y_struct", TensorProto.FLOAT, [1, 3])
 
     # axes as attribute (ReduceMean single-input form for opset 13+)
     reduce_mean = helper.make_node(
@@ -34,14 +34,14 @@ def build_graph() -> onnx.ModelProto:
     )
 
     rng = np.random.default_rng(42)
-    w = rng.standard_normal((7, 4)).astype(np.float32) * 0.1
-    b = rng.standard_normal((4,)).astype(np.float32) * 0.05
+    w = rng.standard_normal((7, 3)).astype(np.float32) * 0.1
+    b = rng.standard_normal((3,)).astype(np.float32) * 0.05
 
     w_init = helper.make_tensor(
-        "W", TensorProto.FLOAT, [7, 4], w.flatten().astype(np.float32)
+        "W", TensorProto.FLOAT, [7, 3], w.flatten().astype(np.float32)
     )
     b_init = helper.make_tensor(
-        "B", TensorProto.FLOAT, [4], b.astype(np.float32)
+        "B", TensorProto.FLOAT, [3], b.astype(np.float32)
     )
     init_w = helper.make_node("Constant", [], ["W_tensor"], value=w_init)
     init_b = helper.make_node("Constant", [], ["B_tensor"], value=b_init)

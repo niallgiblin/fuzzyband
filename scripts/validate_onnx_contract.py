@@ -35,6 +35,8 @@ def _find_tensor(inferred: onnx.ModelProto, name: str):
     raise ValueError(f"tensor '{name}' not found in model")
 
 
+# ─── Pattern (frozen, unchanged from v0.2.0) ─────────────────────────────────
+
 def check_pattern(path: Path) -> None:
     raw = onnx.load(path)
     onnx.checker.check_model(raw)
@@ -73,7 +75,41 @@ def check_pattern(path: Path) -> None:
         raise SystemExit(1)
 
 
+# ─── Structure (v0.4.0: 3-class SILENT/SOFT/LOUD) ────────────────────────────
+
+def check_structure(path: Path) -> None:
+    """Validate structure classifier model: Y_struct [1,3] float32 logits."""
+    raw = onnx.load(path)
+    onnx.checker.check_model(raw)
+    inferred = shape_inference.infer_shapes(raw)
+    vx = _find_tensor(inferred, "X_struct")
+    vy = _find_tensor(inferred, "Y_struct")
+    if vx.type.tensor_type.elem_type != FLOAT:
+        print(
+            f"structure: X_struct must be float32, got elem_type {vx.type.tensor_type.elem_type}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    if vy.type.tensor_type.elem_type != FLOAT:
+        print(
+            f"structure: Y_struct must be float32, got elem_type {vy.type.tensor_type.elem_type}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    dx = _dims(vx)
+    dy = _dims(vy)
+    if len(dx) != 3 or (dx[1] is not None and dx[1] != 12) or (dx[2] is not None and dx[2] != 7):
+        print(f"structure: X_struct must be [1, 12, 7], got shape {dx}", file=sys.stderr)
+        raise SystemExit(1)
+    if len(dy) != 2 or (dy[1] is not None and dy[1] != 3):
+        print(f"structure: Y_struct must be [1, 3], got shape {dy}", file=sys.stderr)
+        raise SystemExit(1)
+
+
+# ─── Bass (v0.4.0: 16-step piano-roll [1,32]) ────────────────────────────────
+
 def check_bass(path: Path) -> None:
+    """Validate bass model: Y_bass [1,32] float32 interleaved piano-roll."""
     raw = onnx.load(path)
     onnx.checker.check_model(raw)
     inferred = shape_inference.infer_shapes(raw)
@@ -96,21 +132,26 @@ def check_bass(path: Path) -> None:
     if len(dx) != 2 or (dx[1] is not None and dx[1] != 7):
         print(f"bass: X_bass must have feature dim 7, got shape {dx}", file=sys.stderr)
         raise SystemExit(1)
-    if len(dy) != 2 or (dy[1] is not None and dy[1] != 4):
-        print(f"bass: Y_bass must be [1, 4], got shape {dy}", file=sys.stderr)
+    if len(dy) != 2 or (dy[1] is not None and dy[1] != 32):
+        print(f"bass: Y_bass must be [1, 32], got shape {dy}", file=sys.stderr)
         raise SystemExit(1)
 
+
+# ─── CLI ──────────────────────────────────────────────────────────────────────
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Validate ONNX I/O vs frozen docs")
     ap.add_argument("--pattern", type=Path, default=None, help="Pattern .onnx path")
+    ap.add_argument("--structure", type=Path, default=None, help="Structure .onnx path")
     ap.add_argument("--bass", type=Path, default=None, help="Bass .onnx path")
     args = ap.parse_args()
-    if args.pattern is None and args.bass is None:
-        print("error: pass at least one of --pattern or --bass", file=sys.stderr)
+    if args.pattern is None and args.structure is None and args.bass is None:
+        print("error: pass at least one of --pattern, --structure, or --bass", file=sys.stderr)
         return 1
     if args.pattern is not None:
         check_pattern(args.pattern)
+    if args.structure is not None:
+        check_structure(args.structure)
     if args.bass is not None:
         check_bass(args.bass)
     return 0
