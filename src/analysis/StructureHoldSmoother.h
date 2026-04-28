@@ -25,9 +25,8 @@ public:
 
 private:
     static constexpr double kHoldSilentSec = 0.0;
-    static constexpr double kHoldVerseSec = 2.0;
-    static constexpr double kHoldChorusSec = 2.5;
-    static constexpr double kHoldBreakdownSec = 2.5;
+    static constexpr double kHoldSoftSec   = 2.0;
+    static constexpr double kHoldLoudSec   = 2.5;
 
     double timeInStateSec = 0.0;
     StructureState currentState = StructureState::SILENT;
