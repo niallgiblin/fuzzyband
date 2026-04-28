@@ -23,14 +23,11 @@ StructureState StructureHoldSmoother::advance(StructureState desired, double dtS
         case StructureState::SILENT:
             holdRequired = kHoldSilentSec;
             break;
-        case StructureState::VERSE:
-            holdRequired = kHoldVerseSec;
+        case StructureState::SOFT:
+            holdRequired = kHoldSoftSec;
             break;
-        case StructureState::CHORUS:
-            holdRequired = kHoldChorusSec;
-            break;
-        case StructureState::BREAKDOWN:
-            holdRequired = kHoldBreakdownSec;
+        case StructureState::LOUD:
+            holdRequired = kHoldLoudSec;
             break;
     }
 
