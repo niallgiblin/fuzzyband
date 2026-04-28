@@ -157,7 +157,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 22-01-PLAN.md — Lock ONNX docs/contracts, regenerate deterministic stubs, enforce validator + ONNX CI smoke gate
+- [x] 22-01-PLAN.md — Lock ONNX docs/contracts, regenerate deterministic stubs, enforce validator + ONNX CI smoke gate
 
 ### Phase 23: C++ Inference Layer
 **Goal**: `OnnxInference` asserts correct shapes at load time, packs 3-class state correctly, decodes `[1,32]` piano-roll bass output, and exposes a rejection signal that the message thread can trigger
@@ -168,7 +168,11 @@ Plans:
   2. `IInference::selectPattern` accepts `excludeIndex` parameter; `patternRejectionCount` atomic is written by the message thread and bypasses the 2-bar hold guard for exactly one inference cycle
   3. Plugin loads with updated stub models and `MA_ENABLE_ONNX=ON`; pattern display shows ML path output
   4. Unit test: calling the rejection path with `excludeIndex=N` never returns pattern N on the immediately following `selectPattern` call
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [x] 23-01-PLAN.md — Pattern [1,7] one-hot packing + bass [1,32] piano-roll decoding + load-time contract assertions (INF-01)
+- [x] 23-02-PLAN.md — IInference excludeIndex + patternRejectionCount atomic + single-shot hold-guard bypass + unit tests (INF-02)
 
 ### Phase 24: UI Simplification
 **Goal**: Genre selection is gone from the plugin across all four affected files atomically; Next Pattern button drives the ML rejection signal instead of hardcoded index cycling
@@ -179,8 +183,12 @@ Plans:
   2. A session XML saved by a pre-v0.4.0 build loads in v0.4.0 without crash (unknown `genre` attribute ignored gracefully by APVTS)
   3. "Next Pattern" button increments `patternRejectionCount` on the processor; ML inference loop responds by excluding the current pattern on its next cycle
   4. Variation slider absent from editor; `structureBlend` slider retained
-**Plans**: TBD
+**Plans**: 2 plans
 **UI hint**: yes
+
+Plans:
+- [ ] 24-01-PLAN.md — Atomic removal: genre, variation, PolicyPatternMapper; resized() reflow (UI-01, UI-02)
+- [ ] 24-02-PLAN.md — Session backward-compat test, version bump 0.4.1, build verify (UI-01, UI-02)
 
 ### Phase 25: Training Data Pipeline
 **Goal**: A merged GMD + Lakh MIDI tensor dataset with source-stratified train/val splits is on disk and passes a domain compatibility check — no model retraining may begin until this gate clears
@@ -231,8 +239,8 @@ Plans:
 | 19. Bass Model | v0.3.0 | 2/2 | Complete | 2026-04-19 |
 | 20. Export & Promotion | v0.3.0 | 2/2 | Complete | 2026-04-19 |
 | 21. C++ Type Foundation | v0.4.0 | 2/2 | Complete | 2026-04-28 |
-| 22. ONNX Contract + Stubs | v0.4.0 | 1/1 | Complete | 2026-04-28 |
-| 23. C++ Inference Layer | v0.4.0 | 0/0 | Not started | - |
+| 22. ONNX Contract + Stubs | v0.4.0 | 1/1 | Complete   | 2026-04-28 |
+| 23. C++ Inference Layer | v0.4.0 | 2/2 | Complete | 2026-04-28 |
 | 24. UI Simplification | v0.4.0 | 0/0 | Not started | - |
 | 25. Training Data Pipeline | v0.4.0 | 0/0 | Not started | - |
 | 26. Retrain + Validate | v0.4.0 | 0/0 | Not started | - |
@@ -268,7 +276,7 @@ Plans:
 
 > **Superseded for execution:** Core themes shipped as **Phase 9** (DATA-*) in v0.2.0. Traceability: `.planning/milestones/v0.2.0-REQUIREMENTS.md`.
 
-**Plans:** 3/3 plans complete
+**Plans:** 1/1 plans complete
 
 Plans:
 - [x] Executed under Phase 9 / v0.2.0 (see phase 9 plans and `docs/DATASET_AUDIT.md`)
