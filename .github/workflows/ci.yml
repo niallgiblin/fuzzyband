@@ -58,6 +58,38 @@ jobs:
         working-directory: training
         run: python3 -m pytest tests/ -v --tb=short
 
+      - name: ONNX contract validation (Phase 22)
+        if: always()
+        run: |
+          python3 scripts/build_minimal_structure_onnx.py
+          python3 scripts/build_minimal_bass_onnx.py
+          python3 scripts/validate_onnx_contract.py --structure assets/structure_model.onnx
+          python3 scripts/validate_onnx_contract.py --bass assets/bass_model.onnx
+          echo "ONNX contract validation passed"
+
+      - name: Download ONNX Runtime (ONNX smoke)
+        run: |
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "arm64" ]; then
+            ONNX_ARCH="arm64"
+          else
+            ONNX_ARCH="x86_64"
+          fi
+          ONNX_URL="https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-osx-${ONNX_ARCH}-1.20.1.tgz"
+          curl -sL "$ONNX_URL" -o /tmp/onnxruntime.tgz
+          tar xzf /tmp/onnxruntime.tgz -C /tmp
+          echo "ONNXRUNTIME_ROOT=/tmp/onnxruntime-osx-${ONNX_ARCH}-1.20.1" >> "$GITHUB_ENV"
+
+      - name: ONNX-enabled build smoke (Phase 22)
+        run: |
+          cmake -B build-onnx -DCMAKE_BUILD_TYPE=Release \
+            -DMA_ENABLE_ONNX=ON \
+            -DONNXRUNTIME_ROOT="$ONNXRUNTIME_ROOT" \
+            -DMA_BUILD_TESTS=OFF \
+            -DMA_BUILD_STANDALONE=OFF
+          cmake --build build-onnx --config Release --parallel
+          echo "ONNX-enabled build smoke passed"
+
       - name: Prep MIDI smoke (Phase 9)
         run: |
           python3 training/prep_midi.py --input training/fixtures/minimal.mid --output /tmp/ci_prep_out.json
