@@ -470,8 +470,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         fv.policyIntensity = rawIntensity->load();
     if (auto* rawVariation = apvts.getRawParameterValue("variation"))
         fv.policyVariation = rawVariation->load();
-    if (auto* genreParam = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("genre")))
-        fv.policyGenreIndex = genreParam->getIndex();
 
     if (fv.pitchConfidence <= 0.0f || fv.pitchConfidence < kMinPitchConfidence)
     {

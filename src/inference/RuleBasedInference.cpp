@@ -18,7 +18,7 @@ int RuleBasedInference::selectPattern(const FeatureVector& f)
         case StructureState::SILENT:
             base = 0;
             break;
-        case StructureState::VERSE:
+        case StructureState::SOFT:
             if (bpmAdj < 120.0f)
                 base = 1;
             else if (bpmAdj < 160.0f)
@@ -26,14 +26,11 @@ int RuleBasedInference::selectPattern(const FeatureVector& f)
             else
                 base = 3;
             break;
-        case StructureState::CHORUS:
+        case StructureState::LOUD:
             if (bpmAdj < 160.0f)
                 base = 4;
             else
                 base = 5;
-            break;
-        case StructureState::BREAKDOWN:
-            base = 6;
             break;
     }
 
