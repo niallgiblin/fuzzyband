@@ -1,12 +1,12 @@
 # ONNX I/O Contract — Metal Accompaniment
 
-> **Status:** Frozen for milestone **v0.2.0** (Phase 10).
+> **Status:** Frozen for milestone **v0.4.0** (Phase 22).
 > **Scope:** Plugin-side tensor contract consumed by `src/inference/OnnxInference.cpp`.
-> Requirement refs: **ONNX-02** (handoff), **PYTR-03** (Phase 15 export must target this graph).
+> Requirement refs: **ONNX-04** (structure contract), **PYTR-03** (Phase 15 export must target this graph).
 
 This document defines the **exact** ONNX graph inputs and outputs that the plugin
 expects when built with `-DMA_ENABLE_ONNX=ON`. Training and export pipelines
-(Phase 15) **must** produce a model that matches this contract byte-for-byte.
+**must** produce a model that matches this contract byte-for-byte.
 
 **See also:** Phase 13 generative bass uses a separate graph and tensor names **`X_bass` / `Y_bass`** — [`docs/BASS_ONNX_IO.md`](BASS_ONNX_IO.md). The **`X` / `Y` pattern-selector tables below are frozen** and are not modified for bass.
 
@@ -18,10 +18,10 @@ expects when built with `-DMA_ENABLE_ONNX=ON`. Training and export pipelines
 |----------|-------|
 | Name | `X` |
 | Dtype | `float32` |
-| Shape | `[1, 5]` (row-major) |
+| Shape | `[1, 7]` (row-major) |
 | Semantics | Single feature window per `selectPattern()` call |
 
-### Feature order (row `X[0]`, columns 0–4)
+### Feature order (row `X[0]`, columns 0–6)
 
 | Index | Field | Source (`FeatureVector`) | Notes |
 |-------|-------|--------------------------|-------|
@@ -29,7 +29,11 @@ expects when built with `-DMA_ENABLE_ONNX=ON`. Training and export pipelines
 | 1 | `rmsEnergy` | `FeatureVector::rmsEnergy` | float; rolling 100 ms RMS, ~[0, 1] |
 | 2 | `spectralCentroid` | `FeatureVector::spectralCentroid` | float; Hz |
 | 3 | `highFreqFlux` | `FeatureVector::highFreqFlux` | float; 2 kHz+ band flux |
-| 4 | `float(state)` | `static_cast<float>(static_cast<int>(FeatureVector::state))` | Numeric cast of `StructureState` enum (`SILENT=0`, `VERSE=1`, `CHORUS=2`, `BREAKDOWN=3`) |
+| 4 | `stateSILENT` | One-hot: `1.0` when `FeatureVector::state == SILENT`, else `0.0` | Three-class one-hot encoding |
+| 5 | `stateSOFT` | One-hot: `1.0` when `FeatureVector::state == SOFT`, else `0.0` | See class order below |
+| 6 | `stateLOUD` | One-hot: `1.0` when `FeatureVector::state == LOUD`, else `0.0` | Mutually exclusive (exactly one is 1.0) |
+
+**Class order:** `SILENT`, `SOFT`, `LOUD` — matches `enum class StructureState` in `src/analysis/StructureTagger.h`.
 
 The packing order is canonical and **must match** the C++ packing in
 `OnnxInference::selectPattern` (see `src/inference/OnnxInference.cpp`).
@@ -90,7 +94,7 @@ If load fails or `Run()` throws, the processor falls back to
 | 1 | `rmsEnergy` | `FeatureVector::rmsEnergy` |
 | 2 | `spectralCentroid` | `FeatureVector::spectralCentroid` |
 | 3 | `highFreqFlux` | `FeatureVector::highFreqFlux` |
-| 4 | `float(static_cast<int>(state))` | Numeric cast of `StructureState` (`SILENT=0` … `BREAKDOWN=3`) |
+| 4 | `float(static_cast<int>(state))` | Numeric cast of `StructureState` (`SILENT=0`, `SOFT=1`, `LOUD=2`) |
 | 5 | `pitchRootMidi` | `FeatureVector::pitchRootMidi` |
 | 6 | `pitchConfidence` | `FeatureVector::pitchConfidence` |
 
@@ -100,9 +104,9 @@ If load fails or `Run()` throws, the processor falls back to
 |----------|-------|
 | Name | `Y_struct` |
 | Dtype | `float32` |
-| Shape | `[1, 4]` **logits** (pre-softmax) |
+| Shape | `[1, 3]` **logits** (pre-softmax) |
 
-**Class order (logits index → label):** `SILENT`, `VERSE`, `CHORUS`, `BREAKDOWN` — same order as `enum class StructureState` in `src/analysis/StructureTagger.h`.
+**Class order (logits index → label):** `SILENT`, `SOFT`, `LOUD` — same order as `enum class StructureState` in `src/analysis/StructureTagger.h`.
 
 The plugin applies **softmax** in C++ and applies confidence / margin gates before hold smoothing. Phase 15 training export **must** emit logits consistent with this head (not probabilities).
 
@@ -119,7 +123,7 @@ The plugin applies **softmax** in C++ and applies confidence / margin gates befo
 Any training or export pipeline landing in Phase 15 **must** emit a graph whose
 input `X` / output `Y` names, shapes, dtypes, and value ranges match the table
 above. Changing this contract requires a breaking-phase update to
-`.planning/milestones/v0.2.0-REQUIREMENTS.md` (ONNX-02).
+`.planning/REQUIREMENTS.md` (ONNX-04).
 
 ---
 
