@@ -37,39 +37,24 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     versionLabel.setTooltip("Plugin version (CMake project VERSION). Rebuild after bumping it in CMakeLists.txt.");
     addAndMakeVisible(versionLabel);
 
-    userPolicyHeading.setText("style", juce::dontSendNotification);
+    userPolicyHeading.setText("Controls", juce::dontSendNotification);
     userPolicyHeading.setFont(juce::FontOptions(11.0f));
     userPolicyHeading.setColour(juce::Label::textColourId, juce::Colour(0xff8aaa80));
     userPolicyHeading.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(userPolicyHeading);
 
-    for (auto* l : { &genreLabel, &intensityLabel, &variationLabel, &structureBlendLabel, &generativeBassLabel })
+    for (auto* l : { &intensityLabel, &structureBlendLabel, &generativeBassLabel })
     {
         l->setJustificationType(juce::Justification::centredLeft);
         l->setFont(juce::FontOptions(14.0f, juce::Font::bold));
         l->setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
     }
 
-    genreCombo.addItem("Metal",      1);
-    genreCombo.addItem("Metalcore",  2);
-    genreCombo.addItem("Death",      3);
-    genreCombo.addItem("Progressive",4);
-    genreCombo.addItem("Black",      5);
-    genreCombo.setTooltip("Style preset for pattern policy (saved with project).");
-    addAndMakeVisible(genreLabel);
-    addAndMakeVisible(genreCombo);
-
     intensitySlider.setSliderStyle(juce::Slider::LinearHorizontal);
     intensitySlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 18);
     intensitySlider.setRange(0.0, 1.0, 0.001);
     addAndMakeVisible(intensityLabel);
     addAndMakeVisible(intensitySlider);
-
-    variationSlider.setSliderStyle(juce::Slider::LinearHorizontal);
-    variationSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 18);
-    variationSlider.setRange(0.0, 1.0, 0.001);
-    addAndMakeVisible(variationLabel);
-    addAndMakeVisible(variationSlider);
 
     structureBlendSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     structureBlendSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 18);
@@ -85,12 +70,8 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(generativeBassModeCombo);
 
     auto& apvts = audioProcessorRef.getApvts();
-    genreAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
-        apvts, "genre", genreCombo);
     intensityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "intensity", intensitySlider);
-    variationAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        apvts, "variation", variationSlider);
     structureBlendAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "structureBlend", structureBlendSlider);
     generativeBassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
@@ -170,27 +151,17 @@ void AccompanimentEditor::resized()
     userPolicyHeading.setBounds(r.removeFromTop(20));
     r.removeFromTop(8);
 
-    auto row = r.removeFromTop(32);
-    genreLabel.setBounds(row.removeFromLeft(140));
-    genreCombo.setBounds(row);
-    r.removeFromTop(8);
-
-    row = r.removeFromTop(28);
+    auto row = r.removeFromTop(52);
     intensityLabel.setBounds(row.removeFromLeft(140));
     intensitySlider.setBounds(row);
     r.removeFromTop(8);
 
-    row = r.removeFromTop(28);
-    variationLabel.setBounds(row.removeFromLeft(140));
-    variationSlider.setBounds(row);
-    r.removeFromTop(8);
-
-    row = r.removeFromTop(28);
+    row = r.removeFromTop(52);
     structureBlendLabel.setBounds(row.removeFromLeft(140));
     structureBlendSlider.setBounds(row);
     r.removeFromTop(8);
 
-    row = r.removeFromTop(32);
+    row = r.removeFromTop(60);
     generativeBassLabel.setBounds(row.removeFromLeft(140));
     generativeBassModeCombo.setBounds(row);
 

@@ -26,3 +26,55 @@ TEST_CASE("RuleBasedInference maps states to pattern indices", "[inference]")
     f.bpm = 170.0f;
     REQUIRE(inf.selectPattern(f) == 5);
 }
+
+TEST_CASE("RuleBasedInference exclusion never returns excluded index", "[inference]")
+{
+    RuleBasedInference inf;
+    inf.prepare(44100.0);
+
+    FeatureVector f;
+    f.policyIntensity = 0.5f;
+
+    // Test all three states across all possible excludeIndex values
+    struct TestCase { StructureState state; float bpm; };
+    TestCase cases[] = {
+        { StructureState::SILENT, 120.0f },
+        { StructureState::SOFT,   100.0f },
+        { StructureState::SOFT,   140.0f },
+        { StructureState::SOFT,   170.0f },
+        { StructureState::LOUD,   150.0f },
+        { StructureState::LOUD,   170.0f },
+    };
+
+    for (const auto& tc : cases)
+    {
+        f.state = tc.state;
+        f.bpm = tc.bpm;
+        for (int exclude = 0; exclude <= 6; ++exclude)
+        {
+            const int result = inf.selectPattern(f, exclude);
+            REQUIRE(result != exclude);
+        }
+    }
+}
+
+TEST_CASE("RuleBasedInference exclusion default preserves original behavior", "[inference]")
+{
+    RuleBasedInference inf;
+    inf.prepare(44100.0);
+
+    FeatureVector f;
+    f.state = StructureState::SILENT;
+    REQUIRE(inf.selectPattern(f) == 0);
+    REQUIRE(inf.selectPattern(f, -1) == 0);
+
+    f.state = StructureState::SOFT;
+    f.bpm = 100.0f;
+    REQUIRE(inf.selectPattern(f) == 1);
+    REQUIRE(inf.selectPattern(f, -1) == 1);
+
+    f.state = StructureState::LOUD;
+    f.bpm = 170.0f;
+    REQUIRE(inf.selectPattern(f) == 5);
+    REQUIRE(inf.selectPattern(f, -1) == 5);
+}

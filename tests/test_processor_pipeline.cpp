@@ -150,17 +150,8 @@ TEST_CASE("Processor pipeline: getStateInformation / setStateInformation round-t
     procA.prepareToPlay(48000.0, 512);
 
     // Set non-default parameter values via AudioProcessorParameter::setValue.
-    // For AudioParameterChoice (5 options): normalized = index / (count-1).
-    //   genre index 3 "Progressive" → 3/4 = 0.75
-    // For AudioParameterFloat [0,1]: normalized value == actual value.
-    if (auto* p = procA.getApvts().getParameter("genre"))
-        p->setValue(0.75f); // index 3 of 5 choices
-
     if (auto* p = procA.getApvts().getParameter("intensity"))
         p->setValue(0.8f);
-
-    if (auto* p = procA.getApvts().getParameter("variation"))
-        p->setValue(0.2f);
 
     juce::MemoryBlock data;
     procA.getStateInformation(data);
@@ -170,56 +161,13 @@ TEST_CASE("Processor pipeline: getStateInformation / setStateInformation round-t
     procB.prepareToPlay(48000.0, 512);
     procB.setStateInformation(data.getData(), static_cast<int>(data.getSize()));
 
-    // Genre should survive the round-trip
-    if (auto* g = dynamic_cast<juce::AudioParameterChoice*>(
-            procB.getApvts().getParameter("genre")))
-        REQUIRE(g->getIndex() == 3);
-
     // Continuous parameters should be within floating-point tolerance
     if (auto* inten = dynamic_cast<juce::AudioParameterFloat*>(
             procB.getApvts().getParameter("intensity")))
         REQUIRE(std::abs(inten->get() - 0.8f) < 0.01f);
 
-    if (auto* var = dynamic_cast<juce::AudioParameterFloat*>(
-            procB.getApvts().getParameter("variation")))
-        REQUIRE(std::abs(var->get() - 0.2f) < 0.01f);
-
     procA.releaseResources();
     procB.releaseResources();
-}
-
-// ─── Parameter effect on pattern selection ────────────────────────────────────
-
-TEST_CASE("Processor pipeline: changing genre shifts displayPatternIndex via PolicyPatternMapper", "[integration][pipeline]")
-{
-    // With SILENT input, RuleBasedInference returns base=0.
-    // PolicyPatternMapper: (0 + genreIndex) % 7 (variation=0.5 → varShift=0).
-    // genre 0 → 0,  genre 1 → 1.
-    // So changing genre from 0 to 1 with silence input changes patternIndex from 0 to 1.
-
-    AccompanimentProcessor procG0;
-    procG0.prepareToPlay(48000.0, 512);
-    procG0.pauseBackgroundInferenceForTests();
-    feedBlocks(procG0, makeSilenceBuffer(512), 512, 5);
-    procG0.flushBackgroundInferenceForTests();
-    const int idxG0 = procG0.getDisplayPatternIndex();
-
-    AccompanimentProcessor procG1;
-    procG1.prepareToPlay(48000.0, 512);
-    // genre index 1 "Metalcore" → normalized 1/4 = 0.25
-    if (auto* p = procG1.getApvts().getParameter("genre"))
-        p->setValue(0.25f);
-    procG1.pauseBackgroundInferenceForTests();
-    feedBlocks(procG1, makeSilenceBuffer(512), 512, 5);
-    procG1.flushBackgroundInferenceForTests();
-    const int idxG1 = procG1.getDisplayPatternIndex();
-
-    // Genre 1 should produce a different (higher) index than genre 0 for silent input
-    REQUIRE(idxG0 == 0);
-    REQUIRE(idxG1 == 1);
-
-    procG0.releaseResources();
-    procG1.releaseResources();
 }
 
 // ─── Thread pause / resume safety ────────────────────────────────────────────
@@ -278,6 +226,40 @@ TEST_CASE("Processor pipeline: BPM display stays in [80, 220] at all times", "[i
     const float bpm = proc.getDisplayBpm();
     REQUIRE(bpm >= 80.0f);
     REQUIRE(bpm <= 220.0f);
+
+    proc.releaseResources();
+}
+
+// ─── Rejection signal ───────────────────────────────────────────────────────
+
+TEST_CASE("Processor rejection changes displayPatternIndex", "[integration][pipeline]")
+{
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(48000.0, 512);
+    proc.pauseBackgroundInferenceForTests();
+
+    // Feed silence blocks to establish pattern 0 (SILENT → base 0)
+    feedBlocks(proc, makeSilenceBuffer(512), 512, 10);
+    proc.flushBackgroundInferenceForTests();
+    const int idxBefore = proc.getDisplayPatternIndex();
+    REQUIRE(idxBefore >= 0);
+
+    // Feed one more block so the queue has a fresh feature for the next flush
+    feedBlocks(proc, makeSilenceBuffer(512), 512, 1);
+
+    // Trigger rejection — should exclude the current pattern for one cycle
+    proc.patternRejectionCount.store(1, std::memory_order_release);
+
+    proc.flushBackgroundInferenceForTests();
+    const int idxAfter = proc.getDisplayPatternIndex();
+
+    // With silence input and genre=0: base=0 → policy=0.  ExcludeIndex=0 → returns (0+1)%7 = 1
+    REQUIRE(idxAfter != idxBefore);
+    REQUIRE(idxAfter == 1); // (excludeIndex 0 + 1) % 7
+
+    // Rejection should be consumed (single-shot)
+    const int remainingRejection = proc.patternRejectionCount.load(std::memory_order_acquire);
+    REQUIRE(remainingRejection == 0);
 
     proc.releaseResources();
 }

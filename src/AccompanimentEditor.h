@@ -136,20 +136,14 @@ private:
     juce::Label versionLabel;
     juce::Label userPolicyHeading;
 
-    juce::Label genreLabel{ {}, "Genre" };
-    juce::ComboBox genreCombo;
     juce::Label intensityLabel{ {}, "Intensity" };
     juce::Slider intensitySlider;
-    juce::Label variationLabel{ {}, "Variation" };
-    juce::Slider variationSlider;
     juce::Label structureBlendLabel{ {}, "Structure: blend ML vs rules" };
     juce::Slider structureBlendSlider;
     juce::Label generativeBassLabel{ {}, "Generative bass" };
     juce::ComboBox generativeBassModeCombo;
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> genreAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> intensityAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> variationAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> structureBlendAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> generativeBassAttachment;
 

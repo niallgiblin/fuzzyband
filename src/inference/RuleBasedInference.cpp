@@ -1,12 +1,12 @@
 #include "RuleBasedInference.h"
-#include "PolicyPatternMapper.h"
+#include <algorithm>
 
 void RuleBasedInference::prepare(double newSampleRate)
 {
     sampleRate = newSampleRate;
 }
 
-int RuleBasedInference::selectPattern(const FeatureVector& f)
+int RuleBasedInference::selectPattern(const FeatureVector& f, int excludeIndex)
 {
     (void)sampleRate;
 
@@ -34,5 +34,11 @@ int RuleBasedInference::selectPattern(const FeatureVector& f)
             break;
     }
 
-    return PolicyPatternMapper::applyPatternPolicy(base, f);
+    int result = std::clamp(base, 0, 6);
+
+    // D-23-04: single-shot exclusion — if result matches excludeIndex, return next
+    if (excludeIndex >= 0 && result == excludeIndex)
+        result = (excludeIndex + 1) % 7;
+
+    return result;
 }
