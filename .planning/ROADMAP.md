@@ -5,7 +5,7 @@
 - ✅ **v0.1.0 — Phase 1 rule-based MVP** — Phases 1–8 (shipped 2026-04-17)
 - ✅ **v0.2.0 — Phase 2 ML + Generative** — Phases 9–16 (shipped 2026-04-17)
 - ✅ **v0.3.0 — Real ML Training Pipeline** — Phases 17–20 (shipped 2026-04-19; `EXP-02` human Reaper smoke still tracked — see `.planning/milestones/v0.3.0-REQUIREMENTS.md`)
-- 📋 **Next milestone** — Not defined; run `/gsd-new-milestone`
+- 🚧 **v0.4.0 — ML Playability & Simplification** — Phases 21–26 (in progress)
 
 ## Phases
 
@@ -117,9 +117,89 @@ Plans:
 
 </details>
 
-### Next milestone
+### v0.4.0 — ML Playability & Simplification (Phases 21–26)
 
-Not started. Run `/gsd-new-milestone` to define the next version, requirements, and phased roadmap.
+**Milestone Goal:** Make the plugin musical and self-contained — better-trained ML drives all pattern decisions from a richer dataset, the UI gets out of the way, and the structure model is simplified to energy states.
+
+**Dependency note:** Phases 21 → 22 → 23 must run in strict sequence (type foundation unlocks contract; contract unlocks inference). Phase 24 (UI) depends only on Phase 23. Phase 25 (data) depends on Phase 21 (3-class label encoding) and can run in parallel with Phases 22–24. Phase 26 (retrain) depends on both Phase 23 and Phase 25.
+
+- [ ] **Phase 21: C++ Type Foundation** — Reduce StructureState to 3 values and remove genre field; compiler enumerates all breakage
+- [ ] **Phase 22: ONNX Contract + Stubs** — Update I/O contract docs and regenerate stubs; unblocks CI and C++ inference work
+- [ ] **Phase 23: C++ Inference Layer** — Update OnnxInference packing for 3-class state and piano-roll bass; wire rejection signal
+- [ ] **Phase 24: UI Simplification** — Remove genre widget atomically; rewire Next Pattern to rejection signal
+- [ ] **Phase 25: Training Data Pipeline** — Download and merge Lakh MIDI with GMD into joint train/val tensors
+- [ ] **Phase 26: Retrain + Validate** — Retrain all three models against new contracts; human Reaper jam verification
+
+### Phase 21: C++ Type Foundation
+**Goal**: All C++ code compiles cleanly with a 3-value StructureState and no genre field — the compiler surfaces every stale reference before any ONNX or Python work begins
+**Depends on**: Phase 20 (last shipped phase)
+**Requirements**: TYPE-01, TYPE-02
+**Success Criteria** (what must be TRUE):
+  1. Plugin compiles in Release and Debug with `StructureState` values `SILENT`, `SOFT`, `LOUD` only — no reference to `VERSE`, `CHORUS`, or `BREAKDOWN` in any `src/` file
+  2. All unit tests pass (`MetalAccompanimentTests`) with 3-state tagger logic
+  3. `FeatureVector` contains no `policyGenreIndex` field; all ONNX packing sites updated; zero compiler errors or warnings about removed identifiers
+  4. CI green on macOS with `MA_ENABLE_ONNX=OFF` (rule-based path unbroken after enum change)
+**Plans**: 2 plans
+
+Plans:
+- [ ] 21-01-PLAN.md — Redefine StructureState enum (SILENT/SOFT/LOUD), update StructureTagger, StructureHoldSmoother, FeatureVector, PolicyPatternMapper, RuleBasedInference, OnnxStructureInference, AccompanimentEditor
+- [ ] 21-02-PLAN.md — Update all tests for 3-state enum, bump version to 0.4.0, build and pass test suite
+
+### Phase 22: ONNX Contract + Stubs
+**Goal**: The ONNX I/O contract document and stub model generators reflect the 3-class state input and piano-roll bass output — CI can validate contract shapes before any real model is trained
+**Depends on**: Phase 21
+**Requirements**: ONNX-04, ONNX-05
+**Success Criteria** (what must be TRUE):
+  1. `docs/ONNX_IO.md` documents `X[state]` as 3-class one-hot and `Y_struct` as `[1,3]`; `Y_bass` documented as `[1,32]` piano-roll (16-step × pitch offset + velocity per 16th note)
+  2. `build_minimal_structure_onnx.py` regenerated stub passes `validate_onnx_contract.py --structure` with new `[1,3]` output shape
+  3. `validate_onnx_contract.py --bass` passes against a `[1,32]` stub output — old `[1,4]` stub fails the check
+  4. CI smoke (`MA_ENABLE_ONNX=ON` with updated stub models) passes without shape assertion errors
+**Plans**: TBD
+
+### Phase 23: C++ Inference Layer
+**Goal**: `OnnxInference` asserts correct shapes at load time, packs 3-class state correctly, decodes `[1,32]` piano-roll bass output, and exposes a rejection signal that the message thread can trigger
+**Depends on**: Phase 22
+**Requirements**: INF-01, INF-02
+**Success Criteria** (what must be TRUE):
+  1. Loading an ONNX model with wrong `Y_bass` shape (e.g. old `[1,4]`) raises a hard assertion at plugin startup — no silent catch/fallback to rule-based on shape mismatch; rule-based fallback triggers only when model file is absent
+  2. `IInference::selectPattern` accepts `excludeIndex` parameter; `patternRejectionCount` atomic is written by the message thread and bypasses the 2-bar hold guard for exactly one inference cycle
+  3. Plugin loads with updated stub models and `MA_ENABLE_ONNX=ON`; pattern display shows ML path output
+  4. Unit test: calling the rejection path with `excludeIndex=N` never returns pattern N on the immediately following `selectPattern` call
+**Plans**: TBD
+
+### Phase 24: UI Simplification
+**Goal**: Genre selection is gone from the plugin across all four affected files atomically; Next Pattern button drives the ML rejection signal instead of hardcoded index cycling
+**Depends on**: Phase 23
+**Requirements**: UI-01, UI-02
+**Success Criteria** (what must be TRUE):
+  1. Genre APVTS parameter absent from plugin; genre widget absent from editor; `PolicyPatternMapper` contains no genre branching — all four files changed in one commit
+  2. A session XML saved by a pre-v0.4.0 build loads in v0.4.0 without crash (unknown `genre` attribute ignored gracefully by APVTS)
+  3. "Next Pattern" button increments `patternRejectionCount` on the processor; ML inference loop responds by excluding the current pattern on its next cycle
+  4. Variation slider absent from editor; `structureBlend` slider retained
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 25: Training Data Pipeline
+**Goal**: A merged GMD + Lakh MIDI tensor dataset with source-stratified train/val splits is on disk and passes a domain compatibility check — no model retraining may begin until this gate clears
+**Depends on**: Phase 21 (3-class state encoding used in label oracle)
+**Requirements**: DATA-07, DATA-08, DATA-09
+**Success Criteria** (what must be TRUE):
+  1. `download_lakh.py` downloads `lmd_matched` subset; filtered file count (channel-10 drum track present, BPM in [80, 220]) is logged and meets minimum threshold
+  2. `build_lakh_dataset.py` produces tensors in GMD-compatible format; domain compatibility check comparing Lakh vs GMD feature distributions passes before merge is permitted
+  3. `merge_datasets.py` produces merged `.pt` shards with joint quantile label recomputation; GMD-only validation fold preserved in a separate shard for cross-corpus comparison
+  4. Class histogram over merged labels shows ≥50 examples per class across all 7 pattern indices
+**Plans**: TBD
+
+### Phase 26: Retrain + Validate
+**Goal**: All three ONNX models are retrained against updated contracts and a human Reaper jam confirms that ML-driven pattern selection is audible with no rule-based fallback
+**Depends on**: Phase 23 (updated inference layer), Phase 25 (merged dataset)
+**Requirements**: PMODEL-04, BMODEL-03, STRUC-04, PVAL-01
+**Success Criteria** (what must be TRUE):
+  1. `validate_onnx_contract.py --pattern` passes for `PatternNet` retrained on merged GMD+Lakh with 3-class state encoding; macro-F1 early-stop gate satisfied
+  2. `validate_onnx_contract.py --bass` passes for `BassNet` with `[1,32]` piano-roll output; exported interval vocabulary demonstrably includes P5, m3, tritone, and chromatic approach offsets
+  3. `validate_onnx_contract.py --structure` passes for structure classifier with 3-class `SILENT/SOFT/LOUD` output
+  4. Reaper jam (5-minute session): ≥3 distinct drum patterns audible; bass lines demonstrate within-bar variation; plugin pattern display shows ML-chosen indices with no silent fallback to rule-based default
+**Plans**: TBD
 
 ---
 
@@ -147,6 +227,12 @@ Not started. Run `/gsd-new-milestone` to define the next version, requirements, 
 | 18. Pattern Model | v0.3.0 | 3/3 | Complete | 2026-04-19 |
 | 19. Bass Model | v0.3.0 | 2/2 | Complete | 2026-04-19 |
 | 20. Export & Promotion | v0.3.0 | 2/2 | Complete | 2026-04-19 |
+| 21. C++ Type Foundation | v0.4.0 | 0/0 | Not started | - |
+| 22. ONNX Contract + Stubs | v0.4.0 | 0/0 | Not started | - |
+| 23. C++ Inference Layer | v0.4.0 | 0/0 | Not started | - |
+| 24. UI Simplification | v0.4.0 | 0/0 | Not started | - |
+| 25. Training Data Pipeline | v0.4.0 | 0/0 | Not started | - |
+| 26. Retrain + Validate | v0.4.0 | 0/0 | Not started | - |
 
 ---
 
@@ -166,6 +252,8 @@ Not started. Run `/gsd-new-milestone` to define the next version, requirements, 
 | Label class collapse (VERSE >> BREAKDOWN) | High | Class histogram audit gate in Phase 17; CrossEntropyLoss with per-class weights |
 | Normalization outside ONNX graph | High | Bake normalization into PatternOnnxExport before first training run |
 | ORT version skew (training vs C++ runtime) | Medium | Pin opset 17; match onnxruntime==1.20.1 to CMakeLists.txt ORT version |
+| StructureState enum change breaks 3 ONNX models silently | High | Phase 21 + 22 must complete before any model retrain; shape assertions in INF-01 prevent silent fallback |
+| Genre APVTS removal partial crash on session load | High | All 4 files changed atomically in Phase 24; session XML round-trip test gates the phase |
 
 ---
 
