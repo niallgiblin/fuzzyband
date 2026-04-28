@@ -1,6 +1,7 @@
 #include "AccompanimentProcessor.h"
 #include "AccompanimentEditor.h"
 #include "inference/IStructureInference.h"
+#include "inference/RuleBasedInference.h"
 #include "inference/RuleStructureInference.h"
 #include "midi/BassMidiValidator.h"
 #if defined(MA_ENABLE_ONNX)

@@ -22,9 +22,17 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 **Archived requirements:** `.planning/milestones/v0.2.0-REQUIREMENTS.md`  
 **Archived roadmap:** `.planning/milestones/v0.2.0-ROADMAP.md`
 
-## Next milestone
+## Current Milestone: v0.4.0 ML Playability & Simplification
 
-**Not defined.** Run `/gsd-new-milestone` to set version, requirements, and roadmap. `.planning/REQUIREMENTS.md` is reset to a placeholder until then.
+**Goal:** Make the plugin musical and self-contained — better-trained ML drives all pattern decisions from a richer dataset, the UI gets out of the way, and the structure model is simplified to energy states.
+
+**Target features:**
+- Expanded training data: Lakh MIDI + GMD; retrain PatternNet and BassNet with better class balance and variety
+- Musical bass: walking lines, fills, rhythmic interest; smoother pattern transitions
+- Pattern variety: more distinct drum patterns; ML-driven transitions
+- Simplified state model: SILENT / SOFT / LOUD (energy-driven, replaces SILENT/VERSE/CHORUS/BREAKDOWN)
+- Remove genre selection: strip genre param from APVTS entirely (plugin is sludge/heavy metal only)
+- ML-owned pattern selection: remove hardcoded pattern cycling from UI; "Next Pattern" becomes ML rejection signal
 
 ## Prior milestones (shipped)
 
@@ -108,7 +116,7 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 | GMD + synthetic bass training before cloud/Lakh | Ship a reproducible local training loop; defer larger corpora | ✓ Good — v0.3.0 |
 
 ---
-*Last updated: 2026-04-19 after v0.3.0 milestone close (`/gsd-complete-milestone`)*
+*Last updated: 2026-04-28 — v0.4.0 milestone started (`/gsd-new-milestone`)*
 
 ## Evolution
 

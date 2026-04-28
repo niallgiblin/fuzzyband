@@ -1,6 +1,4 @@
 #include <catch2/catch_test_macros.hpp>
-#include <array>
-#include <algorithm>
 #include "analysis/FeatureVector.h"
 #include "inference/PolicyPatternMapper.h"
 
