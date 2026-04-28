@@ -8,12 +8,10 @@ static const char* stateName(int idx)
     {
         case StructureState::SILENT:
             return "SILENT";
-        case StructureState::VERSE:
-            return "VERSE";
-        case StructureState::CHORUS:
-            return "CHORUS";
-        case StructureState::BREAKDOWN:
-            return "BREAKDOWN";
+        case StructureState::SOFT:
+            return "SOFT";
+        case StructureState::LOUD:
+            return "LOUD";
     }
     return "?";
 }

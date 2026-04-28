@@ -18,24 +18,19 @@ Ort::Env& ortEnv()
     return env;
 }
 
-void softmax4(const float* logits, float* probs)
+void softmax3(const float* logits, float* probs)
 {
-    float m = std::max(std::max(logits[0], logits[1]), std::max(logits[2], logits[3]));
+    float m = std::max(std::max(logits[0], logits[1]), logits[2]);
     float s = 0.f;
-    for (int i = 0; i < 4; ++i)
-    {
-        probs[i] = std::exp(logits[i] - m);
-        s += probs[i];
-    }
+    for (int i = 0; i < 3; ++i) { probs[i] = std::exp(logits[i] - m); s += probs[i]; }
     const float inv = (s > 0.f) ? (1.f / s) : 0.f;
-    for (int i = 0; i < 4; ++i)
-        probs[i] *= inv;
+    for (int i = 0; i < 3; ++i) probs[i] *= inv;
 }
 
-int argmax4(const float* probs)
+int argmax3(const float* probs)
 {
     int k = 0;
-    for (int i = 1; i < 4; ++i)
+    for (int i = 1; i < 3; ++i)
         if (probs[i] > probs[k])
             k = i;
     return k;
@@ -44,7 +39,7 @@ int argmax4(const float* probs)
 float secondLargest(const float* probs, int argmax)
 {
     float best = -1.f;
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 3; ++i)
     {
         if (i == argmax)
             continue;
@@ -57,16 +52,10 @@ StructureState stateFromClassIndex(int k)
 {
     switch (k)
     {
-        case 0:
-            return StructureState::SILENT;
-        case 1:
-            return StructureState::VERSE;
-        case 2:
-            return StructureState::CHORUS;
-        case 3:
-            return StructureState::BREAKDOWN;
-        default:
-            return StructureState::SILENT;
+        case 0: return StructureState::SILENT;
+        case 1: return StructureState::SOFT;
+        case 2: return StructureState::LOUD;
+        default: return StructureState::SILENT;
     }
 }
 
@@ -224,9 +213,9 @@ void OnnxStructureInference::process(const FeatureVector& fv, double dtSec)
         }
 
         const float* logits = outputs[0].GetTensorData<float>();
-        float probs[4];
-        softmax4(logits, probs);
-        const int am = argmax4(probs);
+        float probs[3];
+        softmax3(logits, probs);
+        const int am = argmax3(probs);
         const float pMax = probs[am];
         const float pSecond = secondLargest(probs, am);
         const float margin = pMax - pSecond;
