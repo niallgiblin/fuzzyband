@@ -14,7 +14,6 @@
 #include "inference/IInference.h"
 #include "inference/IStructureInference.h"
 #include "inference/OnnxBassInference.h"
-#include "inference/RuleBasedInference.h"
 #include "midi/MidiPatternLibrary.h"
 #include "midi/PatternPlayer.h"
 #include "readerwriterqueue.h"
