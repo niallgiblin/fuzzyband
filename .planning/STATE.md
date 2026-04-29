@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: — Rhythmic Coherence
 status: planning
-last_updated: "2026-04-29T12:00:00.000Z"
-last_activity: 2026-04-29 — v0.4.0 milestone archived; active work moves to Phases 27–30
+last_updated: "2026-04-29T18:00:00.000Z"
+last_activity: 2026-04-29 — Phase 27 discuss-phase complete (`27-CONTEXT.md`); next `/gsd-plan-phase 27`
 progress:
   total_phases: 4
   completed_phases: 0
@@ -24,13 +24,13 @@ See: `.planning/PROJECT.md` (updated 2026-04-29)
 **Version string in the plugin UI** comes from **`CMakeLists.txt`** `project(MetalAccompaniment VERSION …)` (JUCE `ProjectInfo::versionString`). **GSD phase/milestone authority** is this file plus **`.planning/ROADMAP.md`**.
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** v0.5.0 — rhythmic coherence (documentation → beat tracker / bass sequencer → runtime coordination → ML retrain). Start with `/gsd-plan-phase 27` or roadmap Phase 27.
+**Current focus:** v0.5.0 — rhythmic coherence (documentation → beat tracker / bass sequencer → runtime coordination → ML retrain). Phase 27 context: `.planning/phases/27-rhythmic-coherence-documentation/27-CONTEXT.md`. Next: `/gsd-plan-phase 27`.
 
 ---
 
 ## Current position
 
-Phase: **27** — Rhythmic coherence documentation (not started)  
+Phase: **27** — Rhythmic coherence documentation (context ready — planning next)  
 Milestone: **v0.5.0**  
 Requirements: `.planning/REQUIREMENTS.md` (RHY-*)
 
@@ -75,7 +75,7 @@ Requirements: `.planning/REQUIREMENTS.md` (RHY-*)
 
 ## Session continuity
 
-Resume: `/gsd-plan-phase 27` — rhythmic coherence documentation — or continue from `.planning/ROADMAP.md` Phase 27.
+Resume: `/gsd-plan-phase 27` — use `27-CONTEXT.md`; or continue from `.planning/ROADMAP.md` Phase 27.
 
 ---
 
