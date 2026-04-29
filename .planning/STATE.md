@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: — Rhythmic Coherence
 status: planning
-last_updated: "2026-04-29T18:00:00.000Z"
-last_activity: 2026-04-29 — Phase 27 discuss-phase complete (`27-CONTEXT.md`); next `/gsd-plan-phase 27`
+last_updated: "2026-04-29T22:30:00.000Z"
+last_activity: 2026-04-29 — Phase **28** context gathered (`28-CONTEXT.md`); next **`/gsd-plan-phase 28`**
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 25
 ---
 
 # STATE — Metal Accompaniment
@@ -24,13 +24,13 @@ See: `.planning/PROJECT.md` (updated 2026-04-29)
 **Version string in the plugin UI** comes from **`CMakeLists.txt`** `project(MetalAccompaniment VERSION …)` (JUCE `ProjectInfo::versionString`). **GSD phase/milestone authority** is this file plus **`.planning/ROADMAP.md`**.
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** v0.5.0 — rhythmic coherence (documentation → beat tracker / bass sequencer → runtime coordination → ML retrain). Phase 27 context: `.planning/phases/27-rhythmic-coherence-documentation/27-CONTEXT.md`. Next: `/gsd-plan-phase 27`.
+**Current focus:** v0.5.0 — rhythmic coherence (**Phase 28** context ready → plan/execute beat tracker & bass sequencer). Next: **`/gsd-plan-phase 28`** (or **`/gsd-execute-phase 28`** when plans exist).
 
 ---
 
 ## Current position
 
-Phase: **27** — Rhythmic coherence documentation (context ready — planning next)  
+Phase: **28** — Beat tracker & bass sequencer (**context** `.planning/phases/28-beat-tracker-bass-sequencer/28-CONTEXT.md`)  
 Milestone: **v0.5.0**  
 Requirements: `.planning/REQUIREMENTS.md` (RHY-*)
 
@@ -56,6 +56,7 @@ Requirements: `.planning/REQUIREMENTS.md` (RHY-*)
 
 ### Decisions log (recent)
 
+- **2026-04-29 — Phase 28 discuss-phase:** Beat-primary + IOI fallback with tests; tracker-based start gate; bar-aligned 16-step bass; synthetic-first ±5 BPM tests; debug getters OK, no `FeatureVector` expansion until Phase 29; module boundary planner discretion — see `28-CONTEXT.md`.
 - **2026-04-29 — v0.4.0 milestone archived:** `.planning/milestones/v0.4.0-ROADMAP.md`, `v0.4.0-REQUIREMENTS.md`; living `REQUIREMENTS.md` reset to **v0.5.0** RHY-* scope; `STATE.md` milestone pointer → v0.5.0.
 
 *(Older entries remain in git history and phase directories.)*
@@ -75,7 +76,7 @@ Requirements: `.planning/REQUIREMENTS.md` (RHY-*)
 
 ## Session continuity
 
-Resume: `/gsd-plan-phase 27` — use `27-CONTEXT.md`; or continue from `.planning/ROADMAP.md` Phase 27.
+Resume: `/gsd-plan-phase 28` — decisions in `.planning/phases/28-beat-tracker-bass-sequencer/28-CONTEXT.md`; Phase **27** summary `.planning/phases/27-rhythmic-coherence-documentation/27-SUMMARY.md`.
 
 ---
 
