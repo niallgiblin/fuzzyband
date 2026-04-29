@@ -8,4 +8,5 @@ scikit-learn==1.8.0
 # Linux CI may substitute tensorflow-cpu==2.21.0 for the same API
 tensorflow==2.21.0
 tensorflow-datasets==4.9.9
+onnxscript>=0.5.0
 torch==2.6.0

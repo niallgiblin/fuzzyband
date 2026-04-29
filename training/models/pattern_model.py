@@ -10,20 +10,16 @@ import torch.nn as nn
 
 
 class PatternNet(nn.Module):
-    """5 → 32 → 16 → 7 logits; LayerNorm + Dropout on trunk (D-18-07).
+    """5 → 64 → 32 → 7 logits; LayerNorm + Dropout (PMODEL-04 / Phase 26 wider trunk)."""
 
-    LayerNorm is used instead of BatchNorm so training stays valid when a batch
-    has N=1 (BatchNorm1d would raise in train mode).
-    """
-
-    def __init__(self, dropout_p: float = 0.2) -> None:
+    def __init__(self, dropout_p: float = 0.12) -> None:
         super().__init__()
         self.dropout_p = dropout_p
-        self.fc1 = nn.Linear(5, 32)
-        self.ln1 = nn.LayerNorm(32)
-        self.fc2 = nn.Linear(32, 16)
-        self.ln2 = nn.LayerNorm(16)
-        self.fc3 = nn.Linear(16, 7)
+        self.fc1 = nn.Linear(5, 64)
+        self.ln1 = nn.LayerNorm(64)
+        self.fc2 = nn.Linear(64, 32)
+        self.ln2 = nn.LayerNorm(32)
+        self.fc3 = nn.Linear(32, 7)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.fc1(x)
@@ -40,7 +36,12 @@ class PatternNet(nn.Module):
 
 
 class PatternOnnxExport(nn.Module):
-    """Raw X [N,5] → normalize with dataset stats → PatternNet → argmax → Y int64 [N] (rank-1)."""
+    """X [N,7] one-hot → 5 core features → normalize → PatternNet → argmax → Y int64 [N].
+
+    Columns 0–3: bpm, rmsEnergy, spectralCentroid, highFreqFlux.
+    Columns 4–6: one-hot SILENT / SOFT / LOUD (matches docs/ONNX_IO.md).
+    Loads 5-float norm_stats (training tensors stay [N,5]); ONNX bridge is export-only.
+    """
 
     _EPS = 1e-8
 
@@ -67,7 +68,14 @@ class PatternOnnxExport(nn.Module):
         return cls(pattern_net, mean_t, std_t)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_norm = (x - self.mean) / self.std
+        # x: [N, 7] — columns 0–3 core, 4–6 one-hot state (SILENT/SOFT/LOUD)
+        core_features = x[:, 0:4]
+        one_hot_state = x[:, 4:7]
+        state_numeric = one_hot_state @ torch.tensor(
+            [0.0, 1.0, 2.0], dtype=torch.float32, device=x.device
+        )
+        x5 = torch.cat([core_features, state_numeric.unsqueeze(1)], dim=1)
+        x_norm = (x5 - self.mean) / self.std
         logits = self.pattern_net(x_norm)
         y = torch.argmax(logits, dim=-1, keepdim=True).to(torch.int64)
         return y.reshape(-1)

@@ -4,13 +4,13 @@ milestone: v0.4.0
 milestone_name: — ML Playability & Simplification
 status: executing
 last_updated: "2026-04-29T13:00:00.000Z"
-last_activity: 2026-04-29 -- Phase 26 plan 26-01 executed (datasets + WIP absorption)
+last_activity: 2026-04-29 -- Phase 26 plan 26-02 complete (retrain three ONNX models + assets)
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 12
-  completed_plans: 10
-  percent: 83
+  completed_plans: 11
+  percent: 92
 ---
 
 # STATE — Metal Accompaniment
@@ -24,16 +24,16 @@ See: `.planning/PROJECT.md` (updated 2026-04-28)
 **Version string in the plugin UI** comes from **`CMakeLists.txt`** `project(MetalAccompaniment VERSION …)` (JUCE `ProjectInfo::versionString`). It should move with milestone checkpoints; **GSD phase/milestone authority** is this file plus **`.planning/ROADMAP.md`** (not `ROADMAP_PHASE_1.md`, which is the historical Phase 1 doc only).
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** Phase 26 — Retrain + Validate. Plan 26-01 complete; next Wave 26-02 model retraining.
+**Current focus:** Phase 26 — Retrain + Validate. Plan 26-02 complete (three ONNX heads + assets); next Plan 26-03 promotion + Reaper jam.
 
 ---
 
 ## Current Position
 
 Phase: 26 — Retrain + Validate (executing)
-Plan: 26-02 (26-03 queued)
-Status: Wave 2 — plan 26-02 pending (Wave 1 / 26-01 complete)
-Last activity: 2026-04-29 -- Phase 26 plan 26-01 SUMMARY committed; bassist/structure .pt regenerated locally (gitignored)
+Plan: 26-03 (human jam + summary)
+Status: Wave 3 — plan 26-03 pending (26-02 training + assets complete)
+Last activity: 2026-04-29 -- Phase 26 plan 26-02: Pattern/Bass/Structure ONNX retrained; assets/ embedded ONNX updated
 
 ---
 

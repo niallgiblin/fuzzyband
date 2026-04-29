@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train BassNet on synthetic metal-key pitch data and export bass_trained.onnx (BMODEL-01)."""
+"""Train BassNet on MIDI-extracted piano-roll tensors and export bass_trained.onnx (BMODEL-03 / Phase 26)."""
 
 from __future__ import annotations
 
@@ -24,53 +24,59 @@ if str(_TRAINING_DIR) not in sys.path:
 from models.bass_model import BassNet, BassOnnxExport  # noqa: E402
 
 
-def _generate_synthetic(
-    n: int = 3000, seed: int = 42
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Generate synthetic metal-key bass training data.
+def _embed_onnx_inplace(path: Path) -> None:
+    raw = onnx.load(str(path), load_external_data=True)
+    onnx.save_model(raw, str(path), save_as_external_data=False)
 
-    Returns (X_train, Y_train, X_val, Y_val) as float32 numpy arrays.
-    X columns (7): bpm, rmsEnergy, spectralCentroid, highFreqFlux, state, pitchRootMidi, pitchConfidence
-    Y columns (4): proposal_confidence, root_midi, duration_beats, margin
-    """
-    rng = np.random.default_rng(seed)
 
-    X = np.zeros((n, 7), dtype=np.float32)
-    X[:, 0] = rng.uniform(80, 220, n).astype(np.float32)  # bpm (D-19-05)
-    X[:, 1] = rng.uniform(0.01, 0.9, n).astype(np.float32)  # rmsEnergy
-    X[:, 2] = rng.uniform(1000, 6000, n).astype(np.float32)  # spectralCentroid Hz
-    X[:, 3] = rng.uniform(0, 0.5, n).astype(np.float32)  # highFreqFlux
-    X[:, 4] = rng.integers(0, 4, n).astype(np.float32)  # state SILENT=0..BREAKDOWN=3
-    # pitchRootMidi: cycles E2=40, A2=45, B1=35 in equal thirds (guaranteed balance — D-19-06)
-    roots = np.array([40, 45, 35], dtype=np.float32)
-    root_col = np.tile(roots, n // 3 + 1)[:n]
-    rng.shuffle(root_col)
-    X[:, 5] = root_col
-    X[:, 6] = rng.uniform(0.3, 1.0, n).astype(np.float32)  # pitchConfidence
+def _repo_root() -> Path:
+    return _TRAINING_DIR.parent
 
-    # Labels (D-19-01/02/03/04)
-    Y = np.zeros((n, 4), dtype=np.float32)
-    Y[:, 0] = X[:, 6]  # proposal_confidence = pitchConfidence (D-19-03)
-    Y[:, 1] = X[:, 5]  # root_midi = pitchRootMidi echo (D-19-01)
-    Y[:, 2] = 1.0  # duration_beats = fixed 1.0 (D-19-02)
-    Y[:, 3] = 0.0  # margin = 0.0 reserved (D-19-04)
 
-    n_tr = int(n * 0.8)  # 80/20 split (D-19-07)
-    return X[:n_tr], Y[:n_tr], X[n_tr:], Y[n_tr:]
+def _resolve_data_dir(data_dir: Path) -> Path:
+    resolved = data_dir.resolve()
+    training_root = (_repo_root() / "training").resolve()
+    try:
+        resolved.relative_to(training_root)
+    except ValueError:
+        pass
+    return resolved
+
+
+def _load_split(path: Path) -> tuple[torch.Tensor, torch.Tensor]:
+    blob = torch.load(path, map_location="cpu", weights_only=True)
+    if not isinstance(blob, dict) or "X" not in blob or "Y" not in blob:
+        raise ValueError(f"{path}: expected dict with X, Y")
+    x, y = blob["X"], blob["Y"]
+    if x.dtype != torch.float32:
+        x = x.float()
+    if y.dtype != torch.float32:
+        y = y.float()
+    if x.shape[1] != 7:
+        raise ValueError(f"{path}: X must be [N,7], got {tuple(x.shape)}")
+    if y.shape[1] != 32:
+        raise ValueError(f"{path}: Y must be [N,32], got {tuple(y.shape)}")
+    return x, y
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Synthetic bass model training + ONNX export")
+    p = argparse.ArgumentParser(description="Bass piano-roll training + ONNX export")
+    p.add_argument(
+        "--data-dir",
+        type=Path,
+        default=_TRAINING_DIR / "data/processed",
+        help="Directory with bass_train.pt, bass_val.pt",
+    )
     p.add_argument(
         "--out-dir",
         type=Path,
         default=None,
-        help="Output dir (default: training/artifacts/bass-synth-<UTC>/)",
+        help="Output dir (default: training/artifacts/bass-<UTC>/)",
     )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--max-epochs", type=int, default=200)
-    p.add_argument("--patience", type=int, default=8)
+    p.add_argument("--patience", type=int, default=12)
     p.add_argument("--lr", type=float, default=1e-3)
     args = p.parse_args()
 
@@ -78,20 +84,30 @@ def main() -> int:
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
+    data_dir = _resolve_data_dir(args.data_dir)
+    train_path = data_dir / "bass_train.pt"
+    val_path = data_dir / "bass_val.pt"
+    if not train_path.is_file():
+        print(f"error: missing {train_path}", file=sys.stderr)
+        return 1
+    if not val_path.is_file():
+        print(f"error: missing {val_path}", file=sys.stderr)
+        return 1
+
     if args.out_dir is None:
         ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        out_dir = _TRAINING_DIR / "artifacts" / f"bass-synth-{ts}"
+        out_dir = _TRAINING_DIR / "artifacts" / f"bass-{ts}"
     else:
         out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output directory: {out_dir}", flush=True)
 
-    X_train, Y_train, X_val, Y_val = _generate_synthetic(n=3000, seed=args.seed)
+    x_tr_raw, y_tr = _load_split(train_path)
+    x_va_raw, y_va = _load_split(val_path)
 
-    # Compute norm stats from training split only (D-19-08)
-    mean = X_train.mean(axis=0)
-    std = X_train.std(axis=0)
-    std = np.maximum(std, 1e-8)  # floor (consistent with BassOnnxExport._EPS)
+    X_train = x_tr_raw.numpy()
+    mean = X_train.mean(axis=0, keepdims=True)
+    std = np.maximum(X_train.std(axis=0, keepdims=True), 1e-8)
 
     norm_stats_path = out_dir / "bass_norm_stats.json"
     stats = {
@@ -104,20 +120,14 @@ def main() -> int:
             "pitchRootMidi",
             "pitchConfidence",
         ],
-        "mean": mean.tolist(),
-        "std": std.tolist(),
+        "mean": mean.reshape(-1).tolist(),
+        "std": std.reshape(-1).tolist(),
         "epsilon": 1e-8,
     }
     norm_stats_path.write_text(json.dumps(stats, indent=2), encoding="utf-8")
 
-    # Normalize X for training (D-19-08: train on normalized; bake same norm in ONNX export)
-    X_train_norm = ((X_train - mean) / std).astype(np.float32)
-    X_val_norm = ((X_val - mean) / std).astype(np.float32)
-
-    x_tr = torch.from_numpy(X_train_norm)
-    y_tr = torch.from_numpy(Y_train)  # float32 regression targets
-    x_va = torch.from_numpy(X_val_norm)
-    y_va = torch.from_numpy(Y_val)
+    x_tr = torch.from_numpy(((X_train - mean) / std).astype(np.float32))
+    x_va = torch.from_numpy(((x_va_raw.numpy() - mean) / std).astype(np.float32))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -139,7 +149,7 @@ def main() -> int:
 
     metrics_path = out_dir / "metrics.jsonl"
     best_state: dict[str, torch.Tensor] | None = None
-    best_val_mse = float("inf")  # lower is better (D-19-11)
+    best_val_mse = float("inf")
     stale = 0
 
     for epoch in range(1, args.max_epochs + 1):
@@ -183,7 +193,6 @@ def main() -> int:
             fh.write(json.dumps(rec) + "\n")
         print(json.dumps(rec), flush=True)
 
-        # Early stopping: lower val MSE is better (D-19-11)
         if val_loss < best_val_mse:
             best_val_mse = val_loss
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
@@ -200,6 +209,11 @@ def main() -> int:
     if best_state is None:
         print("error: no model state captured", file=sys.stderr)
         return 1
+
+    val_report = {"best_val_mse": float(best_val_mse)}
+    (out_dir / "validation.json").write_text(
+        json.dumps(val_report, indent=2) + "\n", encoding="utf-8"
+    )
 
     bass_cpu = BassNet()
     bass_cpu.load_state_dict(best_state)
@@ -218,6 +232,7 @@ def main() -> int:
         opset_version=17,
     )
     onnx.checker.check_model(onnx.load(str(onnx_path)))
+    _embed_onnx_inplace(onnx_path)
     print(f"Wrote {onnx_path.resolve()}", flush=True)
     return 0
 

@@ -5,7 +5,7 @@ Phase 15 stub: synthetic train + ONNX export for pattern + bass heads.
 Pattern graph: input **X** float32 **[1, 5]** → output **Y** int64 **[1]** per `docs/ONNX_IO.md`.
 `OnnxInference.cpp` reads `Y[0]` as int64 (tensor rank 1, length 1).
 
-Bass graph: **X_bass** float32 **[1, 7]** → **Y_bass** float32 **[1, 4]** per `docs/BASS_ONNX_IO.md`.
+Bass graph: **X_bass** float32 **[1, 7]** → **Y_bass** float32 **[1, 32]** per `docs/BASS_ONNX_IO.md`.
 """
 
 from __future__ import annotations
