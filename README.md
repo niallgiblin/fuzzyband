@@ -2,17 +2,22 @@
 
 JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + bass MIDI** in real time. **Default builds** use rule-based tempo, energy, and structure plus **optional ONNX** pattern/structure/bass when built with `MA_ENABLE_ONNX=ON` and models in `assets/` (see [CONTRIBUTING.md](CONTRIBUTING.md)). Pitch-aware bass routing is in the tree; generative bass needs ONNX + `bass_model.onnx`.
 
+## Plugin hosting (insert order)
+
+Put the plug-in on your **dry guitar track *before*** amp/cab sims and heavy FX (**guitar → Metal Accompaniment → FX**) so onset/tempo/analysis match what this build assumes. Quick reference: **[`plugin/README.md`](plugin/README.md)** · contributor entry **[`docs/PLUGIN_HOSTING.md`](docs/PLUGIN_HOSTING.md)**.
+
 ## Version & roadmap (source of truth)
+
 
 
 | What                                                                  | Where                                                                                                                                              |
 | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **GSD milestone & phase** (e.g. v0.3.0, Phase 17 done, Phase 18 next) | `[.planning/STATE.md](.planning/STATE.md)` and `[.planning/ROADMAP.md](.planning/ROADMAP.md)`                                                      |
 | **Shipped v0.2.0 narrative** (Phases 9–16, archived)                  | `[.planning/milestones/v0.2.0-ROADMAP.md](.planning/milestones/v0.2.0-ROADMAP.md)`                                                                 |
-| **Plugin version string** in the editor (e.g. `v0.3.0`)               | `CMakeLists.txt` → `project(MetalAccompaniment VERSION …)` — rebuild `**MetalAccompaniment_VST3`** / `**MetalAccompaniment_AU**` after changing it |
+| **Plugin version string** in the editor                                                     | **`CMakeLists.txt`** → `project(MetalAccompaniment VERSION …)` — rebuild **`MetalAccompaniment_VST3`** / **`MetalAccompaniment_AU`** after changing it                                                            |
 
 
-**Milestone snapshot:** **v0.1.0** = Phases 1–8 (rule MVP). **v0.2.0** = Phases 9–16 (ML + generative stack, ONNX optional). **v0.3.0** = Phases 17–20 (real GMD pipeline + trained models → `assets/*.onnx`); **Phase 17** (data pipeline) is complete; **18–20** are next.
+**Milestone snapshot:** **Shipped:** **v0.1.0** (Phases 1–8, rule MVP), **v0.2.0** (9–16, ML/generative optional), **v0.3.0** (17–20, GMD training → `assets/*.onnx`), **v0.4.0** (21–26, merged data + ONNX/C++ parity). **In progress:** **v0.5.0 Rhythmic Coherence** (Phases 27–30 — documentation, beat tracker, runtime coordination, ML retrain). Current phase/status: **[`.planning/STATE.md`](.planning/STATE.md)**.
 
 ## Phase 2 data & training (prep)
 
@@ -22,7 +27,7 @@ JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + ba
 
 ## ONNX inference (Phase 10)
 
-- **[ONNX I/O contract](docs/ONNX_IO.md)** — frozen tensor names / shapes consumed by the plugin; Phase 15 export must match
+- **[ONNX I/O contract](docs/ONNX_IO.md)** — frozen tensor names / shapes consumed by the plugin; training exports must match this contract
 - Optional ONNX Runtime builds are enabled with `-DMA_ENABLE_ONNX=ON` and `-DONNXRUNTIME_ROOT=/path/to/onnxruntime` — full setup is in **[CONTRIBUTING.md](CONTRIBUTING.md)** (§ONNX Runtime)
 - Default builds (and CI) leave `MA_ENABLE_ONNX=OFF`; the plugin falls back to `RuleBasedInference` when ONNX is disabled or model load fails
 
@@ -51,11 +56,9 @@ This writes `metal_accompaniment_patterns.mid` next to the executable (useful fo
 These are exposed through the custom editor and the host’s generic parameter list (where applicable):
 
 - `**outputGain**` — Guitar pass-through level at the plugin output (does not scale MIDI).
-- `**genre**` — Style preset (`Metal`, `Metalcore`, `Death`, `Progressive`, `Black`) for pattern policy remapping.
-- `**intensity**` — Shifts effective BPM tier on the **rule-based** path ( ONNX pattern tensor still uses analyzed BPM).
-- `**variation`** — Small pattern-index nudge after genre mapping (shared rule/ONNX post-processing).
-- `**structureBlend**` — When ML structure is valid, values **≥ 0.5** use the ML shadow structure for pattern selection; values **below 0.5** follow rule structure.
-- `**generativeBassMode`** — `**Auto**` (score vs library), `**On**` (force when proposal validates), `**Off**` (library bass only).
+- `**intensity**` — Shifts effective BPM tier on the rule-based path (`RuleBasedInference`). Pattern ONNX inputs follow [`docs/ONNX_IO.md`](docs/ONNX_IO.md); `FeatureVector::policyIntensity` is copied from this parameter on the audio thread before enqueue.
+- `**structureBlend**` — When ML structure is valid, values **≥ 0.5** use the ML shadow structure for pattern selection; **below 0.5** follow rule structure (`AccompanimentProcessor::drainFeatureQueueAndRunInference`).
+- `**generativeBassMode`** — **`Auto`** / **`On`** / **`Off`** for generative bass when ONNX bass loads.
 
 ### On-screen diagnostics (not separate automation targets)
 
