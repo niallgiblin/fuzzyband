@@ -29,9 +29,9 @@ ctest --test-dir build --output-on-failure --config Release
 
 User-facing IDs match `AccompanimentProcessor::createParameterLayout()`:
 
-`outputGain`, `genre`, `intensity`, `variation`, `structureBlend`, `generativeBassMode`.
+`outputGain`, `intensity`, `structureBlend`, `generativeBassMode`.
 
-On the audio thread, **`FeatureVector`** carries **`policyGenreIndex`**, **`policyIntensity`**, and **`policyVariation`** from APVTS before enqueue. **`PolicyPatternMapper::applyPatternPolicy`** applies shared genre/variation remapping after rule selection or ONNX output. **`docs/ONNX_IO.md`** tensor **`X`** is unchanged; user policy is applied **after** the pattern ONNX run, and structure trust is expressed via **blended** **`FeatureVector::state`** fed into **`selectPattern`** when ML structure is valid (see `AccompanimentProcessor::drainFeatureQueueAndRunInference`).
+On the audio thread, **`FeatureVector::policyIntensity`** is set from the **`intensity`** parameter before each feature is enqueued for the inference thread. **`FeatureVector::state`** carries the rule-based structure from analysis; in **`AccompanimentProcessor::drainFeatureQueueAndRunInference`**, when structure ONNX provides valid ML metrics, **`structureBlend`** selects the effective structure for pattern selection: if ML is invalid, rules win; otherwise **≥ 0.5** uses the smoothed ML shadow state, **below 0.5** keeps the rule state. Pattern selection then uses that effective state (see **`IInference::selectPattern`**, invoked from the inference thread — **`AccompanimentProcessor.cpp`**). Tensor contracts for ONNX pattern input are documented in **`docs/ONNX_IO.md`**.
 
 ## Build options
 
