@@ -10,11 +10,7 @@ import torch.nn as nn
 
 
 class BassNet(nn.Module):
-    """7 → 32 → 16 → 4 regression; LayerNorm + Dropout (not BatchNorm — WR-001).
-
-    LayerNorm is used instead of BatchNorm so training stays valid when a batch
-    has N=1 (BatchNorm1d would raise in train mode).
-    """
+    """7 → 32 → 16 → 32 piano-roll regression; LayerNorm + Dropout (BMODEL-03 / v0.4.0)."""
 
     def __init__(self, dropout_p: float = 0.2) -> None:
         super().__init__()
@@ -23,7 +19,7 @@ class BassNet(nn.Module):
         self.ln1 = nn.LayerNorm(32)
         self.fc2 = nn.Linear(32, 16)
         self.ln2 = nn.LayerNorm(16)
-        self.fc3 = nn.Linear(16, 4)
+        self.fc3 = nn.Linear(16, 32)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.fc1(x)
@@ -38,7 +34,7 @@ class BassNet(nn.Module):
 
 
 class BassOnnxExport(nn.Module):
-    """Raw X_bass → normalize with training stats → BassNet → Y_bass float32 [1,4].
+    """Raw X_bass → normalize with training stats → BassNet → Y_bass float32 [1,32].
 
     **Batch size:** this wrapper is **N=1 only** (ONNX trace dummy and plugin contract).
     `forward` rejects ``x`` with ``x.shape[0] != 1``.
@@ -77,5 +73,5 @@ class BassOnnxExport(nn.Module):
                     f"got N={x.shape[0]}"
                 )
         x_norm = (x - self.mean) / self.std
-        y = self.bass_net(x_norm)  # [1, 4] float32 when N=1
-        return y.reshape(1, 4)  # MUST be rank-2 [1,4] — NOT reshape(-1)
+        y = self.bass_net(x_norm)  # [1, 32] float32 when N=1
+        return y.reshape(1, 32)

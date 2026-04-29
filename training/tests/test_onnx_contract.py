@@ -49,7 +49,7 @@ class TestPatternModelContract:
         # Should not raise
         check_pattern(_PATTERN_ONNX)
 
-    def test_input_feature_dim_is_5(self) -> None:
+    def test_input_feature_dim_is_7(self) -> None:
         import onnx
         from onnx import shape_inference
         raw = onnx.load(str(_PATTERN_ONNX))
@@ -57,7 +57,7 @@ class TestPatternModelContract:
         x = next(vi for vi in inferred.graph.input if vi.name == "X")
         dims = [d.dim_value for d in x.type.tensor_type.shape.dim]
         assert len(dims) >= 2
-        assert dims[1] == 5 or dims[1] == 0  # 0 = dynamic
+        assert dims[1] == 7 or dims[1] == 0  # v0.4.0 contract
 
     def test_output_Y_is_int64(self) -> None:
         import onnx
