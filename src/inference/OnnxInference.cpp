@@ -5,6 +5,7 @@
 #include "BinaryData.h"
 #include <algorithm>
 #include <array>
+#include <juce_core/juce_core.h>
 #include <onnxruntime_cxx_api.h>
 #endif
 

@@ -93,6 +93,7 @@ AccompanimentProcessor::AccompanimentProcessor()
     , structureInference(makeStructureInference())
     , bassInference(makeBassInference())
 {
+    activeInferenceName = inference ? inference->getName() : "None";
     patternPlayer.setPatternLibrary(&patternLibrary);
     inferenceRunning.store(true, std::memory_order_release);
     inferenceThread = std::thread([this] { inferenceLoop(); });

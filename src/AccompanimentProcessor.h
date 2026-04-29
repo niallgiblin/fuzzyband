@@ -70,6 +70,9 @@ public:
 
     void bumpDebugPattern();
 
+    /** @brief Human-readable name of the active inference backend (for UI label per D-26-09). */
+    const std::string& getActiveInferenceName() const noexcept { return activeInferenceName; }
+
     // Phase 23 rejection signal: written by message thread (Phase 24 button), read/decremented by inference thread.
     std::atomic<int> patternRejectionCount{ 0 };
 
@@ -98,6 +101,8 @@ private:
     std::unique_ptr<IInference> inference;
     std::unique_ptr<IStructureInference> structureInference;
     std::unique_ptr<OnnxBassInference> bassInference;
+
+    std::string activeInferenceName = "None";
 
     moodycamel::ReaderWriterQueue<FeatureVector> featureQueue{ 4096 };
     std::atomic<int> latestPatternIndex{ 0 };

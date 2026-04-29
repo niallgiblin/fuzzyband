@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <juce_core/juce_core.h>
 #include <onnxruntime_cxx_api.h>
 #endif
 
