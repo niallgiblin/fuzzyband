@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.4.7)
+project(MetalAccompaniment VERSION 0.4.10)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -139,6 +139,7 @@ target_sources(MetalAccompaniment PRIVATE
 
     # Analysis
     src/analysis/OnsetDetector.cpp
+    src/analysis/BeatTracker.cpp
     src/analysis/EnergyAnalyser.cpp
     src/analysis/StructureTagger.cpp
     src/analysis/StructureHoldSmoother.cpp
@@ -264,9 +265,11 @@ if(MA_BUILD_TESTS)
         tests/test_onset_detector_extended.cpp
         tests/test_bass_validator_boundaries.cpp
         tests/test_pattern_player_generative_bass.cpp
+        tests/test_beat_tracker.cpp
 
         # Plugin sources compiled into the test executable
         src/analysis/OnsetDetector.cpp
+        src/analysis/BeatTracker.cpp
         src/analysis/EnergyAnalyser.cpp
         src/analysis/StructureTagger.cpp
         src/analysis/StructureHoldSmoother.cpp
