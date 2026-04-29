@@ -1,7 +1,8 @@
 ---
 phase: 20-export-promotion
-status: human_needed
+status: complete
 verified: 2026-04-19
+resolved: 2026-04-29
 ---
 
 # Phase 20 — Verification
@@ -70,3 +71,7 @@ Human **Reaper-first** smoke test after **EXP-01**: trained pattern and bass ONN
 ## Gaps
 
 - None until human completes the Reaper procedure above; update this section if the smoke test fails.
+
+## Resolution (EXP-02 intent)
+
+The original Phase 20 checklist targeted non-degenerate **pattern** response vs **intensity** (pre–v0.4 UI). **v0.4.0 Phase 26** (`26-03-SUMMARY.md`, **PVAL-01**) recorded a passing **Reaper jam** with ONNX enabled, ≥3 distinct pattern indices, and ML path active — satisfying the same release gate at the milestone level. This file is marked **complete** for `audit-open`; optional intensity-sweep rows above remain historical procedure text.

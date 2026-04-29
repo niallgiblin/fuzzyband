@@ -4,6 +4,40 @@ Living document; append new milestone sections at the top of the milestone histo
 
 ---
 
+## Milestone: v0.4.0 — ML Playability & Simplification
+
+**Shipped:** 2026-04-29  
+**Phases:** 6 (numbered 21–26) | **Plans:** 13
+
+### What was built
+
+Three-class energy structure end-to-end; ONNX contract + stubs for structure `[1,3]` and bass `[1,32]`; load-time shape assertions and ML rejection (`excludeIndex`, `patternRejectionCount`); genre-free UI; GMD+Lakh `merge_datasets.py` pipeline; retrained pattern/bass/structure ONNX; promoted `assets/*.onnx`; PVAL-01 Reaper jam recorded in `26-03-SUMMARY.md`.
+
+### What worked
+
+- Compiler-driven enum migration (Phase 21) before contract and data work reduced silent drift between C++ and training labels.
+- Single `validate_onnx_contract.py` tri-flag gate stayed the spine from stubs through promoted artifacts.
+
+### What was inefficient
+
+- `audit-open` flagged quick tasks whose summaries used prefixed filenames instead of `SUMMARY.md` — fixed at milestone close.
+- Living `REQUIREMENTS.md` checkboxes lagged traceability until archival reconciliation.
+
+### Patterns established
+
+- Merged corpus with preserved `val_gmd.pt` for cross-corpus comparison.
+- “Next Pattern” as inference-visible rejection rather than APVTS-driven pattern index.
+
+### Key lessons
+
+- Resolve `audit-open` gates before `complete-milestone`, or batch-fix artifact naming (`SUMMARY.md`) once.
+
+### Cost observations
+
+Not tracked for this milestone.
+
+---
+
 ## Milestone: v0.3.0 — Real ML Training Pipeline
 
 **Shipped:** 2026-04-19  
@@ -113,6 +147,7 @@ Not tracked for this milestone.
 
 | Milestone | Duration (calendar) | Phases | Notes |
 |-----------|---------------------|--------|-------|
+| v0.4.0 | 2026-04-28 — 2026-04-29 | 6 (21–26) | Type→contract→inference→UI→data→retrain; PVAL-01 closes ML playable loop |
 | v0.3.0 | 2026-04-18 — 2026-04-19 | 4 (17–20) | Real training pipeline + export; EXP-02 human verification deferred |
 | v0.2.0 | 2026-04-16 — 2026-04-17 | 8 (9–16) | Phase 2 ML + generative stack; 18 plan summaries |
 | v0.1.0 | 2026-04-16 — 2026-04-17 | 8 (1–8) | Import + close in two calendar days of recorded GSD history |

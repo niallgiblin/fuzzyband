@@ -1,5 +1,31 @@
 # Milestones — Metal Accompaniment
 
+## v0.4.0 — ML Playability & Simplification (Shipped: 2026-04-29)
+
+**Phases:** 21–26 (6 phases) | **Plans:** 13 | **Requirements:** 15 (all satisfied — see `.planning/milestones/v0.4.0-REQUIREMENTS.md`)
+
+### Summary
+
+Shipped three-class energy structure (SILENT/SOFT/LOUD), ONNX contracts + stubs for 3-class structure and `[1,32]` piano-roll bass, C++ `OnnxInference` with load-time shape assertions and ML pattern rejection (`excludeIndex` / `patternRejectionCount`), genre-free UI with Next Pattern driving rejection, GMD+Lakh merged training tensors with domain compatibility gate, retrained Pattern/Bass/Structure models, and human Reaper jam (PVAL-01).
+
+### Key accomplishments
+
+1. **Types + contract** — Phase 21–22: enum + `FeatureVector` cleanup; `docs/ONNX_IO.md`, stubs, `validate_onnx_contract.py` gates.
+2. **Inference + UI** — Phase 23–24: piano-roll bass decode, rejection path + tests; atomic genre removal + session XML compat.
+3. **Data** — Phase 25: Lakh download/filter/build + `merge_datasets.py` with `val_gmd.pt` preserved.
+4. **Retrain + ship** — Phase 26: merged-data training, promoted `assets/*.onnx`, Reaper verification (`26-03-SUMMARY.md`).
+
+### Pre-flight
+
+- No `.planning/v0.4.0-MILESTONE-AUDIT.md` — optional `/gsd-audit-milestone` for future milestones.
+- `audit-open` clear at close after resolving quick-task `SUMMARY.md` filenames and `20-VERIFICATION.md` status.
+
+### Deferred at milestone boundary
+
+Operational git pushes / GitHub issues remain in `PROJECT.md` **Active (release / ops)** where applicable.
+
+---
+
 ## v0.3.0 — Real ML Training Pipeline (Shipped: 2026-04-19)
 
 **Phases:** 17–20 (4 phases) | **Plans with summaries:** 10 | **Tasks (from summaries):** 13
