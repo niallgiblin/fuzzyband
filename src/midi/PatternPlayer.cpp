@@ -24,6 +24,7 @@ void PatternPlayer::reset()
     for (int i = 0; i < 16; ++i) { genBassPitchOffset[i] = 0.0f; genBassVelocity[i] = 0.0f; }
     genBassStepRootMidi = 40.0f;
     genBassAbsNoteOffSample = -1;
+    genStepsDeferCount = 0;
     genBassLastMidiNote = 40;
     libBassAbsNoteOffSample = -1;
     libBassLastMidiNote = 40;
@@ -40,6 +41,7 @@ void PatternPlayer::setGenerativeBassActive(bool active, int rootMidi, float dur
     generativeBassRootMidi = juce::jlimit(28, 55, rootMidi);
     generativeBassDurationBeats = juce::jlimit(0.0625f, 4.0f, durationBeats);
     genBassHasSteps = false; // piano-roll overrides single-note path
+    genStepsDeferCount = 0;
 }
 
 void PatternPlayer::setGenerativeBassSteps(const float pitchOffset[16],
@@ -54,6 +56,7 @@ void PatternPlayer::setGenerativeBassSteps(const float pitchOffset[16],
     genBassStepRootMidi = juce::jlimit(28.0f, 55.0f, rootMidi);
     genBassHasSteps = true;
     generativeBassActive = true; // activate the generative path
+    genBassAbsNoteOffSample = -1; // mutual exclusion with piano-roll steps defers on separate store
 }
 
 void PatternPlayer::setBpm(float newBpm)
@@ -227,6 +230,41 @@ void PatternPlayer::emitGenerativeBassForWindow(juce::MidiBuffer& midi,
     }
 }
 
+void PatternPlayer::insertGenStepsDefer(juce::MidiBuffer& midi,
+                                        int numSamples,
+                                        int sampleOffsetBase,
+                                        int64_t absOff,
+                                        int midiNote) noexcept
+{
+    while (genStepsDeferCount >= kMaxGenStepsDeferredOffs)
+    {
+        const int chop = juce::jmax(0, numSamples - 1);
+        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, genStepsDeferMidiNote[0]),
+                        sampleOffsetBase + chop);
+        for (int i = 1; i < genStepsDeferCount; ++i)
+        {
+            genStepsDeferAbsSample[static_cast<size_t>(i - 1)] =
+                genStepsDeferAbsSample[static_cast<size_t>(i)];
+            genStepsDeferMidiNote[static_cast<size_t>(i - 1)] = genStepsDeferMidiNote[static_cast<size_t>(i)];
+        }
+        --genStepsDeferCount;
+    }
+
+    int insertIdx = 0;
+    while (insertIdx < genStepsDeferCount
+           && genStepsDeferAbsSample[static_cast<size_t>(insertIdx)] < absOff)
+        ++insertIdx;
+
+    for (int j = genStepsDeferCount; j > insertIdx; --j)
+    {
+        genStepsDeferAbsSample[static_cast<size_t>(j)] = genStepsDeferAbsSample[static_cast<size_t>(j - 1)];
+        genStepsDeferMidiNote[static_cast<size_t>(j)] = genStepsDeferMidiNote[static_cast<size_t>(j - 1)];
+    }
+    genStepsDeferAbsSample[static_cast<size_t>(insertIdx)] = absOff;
+    genStepsDeferMidiNote[static_cast<size_t>(insertIdx)] = midiNote;
+    ++genStepsDeferCount;
+}
+
 void PatternPlayer::emitGenerativeBassSteps(juce::MidiBuffer& midi,
                                             int numSamples,
                                             double beatStart,
@@ -236,50 +274,88 @@ void PatternPlayer::emitGenerativeBassSteps(juce::MidiBuffer& midi,
     if (beatEnd <= beatStart + 1.0e-9)
         return;
 
-    // Note-offs are emitted inline per-step (no deferred tracking needed).
-
-    // 16-step grid: each step = 1/16 of a beat = 1/4 of a quarter-note = sixteenth note
-    const double stepLenBeats = 1.0 / 4.0; // one sixteenth = 0.25 beats
-    const double stepLenSec = stepLenBeats * 60.0 / static_cast<double>(bpm);
-    const int stepLenSamples = juce::jmax(1, static_cast<int>(std::round(stepLenSec * sampleRate)));
-
     const int64_t blockStart = sampleCounter;
     const int64_t blockEnd = blockStart + static_cast<int64_t>(numSamples);
 
-    // Emit one note-on per step whose velocity > 0 and whose time lands in this block
+    while (genStepsDeferCount > 0 && genStepsDeferAbsSample[0] < blockStart)
+    {
+        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, genStepsDeferMidiNote[0]), sampleOffsetBase);
+        for (int i = 1; i < genStepsDeferCount; ++i)
+        {
+            genStepsDeferAbsSample[static_cast<size_t>(i - 1)] =
+                genStepsDeferAbsSample[static_cast<size_t>(i)];
+            genStepsDeferMidiNote[static_cast<size_t>(i - 1)] = genStepsDeferMidiNote[static_cast<size_t>(i)];
+        }
+        --genStepsDeferCount;
+    }
+
+    while (genStepsDeferCount > 0 && genStepsDeferAbsSample[0] < blockEnd)
+    {
+        const int off = static_cast<int>(genStepsDeferAbsSample[0] - blockStart);
+        const int clamped = juce::jlimit(0, numSamples - 1, off);
+        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, genStepsDeferMidiNote[0]),
+                      sampleOffsetBase + clamped);
+        for (int i = 1; i < genStepsDeferCount; ++i)
+        {
+            genStepsDeferAbsSample[static_cast<size_t>(i - 1)] =
+                genStepsDeferAbsSample[static_cast<size_t>(i)];
+            genStepsDeferMidiNote[static_cast<size_t>(i - 1)] = genStepsDeferMidiNote[static_cast<size_t>(i)];
+        }
+        --genStepsDeferCount;
+    }
+
+    const double samplesPerBeat = (60.0 / static_cast<double>(bpm)) * sampleRate;
+    constexpr double stepBeats = 0.25;
+    constexpr double barBeats = 4.0;
+
     for (int step = 0; step < 16; ++step)
     {
         const float vel = genBassVelocity[step];
         if (vel <= 0.0f)
             continue;
 
-        const int64_t stepOnSample = blockStart + static_cast<int64_t>(step) * static_cast<int64_t>(stepLenSamples);
-        if (stepOnSample < blockStart || stepOnSample >= blockEnd)
-            continue;
+        double stepBeatPos = static_cast<double>(step) * stepBeats;
+        while (stepBeatPos + 1.0e-9 < beatStart)
+            stepBeatPos += barBeats;
 
-        const int onOffset = static_cast<int>(stepOnSample - blockStart);
-        const int clampedOn = juce::jlimit(0, numSamples - 1, onOffset);
+        while (stepBeatPos < beatEnd - 1.0e-9)
+        {
+            const double rel = stepBeatPos - beatStart;
+            int off = static_cast<int>(std::round(rel * samplesPerBeat));
+            off = juce::jlimit(0, numSamples - 1, off);
 
-        // Absolute MIDI = root + pitch offset (floored, clamped)
-        const float offset = genBassPitchOffset[step];
-        const int midiNote = juce::jlimit(0, 127,
-            static_cast<int>(std::floor(genBassStepRootMidi + offset)));
-        const int noteVel = juce::jlimit(1, 127, static_cast<int>(vel));
+            const float offset = genBassPitchOffset[step];
+            const int midiNote = juce::jlimit(
+                0,
+                127,
+                static_cast<int>(std::floor(genBassStepRootMidi + offset)));
+            const int noteVel = juce::jlimit(1, 127, static_cast<int>(vel));
 
-        genBassLastMidiNote = midiNote;
-        midi.addEvent(juce::MidiMessage::noteOn(kBassChannel, midiNote,
-                         static_cast<float>(noteVel) / 127.0f),
-                      sampleOffsetBase + clampedOn);
+            genBassLastMidiNote = midiNote;
+            midi.addEvent(juce::MidiMessage::noteOn(kBassChannel, midiNote,
+                             static_cast<float>(noteVel) / 127.0f),
+                          sampleOffsetBase + off);
 
-        // Note-off at step boundary within this block, or at block end if it spills over.
-        // (Single genBassAbsNoteOffSample means we cannot defer multiple note-offs;
-        //  emit at block-end instead to avoid lost note-offs.)
-        const int64_t stepOffSample = stepOnSample + static_cast<int64_t>(stepLenSamples);
-        const int64_t clampedOffSample = (stepOffSample <= blockEnd) ? stepOffSample : blockEnd;
-        const int offOff = static_cast<int>(clampedOffSample - blockStart);
-        const int clampedOff = juce::jlimit(0, numSamples - 1, offOff);
-        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, midiNote),
-                      sampleOffsetBase + clampedOff);
+            const int durSamps = juce::jmax(
+                1,
+                static_cast<int>(std::round(stepBeats * (60.0 / static_cast<double>(bpm)) * sampleRate)));
+            const int64_t noteOnSampleAbs = blockStart + static_cast<int64_t>(off);
+            const int64_t noteOffSampleAbs = noteOnSampleAbs + static_cast<int64_t>(durSamps);
+
+            if (noteOffSampleAbs < blockEnd)
+            {
+                const int offRel = static_cast<int>(noteOffSampleAbs - blockStart);
+                const int clampedOff = juce::jlimit(0, numSamples - 1, offRel);
+                midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, midiNote),
+                              sampleOffsetBase + clampedOff);
+            }
+            else
+            {
+                insertGenStepsDefer(midi, numSamples, sampleOffsetBase, noteOffSampleAbs, midiNote);
+            }
+
+            stepBeatPos += barBeats;
+        }
     }
 }
 
@@ -305,6 +381,7 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         }
         wasSilent = true;
         genBassAbsNoteOffSample = -1;
+        genStepsDeferCount = 0;
         libBassAbsNoteOffSample = -1;
         beatPosition += static_cast<double>(numSamples) * bpm / (60.0 * sampleRate);
         sampleCounter += static_cast<int64_t>(numSamples);
@@ -317,6 +394,7 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
     {
         midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, genBassLastMidiNote), 0);
         genBassAbsNoteOffSample = -1;
+        genStepsDeferCount = 0;
     }
 
     if (!generativeBassActive && libBassAbsNoteOffSample >= 0)

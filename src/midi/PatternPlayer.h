@@ -98,9 +98,21 @@ private:
     float genBassVelocity[16] = {};
     float genBassStepRootMidi = 40.0f;
 
-    /** Absolute sample index (exclusive) for generative bass note-off; -1 = no held note. */
+    /** Absolute sample index (exclusive) for single-note generative bass note-off (non–piano-roll path). */
     int64_t genBassAbsNoteOffSample = -1;
     int genBassLastMidiNote = 40;
+
+    /** Deferred note-offs from @ref emitGenerativeBassSteps (sorted by time); real-time safe fixed cap. */
+    static constexpr int kMaxGenStepsDeferredOffs = 16;
+    int genStepsDeferCount = 0;
+    int64_t genStepsDeferAbsSample[kMaxGenStepsDeferredOffs] = {};
+    int genStepsDeferMidiNote[kMaxGenStepsDeferredOffs] = {};
+
+    void insertGenStepsDefer(juce::MidiBuffer& midi,
+                             int numSamples,
+                             int sampleOffsetBase,
+                             int64_t absOff,
+                             int midiNote) noexcept;
 
     /** Absolute sample index for library-pattern bass note-off; -1 = no held note. */
     int64_t libBassAbsNoteOffSample = -1;
