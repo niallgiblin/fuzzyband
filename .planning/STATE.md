@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.4.0
 milestone_name: — ML Playability & Simplification
 status: executing
-last_updated: "2026-04-29T13:00:00.000Z"
-last_activity: 2026-04-29 -- Phase 26 plan 26-02 complete (retrain three ONNX models + assets)
+last_updated: "2026-04-29T17:00:00.000Z"
+last_activity: 2026-04-29 -- Phase 26 complete (PVAL-01 PASS — Reaper jam v0.4.7, OnnxInference active, ≥3 pattern indices)
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 12
-  completed_plans: 11
-  percent: 92
+  completed_plans: 12
+  percent: 100
 ---
 
 # STATE — Metal Accompaniment
@@ -24,16 +24,16 @@ See: `.planning/PROJECT.md` (updated 2026-04-28)
 **Version string in the plugin UI** comes from **`CMakeLists.txt`** `project(MetalAccompaniment VERSION …)` (JUCE `ProjectInfo::versionString`). It should move with milestone checkpoints; **GSD phase/milestone authority** is this file plus **`.planning/ROADMAP.md`** (not `ROADMAP_PHASE_1.md`, which is the historical Phase 1 doc only).
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** Phase 26 — Retrain + Validate. Plan 26-02 complete (three ONNX heads + assets); next Plan 26-03 promotion + Reaper jam.
+**Current focus:** Phase 26 complete — all three ONNX models retrained + promoted + Reaper jam PASS (PVAL-01). v0.4.0 milestone final phase done.
 
 ---
 
 ## Current Position
 
-Phase: 26 — Retrain + Validate (executing)
-Plan: 26-03 (human jam + summary)
-Status: Wave 3 — plan 26-03 pending (26-02 training + assets complete)
-Last activity: 2026-04-29 -- Phase 26 plan 26-02: Pattern/Bass/Structure ONNX retrained; assets/ embedded ONNX updated
+Phase: 26 — Retrain + Validate (complete)
+Plan: all 3/3 complete
+Status: Phase 26 complete — v0.4.0 milestone fully executed
+Last activity: 2026-04-29 -- Phase 26 plan 26-03: Reaper jam PASS (PVAL-01), OnnxInference label live in UI, v0.4.7
 
 ---
 

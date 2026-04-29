@@ -214,8 +214,8 @@ Plans:
 
 Plans:
 - [x] 26-01-PLAN.md — Training data prep (bass + structure) + C++ WIP integration + inference name UI label
-- [ ] 26-02-PLAN.md — Retrain all three models (PatternNet, BassNet, StructureNet) with quality gates
-- [ ] 26-03-PLAN.md — ONNX promotion + Reaper jam verification + phase summary
+- [x] 26-02-PLAN.md — Retrain all three models (PatternNet, BassNet, StructureNet) with quality gates
+- [x] 26-03-PLAN.md — ONNX promotion + Reaper jam verification + phase summary
 
 ---
 
@@ -248,7 +248,7 @@ Plans:
 | 23. C++ Inference Layer | v0.4.0 | 2/2 | Complete | 2026-04-28 |
 | 24. UI Simplification | v0.4.0 | 0/0 | Not started | - |
 | 25. Training Data Pipeline | v0.4.0 | 0/0 | Not started | - |
-| 26. Retrain + Validate | v0.4.0 | 1/3 | In progress | - |
+| 26. Retrain + Validate | v0.4.0 | 3/3 | Complete | 2026-04-29 |
 
 ---
 
