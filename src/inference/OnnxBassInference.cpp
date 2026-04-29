@@ -48,6 +48,33 @@ bool OnnxBassInference::tryLoadModel()
             reinterpret_cast<const char*>(data),
             static_cast<size_t>(size),
             opts);
+
+        // Strict contract validation: D-23-01 / D-23-03
+        const auto inputTypeInfo = impl->session->GetInputTypeInfo(0);
+        const auto& inputShapeInfo = inputTypeInfo.GetTensorTypeAndShapeInfo();
+        const auto inputShape = inputShapeInfo.GetShape();
+        const auto inputElemType = inputShapeInfo.GetElementType();
+
+        if (inputElemType != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+            inputShape.size() != 2 || inputShape[0] != 1 || inputShape[1] != 7)
+        {
+            jassert(false); // D-23-01: contract mismatch on X_bass [1,7]
+            impl.reset();
+            return false;
+        }
+
+        const auto outputTypeInfo = impl->session->GetOutputTypeInfo(0);
+        const auto& outputShapeInfo = outputTypeInfo.GetTensorTypeAndShapeInfo();
+        const auto outputShape = outputShapeInfo.GetShape();
+        const auto outputElemType = outputShapeInfo.GetElementType();
+
+        if (outputElemType != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+            outputShape.size() != 2 || outputShape[0] != 1 || outputShape[1] != 32)
+        {
+            jassert(false); // D-23-01: contract mismatch on Y_bass [1,32]
+            impl.reset();
+            return false;
+        }
     }
     catch (const Ort::Exception& e)
     {
@@ -76,11 +103,10 @@ void OnnxBassInference::reset()
 
 void OnnxBassInference::propose(const FeatureVector& f)
 {
+    last = {};
+
     if (impl == nullptr || impl->session == nullptr)
-    {
-        last = {};
         return;
-    }
 
     std::array<float, 7> inputData = {
         f.bpm,
@@ -114,22 +140,30 @@ void OnnxBassInference::propose(const FeatureVector& f)
             1);
 
         if (outputs.empty())
-        {
-            last = {};
             return;
-        }
 
         const float* out = outputs[0].GetTensorData<float>();
-        if (!std::isfinite(out[0]) || !std::isfinite(out[1]) || !std::isfinite(out[2])
-            || !std::isfinite(out[3]))
+
+        // Decode [1,32] interleaved piano-roll: 16 × [pitch_offset_n, velocity_n]
+        bool allFinite = true;
+        for (int i = 0; i < 32; ++i)
         {
-            last = {};
-            return;
+            if (!std::isfinite(out[i]))
+            {
+                allFinite = false;
+                break;
+            }
         }
-        last.confidence = out[0];
-        last.rootMidi = out[1];
-        last.durationBeats = out[2];
-        last.margin = out[3];
+
+        if (!allFinite)
+            return;
+
+        for (int step = 0; step < BassOnnxProposal::kSteps; ++step)
+        {
+            last.pitchOffset[step] = std::clamp(out[step * 2], -12.0f, 12.0f);
+            last.velocity[step]   = std::clamp(out[step * 2 + 1], 0.0f, 127.0f);
+        }
+        last.valid = true;
     }
     catch (const Ort::Exception& e)
     {

@@ -36,6 +36,11 @@ public:
         @p rootMidi is absolute (matches ONNX `Y_bass`); not summed with @ref setBassSemitoneOffset. */
     void setGenerativeBassActive(bool active, int rootMidi, float durationBeats);
 
+    /** @brief Piano-roll generative bass (Phase 23): deliver 16-step decoded ONNX output. Audio thread.
+        @p pitchOffset[16] are relative semitone offsets; @p velocity[16] are 0=rest.
+        @p rootMidi is the conditioned absolute root from X_bass. */
+    void setGenerativeBassSteps(const float pitchOffset[16], const float velocity[16], float rootMidi);
+
     /** @brief Fill @p midi for this audio block using host sample position for timing. */
     void process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition);
 
@@ -54,6 +59,13 @@ private:
                                      double beatStart,
                                      double beatEnd,
                                      int sampleOffsetBase);
+
+    /** Phase 23: piano-roll generative bass emission. */
+    void emitGenerativeBassSteps(juce::MidiBuffer& midi,
+                                 int numSamples,
+                                 double beatStart,
+                                 double beatEnd,
+                                 int sampleOffsetBase);
 
     int humanVel(int base) const;
     int humanSamples() const;
@@ -79,6 +91,12 @@ private:
     bool generativeBassActive = false;
     int generativeBassRootMidi = 40;
     float generativeBassDurationBeats = 1.0f;
+
+    /** Piano-roll bass state (Phase 23). */
+    bool genBassHasSteps = false;
+    float genBassPitchOffset[16] = {};
+    float genBassVelocity[16] = {};
+    float genBassStepRootMidi = 40.0f;
 
     /** Absolute sample index (exclusive) for generative bass note-off; -1 = no held note. */
     int64_t genBassAbsNoteOffSample = -1;

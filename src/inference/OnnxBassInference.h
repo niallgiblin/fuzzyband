@@ -6,14 +6,21 @@
 /**
  * @brief Phase 13 generative bass head over `bass_model.onnx` — background thread only.
  *
+ * Decoded piano-roll: 16 sixteenth-note steps of [pitch_offset, velocity] pairs.
  * @see docs/BASS_ONNX_IO.md
  */
 struct BassOnnxProposal
 {
-    float confidence = 0.f;
-    float rootMidi = 40.f;
-    float durationBeats = 1.f;
-    float margin = 0.f;
+    static constexpr int kSteps = 16;
+
+    /** Relative pitch offsets in semitones from conditioned root (index = step). */
+    float pitchOffset[kSteps] = {};
+
+    /** MIDI velocity per step; 0.0f = rest/silent step. */
+    float velocity[kSteps] = {};
+
+    /** True if the last proposal decoded successfully. */
+    bool valid = false;
 };
 
 class OnnxBassInference
