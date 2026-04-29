@@ -91,6 +91,11 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(centroidLabel);
     addAndMakeVisible(hfFluxLabel);
 
+    inferenceLabel.setJustificationType(juce::Justification::centredLeft);
+    inferenceLabel.setFont(juce::FontOptions(14.0f, juce::Font::plain));
+    inferenceLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    addAndMakeVisible(inferenceLabel);
+
     debugPatternButton.onClick = [this] { audioProcessorRef.bumpDebugPattern(); };
     addAndMakeVisible(debugPatternButton);
 
@@ -120,6 +125,8 @@ void AccompanimentEditor::timerCallback()
     rmsLabel.setText("RMS: " + juce::String(audioProcessorRef.getDisplayRms(), 4), juce::dontSendNotification);
     centroidLabel.setText("Centroid: " + juce::String(audioProcessorRef.getDisplayCentroid(), 0) + " Hz", juce::dontSendNotification);
     hfFluxLabel.setText("HF Flux: " + juce::String(audioProcessorRef.getDisplayHfFlux(), 4), juce::dontSendNotification);
+
+    inferenceLabel.setText("Inference: " + audioProcessorRef.getActiveInferenceName(), juce::dontSendNotification);
 }
 
 void AccompanimentEditor::paint(juce::Graphics& g)
@@ -179,5 +186,7 @@ void AccompanimentEditor::resized()
     r.removeFromTop(8);
     debugPatternButton.setBounds(r.removeFromTop(32));
     r.removeFromTop(8);
+    inferenceLabel.setBounds(r.removeFromTop(20));
+    r.removeFromTop(4);
     helpCaptionLabel.setBounds(r);
 }

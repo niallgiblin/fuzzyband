@@ -156,6 +156,8 @@ private:
     juce::Label centroidLabel;
     juce::Label hfFluxLabel;
 
+    juce::Label inferenceLabel;
+
     juce::TextButton debugPatternButton{ "Next pattern (preview 5s)" };
     juce::Label helpCaptionLabel;
 
