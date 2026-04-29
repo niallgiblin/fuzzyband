@@ -19,10 +19,10 @@ from onnx import TensorProto, helper
 
 
 def build_graph() -> onnx.ModelProto:
-    # X [1,5] -> ReduceSum axes=1 -> [1] float
+    # X [1,7] -> ReduceSum axes=1 -> [1] float
     # Mod 7 -> [1] float
     # Floor -> Cast INT64 -> Y [1]
-    x_info = helper.make_tensor_value_info("X", TensorProto.FLOAT, [1, 5])
+    x_info = helper.make_tensor_value_info("X", TensorProto.FLOAT, [1, 7])
     y_info = helper.make_tensor_value_info("Y", TensorProto.INT64, [1])
 
     seven_i = helper.make_tensor(

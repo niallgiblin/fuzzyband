@@ -70,6 +70,9 @@ public:
 
     void bumpDebugPattern();
 
+    // Phase 23 rejection signal: written by message thread (Phase 24 button), read/decremented by inference thread.
+    std::atomic<int> patternRejectionCount{ 0 };
+
     /** @brief Test-only: stop the background thread from draining @a featureQueue (integration tests). */
     void pauseBackgroundInferenceForTests();
     /** @brief Test-only: run one inference drain synchronously (call while paused). */
@@ -100,8 +103,13 @@ private:
     std::atomic<int> latestPatternIndex{ 0 };
 
     std::atomic<bool> useGenerativeBass{ false };
-    std::atomic<int> generativeBassRootNote{ 40 };
-    std::atomic<float> generativeBassDurationBeats{ 1.0f };
+
+    // Phase 23 piano-roll bass: written by inference thread, read by audio thread.
+    // Single-producer single-consumer — inference writes, audio reads + clears.
+    float genBassPitchOffsets[16] = {};
+    float genBassVelocities[16] = {};
+    float genBassRootMidi = 40.0f;
+    std::atomic<bool> genBassStepsReady{ false };
 
     std::atomic<float> displayBpm{ 120.0f };
     std::atomic<int> displayStateIndex{ 0 };

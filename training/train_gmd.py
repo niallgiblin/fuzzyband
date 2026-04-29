@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train PatternNet on Phase 17 GMD tensors and export pattern_trained.onnx (PMODEL-02)."""
+"""Train PatternNet on merged GMD+Lakh tensors and export pattern_trained.onnx (PMODEL-02 / Phase 26)."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def _resolve_data_dir(data_dir: Path) -> Path:
 
 
 def _load_split(path: Path) -> tuple[torch.Tensor, torch.Tensor]:
-    blob = torch.load(path, map_location="cpu", weights_only=False)
+    blob = torch.load(path, map_location="cpu", weights_only=True)
     if not isinstance(blob, dict) or "X" not in blob or "Y" not in blob:
         raise ValueError(f"{path}: expected dict with X, Y")
     x, y = blob["X"], blob["Y"]
@@ -76,7 +76,13 @@ def main() -> int:
         "--data-dir",
         type=Path,
         default=_TRAINING_DIR / "data/processed",
-        help="Directory with train.pt, val.pt (default: training/data/processed)",
+        help="Directory with train.pt, val.pt or val_gmd.pt (default: training/data/processed)",
+    )
+    p.add_argument(
+        "--val-file",
+        type=str,
+        default=None,
+        help="Validation .pt filename (default: val_gmd.pt if present, else val.pt)",
     )
     p.add_argument(
         "--norm-stats",
@@ -88,7 +94,7 @@ def main() -> int:
         "--out-dir",
         type=Path,
         default=None,
-        help="Output dir (default: training/artifacts/pattern-gmd-<UTC>/ )",
+        help="Output dir (default: training/artifacts/pattern-merged-<UTC>/ )",
     )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--batch-size", type=int, default=64)
@@ -104,17 +110,30 @@ def main() -> int:
     data_dir = _resolve_data_dir(args.data_dir)
     norm_stats = args.norm_stats or (data_dir / "norm_stats.json")
     train_path = data_dir / "train.pt"
-    val_path = data_dir / "val.pt"
-    if not train_path.is_file() or not val_path.is_file():
-        print(f"error: missing {train_path} or {val_path}", file=sys.stderr)
+
+    # Auto-detect validation file: prefer val_gmd.pt (merged norm) over val.pt
+    if args.val_file is not None:
+        val_path = data_dir / args.val_file
+    elif (data_dir / "val_gmd.pt").is_file():
+        val_path = data_dir / "val_gmd.pt"
+    else:
+        val_path = data_dir / "val.pt"
+
+    if not train_path.is_file():
+        print(f"error: missing {train_path}", file=sys.stderr)
+        return 1
+    if not val_path.is_file():
+        print(f"error: missing {val_path}", file=sys.stderr)
         return 1
     if not norm_stats.is_file():
         print(f"error: missing {norm_stats}", file=sys.stderr)
         return 1
 
+    print(f"train: {train_path.name}  val: {val_path.name}  norm: {norm_stats.name}", flush=True)
+
     if args.out_dir is None:
         ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        out_dir = _TRAINING_DIR / "artifacts" / f"pattern-gmd-{ts}"
+        out_dir = _TRAINING_DIR / "artifacts" / f"pattern-merged-{ts}"
     else:
         out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -211,9 +230,51 @@ def main() -> int:
         print("error: no model state captured", file=sys.stderr)
         return 1
 
+    print(f"\nBest val_macro_f1: {best_f1:.4f}", flush=True)
+
     pattern_cpu = PatternNet()
     pattern_cpu.load_state_dict(best_state)
     pattern_cpu.eval()
+
+    # ── Final validation pass with class-wise metrics ────────────────────
+    final_preds: list[int] = []
+    final_labels: list[int] = []
+    with torch.no_grad():
+        for bx, by in val_loader:
+            bx = bx.to(dtype=torch.float32)
+            logits = pattern_cpu(bx)
+            final_preds.extend(torch.argmax(logits, dim=-1).cpu().numpy().tolist())
+            final_labels.extend(by.cpu().numpy().tolist())
+
+    class_f1 = f1_score(final_labels, final_preds, average=None, zero_division=0)
+    from sklearn.metrics import confusion_matrix as sk_confusion_matrix
+    cm = sk_confusion_matrix(final_labels, final_preds, labels=list(range(7)))
+
+    print("\nCLASS-WISE F1 (best model on val set):", flush=True)
+    for c in range(7):
+        count = sum(1 for lb in final_labels if lb == c)
+        print(f"  class {c}: F1={class_f1[c]:.4f}  (n={count})", flush=True)
+
+    print("\nCONFUSION MATRIX (rows=true, cols=pred):", flush=True)
+    header = "      " + " ".join(f"pred{c:>4d}" for c in range(7))
+    print(header, flush=True)
+    for r in range(7):
+        row_str = " ".join(f"{cm[r][c]:>8d}" for c in range(7))
+        print(f"true{r}: {row_str}", flush=True)
+
+    val_report = {
+        "best_macro_f1": float(best_f1),
+        "class_f1": [float(x) for x in class_f1],
+        "confusion_matrix": cm.tolist(),
+    }
+    (out_dir / "validation.json").write_text(
+        json.dumps(val_report, indent=2) + "\n", encoding="utf-8"
+    )
+
+    # ── Save best model weights (PyTorch state dict) ────────────────────
+    torch.save({"state_dict": best_state, "best_macro_f1": best_f1}, out_dir / "best_model.pt")
+
+    # ── ONNX export ──────────────────────────────────────────────────────
     export = PatternOnnxExport.from_norm_stats(norm_stats, pattern_cpu)
     export.eval()
 
@@ -228,7 +289,7 @@ def main() -> int:
         opset_version=17,
     )
     onnx.checker.check_model(onnx.load(str(onnx_path)))
-    print(f"Wrote {onnx_path.resolve()}", flush=True)
+    print(f"\nWrote {onnx_path.resolve()}", flush=True)
     return 0
 
 

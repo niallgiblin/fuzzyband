@@ -191,6 +191,18 @@ def main() -> int:
         print("\nDRY RUN — no files written.", flush=True)
         return 0
 
+    # ── Backup GMD originals FIRST (before overwriting) ───────────────────
+    import shutil
+
+    backup_dir = args.out_dir / "gmd_original_backup"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    for src_name in ["train.pt", "val.pt", "norm_stats.json"]:
+        src = args.out_dir / src_name
+        dst = backup_dir / src_name
+        if src.exists() and not dst.exists():
+            shutil.copy2(str(src), str(dst))
+    print(f"Backed up GMD originals: {backup_dir}", flush=True)
+
     # ── Save outputs ──────────────────────────────────────────────────────
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -203,7 +215,7 @@ def main() -> int:
         },
         str(args.out_dir / "train.pt"),
     )
-    print(f"\nSaved: {args.out_dir / 'train.pt'}", flush=True)
+    print(f"Saved: {args.out_dir / 'train.pt'}", flush=True)
 
     # GMD-only validation fold
     torch.save(
@@ -229,19 +241,6 @@ def main() -> int:
         encoding="utf-8",
     )
     print(f"Saved: {norm_path}", flush=True)
-
-    # ── Backup GMD originals ──────────────────────────────────────────────
-    # Preserve the original GMD files before overwriting
-    backup_dir = args.out_dir / "gmd_original_backup"
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    import shutil
-
-    for src_name in ["train.pt", "val.pt", "norm_stats.json"]:
-        src = args.out_dir / src_name
-        dst = backup_dir / src_name
-        if src.exists() and not dst.exists():
-            shutil.copy2(str(src), str(dst))
-    print(f"Backed up GMD originals: {backup_dir}", flush=True)
 
     return 0
 

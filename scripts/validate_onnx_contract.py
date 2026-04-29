@@ -35,9 +35,10 @@ def _find_tensor(inferred: onnx.ModelProto, name: str):
     raise ValueError(f"tensor '{name}' not found in model")
 
 
-# ─── Pattern (frozen, unchanged from v0.2.0) ─────────────────────────────────
+# ─── Pattern (v0.4.0: 3-class one-hot [1,7]) ────────────────────────────────
 
 def check_pattern(path: Path) -> None:
+    """Validate pattern model: X [1,7] float32 with one-hot state, Y [1] int64."""
     raw = onnx.load(path)
     onnx.checker.check_model(raw)
     inferred = shape_inference.infer_shapes(raw)
@@ -57,8 +58,8 @@ def check_pattern(path: Path) -> None:
         raise SystemExit(1)
     dx = _dims(vx)
     dy = _dims(vy)
-    if len(dx) != 2 or (dx[1] is not None and dx[1] != 5):
-        print(f"pattern: X must have feature dim 5, got shape {dx}", file=sys.stderr)
+    if len(dx) != 2 or (dx[1] is not None and dx[1] != 7):
+        print(f"pattern: X must have feature dim 7, got shape {dx}", file=sys.stderr)
         raise SystemExit(1)
     ok_y = False
     if dy == [1]:
