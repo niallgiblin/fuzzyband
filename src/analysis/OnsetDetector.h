@@ -43,10 +43,17 @@ public:
     /** @brief True once 8+ consecutive IOIs are within ±8% of their mean. */
     bool isTempoLocked() const noexcept { return tempoLocked; }
 
+    /** @brief Optional per-hop OSF callback (real-time safe — single indirect call).
+     *         Invoked with latest flux **before** adaptive onset gating. Default: no-op. */
+    using FluxSinkFn = void (*)(void* userData, float flux, int64_t audioSampleCounter);
+    void setFluxSink(void* userData, FluxSinkFn fn) noexcept;
+
 private:
     void runFftFrame();
     float medianIoiBpm() const;
     void pushIoi(float ioiSamples);
+    /** @brief Chronological IOI index @a chronologicalIndex (oldest = 0) in the 16-slot ring. */
+    int ioiChronologicalSlot(int chronologicalIndex) const noexcept;
 
     std::unique_ptr<juce::dsp::FFT> fft;
     int fftOrder = 11;
@@ -91,4 +98,7 @@ private:
     static constexpr float kMaxBpm = 220.0f;
 
     std::atomic<float> currentBpm{ 120.0f };
+
+    void* fluxSinkUser = nullptr;
+    FluxSinkFn fluxSinkFn = nullptr;
 };
