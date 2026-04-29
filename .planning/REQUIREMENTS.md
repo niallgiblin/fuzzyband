@@ -63,10 +63,10 @@
 | DATA-07 | Phase 25 | Pending |
 | DATA-08 | Phase 25 | Pending |
 | DATA-09 | Phase 25 | Pending |
-| PMODEL-04 | Phase 26 | Pending |
-| BMODEL-03 | Phase 26 | Pending |
-| STRUC-04 | Phase 26 | Pending |
-| PVAL-01 | Phase 26 | Pending |
+| PMODEL-04 | Phase 26 | Verified 2026-04-29 |
+| BMODEL-03 | Phase 26 | Verified 2026-04-29 |
+| STRUC-04 | Phase 26 | Verified 2026-04-29 |
+| PVAL-01 | Phase 26 | Verified 2026-04-29 |
 
 ---
 *Created: 2026-04-28 — v0.4.0 milestone (`/gsd-new-milestone`)*
