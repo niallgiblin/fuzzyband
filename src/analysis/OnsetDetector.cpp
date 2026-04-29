@@ -61,6 +61,11 @@ void OnsetDetector::pushIoi(float ioiSamples)
     ioiRingCount = juce::jmin(16, ioiRingCount + 1);
 }
 
+int OnsetDetector::ioiChronologicalSlot(int chronologicalIndex) const noexcept
+{
+    return (ioiRingWrite - ioiRingCount + chronologicalIndex + 256) % 16;
+}
+
 float OnsetDetector::medianIoiBpm() const
 {
     if (ioiRingCount < 8)
@@ -68,11 +73,7 @@ float OnsetDetector::medianIoiBpm() const
 
     std::array<float, 16> sorted{};
     for (int i = 0; i < ioiRingCount; ++i)
-    {
-        // ioiRingWrite is always in [0,15]; use large multiple of 16 to keep result positive
-        const int idx = (ioiRingWrite - ioiRingCount + i + 16 * 16) % 16;
-        sorted[static_cast<size_t>(i)] = ioiHistory[static_cast<size_t>(idx)];
-    }
+        sorted[static_cast<size_t>(i)] = ioiHistory[static_cast<size_t>(ioiChronologicalSlot(i))];
 
     std::sort(sorted.begin(), sorted.begin() + ioiRingCount);
 
@@ -146,6 +147,9 @@ void OnsetDetector::runFftFrame()
     const float mean = fluxRollingSum / static_cast<float>(fluxRollingN);
     const float threshold = std::max(kFluxFloor, kAdaptiveK * mean);
 
+    if (fluxSinkFn != nullptr)
+        fluxSinkFn(fluxSinkUser, flux, totalSamples);
+
     if (flux <= threshold)
         return;
 
@@ -170,14 +174,15 @@ void OnsetDetector::runFftFrame()
                 {
                     float sum = 0.0f;
                     for (int j = 0; j < ioiRingCount; ++j)
-                        sum += ioiHistory[static_cast<size_t>(j)];
+                        sum += ioiHistory[static_cast<size_t>(ioiChronologicalSlot(j))];
                     const float ioiMean = sum / static_cast<float>(ioiRingCount);
                     const float band = ioiMean * 0.08f;
 
                     bool allConsistent = true;
                     for (int j = 0; j < ioiRingCount; ++j)
                     {
-                        if (std::abs(ioiHistory[static_cast<size_t>(j)] - ioiMean) > band)
+                        const float ioij = ioiHistory[static_cast<size_t>(ioiChronologicalSlot(j))];
+                        if (std::abs(ioij - ioiMean) > band)
                         {
                             allConsistent = false;
                             break;
@@ -218,4 +223,10 @@ void OnsetDetector::process(const float* audioData, int numSamples)
 void OnsetDetector::resetTempoLock() noexcept
 {
     tempoLocked = false;
+}
+
+void OnsetDetector::setFluxSink(void* userData, FluxSinkFn fn) noexcept
+{
+    fluxSinkUser = userData;
+    fluxSinkFn = fn;
 }
