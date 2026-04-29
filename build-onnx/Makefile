@@ -1874,33 +1874,6 @@ src/inference/OnnxStructureInference.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/inference/OnnxStructureInference.cpp.s
 .PHONY : src/inference/OnnxStructureInference.cpp.s
 
-src/inference/PolicyPatternMapper.o: src/inference/PolicyPatternMapper.cpp.o
-.PHONY : src/inference/PolicyPatternMapper.o
-
-# target to build an object file
-src/inference/PolicyPatternMapper.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/inference/PolicyPatternMapper.cpp.o
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/inference/PolicyPatternMapper.cpp.o
-.PHONY : src/inference/PolicyPatternMapper.cpp.o
-
-src/inference/PolicyPatternMapper.i: src/inference/PolicyPatternMapper.cpp.i
-.PHONY : src/inference/PolicyPatternMapper.i
-
-# target to preprocess a source file
-src/inference/PolicyPatternMapper.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/inference/PolicyPatternMapper.cpp.i
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/inference/PolicyPatternMapper.cpp.i
-.PHONY : src/inference/PolicyPatternMapper.cpp.i
-
-src/inference/PolicyPatternMapper.s: src/inference/PolicyPatternMapper.cpp.s
-.PHONY : src/inference/PolicyPatternMapper.s
-
-# target to generate assembly for a file
-src/inference/PolicyPatternMapper.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/inference/PolicyPatternMapper.cpp.s
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/inference/PolicyPatternMapper.cpp.s
-.PHONY : src/inference/PolicyPatternMapper.cpp.s
-
 src/inference/RuleBasedInference.o: src/inference/RuleBasedInference.cpp.o
 .PHONY : src/inference/RuleBasedInference.o
 
@@ -2038,30 +2011,6 @@ src/midi/PatternPlayer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/midi/PatternPlayer.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/midi/PatternPlayer.cpp.s
 .PHONY : src/midi/PatternPlayer.cpp.s
-
-tests/PolicyPatternMapperTests.o: tests/PolicyPatternMapperTests.cpp.o
-.PHONY : tests/PolicyPatternMapperTests.o
-
-# target to build an object file
-tests/PolicyPatternMapperTests.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/PolicyPatternMapperTests.cpp.o
-.PHONY : tests/PolicyPatternMapperTests.cpp.o
-
-tests/PolicyPatternMapperTests.i: tests/PolicyPatternMapperTests.cpp.i
-.PHONY : tests/PolicyPatternMapperTests.i
-
-# target to preprocess a source file
-tests/PolicyPatternMapperTests.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/PolicyPatternMapperTests.cpp.i
-.PHONY : tests/PolicyPatternMapperTests.cpp.i
-
-tests/PolicyPatternMapperTests.s: tests/PolicyPatternMapperTests.cpp.s
-.PHONY : tests/PolicyPatternMapperTests.s
-
-# target to generate assembly for a file
-tests/PolicyPatternMapperTests.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/PolicyPatternMapperTests.cpp.s
-.PHONY : tests/PolicyPatternMapperTests.cpp.s
 
 tests/test_bass_generative.o: tests/test_bass_generative.cpp.o
 .PHONY : tests/test_bass_generative.o
@@ -2326,30 +2275,6 @@ tests/test_pitch_estimator.s: tests/test_pitch_estimator.cpp.s
 tests/test_pitch_estimator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_pitch_estimator.cpp.s
 .PHONY : tests/test_pitch_estimator.cpp.s
-
-tests/test_policy_pattern_mapper_full.o: tests/test_policy_pattern_mapper_full.cpp.o
-.PHONY : tests/test_policy_pattern_mapper_full.o
-
-# target to build an object file
-tests/test_policy_pattern_mapper_full.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_policy_pattern_mapper_full.cpp.o
-.PHONY : tests/test_policy_pattern_mapper_full.cpp.o
-
-tests/test_policy_pattern_mapper_full.i: tests/test_policy_pattern_mapper_full.cpp.i
-.PHONY : tests/test_policy_pattern_mapper_full.i
-
-# target to preprocess a source file
-tests/test_policy_pattern_mapper_full.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_policy_pattern_mapper_full.cpp.i
-.PHONY : tests/test_policy_pattern_mapper_full.cpp.i
-
-tests/test_policy_pattern_mapper_full.s: tests/test_policy_pattern_mapper_full.cpp.s
-.PHONY : tests/test_policy_pattern_mapper_full.s
-
-# target to generate assembly for a file
-tests/test_policy_pattern_mapper_full.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_policy_pattern_mapper_full.cpp.s
-.PHONY : tests/test_policy_pattern_mapper_full.cpp.s
 
 tests/test_processor_pipeline.o: tests/test_processor_pipeline.cpp.o
 .PHONY : tests/test_processor_pipeline.o
@@ -2749,9 +2674,6 @@ help:
 	@echo "... src/inference/OnnxStructureInference.o"
 	@echo "... src/inference/OnnxStructureInference.i"
 	@echo "... src/inference/OnnxStructureInference.s"
-	@echo "... src/inference/PolicyPatternMapper.o"
-	@echo "... src/inference/PolicyPatternMapper.i"
-	@echo "... src/inference/PolicyPatternMapper.s"
 	@echo "... src/inference/RuleBasedInference.o"
 	@echo "... src/inference/RuleBasedInference.i"
 	@echo "... src/inference/RuleBasedInference.s"
@@ -2767,9 +2689,6 @@ help:
 	@echo "... src/midi/PatternPlayer.o"
 	@echo "... src/midi/PatternPlayer.i"
 	@echo "... src/midi/PatternPlayer.s"
-	@echo "... tests/PolicyPatternMapperTests.o"
-	@echo "... tests/PolicyPatternMapperTests.i"
-	@echo "... tests/PolicyPatternMapperTests.s"
 	@echo "... tests/test_bass_generative.o"
 	@echo "... tests/test_bass_generative.i"
 	@echo "... tests/test_bass_generative.s"
@@ -2803,9 +2722,6 @@ help:
 	@echo "... tests/test_pitch_estimator.o"
 	@echo "... tests/test_pitch_estimator.i"
 	@echo "... tests/test_pitch_estimator.s"
-	@echo "... tests/test_policy_pattern_mapper_full.o"
-	@echo "... tests/test_policy_pattern_mapper_full.i"
-	@echo "... tests/test_policy_pattern_mapper_full.s"
 	@echo "... tests/test_processor_pipeline.o"
 	@echo "... tests/test_processor_pipeline.i"
 	@echo "... tests/test_processor_pipeline.s"
