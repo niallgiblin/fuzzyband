@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """Extract BassNet training data from Lakh+GMD MIDI files (D-26-01).
 
-Parses MIDI files via `prep_midi._events_from_file`, detects bass channels
-(channel 2, GM program 33–40), quantizes to 16-step piano-roll grids,
-derives root pitch from bar-level pitch-class histograms, and extracts
-7-float feature proxy rows for each bar.
+Parses MIDI files via `prep_midi._events_from_file`, detects bass tracks
+(channel 2 with GM bass program 33–40), quantizes to 16-step piano-roll grids,
+derives root pitch per bar, and extracts 7-float feature proxies per bar.
 
-Output: .pt dict with X [N,7] float32, Y [N,32] float32 interleaved piano-roll.
+Output: bass_train.pt / bass_val.pt dicts with X [N,7], Y [N,32].
 """
 
 from __future__ import annotations
 
 import argparse
-import json
+import math
 import sys
 from pathlib import Path
 
+import mido
 import numpy as np
 import torch
 
@@ -23,126 +23,152 @@ _TRAINING_DIR = Path(__file__).resolve().parent
 if str(_TRAINING_DIR) not in sys.path:
     sys.path.insert(0, str(_TRAINING_DIR))
 
+from build_dataset import _compute_proxy_row  # noqa: E402
 from prep_midi import _events_from_file  # noqa: E402
 
-
-# ── Bass GM program numbers (MIDI program change: 33–40) ─────────────────
-_BASS_GM_PROGRAMS = frozenset(range(33, 41))  # 33=Acoustic Bass .. 40=Synth Bass 2
-
-# ── Root pitch candidates: E2(40) / A2(45) / B1(35) ──────────────────────
+_BASS_GM_PROGRAMS = frozenset(range(33, 41))  # GM bass instruments
 _ROOT_CANDIDATES = [40, 45, 35]
-
-# ── Default tempo if no tempo change events found ────────────────────────
 _DEFAULT_BPM = 120.0
-
 _EPS = 1e-8
 
 
 def _clamp_bpm(bpm: float) -> float:
-    """Clamp BPM to valid range [80, 220]."""
     return float(np.clip(bpm, 80.0, 220.0))
 
 
-def _detect_bass_channel(events: list[dict]) -> int | None:
-    """Return the first channel index (1-indexed) that has bass note-on events.
+def _first_bpm_from_midi_file(path: Path) -> float:
+    """First set_tempo in merged tracks → BPM, else default."""
+    try:
+        mid = mido.MidiFile(str(path), clip=True)
+    except (OSError, EOFError, ValueError):
+        return _DEFAULT_BPM
+    for msg in mido.merge_tracks(mid.tracks):
+        if msg.type == "set_tempo":
+            return _clamp_bpm(60000000.0 / float(msg.tempo))
+    return _DEFAULT_BPM
 
-    Bass detection scans for note_on events on channel 2 (GM bass convention).
-    Returns None if no bass channel found.
+
+def _program_at_first_ch2_note(path: Path) -> int | None:
+    """GM program number on melodic channel 2 active at first MIDI note-on on that channel.
+
+    MIDI channel 2 (human 1-indexed) ⇒ ``mido`` ``channel == 1``. Returns ``None``
+    if a note fires before any ``program_change`` on that channel, or on corrupt files.
     """
-    channels_seen: set[int] = set()
-    for e in events:
-        if e.get("type") == "note_on" and e.get("velocity", 0) > 0:
-            channels_seen.add(int(e.get("channel", 0)))
-    # Channel 2 in 1-indexed MIDI is the bass channel
-    if 2 in channels_seen:
-        return 2
+    try:
+        mid = mido.MidiFile(str(path), clip=True)
+    except (OSError, EOFError, ValueError):
+        return None
+    prog: int | None = None
+    for msg in mido.merge_tracks(mid.tracks):
+        if msg.type == "program_change" and getattr(msg, "channel", None) == 1:
+            prog = int(msg.program)
+        elif msg.type == "note_on" and getattr(msg, "channel", None) == 1 and getattr(msg, "velocity", 0) > 0:
+            return prog
     return None
 
 
-def _extract_bass_events(events: list[dict], channel: int = 2) -> list[dict]:
-    """Extract bass note events (note_on with velocity > 0) from a specific channel.
+def _events_in_time_range(events: list[dict], t0: float, t1: float) -> list[dict]:
+    out = []
+    for e in events:
+        t = float(e.get("time_sec", 0.0))
+        if t0 <= t < t1:
+            out.append(e)
+    return out
 
-    Returns list of dicts with keys: pitch, velocity, start_sec, end_sec, channel.
-    """
-    note_ons: dict[int, dict] = {}  # pitch → {pitch, velocity, start_sec, channel}
-    bass_notes: list[dict] = []
+
+def extract_bass_events(events: list[dict], channel: int = 2) -> list[dict]:
+    """Bass notes as {pitch, velocity, start_sec, end_sec, channel}."""
+
+    pending: dict[int, dict[str, float | int]] = {}
+    finished: list[dict] = []
 
     for e in events:
         if int(e.get("channel", 0)) != channel:
             continue
 
-        etype = e.get("type")
-        if etype == "note_on" and e.get("velocity", 0) > 0:
+        et = e.get("type")
+        if et == "note_on" and int(e.get("velocity", 0)) > 0:
             pitch = int(e.get("note", 0))
-            vel = int(e.get("velocity", 0))
-            t = float(e.get("time_sec", 0.0))
-            note_ons[pitch] = {
+            pending[pitch] = {
                 "pitch": pitch,
-                "velocity": vel,
-                "start_sec": t,
-                "end_sec": t + 1.0,  # placeholder, will be updated on note_off
+                "velocity": float(e.get("velocity", 0)),
+                "start_sec": float(e.get("time_sec", 0.0)),
+                "channel": channel,
+                "end_sec": float(e.get("time_sec", 0.0)),
+            }
+        elif et in ("note_off",) or (et == "note_on" and int(e.get("velocity", 0)) == 0):
+            pitch = int(e.get("note", 0))
+            if pitch in pending:
+                st = pending.pop(pitch)
+                st["end_sec"] = float(e.get("time_sec", float(st["start_sec"]) + 0.1))
+                finished.append(
+                    {
+                        "pitch": int(st["pitch"]),
+                        "velocity": int(st["velocity"]),
+                        "start_sec": float(st["start_sec"]),
+                        "end_sec": float(st["end_sec"]),
+                        "channel": channel,
+                    }
+                )
+
+    for pitch, st in pending.items():
+        finished.append(
+            {
+                "pitch": pitch,
+                "velocity": int(st["velocity"]),
+                "start_sec": float(st["start_sec"]),
+                "end_sec": float(st["start_sec"]) + 0.25,
                 "channel": channel,
             }
-        elif etype in ("note_off",) or (etype == "note_on" and e.get("velocity", 0) == 0):
-            pitch = int(e.get("note", 0))
-            if pitch in note_ons:
-                t = float(e.get("time_sec", 0.0))
-                note_ons[pitch]["end_sec"] = t
-                bass_notes.append(note_ons.pop(pitch))
+        )
 
-    # Any remaining note_ons (no matching note_off) get a short duration
-    for note in note_ons.values():
-        note["end_sec"] = note["start_sec"] + 0.25
-        bass_notes.append(note)
-
-    return bass_notes
+    finished.sort(key=lambda n: float(n["start_sec"]))
+    return finished
 
 
 def _derive_root_from_events(
     bass_notes: list[dict],
     candidates: list[int] | None = None,
 ) -> int:
-    """Identify the most frequent pitch class among bass notes, matched to nearest candidate.
-
-    For each candidate root, compute total semitone distance to all notes.
-    Return the candidate with minimum total distance.
-    If no notes, return default 40 (E2).
-    """
+    """Pick E2/A2/B1 candidate minimizing sum of circular pitch-class distance."""
     if not bass_notes:
-        return 40
+        return _ROOT_CANDIDATES[0]
 
-    if candidates is None:
-        candidates = _ROOT_CANDIDATES
+    cand_list = candidates or _ROOT_CANDIDATES
+
+    def pc_dist_deg(p: int, c: int) -> float:
+        a, b = p % 12, c % 12
+        d = abs(a - b)
+        return float(min(d, 12 - d))
 
     pitches = [int(n["pitch"]) for n in bass_notes]
-    best_candidate = candidates[0]
-    best_distance = float("inf")
+    best = cand_list[0]
+    best_sum = math.inf
 
-    for candidate in candidates:
-        total_dist = sum(abs(p % 12 - candidate % 12) for p in pitches)
-        if total_dist < best_distance:
-            best_distance = total_dist
-            best_candidate = candidate
+    for candidate in cand_list:
+        s = sum(pc_dist_deg(p, candidate) for p in pitches)
+        if s < best_sum:
+            best_sum = s
+            best = candidate
 
-    return best_candidate
+    return best
 
 
-def _detect_tempo(events: list[dict]) -> float:
-    """Extract BPM from MIDI tempo change events.
-
-    Returns the first tempo found, or _DEFAULT_BPM if none.
-    Clamped to [80, 220].
-    """
-    # Walk events for tempo meta-events in prep_midi output.
-    # prep_midi merges tracks and converts set_tempo to tempo changes.
-    # But since _events_from_file returns a flat event list without tempo metadata,
-    # we need to look for tempo info differently. We'll default to 120 BPM
-    # and let the caller override.
-    #
-    # For bass extraction, we use the default tempo because prep_midi
-    # doesn't include tempo in its flat event output.
-    # The caller can pass a known BPM from the manifest.
-    return _clamp_bpm(_DEFAULT_BPM)
+def _infer_state_drums(bar_events_global: list[dict]) -> float:
+    """LOUD≥3 drum onsets, SOFT≥1, else SILENT in this bar."""
+    drums = [
+        e
+        for e in bar_events_global
+        if e.get("type") == "note_on"
+        and int(e.get("velocity", 0)) > 0
+        and int(e.get("channel", 0)) == 10
+    ]
+    n = len(drums)
+    if n >= 3:
+        return 2.0
+    if n >= 1:
+        return 1.0
+    return 0.0
 
 
 def _quantize_bass_to_pianoroll(
@@ -153,19 +179,6 @@ def _quantize_bass_to_pianoroll(
     steps_per_bar: int = 16,
     beats_per_bar: int = 4,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Quantize bass notes within one bar to a 16-step piano-roll.
-
-    Args:
-        bass_notes: List of bass note events (pitch, velocity, start_sec, end_sec, channel).
-        root: Root pitch (MIDI note number).
-        bpm: Tempo in BPM.
-        start_beat: Starting beat position of the bar.
-        steps_per_bar: Number of quantization steps (default 16 for sixteenth notes).
-        beats_per_bar: Number of beats per bar (default 4).
-
-    Returns:
-        tuple of (pitch_offsets [steps_per_bar], velocities [steps_per_bar]).
-    """
     beat_duration_sec = 60.0 / float(bpm)
     step_duration_sec = beat_duration_sec * (float(beats_per_bar) / float(steps_per_bar))
     bar_start_sec = start_beat * beat_duration_sec
@@ -178,265 +191,223 @@ def _quantize_bass_to_pianoroll(
         step_start = bar_start_sec + step * step_duration_sec
         step_end = step_start + step_duration_sec
 
-        # Find all notes whose start_sec falls within this step window
-        active_notes = []
+        active = []
         for note in bass_notes:
             ns = float(note.get("start_sec", 0.0))
-            # Note starts in this step window
             if ns >= step_start and ns < step_end:
-                active_notes.append(note)
+                active.append(note)
 
-        if active_notes:
-            # Use the first active note (or the one closest to root)
-            best_note = active_notes[0]
-            best_dist = abs(int(best_note["pitch"]) - root)
-            for n in active_notes[1:]:
-                dist = abs(int(n["pitch"]) - root)
-                if dist < best_dist:
-                    best_dist = dist
-                    best_note = n
+        if not active:
+            continue
 
-            offset = float(best_note["pitch"] - root)
-            pitch_offsets[step] = float(np.clip(offset, -12.0, 12.0))
-            velocities[step] = float(best_note["velocity"]) / 127.0
+        best_note = active[0]
+        best_dist = abs(int(best_note["pitch"]) - root)
+        for n in active[1:]:
+            d = abs(int(n["pitch"]) - root)
+            if d < best_dist:
+                best_dist = d
+                best_note = n
+
+        offset = float(int(best_note["pitch"]) - root)
+        pitch_offsets[step] = float(np.clip(offset, -12.0, 12.0))
+        velocities[step] = float(int(best_note["velocity"])) / 127.0
 
     return pitch_offsets, velocities
 
 
-def _compute_proxy_row_5float(events: list[dict], bpm_raw: float) -> np.ndarray:
-    """Extract 5-float proxy row compatible with training/build_dataset.py.
+def build_bass_rows_for_file(midi_path: Path, bpm_fallback: float | None = None) -> list[dict]:
+    """Return flat list of per-bar records {X row [7], Y row [32], meta dict}."""
 
-    Uses 3-class state: SILENT(0)/SOFT(1)/LOUD(2).
-    """
-    bpm = _clamp_bpm(float(bpm_raw))
-    ons = [e for e in events if e.get("type") == "note_on" and e.get("velocity", 0) > 0]
-    vels = [int(e.get("velocity", 0)) for e in ons]
-    if not vels:
-        return np.array([bpm, 0.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    gm_seen = _program_at_first_ch2_note(midi_path)
+    if gm_seen is None or gm_seen not in _BASS_GM_PROGRAMS:
+        return []
 
-    rms = float(np.sqrt(np.mean(np.square(np.asarray(vels, dtype=np.float64)))) / 127.0)
-    notes = [int(e.get("note", 0)) for e in ons]
-    cent = 400.0 + (float(np.mean(notes)) / 127.0) * 6000.0
+    try:
+        events = _events_from_file(midi_path)
+    except Exception:
+        return []
 
-    high_times = sorted(float(e["time_sec"]) for e in ons if int(e.get("note", 0)) >= 42)
-    if len(high_times) < 2:
-        hf = 0.0
-    else:
-        dt = np.diff(np.asarray(high_times, dtype=np.float64))
-        dt_beats = dt * (float(bpm) / 60.0)
-        hf = float(min(1.0, 4.0 * float(np.std(dt_beats))))
-
-    # 3-class state: SILENT(0) / SOFT(1) / LOUD(2)
-    dens = len(ons) / max(float(e.get("time_sec", 0.0)) * bpm / 60.0 for e in events) if events else 1.0
-    dens = max(dens, 0.25)
-    if len(ons) < 3 or rms < 0.02:
-        state = 0.0
-    elif dens >= 10.0 and hf >= 0.35:
-        state = 2.0
-    else:
-        state = 1.0
-
-    return np.array([bpm, rms, cent, hf, state], dtype=np.float64)
-
-
-def _infer_state_from_events(events: list[dict], bpm: float) -> float:
-    """Infer 3-class state (0=SILENT, 1=SOFT, 2=LOUD) from drum-channel activity.
-    
-    Drum channel = channel 10 (1-indexed). Counts simultaneous notes.
-    """
-    drum_ons = [
-        e for e in events
-        if e.get("type") == "note_on"
-        and e.get("velocity", 0) > 0
-        and int(e.get("channel", 0)) == 10
-    ]
-    num_drums = len(drum_ons)
-
-    if num_drums == 0:
-        return 0.0  # SILENT
-    elif num_drums >= 3:
-        return 2.0  # LOUD
-    else:
-        return 1.0  # SOFT
-
-
-def _duration_beats(events: list[dict], bpm: float) -> float:
-    """Compute duration in beats from event timestamps."""
     if not events:
-        return 1.0
-    t_max = max(float(e.get("time_sec", 0.0)) for e in events)
-    return max(t_max * float(bpm) / 60.0, 0.25)
+        return []
+
+    bpm = bpm_fallback if bpm_fallback is not None else _first_bpm_from_midi_file(midi_path)
+    bpm = _clamp_bpm(bpm)
+
+    bass_notes_abs = extract_bass_events(events, channel=2)
+    if not bass_notes_abs:
+        return []
+
+    beat_duration_sec = 60.0 / bpm
+    bar_duration_sec = beat_duration_sec * 4.0
+    duration_sec = max(float(e.get("time_sec", 0.0)) for e in events)
+    total_bars = max(1, int(np.ceil(duration_sec / bar_duration_sec)))
+
+    rows_out: list[dict] = []
+
+    for bar_idx in range(total_bars):
+        t0 = bar_idx * bar_duration_sec
+        t1 = (bar_idx + 1) * bar_duration_sec
+
+        bar_events_global = _events_in_time_range(events, t0, t1)
+        bar_notes = []
+        for n in bass_notes_abs:
+            ns = float(n["start_sec"])
+            if t0 <= ns < t1:
+                nn = dict(n)
+                nn["start_sec"] = ns - t0
+                nn["end_sec"] = float(nn["end_sec"]) - t0
+                bar_notes.append(nn)
+
+        if not bar_notes:
+            continue
+
+        root_pitch = _derive_root_from_events(bar_notes)
+
+        drum_state = _infer_state_drums(bar_events_global)
+        proxy_row = _compute_proxy_row(bar_events_global, bpm).astype(np.float64)
+        proxy_row[4] = float(drum_state)
+
+        feature_7 = np.array(
+            [
+                proxy_row[0],
+                proxy_row[1],
+                proxy_row[2],
+                proxy_row[3],
+                proxy_row[4],
+                float(root_pitch),
+                0.8,
+            ],
+            dtype=np.float32,
+        )
+
+        po, vv = _quantize_bass_to_pianoroll(
+            bar_notes,
+            root=root_pitch,
+            bpm=bpm,
+            start_beat=0.0,
+        )
+        if float(np.max(vv)) < _EPS:
+            continue
+
+        y32 = np.empty(32, dtype=np.float32)
+        for s in range(16):
+            y32[s * 2] = po[s]
+            y32[s * 2 + 1] = vv[s]
+
+        rows_out.append({
+            "X": feature_7,
+            "Y": y32,
+            "meta": {
+                "midi_path": str(midi_path.resolve()),
+                "root_pitch": int(root_pitch),
+                "gm_program_ch2_seen": int(gm_seen),
+                "bpm": float(bpm),
+                "bar_index": bar_idx,
+            },
+        })
+
+    return rows_out
 
 
 def build_bass_dataset(
     midi_dir: Path,
     max_files: int = 5000,
+    seed: int = 42,
+    val_fraction: float = 0.2,
     bpm_override: float | None = None,
-) -> dict:
-    """Build bass training tensors from MIDI files.
+) -> tuple[dict, dict]:
+    """Load MIDI directory, aggregate rows, split train/val by source file."""
 
-    Args:
-        midi_dir: Directory containing .mid or .midi files (recursively).
-        max_files: Maximum number of files to process.
-        bpm_override: Optional BPM override if tempo detection fails.
-
-    Returns:
-        dict with keys X (float32 [N,7]), Y (float32 [N,32]), meta (list of dict).
-    """
     midi_files: list[Path] = []
     for ext in ("*.mid", "*.midi", "*.MID", "*.MIDI"):
         midi_files.extend(sorted(midi_dir.rglob(ext)))
-    midi_files = midi_files[:max_files]
+    midi_files = sorted(set(midi_files))[:max_files]
 
-    x_rows: list[np.ndarray] = []
-    y_rows: list[np.ndarray] = []
-    meta_rows: list[dict] = []
-
-    for idx, midi_path in enumerate(midi_files):
-        try:
-            events = _events_from_file(midi_path)
-        except Exception:
+    by_file: dict[str, list[dict]] = {}
+    for p in midi_files:
+        bars = build_bass_rows_for_file(p, bpm_fallback=bpm_override)
+        if not bars:
             continue
+        key = str(p.resolve())
+        by_file.setdefault(key, []).extend(bars)
 
-        if not events:
-            continue
+    if not by_file:
+        raise ValueError(f"No usable bass bars from MIDI under {midi_dir}")
 
-        # Detect bass channel
-        bass_channel = _detect_bass_channel(events)
-        if bass_channel is None:
-            continue
+    groups = sorted(by_file.keys())
 
-        # Extract bass notes
-        bass_notes = _extract_bass_events(events, channel=bass_channel)
-        if not bass_notes:
-            continue
+    rng = np.random.default_rng(seed)
 
-        # Detect tempo
-        bpm = _detect_tempo(events)
-        if bpm_override is not None:
-            bpm = bpm_override
-        bpm = _clamp_bpm(bpm)
+    def rows_to_blob(rows: list[dict]) -> dict:
+        xs = [r["X"] for r in rows]
+        ys = [r["Y"] for r in rows]
+        met = [r["meta"] for r in rows]
 
-        # Derive root pitch from all bass notes in the file
-        root_pitch = _derive_root_from_events(bass_notes)
+        X = np.stack(xs, axis=0).astype(np.float32)
+        Y = np.stack(ys, axis=0).astype(np.float32)
+        return {"X": torch.from_numpy(X), "Y": torch.from_numpy(Y), "meta": met}
 
-        # Extract 5-float proxy for the whole file
-        proxy_5 = _compute_proxy_row_5float(events, bpm)
+    if len(groups) < 2:
+        flat: list[dict] = []
+        for g in groups:
+            flat.extend(by_file[g])
 
-        # Build 7-float feature vector: [bpm, rmsEnergy, spectralCentroid, highFreqFlux, stateFloat, pitchRootMidi, pitchConfidence]
-        feature_7 = np.array([
-            proxy_5[0],  # bpm
-            proxy_5[1],  # rmsEnergy
-            proxy_5[2],  # spectralCentroid
-            proxy_5[3],  # highFreqFlux
-            proxy_5[4],  # stateFloat
-            float(root_pitch),  # pitchRootMidi
-            0.8,  # pitchConfidence (fixed for MIDI-derived data)
-        ], dtype=np.float32)
+        rng.shuffle(flat)
 
-        # Quantize bass to piano-roll
-        # Process one bar at a time
-        beat_duration_sec = 60.0 / bpm
-        bar_duration_sec = beat_duration_sec * 4.0  # 4 beats per bar
-        total_duration_sec = max(
-            float(n.get("end_sec", float(n.get("start_sec", 0.0)) + 0.1))
-            for n in bass_notes
-        ) if bass_notes else bar_duration_sec
-        total_bars = int(np.ceil(total_duration_sec / bar_duration_sec))
+        if len(flat) == 0:
+            raise ValueError("No rows after grouping (empty flat list)")
 
-        for bar_idx in range(total_bars):
-            bar_start_sec = bar_idx * bar_duration_sec
-            bar_end_sec = bar_start_sec + bar_duration_sec
+        if len(flat) == 1:
+            return rows_to_blob(flat), {
+                "X": torch.zeros(0, 7, dtype=torch.float32),
+                "Y": torch.zeros(0, 32, dtype=torch.float32),
+                "meta": [],
+            }
 
-            # Filter bass notes active in this bar
-            bar_notes = []
-            for note in bass_notes:
-                ns = float(note.get("start_sec", 0.0))
-                ne = float(note.get("end_sec", ns + 0.1))
-                if ne > bar_start_sec and ns < bar_end_sec:
-                    # Adjust timestamps relative to bar start
-                    bar_note = dict(note)
-                    bar_note["start_sec"] = ns - bar_start_sec
-                    bar_note["end_sec"] = ne - bar_start_sec
-                    bar_notes.append(bar_note)
+        split_i = max(1, min(int(len(flat) * (1.0 - val_fraction)), len(flat) - 1))
+        return rows_to_blob(flat[:split_i]), rows_to_blob(flat[split_i:])
 
-            if not bar_notes:
-                continue
+    rng.shuffle(groups)
+    split_at = max(1, int(len(groups) * (1.0 - val_fraction)))
+    split_at = min(split_at, len(groups) - 1)
 
-            # Quantize this bar
-            pitch_offsets, velocities = _quantize_bass_to_pianoroll(
-                bar_notes,
-                root=root_pitch,
-                bpm=bpm,
-                start_beat=0.0,  # relative to bar start
-            )
+    train_groups = set(groups[:split_at])
+    val_groups = set(groups[split_at:])
 
-            # Skip bars with zero activity
-            if np.all(velocities < _EPS):
-                continue
+    def pack(group_set: set[str]) -> dict:
+        xs, ys, metas = [], [], []
+        for g in group_set:
+            for rec in by_file[g]:
+                xs.append(rec["X"])
+                ys.append(rec["Y"])
+                metas.append(rec["meta"])
 
-            # Interleave: [offset_0, vel_0, offset_1, vel_1, ..., offset_15, vel_15]
-            y_interleaved = np.empty(32, dtype=np.float32)
-            for step in range(16):
-                y_interleaved[step * 2] = pitch_offsets[step]
-                y_interleaved[step * 2 + 1] = velocities[step]
+        X = np.stack(xs, axis=0).astype(np.float32)
+        Y = np.stack(ys, axis=0).astype(np.float32)
+        return {"X": torch.from_numpy(X), "Y": torch.from_numpy(Y), "meta": metas}
 
-            x_rows.append(feature_7)
-            y_rows.append(y_interleaved)
-            meta_rows.append({
-                "midi_path": str(midi_path),
-                "root_pitch": root_pitch,
-                "bpm": float(bpm),
-                "bar_index": bar_idx,
-            })
-
-    if not x_rows:
-        raise ValueError(f"No valid bass bars extracted from {len(midi_files)} files in {midi_dir}")
-
-    X = np.stack(x_rows, axis=0).astype(np.float32)
-    Y = np.stack(y_rows, axis=0).astype(np.float32)
-
-    return {
-        "X": X,
-        "Y": Y,
-        "meta": meta_rows,
-    }
+    return pack(train_groups), pack(val_groups)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Extract BassNet training data from Lakh+GMD MIDI files (D-26-01)."
-    )
+    parser = argparse.ArgumentParser(description="Extract BassNet training tensors (D-26-01).")
+    parser.add_argument("--midi-dir", type=Path, required=True, help="Root directory of .mid/.midi files.")
     parser.add_argument(
-        "--midi-dir",
+        "--processed-dir",
         type=Path,
-        required=True,
-        help="Root directory containing .mid files (recursively searched).",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        required=True,
-        help="Output .pt file path.",
+        default=_TRAINING_DIR / "data/processed",
+        help="Directory for bass_train.pt and bass_val.pt (default: training/data/processed)",
     )
     parser.add_argument(
         "--data-dir",
         type=Path,
         default=None,
-        help="Directory with norm_stats.json (for reference, optional).",
+        help="Directory with norm_stats.json (documentation only)",
     )
-    parser.add_argument(
-        "--max-files",
-        type=int,
-        default=5000,
-        help="Maximum number of MIDI files to process (default: 5000).",
-    )
-    parser.add_argument(
-        "--bpm",
-        type=float,
-        default=None,
-        help="Override BPM if tempo detection fails.",
-    )
+    parser.add_argument("--max-files", type=int, default=5000)
+    parser.add_argument("--val-fraction", type=float, default=0.2)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--bpm", type=float, default=None)
     args = parser.parse_args()
 
     if not args.midi_dir.is_dir():
@@ -444,30 +415,31 @@ def main() -> int:
         return 1
 
     try:
-        result = build_bass_dataset(
+        train_blob, val_blob = build_bass_dataset(
             midi_dir=args.midi_dir,
             max_files=args.max_files,
+            seed=args.seed,
+            val_fraction=args.val_fraction,
             bpm_override=args.bpm,
         )
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
 
-    # Save output
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {
-            "X": torch.from_numpy(result["X"]),
-            "Y": torch.from_numpy(result["Y"]),
-            "meta": result["meta"],
-        },
-        str(args.output),
-    )
+    args.processed_dir.mkdir(parents=True, exist_ok=True)
+    train_pt = args.processed_dir / "bass_train.pt"
+    val_pt = args.processed_dir / "bass_val.pt"
 
-    print(f"Saved: {args.output}", flush=True)
-    print(f"  X shape: {result['X'].shape}", flush=True)
-    print(f"  Y shape: {result['Y'].shape}", flush=True)
-    print(f"  Bars extracted: {len(result['meta'])}", flush=True)
+    torch.save(train_blob, str(train_pt))
+    torch.save(val_blob, str(val_pt))
+
+    print(f"Saved: {train_pt}  X shape: {tuple(train_blob['X'].shape)}", flush=True)
+    print(f"Saved: {val_pt}  X shape: {tuple(val_blob['X'].shape)}", flush=True)
+
+    if args.data_dir is not None:
+        stats = args.data_dir / "norm_stats.json"
+        if stats.is_file():
+            print(f"norm_stats.json reference OK: {stats}", flush=True)
     return 0
 
 

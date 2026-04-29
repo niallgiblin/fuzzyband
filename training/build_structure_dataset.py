@@ -104,11 +104,11 @@ def _sample_sequence_window(
             window = X[window_indices, :]  # [window_size, 7]
             anchor_row = window[-1, :]  # newest row
 
-            # Label from stateFloat (column 4)
+            # Label from stateFloat (column 4); tolerate legacy 4-state proxies (clamp to [0..2])
             state_float = float(anchor_row[4].item())
-            if np.isnan(state_float) or state_float < 0.0 or state_float > 2.0:
+            if np.isnan(state_float):
                 continue
-            label = int(np.clip(int(state_float), 0, 2))
+            label = int(np.clip(round(state_float), 0.0, 2.0))
 
             windows.append(window)
             labels.append(label)
@@ -141,10 +141,16 @@ def main() -> int:
         help="Merged tensor .pt file (e.g. train_merged.pt).",
     )
     parser.add_argument(
-        "--output",
+        "--out-dir",
         type=Path,
-        required=True,
-        help="Output .pt file path (e.g. structure_train.pt).",
+        default=_TRAINING_DIR / "data/processed",
+        help="Directory for structure_train.pt / structure_val.pt (default: training/data/processed)",
+    )
+    parser.add_argument(
+        "--stem",
+        type=str,
+        default="structure",
+        help='Output file stem: {stem}_train.pt and {stem}_val.pt (default: structure).',
     )
     parser.add_argument(
         "--window-size",
@@ -252,23 +258,40 @@ def main() -> int:
         print(f"Capped to {args.max_samples} samples", flush=True)
 
     # ── Train/val split via GroupShuffleSplit ──────────────────────────────
-    # Extract group IDs from window_meta
+    train_path = args.out_dir / f"{args.stem}_train.pt"
+    val_path = args.out_dir / f"{args.stem}_val.pt"
+    manifest_out = args.out_dir / "manifest_structure.jsonl"
+
     group_ids = np.array([m.get("group_id", f"_row_{i}") for i, m in enumerate(window_meta)], dtype=object)
 
     try:
         from sklearn.model_selection import GroupShuffleSplit  # noqa: PLC0415
     except ImportError:
         print("warning: sklearn not available; saving all as train (no val split)", file=sys.stderr)
-        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.out_dir.mkdir(parents=True, exist_ok=True)
         torch.save(
             {
                 "X": X_struct,
                 "Y": Y_struct,
                 "meta": window_meta,
             },
-            str(args.output),
+            str(train_path),
         )
-        print(f"Saved: {args.output}", flush=True)
+        torch.save(
+            {
+                "X": torch.empty(
+                    0,
+                    X_struct.shape[1],
+                    X_struct.shape[2],
+                    dtype=X_struct.dtype,
+                ),
+                "Y": torch.empty(0, dtype=Y_struct.dtype),
+                "meta": [],
+            },
+            str(val_path),
+        )
+        print(f"Saved train: {train_path}", flush=True)
+        print(f"Saved empty val scaffold: {val_path}", flush=True)
         return 0
 
     gss = GroupShuffleSplit(n_splits=1, test_size=args.val_fraction, random_state=args.seed)
@@ -280,30 +303,19 @@ def main() -> int:
     X_val = X_struct[va_idx]
     Y_val = Y_struct[va_idx]
 
-    # Save train
-    train_path = args.output.parent / (args.output.stem + "_train.pt")
-    if str(args.output) == str(train_path):
-        train_path = args.output  # exact match
-    train_path.parent.mkdir(parents=True, exist_ok=True)
+    args.out_dir.mkdir(parents=True, exist_ok=True)
     torch.save(
         {"X": X_train, "Y": Y_train, "meta": [window_meta[i] for i in tr_idx]},
         str(train_path),
     )
     print(f"Saved: {train_path}  X shape: {list(X_train.shape)}  Y shape: {list(Y_train.shape)}", flush=True)
 
-    # Save val
-    val_path = args.output.parent / (args.output.stem + "_val.pt")
-    if str(args.output) == str(val_path):
-        val_path = args.output
-    val_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {"X": X_val, "Y": Y_val, "meta": [window_meta[i] for i in va_idx]},
         str(val_path),
     )
     print(f"Saved: {val_path}  X shape: {list(X_val.shape)}  Y shape: {list(Y_val.shape)}", flush=True)
 
-    # ── Manifest ───────────────────────────────────────────────────────────
-    manifest_out = args.output.parent / (args.output.stem + "_manifest.jsonl")
     with manifest_out.open("w", encoding="utf-8") as f:
         for i in tr_idx:
             rec = dict(window_meta[i])
@@ -315,10 +327,9 @@ def main() -> int:
             f.write(json.dumps(rec, sort_keys=True) + "\n")
     print(f"Manifest: {manifest_out}", flush=True)
 
-    # ── Class distribution ─────────────────────────────────────────────────
     tr_counts = np.bincount(Y_train.numpy(), minlength=3)
     va_counts = np.bincount(Y_val.numpy(), minlength=3)
-    print(f"\nClass distribution:", flush=True)
+    print("\nClass distribution:", flush=True)
     for c in range(3):
         print(f"  class {c}: train={int(tr_counts[c])}  val={int(va_counts[c])}", flush=True)
 

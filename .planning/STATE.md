@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.4.0
-milestone_name: ML Playability & Simplification
-status: roadmapped
-last_updated: "2026-04-28T00:00:00.000Z"
-last_activity: 2026-04-28
+milestone_name: — ML Playability & Simplification
+status: executing
+last_updated: "2026-04-29T13:00:00.000Z"
+last_activity: 2026-04-29 -- Phase 26 plan 26-01 executed (datasets + WIP absorption)
 progress:
-  total_phases: 6
-  completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
-  percent: 33
+  total_phases: 7
+  completed_phases: 5
+  total_plans: 12
+  completed_plans: 10
+  percent: 83
 ---
 
 # STATE — Metal Accompaniment
@@ -24,16 +24,16 @@ See: `.planning/PROJECT.md` (updated 2026-04-28)
 **Version string in the plugin UI** comes from **`CMakeLists.txt`** `project(MetalAccompaniment VERSION …)` (JUCE `ProjectInfo::versionString`). It should move with milestone checkpoints; **GSD phase/milestone authority** is this file plus **`.planning/ROADMAP.md`** (not `ROADMAP_PHASE_1.md`, which is the historical Phase 1 doc only).
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** Phase 23 — C++ Inference Layer. Run `/gsd-plan-phase 23` to begin.
+**Current focus:** Phase 26 — Retrain + Validate. Plan 26-01 complete; next Wave 26-02 model retraining.
 
 ---
 
 ## Current Position
 
-Phase: 22 — ONNX Contract + Stubs (complete)
-Plan: 22-01
-Status: Complete — ONNX contract docs, stubs, validator, tests, CI gate all locked
-Last activity: 2026-04-28 — Phase 22 execution complete
+Phase: 26 — Retrain + Validate (executing)
+Plan: 26-02 (26-03 queued)
+Status: Wave 2 — plan 26-02 pending (Wave 1 / 26-01 complete)
+Last activity: 2026-04-29 -- Phase 26 plan 26-01 SUMMARY committed; bassist/structure .pt regenerated locally (gitignored)
 
 ---
 
@@ -53,10 +53,10 @@ Last activity: 2026-04-28 — Phase 22 execution complete
 |-------|------|--------------|--------|
 | 21 | C++ Type Foundation | TYPE-01, TYPE-02 | Complete |
 | 22 | ONNX Contract + Stubs | ONNX-04, ONNX-05 | Complete |
-| 23 | C++ Inference Layer | INF-01, INF-02 | Not started |
+| 23 | C++ Inference Layer | INF-01, INF-02 | Complete |
 | 24 | UI Simplification | UI-01, UI-02 | Not started |
 | 25 | Training Data Pipeline | DATA-07, DATA-08, DATA-09 | Not started |
-| 26 | Retrain + Validate | PMODEL-04, BMODEL-03, STRUC-04, PVAL-01 | Not started |
+| 26 | Retrain + Validate | PMODEL-04, BMODEL-03, STRUC-04, PVAL-01 | In progress |
 
 **Execution order:** 21 → 22 → 23 → 24 (sequential). Phase 25 depends on Phase 21 and can run in parallel with 22–24. Phase 26 depends on both Phase 23 and Phase 25.
 
