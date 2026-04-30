@@ -212,3 +212,49 @@ TEST_CASE("PatternPlayer: setBassSemitoneOffset does not affect generative bass 
     REQUIRE(sawRoot40);      // absolute root — no semitone shift applied
     REQUIRE_FALSE(sawRoot45); // shifted root must not appear
 }
+
+TEST_CASE("PatternPlayer: bar-aligned sixteen-step bass (RHY-BASSSEQ-01 / D-28-06)", "[midi]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(kSampleRate, 256);
+    player.setBpm(kBpm);
+    player.setPatternIndex(1);
+    player.setStructureSilent(false);
+    player.snapToBarStart();
+
+    float pitch[16] = {};
+    float vel[16] = {};
+    vel[0] = 100.0f;
+    vel[4] = 100.0f;
+    pitch[0] = 0.0f;
+    pitch[4] = 2.0f;
+
+    player.setGenerativeBassSteps(pitch, vel, 40.0f);
+
+    juce::MidiBuffer midi;
+    player.process(midi, kOneBar, 0);
+
+    int bassOnCount = 0;
+    bool sawDistinctNotes = false;
+    std::vector<int> notesHit;
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOn() && msg.getChannel() == kBassChannel)
+        {
+            ++bassOnCount;
+            notesHit.push_back(msg.getNoteNumber());
+        }
+    }
+
+    REQUIRE(bassOnCount >= 2);
+
+    // Two different MIDI notes — steps 0 and 4 resolved to different pitches (+2 semitone offset).
+    for (size_t i = 0; i < notesHit.size() && !sawDistinctNotes; ++i)
+        for (size_t j = i + 1; j < notesHit.size(); ++j)
+            if (notesHit[i] != notesHit[j])
+                sawDistinctNotes = true;
+    REQUIRE(sawDistinctNotes);
+}

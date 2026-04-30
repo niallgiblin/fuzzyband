@@ -17,7 +17,7 @@
  *
  * Locks BPM once 8+ consecutive IOIs agree within ±8%; lock clears on SILENT state.
  * Onset refractory period is 80 ms to reject fuzz-guitar harmonic false-triggers.
- * BPM is quantized to the nearest 5 BPM after median estimation.
+ * BPM is computed via median IOI with no post-rounding.
  *
  * Intended to run from the audio processing path; methods called from @ref AccompanimentProcessor::processBlock.
  */
@@ -36,8 +36,7 @@ public:
     /** @brief True if a new onset was detected in the current process() call. */
     bool onsetDetectedThisBlock() const { return onsetThisBlock; }
 
-    /** @brief Clear the tempo lock so BPM estimation resumes. Call when structural state
-     *         transitions to SILENT. Safe to call from the audio thread. */
+    /** @brief Clear lock and recent IOI tempo memory after sustained silence. Audio-thread safe. */
     void resetTempoLock() noexcept;
 
     /** @brief True once 8+ consecutive IOIs are within ±8% of their mean. */

@@ -29,6 +29,8 @@ public:
     void setStructureSilent(bool silent);
     /** @brief Resets beat clock to bar 1; call when count-in gate completes. Audio thread safe (no heap). */
     void snapToBarStart();
+    /** @brief Set BPM directly with no EMA smoothing. Use only at gate-open. Audio thread safe. */
+    void snapBpm(float newBpm);
     /** @brief Semitone transpose for bass (ch @c kBassChannel) only; clamped [-24,24]. Audio thread. */
     void setBassSemitoneOffset(int semitones);
 
@@ -43,6 +45,9 @@ public:
 
     /** @brief Fill @p midi for this audio block using host sample position for timing. */
     void process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition);
+
+    /** @brief Arm a crash cymbal (MIDI 49) for the next active block. Audio thread safe. */
+    void armTransitionCrash() noexcept { fireTransitionCrash = true; }
 
     static constexpr int kBassChannel = 2;
 
@@ -117,6 +122,8 @@ private:
     /** Absolute sample index for library-pattern bass note-off; -1 = no held note. */
     int64_t libBassAbsNoteOffSample = -1;
     int libBassLastMidiNote = 40;
+
+    bool fireTransitionCrash = false;
 
     static constexpr int kDrumChannel = 10;
 };

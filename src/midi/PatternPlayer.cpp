@@ -28,6 +28,7 @@ void PatternPlayer::reset()
     genBassLastMidiNote = 40;
     libBassAbsNoteOffSample = -1;
     libBassLastMidiNote = 40;
+    fireTransitionCrash = false;
 }
 
 void PatternPlayer::setBassSemitoneOffset(int semitones)
@@ -79,6 +80,11 @@ void PatternPlayer::snapToBarStart()
 {
     beatPosition = 0.0;
     pendingPatternIndex = -1;
+}
+
+void PatternPlayer::snapBpm(float newBpm)
+{
+    bpm = juce::jlimit(40.0f, 320.0f, newBpm);
 }
 
 int PatternPlayer::humanVel(int base) const
@@ -390,6 +396,12 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
 
     wasSilent = false;
 
+    if (fireTransitionCrash)
+    {
+        midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, 49, 0.9f), 0);
+        fireTransitionCrash = false;
+    }
+
     if (!generativeBassActive && genBassAbsNoteOffSample > sampleCounter)
     {
         midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, genBassLastMidiNote), 0);
@@ -420,8 +432,11 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         const bool atBar = barPhase < 1.0e-4 || (4.0 - barPhase) < 1.0e-3;
         if (atBar)
         {
+            const int prevIndex = activePatternIndex;
             activePatternIndex = pendingPatternIndex;
             pendingPatternIndex = -1;
+            if (prevIndex != 0 && activePatternIndex != 0)
+                fireTransitionCrash = true;
         }
     }
 

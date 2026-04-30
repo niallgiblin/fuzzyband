@@ -32,13 +32,20 @@ public:
 
 private:
     StructureState computeDesiredState(float rms, float centroid, float peakRms) const;
+    double holdRequiredForTransition(StructureState from, StructureState to) const noexcept;
 
     double sampleRate = 44100.0;
-    double timeInStateSec = 0.0;
+    double pendingTransitionSec = 0.0;
     StructureState currentState = StructureState::SILENT;
-    static constexpr float kSilentRms = 0.05f;
-    static constexpr float kLoudRms   = 0.35f;
+    StructureState pendingState = StructureState::SILENT;
+    static constexpr float kSilentRms = 0.012f;
+    static constexpr float kSilentPeakRatio = 0.02f;
+    static constexpr float kLoudRmsFloor = 0.055f;
+    static constexpr float kLoudRms = 0.075f;
+    static constexpr float kLoudPeakRatio = 0.50f;
     static constexpr double kHoldSilentSec = 0.0;  // D-07: immediate exit from SILENT
-    static constexpr double kHoldSoftSec   = 2.0;
-    static constexpr double kHoldLoudSec   = 2.5;
+    static constexpr double kHoldSoftToLoudSec = 0.20;
+    static constexpr double kHoldSoftToSilentSec = 1.50;
+    static constexpr double kHoldLoudToSoftSec = 1.50;
+    static constexpr double kHoldLoudToSilentSec = 2.00;
 };

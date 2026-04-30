@@ -142,6 +142,61 @@ TEST_CASE("Processor pipeline: sustained signal raises RMS and changes display s
     proc.releaseResources();
 }
 
+TEST_CASE("Processor pipeline: clean DI phrase gap does not immediately return to SILENT", "[integration][pipeline]")
+{
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(48000.0, 512);
+    proc.pauseBackgroundInferenceForTests();
+
+    const double sr = 48000.0;
+    const int block = 512;
+
+    // Low-level clean DI: raw sine amp 0.012 becomes scaled RMS around 0.034.
+    auto cleanDi = makeSineBuffer(block, 110.0, sr, 0.012f);
+    feedBlocks(proc, cleanDi, block, static_cast<int>(1.0 * sr) / block);
+    proc.flushBackgroundInferenceForTests();
+    REQUIRE(proc.getDisplayStateIndex() != static_cast<int>(StructureState::SILENT));
+
+    auto silence = makeSilenceBuffer(block);
+    feedBlocks(proc, silence, block, static_cast<int>(0.75 * sr) / block);
+    proc.flushBackgroundInferenceForTests();
+
+    REQUIRE(proc.getDisplayStateIndex() != static_cast<int>(StructureState::SILENT));
+
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: clean DI active signal opens accompaniment gate", "[integration][pipeline]")
+{
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(48000.0, 512);
+    proc.pauseBackgroundInferenceForTests();
+
+    const double sr = 48000.0;
+    const int block = 512;
+    auto cleanDi = makeSineBuffer(block, 110.0, sr, 0.012f);
+
+    feedBlocks(proc, cleanDi, block, static_cast<int>(0.75 * sr) / block);
+    proc.flushBackgroundInferenceForTests();
+
+    bool sawNoteOn = false;
+    for (int i = 0; i < static_cast<int>(1.0 * sr) / block; ++i)
+    {
+        juce::AudioBuffer<float> audio = cleanDi;
+        juce::MidiBuffer midi;
+        proc.processBlock(audio, midi);
+        for (const auto meta : midi)
+        {
+            if (meta.getMessage().isNoteOn())
+                sawNoteOn = true;
+        }
+    }
+
+    REQUIRE(sawNoteOn);
+
+    proc.releaseResources();
+}
+
 // ─── State serialization round-trip ─────────────────────────────────────────
 
 TEST_CASE("Processor pipeline: getStateInformation / setStateInformation round-trip", "[integration][pipeline]")

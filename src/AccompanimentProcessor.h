@@ -10,6 +10,7 @@
 #include "analysis/EnergyAnalyser.h"
 #include "analysis/StructureTagger.h"
 #include "analysis/PitchEstimator.h"
+#include "analysis/BeatTracker.h"
 #include "analysis/FeatureVector.h"
 #include "inference/IInference.h"
 #include "inference/IStructureInference.h"
@@ -67,6 +68,7 @@ public:
     float getDisplayRms() const noexcept { return displayRms.load(std::memory_order_relaxed); }
     float getDisplayCentroid() const noexcept { return displayCentroid.load(std::memory_order_relaxed); }
     float getDisplayHfFlux() const noexcept { return displayHfFlux.load(std::memory_order_relaxed); }
+    float getDisplayBeatConfidence() const noexcept { return displayBeatConfidence.load(std::memory_order_relaxed); }
 
     void bumpDebugPattern();
 
@@ -95,6 +97,7 @@ private:
     EnergyAnalyser energyAnalyser;
     StructureTagger structureTagger;
     PitchEstimator pitchEstimator;
+    BeatTracker beatTracker;
     MidiPatternLibrary patternLibrary;
     PatternPlayer patternPlayer;
 
@@ -123,6 +126,7 @@ private:
     std::atomic<float> displayRms{ 0.0f };
     std::atomic<float> displayCentroid{ 0.0f };
     std::atomic<float> displayHfFlux{ 0.0f };
+    std::atomic<float> displayBeatConfidence{ 0.0f };
 
     std::atomic<bool> inferenceRunning{ false };
     /** Starts true so inference does not run until prepareToPlay() completes. */
@@ -139,10 +143,25 @@ private:
     int pitchStableCounterSamples = 0;
     float lastStablePitchMidi = 40.0f;
     int64_t lastBassUpdateSample = -1;   // -1 = never committed
-    int64_t lastDrumPatternChangeSample = -1;  // -1 = never committed; inference thread
-    int     countInOnsetCount   = 0;           // audio thread
-    bool    countInComplete     = false;       // audio thread
-    int64_t countInLastBeatSample = -1;        // sample time of last beat-spaced onset
+    int64_t lastDrumPatternChangeSample = -1; // -1 = never committed; inference thread
+
+    /** @brief When true, drummer may sound (tracker gate replaces 4-onset count-in). */
+    bool playbackGateOpen     = false;
+    bool prevPlaybackGateOpen = false;
+    float stablePlaybackBpm = 120.0f;
+    float pendingTempoCandidateBpm = 120.0f;
+    int pendingTempoCandidateSamples = 0;
+
+    float prevBlockRms = 0.0f;
+
+    int  silenceSamples     = 0;
+    int  activeNonSilentSamples = 0;
+    bool inPhraseBreath     = false;
+    bool prevStructureSilent = false;
+
+    bool pendingBeatSnap = false;
+    double prevBeatPhase01 = 0.0;
+    int64_t pendingBeatSnapSamples = 0;
 
     std::atomic<double> cachedSampleRate{ 44100.0 };
     std::atomic<int> debugPreviewSamplesRemaining{ 0 };

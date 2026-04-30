@@ -100,6 +100,21 @@ TEST_CASE("OnsetDetector: default BPM of 120 before any onsets accumulate", "[on
     REQUIRE(det.getCurrentBpm() == 120.0f);
 }
 
+TEST_CASE("OnsetDetector: resetTempoLock clears stale IOI tempo", "[onset]")
+{
+    OnsetDetector det;
+    const double sr = 44100.0;
+    det.prepare(sr, 512);
+
+    auto fastAudio = makeClickTrain(180.0, sr, 24);
+    feedInChunks(det, fastAudio, 256);
+    REQUIRE(det.getCurrentBpm() > 160.0f);
+
+    det.resetTempoLock();
+    REQUIRE(det.getCurrentBpm() == 120.0f);
+    REQUIRE_FALSE(det.isTempoLocked());
+}
+
 // ─── Gradual tempo drift ──────────────────────────────────────────────────────
 
 TEST_CASE("OnsetDetector: BPM tracks gradual tempo increase (100 -> 140 BPM)", "[onset]")
