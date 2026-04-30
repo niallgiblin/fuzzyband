@@ -1,10 +1,16 @@
-# Rhythmic coherence — research & design index
+# Rhythmic coherence — research index (v0.5.0)
 
-This folder is the **milestone anchor** for **v0.5.0 — Rhythmic Coherence** (Phases 27–30). See:
+This folder anchors **documentation and design artifacts** for the **v0.5.0 Rhythmic Coherence** milestone (Metal Accompaniment): beat tracking that survives clean guitar, unified drum/bass clock at bar boundaries, enriched `FeatureVector`, directional fills, and (Phase 30) ONNX/training alignment.
 
-- `.planning/ROADMAP.md` — Phase 27–30 goals, requirements, and success criteria  
-- `.planning/REQUIREMENTS.md` — **RHY-*** IDs  
+## Where to read next
 
-**Note:** This clone may not yet contain detailed design artifacts. If the directory only holds this file, sync or cherry-pick from the branch or session where proposal/decision docs were authored (per roadmap callout). **Do not** treat this stub as technical specification — Phase 28+ implementations follow **CONTEXT.md**, **ROADMAP.md**, and checked-in design docs once present.
+- **[`.planning/ROADMAP.md`](../../ROADMAP.md)** — Phases **27–30** under **v0.5.0 — Rhythmic Coherence** (goals and success criteria).
+- Canonical user-facing hosting story: **[`plugin/README.md`](../../../plugin/README.md)** (insert order — guitar → plug-in → FX).
 
-Phase 27 establishes **documentation** and stable links here so `plugin/README.md` and contributor entry points can reference a single path.
+## Clone note
+
+Detailed Markdown files **may not be present** in every checkout until synced from the branch/session where they were authored. Do **not** add fabricated DSP or algorithm specs here — only link or describe what actually exists.
+
+---
+
+*Rhythmic coherence milestone — `.planning` research anchor*

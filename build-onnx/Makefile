@@ -1667,6 +1667,33 @@ src/AccompanimentProcessor.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/AccompanimentProcessor.cpp.s
 .PHONY : src/AccompanimentProcessor.cpp.s
 
+src/analysis/BeatTracker.o: src/analysis/BeatTracker.cpp.o
+.PHONY : src/analysis/BeatTracker.o
+
+# target to build an object file
+src/analysis/BeatTracker.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/BeatTracker.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/BeatTracker.cpp.o
+.PHONY : src/analysis/BeatTracker.cpp.o
+
+src/analysis/BeatTracker.i: src/analysis/BeatTracker.cpp.i
+.PHONY : src/analysis/BeatTracker.i
+
+# target to preprocess a source file
+src/analysis/BeatTracker.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/BeatTracker.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/BeatTracker.cpp.i
+.PHONY : src/analysis/BeatTracker.cpp.i
+
+src/analysis/BeatTracker.s: src/analysis/BeatTracker.cpp.s
+.PHONY : src/analysis/BeatTracker.s
+
+# target to generate assembly for a file
+src/analysis/BeatTracker.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/BeatTracker.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/BeatTracker.cpp.s
+.PHONY : src/analysis/BeatTracker.cpp.s
+
 src/analysis/EnergyAnalyser.o: src/analysis/EnergyAnalyser.cpp.o
 .PHONY : src/analysis/EnergyAnalyser.o
 
@@ -2059,6 +2086,30 @@ tests/test_bass_validator_boundaries.s: tests/test_bass_validator_boundaries.cpp
 tests/test_bass_validator_boundaries.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_bass_validator_boundaries.cpp.s
 .PHONY : tests/test_bass_validator_boundaries.cpp.s
+
+tests/test_beat_tracker.o: tests/test_beat_tracker.cpp.o
+.PHONY : tests/test_beat_tracker.o
+
+# target to build an object file
+tests/test_beat_tracker.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_beat_tracker.cpp.o
+.PHONY : tests/test_beat_tracker.cpp.o
+
+tests/test_beat_tracker.i: tests/test_beat_tracker.cpp.i
+.PHONY : tests/test_beat_tracker.i
+
+# target to preprocess a source file
+tests/test_beat_tracker.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_beat_tracker.cpp.i
+.PHONY : tests/test_beat_tracker.cpp.i
+
+tests/test_beat_tracker.s: tests/test_beat_tracker.cpp.s
+.PHONY : tests/test_beat_tracker.s
+
+# target to generate assembly for a file
+tests/test_beat_tracker.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_beat_tracker.cpp.s
+.PHONY : tests/test_beat_tracker.cpp.s
 
 tests/test_e2e_bpm_tracking.o: tests/test_e2e_bpm_tracking.cpp.o
 .PHONY : tests/test_e2e_bpm_tracking.o
@@ -2650,6 +2701,9 @@ help:
 	@echo "... src/AccompanimentProcessor.o"
 	@echo "... src/AccompanimentProcessor.i"
 	@echo "... src/AccompanimentProcessor.s"
+	@echo "... src/analysis/BeatTracker.o"
+	@echo "... src/analysis/BeatTracker.i"
+	@echo "... src/analysis/BeatTracker.s"
 	@echo "... src/analysis/EnergyAnalyser.o"
 	@echo "... src/analysis/EnergyAnalyser.i"
 	@echo "... src/analysis/EnergyAnalyser.s"
@@ -2695,6 +2749,9 @@ help:
 	@echo "... tests/test_bass_validator_boundaries.o"
 	@echo "... tests/test_bass_validator_boundaries.i"
 	@echo "... tests/test_bass_validator_boundaries.s"
+	@echo "... tests/test_beat_tracker.o"
+	@echo "... tests/test_beat_tracker.i"
+	@echo "... tests/test_beat_tracker.s"
 	@echo "... tests/test_e2e_bpm_tracking.o"
 	@echo "... tests/test_e2e_bpm_tracking.i"
 	@echo "... tests/test_e2e_bpm_tracking.s"

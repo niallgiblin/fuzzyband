@@ -6,8 +6,8 @@
 
 ### Documentation — Phase 27
 
-- [ ] **RHY-DOC-01**: `plugin/README.md` documents insert order (guitar → plugin → FX), failure modes when post-FX, and links rhythmic-coherence research  
-- [ ] **RHY-DOC-02**: Root or `docs/` entry points link the same workflow for contributors  
+- [x] **RHY-DOC-01**: `plugin/README.md` documents insert order (guitar → plugin → FX), failure modes when post-FX, and links rhythmic-coherence research  
+- [x] **RHY-DOC-02**: Root or `docs/` entry points link the same workflow for contributors  
 
 ### Beat tracker & bass sequencer — Phase 28
 
@@ -34,9 +34,9 @@ See roadmap Future/out-of-scope for Windows-only builds and waveform generation 
 
 | REQ-ID       | Phase | Notes                         |
 |--------------|-------|-------------------------------|
-| RHY-DOC-*    | 27    | Plans TBD `/gsd-plan-phase 27` |
-| RHY-TEMPO-*  | 28    | Plans TBD `/gsd-plan-phase 28` |
-| RHY-BASSSEQ-01 | 28  |                               |
+| RHY-DOC-*    | 27    | `27-01-PLAN.md`, `27-02-PLAN.md` |
+| RHY-TEMPO-*  | 28    | `28-01-PLAN.md` |
+| RHY-BASSSEQ-01 | 28  | `28-02-PLAN.md` |
 | RHY-SYNC-01  | 29    |                               |
 | RHY-FEAT-01  | 29    |                               |
 | RHY-FILL-01  | 29    |                               |

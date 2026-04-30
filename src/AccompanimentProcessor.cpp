@@ -14,6 +14,78 @@ namespace
 {
 constexpr float kMinPitchConfidence = 0.35f;
 
+// Playback may start on early tracker confidence, but BPM display/playback only trust a locked tracker.
+constexpr float kPlaybackConfidenceStart = 0.35f;
+constexpr double kActiveFallbackStartSec = 0.35;
+constexpr float kTempoChangeDeadbandBpm = 4.0f;
+constexpr double kTempoChangeHoldSec = 2.0;
+// Clean DI guitar has natural gaps between attacks; do not wipe groove memory on a one-beat breath.
+constexpr double kPhraseBreathHoldSec = 2.0;
+
+float foldTrackerAliasTowardOnset(float trackerBpm, float onsetBpm) noexcept
+{
+    float reconciled = juce::jlimit(80.0f, 220.0f, trackerBpm);
+    const float anchor = juce::jlimit(80.0f, 220.0f, onsetBpm);
+
+    if (anchor <= 0.0f)
+        return reconciled;
+
+    while (reconciled / anchor > 1.55f && reconciled * 0.5f >= 80.0f)
+        reconciled *= 0.5f;
+
+    while (reconciled / anchor < 0.65f && reconciled * 2.0f <= 220.0f)
+        reconciled *= 2.0f;
+
+    return reconciled;
+}
+
+float stabilizePlaybackBpm(float candidateBpm,
+                           float currentStableBpm,
+                           float& pendingCandidateBpm,
+                           int& pendingCandidateSamples,
+                           int numSamples,
+                           double sampleRate,
+                           bool playbackOpen) noexcept
+{
+    const float candidate = juce::jlimit(80.0f, 220.0f, candidateBpm);
+
+    if (!playbackOpen)
+    {
+        pendingCandidateBpm = candidate;
+        pendingCandidateSamples = 0;
+        return candidate;
+    }
+
+    if (std::abs(candidate - currentStableBpm) <= kTempoChangeDeadbandBpm)
+    {
+        pendingCandidateBpm = candidate;
+        pendingCandidateSamples = 0;
+        return currentStableBpm + 0.05f * (candidate - currentStableBpm);
+    }
+
+    if (std::abs(candidate - pendingCandidateBpm) > kTempoChangeDeadbandBpm)
+    {
+        pendingCandidateBpm = candidate;
+        pendingCandidateSamples = 0;
+    }
+
+    pendingCandidateSamples += numSamples;
+    const int holdSamples = static_cast<int>(kTempoChangeHoldSec * sampleRate);
+    if (pendingCandidateSamples >= holdSamples)
+    {
+        pendingCandidateSamples = 0;
+        return candidate;
+    }
+
+    return currentStableBpm;
+}
+
+void maBeatFluxSink(void* user, float flux, int64_t totalSamples) noexcept
+{
+    if (user != nullptr)
+        static_cast<BeatTracker*>(user)->pushFluxSample(flux, totalSamples);
+}
+
 std::unique_ptr<IInference> makeInference()
 {
 #if defined(MA_ENABLE_ONNX)
@@ -121,6 +193,8 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     const double sr = (sampleRate > 0.0) ? sampleRate : 44100.0;
     cachedSampleRate.store(sr, std::memory_order_release);
     onsetDetector.prepare(sr, samplesPerBlock);
+    onsetDetector.setFluxSink(&beatTracker, maBeatFluxSink);
+    beatTracker.prepare(sr, samplesPerBlock);
     energyAnalyser.prepare(sr, samplesPerBlock);
     structureTagger.prepare(sr);
     pitchEstimator.prepare(sr, samplesPerBlock);
@@ -132,9 +206,19 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     lastStablePitchMidi = 40.0f;
     lastBassUpdateSample = -1;
     lastDrumPatternChangeSample = -1;
-    countInOnsetCount = 0;
-    countInComplete = false;
-    countInLastBeatSample = -1;
+    playbackGateOpen = false;
+    prevPlaybackGateOpen = false;
+    stablePlaybackBpm = 120.0f;
+    pendingTempoCandidateBpm = 120.0f;
+    pendingTempoCandidateSamples = 0;
+    pendingBeatSnap = false;
+    prevBeatPhase01 = 0.0;
+    pendingBeatSnapSamples = 0;
+    prevBlockRms = 0.0f;
+    silenceSamples = 0;
+    activeNonSilentSamples = 0;
+    inPhraseBreath = false;
+    prevStructureSilent = false;
 
     patternPlayer.prepare(sr, samplesPerBlock);
     patternPlayer.reset();
@@ -199,11 +283,11 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         if (structureInference)
         {
             const auto& m = structureInference->getLastShadowMetrics();
-            // Midpoint blend (PUI-01): when ML is invalid, follow rules only; else t>=0.5 uses ML shadow state.
-            if (!m.mlValid)
+            // Rule silence owns the audio gate. ONNX can shape non-silent sections only when explicitly favored.
+            if (!m.mlValid || rule == StructureState::SILENT || m.smoothedState == StructureState::SILENT)
                 effective = rule;
             else
-                effective = (structureBlend >= 0.5f) ? m.smoothedState : rule;
+                effective = (structureBlend > 0.5f) ? m.smoothedState : rule;
         }
         patternFeatures.state = effective;
 
@@ -228,7 +312,16 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             (lastDrumPatternChangeSample < 0) ||
             (latest.sampleTimestamp - lastDrumPatternChangeSample >= twoBarsInSamplesDrum);
 
-        if (drumHoldExpired || excludeParam >= 0)
+        const bool transitionEvent = std::abs(latest.rmsDelta) > 0.6f;
+
+        const int64_t samplesPerBar =
+            static_cast<int64_t>(4.0 * 60.0 / static_cast<double>(bpmNowDrum) * srDrum);
+        const int64_t barsSinceChange =
+            (lastDrumPatternChangeSample < 0 || samplesPerBar <= 0) ? 0
+            : (latest.sampleTimestamp - lastDrumPatternChangeSample) / samplesPerBar;
+        const bool autoChangeReady = (barsSinceChange >= 8);
+
+        if (drumHoldExpired || excludeParam >= 0 || transitionEvent || autoChangeReady)
         {
             latestPatternIndex.store(idx, std::memory_order_release);
             lastDrumPatternChangeSample = latest.sampleTimestamp;
@@ -370,6 +463,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     energyAnalyser.process(in, numSamples);
 
     const float rms = energyAnalyser.getRmsEnergy();
+    const float rmsDelta = (rms - prevBlockRms) / std::max(prevBlockRms, 1.0e-6f);
+    prevBlockRms = rms;
     const float centroid = energyAnalyser.getSpectralCentroid();
     const float hfFlux = energyAnalyser.getHighFreqFlux();
     const StructureState st = structureTagger.update(rms, centroid, hfFlux, numSamples, energyAnalyser.getPeakRms());
@@ -402,42 +497,98 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         pitchHoldValid = true;
     }
 
-    // Count-in gate: require 4 beat-spaced onsets before drums start.
-    // Onsets must be at least half a beat apart so rapid strumming doesn't
-    // satisfy the count instantly — the guitarist has to establish tempo first.
+    const bool beatTrackerLocked = beatTracker.isLocked();
+    const float onsetBpm = onsetDetector.getCurrentBpm();
+    const float tempoCandidateBpm = beatTrackerLocked
+        ? foldTrackerAliasTowardOnset(beatTracker.getBpm(), onsetBpm)
+        : onsetBpm;
+    const double sr = cachedSampleRate.load(std::memory_order_relaxed);
+    stablePlaybackBpm = stabilizePlaybackBpm(
+        tempoCandidateBpm,
+        stablePlaybackBpm,
+        pendingTempoCandidateBpm,
+        pendingTempoCandidateSamples,
+        numSamples,
+        sr,
+        playbackGateOpen);
+    const float bpmForPlayer = stablePlaybackBpm;
+
     if (st == StructureState::SILENT)
     {
-        onsetDetector.resetTempoLock();
-        countInOnsetCount = 0;
-        countInComplete = false;
-        countInLastBeatSample = -1;
-        lastDrumPatternChangeSample = -1;
-    }
-    else if (!countInComplete)
-    {
-        if (onsetDetector.onsetDetectedThisBlock())
+        if (!prevStructureSilent)
+            silenceSamples = 0;
+
+        silenceSamples += numSamples;
+        const int phraseBreathSamples = static_cast<int>(kPhraseBreathHoldSec * sr);
+
+        if (silenceSamples > phraseBreathSamples)
         {
-            const float bpmEst = onsetDetector.getCurrentBpm();
-            const double sr = cachedSampleRate.load(std::memory_order_relaxed);
-            // Require at least half a beat between counted onsets (generous — allows early 2x speed detection)
-            const int64_t halfBeatSamples = static_cast<int64_t>(
-                0.5 * 60.0 / static_cast<double>(bpmEst > 0.f ? bpmEst : 120.f) * sr);
-            if (countInLastBeatSample < 0 ||
-                (hostSampleTime - countInLastBeatSample) >= halfBeatSamples)
+            onsetDetector.resetTempoLock();
+            beatTracker.reset();
+            playbackGateOpen = false;
+            prevPlaybackGateOpen = false;
+            pendingBeatSnap = false;
+            prevBeatPhase01 = 0.0;
+            pendingBeatSnapSamples = 0;
+            lastDrumPatternChangeSample = -1;
+            stablePlaybackBpm = 120.0f;
+            pendingTempoCandidateBpm = 120.0f;
+            pendingTempoCandidateSamples = 0;
+            activeNonSilentSamples = 0;
+            inPhraseBreath = false;
+        }
+        else
+        {
+            // Phrase breath — keep gate and beat tracker alive; arm crash on re-entry
+            inPhraseBreath = true;
+        }
+    }
+    else
+    {
+        if (prevStructureSilent && inPhraseBreath)
+            patternPlayer.armTransitionCrash();
+
+        inPhraseBreath = false;
+        silenceSamples = 0;
+        activeNonSilentSamples += numSamples;
+        const float beatTrackerConfEarly = beatTracker.getConfidence();
+        const bool activeFallbackReady =
+            activeNonSilentSamples >= static_cast<int>(kActiveFallbackStartSec * sr);
+        const bool allowPlayback = beatTrackerLocked
+            || onsetDetector.isTempoLocked()
+            || (beatTrackerConfEarly >= kPlaybackConfidenceStart)
+            || activeFallbackReady;
+
+        if (allowPlayback != prevPlaybackGateOpen && allowPlayback)
+            pendingBeatSnap = true;
+
+        if (pendingBeatSnap)
+        {
+            const double currentPhase = beatTracker.getBeatPhase01();
+            pendingBeatSnapSamples += numSamples;
+            const bool timedOut = (pendingBeatSnapSamples > static_cast<int64_t>(sr * 2.0));
+            const bool fallbackSnap = activeFallbackReady && !beatTrackerLocked;
+            const bool beatBoundaryNow = fallbackSnap || (currentPhase < prevBeatPhase01) || timedOut;
+            if (beatBoundaryNow)
             {
-                ++countInOnsetCount;
-                countInLastBeatSample = hostSampleTime;
+                patternPlayer.snapBpm(bpmForPlayer);
+                patternPlayer.snapToBarStart();
+                playbackGateOpen = true;
+                pendingBeatSnap = false;
+                pendingBeatSnapSamples = 0;
             }
         }
-        if (countInOnsetCount >= 4)
+        else
         {
-            countInComplete = true;
-            patternPlayer.snapToBarStart();
+            playbackGateOpen = allowPlayback;
         }
+
+        prevPlaybackGateOpen = allowPlayback;
+        prevBeatPhase01 = beatTracker.getBeatPhase01();
     }
 
     FeatureVector fv;
-    fv.bpm = onsetDetector.getCurrentBpm();
+    fv.bpm = bpmForPlayer;
     fv.rmsEnergy = rms;
     fv.spectralCentroid = centroid;
     fv.highFreqFlux = hfFlux;
@@ -445,6 +596,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     fv.sampleTimestamp = hostSampleTime;
     fv.pitchRootMidi = heldPitchRootMidi;
     fv.pitchConfidence = heldPitchConfidence;
+    fv.rmsDelta = rmsDelta;
 
     if (auto* rawIntensity = apvts.getRawParameterValue("intensity"))
         fv.policyIntensity = rawIntensity->load();
@@ -471,7 +623,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
 
         // One beat duration in samples at current BPM.
-        const float bpmNow = onsetDetector.getCurrentBpm();
+        const float bpmNow = bpmForPlayer;
         const int oneBeatSamples = (bpmNow > 0.0f)
             ? static_cast<int>((60.0f / bpmNow) * static_cast<float>(cachedSampleRate.load(std::memory_order_relaxed)))
             : static_cast<int>(cachedSampleRate.load(std::memory_order_relaxed) / 2);
@@ -494,7 +646,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     (void)featureQueue.try_enqueue(fv);
 
     const int patternIdx = latestPatternIndex.load(std::memory_order_acquire);
-    patternPlayer.setBpm(onsetDetector.getCurrentBpm());
+    patternPlayer.setBpm(bpmForPlayer);
     patternPlayer.setPatternIndex(patternIdx);
 
     int previewRem = debugPreviewSamplesRemaining.load(std::memory_order_acquire);
@@ -502,7 +654,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     if (previewAudible)
         debugPreviewSamplesRemaining.store(juce::jmax(0, previewRem - numSamples), std::memory_order_release);
 
-    patternPlayer.setStructureSilent((st == StructureState::SILENT || !countInComplete) && !previewAudible);
+    const bool trulySilent = (st == StructureState::SILENT && !inPhraseBreath) || !playbackGateOpen;
+    patternPlayer.setStructureSilent(trulySilent && !previewAudible);
 
     if (silencePolicy)
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
@@ -545,8 +698,10 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     }
 
     hostSampleTime += static_cast<int64_t>(numSamples);
+    prevStructureSilent = (st == StructureState::SILENT);
 
-    displayBpm.store(onsetDetector.getCurrentBpm(), std::memory_order_relaxed);
+    displayBpm.store(bpmForPlayer, std::memory_order_relaxed);
+    displayBeatConfidence.store(beatTracker.getConfidence(), std::memory_order_relaxed);
     displayStateIndex.store(static_cast<int>(st), std::memory_order_relaxed);
     displayPatternIndex.store(patternIdx, std::memory_order_relaxed);
     displayRms.store(rms, std::memory_order_relaxed);
@@ -589,6 +744,11 @@ void AccompanimentProcessor::processBlockBypassed(
     for (int ch = 1; ch <= 16; ++ch)
         midi.addEvent(juce::MidiMessage::allNotesOff(ch), 0);
     patternPlayer.reset();
+    beatTracker.reset();
+    stablePlaybackBpm = 120.0f;
+    pendingTempoCandidateBpm = 120.0f;
+    pendingTempoCandidateSamples = 0;
+    activeNonSilentSamples = 0;
 
     const int n = buffer.getNumSamples();
     if (buffer.getNumChannels() >= 2 && n > 0)

@@ -143,7 +143,7 @@ Plans:
 
 **Milestone goal:** Make the plugin reliably join the player in time — fix tempo tracking on clean signal, eliminate drum/bass disconnection, and add musical transitions between sections.
 
-**Research / design anchor:** `.planning/research/rhythmic-coherence/` — proposal and decision docs (5 research artifacts; 11 decisions across 4 review rounds). If the folder is empty in this clone, sync from the branch or session where those files were authored.
+**Research / design anchor:** `.planning/research/rhythmic-coherence/README.md` indexes v0.5.0 design/research; optional deeper artifacts may be added per clone.
 
 **Target capabilities (summary)**
 
@@ -159,7 +159,7 @@ Plans:
 
 **Dependency note:** **27** (docs) can run early. **28** (beat tracker + bass sequencer) before **29** (C++ coordination, enriched features, fills). **30** (retrain) after **29** locks feature semantics and ONNX I/O.
 
-- [ ] **Phase 27: Rhythmic coherence documentation** — Pre-FX workflow, milestone-facing README updates, pointers to research
+- [x] **Phase 27: Rhythmic coherence documentation** — Pre-FX workflow, milestone-facing README updates, pointers to research
 - [ ] **Phase 28: Beat tracker & bass sequencer** — Replace tempo core; bar-aligned bass steps; tests on clean guitar / synthetic signals
 - [ ] **Phase 29: Runtime coordination (C++)** — Unified bar tick; extend `FeatureVector` and handoff to inference; transition fills
 - [ ] **Phase 30: ML retrain (12 features)** — Update `docs/ONNX_IO.md`, training scripts, validators; retrain, export, promote, smoke + jam
@@ -171,7 +171,7 @@ Plans:
 **Success criteria** (what must be TRUE):
   1. `plugin/README.md` states insert order (guitar → plugin → FX/amp), failure modes when post-FX, and link to rhythmic-coherence research folder
   2. Root or `docs/` entry points link to the same workflow so contributors do not miss it
-**Plans**: TBD (`/gsd-plan-phase 27`)
+**Plans**: `27-01-PLAN.md` (wave 1 — RHY-DOC-01), `27-02-PLAN.md` (wave 2 — RHY-DOC-02); see `.planning/phases/27-rhythmic-coherence-documentation/`
 
 #### Phase 28: Beat tracker & bass sequencer
 **Goal**: Tempo follows musical pulse on clean input; bass MIDI reflects every active 16th in the bar-aligned piano-roll path.
@@ -181,7 +181,7 @@ Plans:
   1. New beat-tracking path is the primary BPM/phase source (IOI-median path retired or demoted to fallback with explicit tests)
   2. Controlled tests or golden audio snippets show BPM stability within ±5 BPM where project expects it
   3. Bass sequencer regression test: multiple steps in a bar produce note-ons (not only step 0)
-**Plans**: TBD (`/gsd-plan-phase 28`)
+**Plans**: `28-01-PLAN.md` (RHY-TEMPO-01/02), `28-02-PLAN.md` (RHY-BASSSEQ-01) in `.planning/phases/28-beat-tracker-bass-sequencer/`
 
 #### Phase 29: Runtime coordination (C++)
 **Goal**: Drums and bass share one musical clock; inference sees enriched features; section changes trigger directional fills instead of hard cuts.
@@ -234,8 +234,8 @@ Plans:
 | 24. UI Simplification | v0.4.0 | 2/2 | Complete | 2026-04-29 |
 | 25. Training Data Pipeline | v0.4.0 | 3/3 | Complete | 2026-04-29 |
 | 26. Retrain + Validate | v0.4.0 | 3/3 | Complete | 2026-04-29 |
-| 27. Rhythmic coherence documentation | v0.5.0 | 0/0 | Not started | - |
-| 28. Beat tracker & bass sequencer | v0.5.0 | 0/0 | Not started | - |
+| 27. Rhythmic coherence documentation | v0.5.0 | 2/2 | Complete | 2026-04-29 |
+| 28. Beat tracker & bass sequencer | v0.5.0 | 0/2 | Not started | - |
 | 29. Runtime coordination (C++) | v0.5.0 | 0/0 | Not started | - |
 | 30. ML retrain (12 features) | v0.5.0 | 0/0 | Not started | - |
 

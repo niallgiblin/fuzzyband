@@ -100,8 +100,6 @@ float OnsetDetector::medianIoiBpm() const
             bpm *= 2.0f;
     }
     bpm = juce::jlimit(kMinBpm, kMaxBpm, bpm);
-    bpm = std::round(bpm / 5.0f) * 5.0f;
-    bpm = juce::jlimit(kMinBpm, kMaxBpm, bpm);
     return bpm;
 }
 
@@ -223,6 +221,12 @@ void OnsetDetector::process(const float* audioData, int numSamples)
 void OnsetDetector::resetTempoLock() noexcept
 {
     tempoLocked = false;
+    currentBpm.store(120.0f, std::memory_order_relaxed);
+    ioiRingWrite = 0;
+    ioiRingCount = 0;
+    for (auto& v : ioiHistory)
+        v = 0.0f;
+    lastOnsetSample = -1;
 }
 
 void OnsetDetector::setFluxSink(void* userData, FluxSinkFn fn) noexcept

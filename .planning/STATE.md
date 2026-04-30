@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.5.0
 milestone_name: — Rhythmic Coherence
-status: planning
-last_updated: "2026-04-29T22:30:00.000Z"
-last_activity: 2026-04-29 — Phase **28** context gathered (`28-CONTEXT.md`); next **`/gsd-plan-phase 28`**
+status: ready_to_execute
+last_updated: "2026-04-29T23:59:00.000Z"
+last_activity: 2026-04-29 — Phase **28** planned (`28-01-PLAN.md`, `28-02-PLAN.md`, `28-RESEARCH.md`); next **`/gsd-execute-phase 28`**
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 2
-  completed_plans: 2
+  completed_plans: 0
   percent: 25
 ---
 
@@ -24,13 +24,13 @@ See: `.planning/PROJECT.md` (updated 2026-04-29)
 **Version string in the plugin UI** comes from **`CMakeLists.txt`** `project(MetalAccompaniment VERSION …)` (JUCE `ProjectInfo::versionString`). **GSD phase/milestone authority** is this file plus **`.planning/ROADMAP.md`**.
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** v0.5.0 — rhythmic coherence (**Phase 28** context ready → plan/execute beat tracker & bass sequencer). Next: **`/gsd-plan-phase 28`** (or **`/gsd-execute-phase 28`** when plans exist).
+**Current focus:** v0.5.0 — rhythmic coherence (**Phase 28** plans ready). Next: **`/gsd-execute-phase 28`**.
 
 ---
 
 ## Current position
 
-Phase: **28** — Beat tracker & bass sequencer (**context** `.planning/phases/28-beat-tracker-bass-sequencer/28-CONTEXT.md`)  
+Phase: **28** — Beat tracker & bass sequencer (**plans** `28-01-PLAN.md`, `28-02-PLAN.md`; **research** `28-RESEARCH.md`)  
 Milestone: **v0.5.0**  
 Requirements: `.planning/REQUIREMENTS.md` (RHY-*)
 
@@ -76,7 +76,7 @@ Requirements: `.planning/REQUIREMENTS.md` (RHY-*)
 
 ## Session continuity
 
-Resume: `/gsd-plan-phase 28` — decisions in `.planning/phases/28-beat-tracker-bass-sequencer/28-CONTEXT.md`; Phase **27** summary `.planning/phases/27-rhythmic-coherence-documentation/27-SUMMARY.md`.
+Resume: `/gsd-execute-phase 28` — `.planning/phases/28-beat-tracker-bass-sequencer/`; Phase **27** summary `.planning/phases/27-rhythmic-coherence-documentation/27-SUMMARY.md`.
 
 ---
 

@@ -118,6 +118,30 @@ TEST_CASE("PatternPlayer notes do not overlap at BPM extremes", "[midi]")
     }
 }
 
+TEST_CASE("PatternPlayer::snapBpm sets BPM immediately without EMA", "[midi]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 256);
+    // Internal bpm starts at 120.0f after reset().
+    // At 100 BPM, one beat = 48000*60/100 = 28800 samples. Beat 0 kick fires at sample 0.
+    player.snapBpm(100.0f);
+    player.setPatternIndex(1); // VerseSlow — kick at beat 0
+    player.setStructureSilent(false);
+
+    juce::MidiBuffer midi;
+    player.process(midi, 29000, 0);
+    bool foundKick = false;
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOn() && msg.getChannel() == 10 && msg.getNoteNumber() == 36)
+            foundKick = true;
+    }
+    REQUIRE(foundKick);
+}
+
 TEST_CASE("PatternPlayer applies bass semitone offset", "[midi]")
 {
     MidiPatternLibrary lib;

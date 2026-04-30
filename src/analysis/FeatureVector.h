@@ -29,4 +29,7 @@ struct FeatureVector
 
     /** PUI-01: intensity [0,1] — rule path uses BPM adjustment; ONNX tensor unchanged. */
     float policyIntensity = 0.5f;
+
+    /** Signed RMS ratio vs previous block: (rms - prevRms) / max(prevRms, 1e-6). Used for energy-delta bypass. */
+    float rmsDelta = 0.0f;
 };
