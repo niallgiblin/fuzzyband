@@ -202,6 +202,23 @@ Plans:
   2. Retrained models promoted to `assets/`; plugin build with `MA_ENABLE_ONNX=ON`; jam checklist confirms no regression vs v0.4 behavior goals
 **Plans**: TBD (`/gsd-plan-phase 30`)
 
+#### Phase 31: Architecture Deepening
+**Goal**: Four shallow or leaky modules extracted into deep, independently-testable units; `AccompanimentProcessor` reduced to a thin coordinator.
+**Depends on**: None (pure refactor — no behaviour changes required; can run before or after Phase 28 execution)
+**Requirements**: ARCH-01, ARCH-02, ARCH-03, ARCH-04
+**Success criteria** (what must be TRUE):
+  1. `PlaybackGate` class exists in `src/analysis/`; `AccompanimentProcessor` loses 8 gate-related private fields; new unit tests cover phrase-breath/beat-snap interaction directly
+  2. `StablePitchTracker` class exists in `src/analysis/`; `AccompanimentProcessor` loses 6 pitch-stability private fields and the ~40-line stability block; tests cover pitch-class stability window and semitone mapping
+  3. Shared `pattern_rules.h` (or equivalent) in `src/inference/`; both `RuleBasedInference.cpp` and `OnnxInference.cpp` depend on it; duplication eliminated
+  4. `TempoStabiliser` class exists in `src/analysis/`; `AccompanimentProcessor` loses 3 BPM-hysteresis fields; unit tests drive the stabilizer with synthetic BPM candidate sequences
+**Plans**: 4 plans in 2 waves
+
+Plans:
+- [ ] 31-01-PLAN.md — PatternSelectionRules header-only extraction (ARCH-03, Wave 1)
+- [ ] 31-02-PLAN.md — TempoStabiliser extraction (ARCH-04, Wave 1)
+- [ ] 31-03-PLAN.md — PlaybackGate extraction (ARCH-01, Wave 2)
+- [ ] 31-04-PLAN.md — StablePitchTracker extraction + version bump to 0.5.0 (ARCH-02, Wave 2)
+
 ---
 
 ## Progress
@@ -238,6 +255,7 @@ Plans:
 | 28. Beat tracker & bass sequencer | v0.5.0 | 0/2 | Not started | - |
 | 29. Runtime coordination (C++) | v0.5.0 | 0/0 | Not started | - |
 | 30. ML retrain (12 features) | v0.5.0 | 0/0 | Not started | - |
+| 31. Architecture Deepening | v0.5.0 | 0/4 | Not started | - |
 
 ---
 
