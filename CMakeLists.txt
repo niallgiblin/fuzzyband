@@ -144,6 +144,7 @@ target_sources(MetalAccompaniment PRIVATE
     src/analysis/StructureTagger.cpp
     src/analysis/StructureHoldSmoother.cpp
     src/analysis/PitchEstimator.cpp
+    src/analysis/TempoStabiliser.cpp
 
     # Inference
     src/inference/RuleBasedInference.cpp
@@ -267,6 +268,7 @@ if(MA_BUILD_TESTS)
         tests/test_pattern_player_generative_bass.cpp
         tests/test_beat_tracker.cpp
         tests/test_pattern_rules.cpp
+        tests/test_tempo_stabiliser.cpp
 
         # Plugin sources compiled into the test executable
         src/analysis/OnsetDetector.cpp
@@ -275,6 +277,7 @@ if(MA_BUILD_TESTS)
         src/analysis/StructureTagger.cpp
         src/analysis/StructureHoldSmoother.cpp
         src/analysis/PitchEstimator.cpp
+        src/analysis/TempoStabiliser.cpp
         src/inference/RuleBasedInference.cpp
         src/inference/RuleStructureInference.cpp
         src/midi/MidiPatternLibrary.cpp
