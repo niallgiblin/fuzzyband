@@ -3,6 +3,7 @@
 
 #if defined(MA_ENABLE_ONNX)
 #include "BinaryData.h"
+#include "pattern_rules.h"
 #include <algorithm>
 #include <array>
 #include <juce_core/juce_core.h>
@@ -17,49 +18,6 @@ Ort::Env& ortEnv()
 {
     static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "MetalAccompaniment");
     return env;
-}
-
-int rulePatternForState(const FeatureVector& f) noexcept
-{
-    const float bpmAdj = f.bpm + (f.policyIntensity - 0.5f) * 40.0f;
-
-    switch (f.state)
-    {
-        case StructureState::SILENT:
-            return 0;
-        case StructureState::SOFT:
-            if (bpmAdj < 120.0f)
-                return 1;
-            if (bpmAdj < 160.0f)
-                return 2;
-            return 3;
-        case StructureState::LOUD:
-            return bpmAdj < 160.0f ? 4 : 5;
-    }
-
-    return 0;
-}
-
-bool isPatternCompatibleWithState(int patternIndex, StructureState state) noexcept
-{
-    switch (state)
-    {
-        case StructureState::SILENT:
-            return patternIndex == 0;
-        case StructureState::SOFT:
-            return patternIndex >= 1 && patternIndex <= 3;
-        case StructureState::LOUD:
-            return patternIndex >= 4 && patternIndex <= 5;
-    }
-
-    return false;
-}
-
-int applyExclusion(int result, int excludeIndex) noexcept
-{
-    if (excludeIndex >= 0 && result == excludeIndex)
-        return (excludeIndex + 1) % 7;
-    return result;
 }
 } // namespace
 
@@ -192,17 +150,17 @@ int OnnxInference::selectPattern(const FeatureVector& f, int excludeIndex)
         const int64_t* out = outputs[0].GetTensorData<int64_t>();
         const int64_t raw = out[0];
         const int clamped = static_cast<int>(std::clamp(raw, static_cast<int64_t>(0), static_cast<int64_t>(6)));
-        const int result = isPatternCompatibleWithState(clamped, f.state)
+        const int result = PatternRules::isPatternCompatibleWithState(clamped, f.state)
             ? clamped
-            : rulePatternForState(f);
+            : PatternRules::rulePatternForState(f);
 
         // D-23-04: single-shot exclusion — if result matches excludeIndex, return next
-        return applyExclusion(result, excludeIndex);
+        return PatternRules::applyExclusion(result, excludeIndex);
     }
     catch (...)
     {
         // D-23-04: never return excluded index even on error
-        return applyExclusion(rulePatternForState(f), excludeIndex);
+        return PatternRules::applyExclusion(PatternRules::rulePatternForState(f), excludeIndex);
     }
 }
 
