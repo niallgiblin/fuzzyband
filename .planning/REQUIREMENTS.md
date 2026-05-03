@@ -29,7 +29,7 @@
 ### Architecture Deepening — Phase 31
 
 - [ ] **ARCH-01**: `PlaybackGate` extracted to `src/analysis/`; `AccompanimentProcessor` loses 8 gate private fields; unit tests cover phrase-breath/beat-snap directly  
-- [ ] **ARCH-02**: `StablePitchTracker` extracted to `src/analysis/`; `AccompanimentProcessor` loses 6 pitch-stability fields; unit tests verify pitch-class window and semitone mapping  
+- [ ] **ARCH-02**: `StablePitchTracker` extracted to `src/analysis/`; `AccompanimentProcessor` loses 5 pitch-stability fields (`heldPitchRootMidi`, `heldPitchConfidence`, `pitchHoldValid`, `pitchStableCounterSamples`, `lastStablePitchMidi`; `lastBassUpdateSample` is retained — it is inference-thread bass hold guard state, not pitch stability); unit tests verify pitch-class window and semitone mapping  
 - [ ] **ARCH-03**: Shared `pattern_rules.h` in `src/inference/`; duplicated rule logic eliminated from both `RuleBasedInference.cpp` and `OnnxInference.cpp`  
 - [ ] **ARCH-04**: `TempoStabiliser` extracted to `src/analysis/`; `AccompanimentProcessor` loses 3 BPM-hysteresis fields; unit tests drive stabilizer with synthetic candidates  
 

@@ -208,7 +208,7 @@ Plans:
 **Requirements**: ARCH-01, ARCH-02, ARCH-03, ARCH-04
 **Success criteria** (what must be TRUE):
   1. `PlaybackGate` class exists in `src/analysis/`; `AccompanimentProcessor` loses 8 gate-related private fields; new unit tests cover phrase-breath/beat-snap interaction directly
-  2. `StablePitchTracker` class exists in `src/analysis/`; `AccompanimentProcessor` loses 6 pitch-stability private fields and the ~40-line stability block; tests cover pitch-class stability window and semitone mapping
+  2. `StablePitchTracker` class exists in `src/analysis/`; `AccompanimentProcessor` loses 5 pitch-stability private fields (`heldPitchRootMidi`, `heldPitchConfidence`, `pitchHoldValid`, `pitchStableCounterSamples`, `lastStablePitchMidi`; `lastBassUpdateSample` retained — inference-thread bass hold guard) and the ~40-line stability block; tests cover pitch-class stability window and semitone mapping
   3. Shared `pattern_rules.h` (or equivalent) in `src/inference/`; both `RuleBasedInference.cpp` and `OnnxInference.cpp` depend on it; duplication eliminated
   4. `TempoStabiliser` class exists in `src/analysis/`; `AccompanimentProcessor` loses 3 BPM-hysteresis fields; unit tests drive the stabilizer with synthetic BPM candidate sequences
 **Plans**: 4 plans in 2 waves
