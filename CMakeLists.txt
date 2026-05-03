@@ -266,6 +266,7 @@ if(MA_BUILD_TESTS)
         tests/test_bass_validator_boundaries.cpp
         tests/test_pattern_player_generative_bass.cpp
         tests/test_beat_tracker.cpp
+        tests/test_pattern_rules.cpp
 
         # Plugin sources compiled into the test executable
         src/analysis/OnsetDetector.cpp
