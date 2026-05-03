@@ -14,12 +14,6 @@ namespace
 {
 constexpr float kMinPitchConfidence = 0.35f;
 
-// Playback may start on early tracker confidence, but BPM display/playback only trust a locked tracker.
-constexpr float kPlaybackConfidenceStart = 0.35f;
-constexpr double kActiveFallbackStartSec = 0.35;
-// Clean DI guitar has natural gaps between attacks; do not wipe groove memory on a one-beat breath.
-constexpr double kPhraseBreathHoldSec = 2.0;
-
 float foldTrackerAliasTowardOnset(float trackerBpm, float onsetBpm) noexcept
 {
     float reconciled = juce::jlimit(80.0f, 220.0f, trackerBpm);
@@ -163,16 +157,9 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     lastStablePitchMidi = 40.0f;
     lastBassUpdateSample = -1;
     lastDrumPatternChangeSample = -1;
-    playbackGateOpen = false;
-    prevPlaybackGateOpen = false;
+    playbackGate.reset();
     tempoStabiliser.reset();
-    pendingBeatSnap = false;
-    prevBeatPhase01 = 0.0;
-    pendingBeatSnapSamples = 0;
     prevBlockRms = 0.0f;
-    silenceSamples = 0;
-    activeNonSilentSamples = 0;
-    inPhraseBreath = false;
     prevStructureSilent = false;
 
     patternPlayer.prepare(sr, samplesPerBlock);
@@ -458,80 +445,32 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         ? foldTrackerAliasTowardOnset(beatTracker.getBpm(), onsetBpm)
         : onsetBpm;
     const double sr = cachedSampleRate.load(std::memory_order_relaxed);
-    const float stablePlaybackBpm = tempoStabiliser.update(tempoCandidateBpm, playbackGateOpen,
+    const float stablePlaybackBpm = tempoStabiliser.update(tempoCandidateBpm, playbackGate.isGateOpen(),
                                                             numSamples, sr);
     const float bpmForPlayer = stablePlaybackBpm;
 
-    if (st == StructureState::SILENT)
+    const GateDecision gd = playbackGate.update(
+        st,
+        beatTracker.getBeatPhase01(),
+        beatTracker.isLocked(),
+        onsetDetector.isTempoLocked(),
+        beatTracker.getConfidence(),
+        numSamples,
+        sr);
+
+    if (gd.armCrash)
+        patternPlayer.armTransitionCrash();
+    if (gd.resetTrackers)
     {
-        if (!prevStructureSilent)
-            silenceSamples = 0;
-
-        silenceSamples += numSamples;
-        const int phraseBreathSamples = static_cast<int>(kPhraseBreathHoldSec * sr);
-
-        if (silenceSamples > phraseBreathSamples)
-        {
-            onsetDetector.resetTempoLock();
-            beatTracker.reset();
-            playbackGateOpen = false;
-            prevPlaybackGateOpen = false;
-            pendingBeatSnap = false;
-            prevBeatPhase01 = 0.0;
-            pendingBeatSnapSamples = 0;
-            lastDrumPatternChangeSample = -1;
-            tempoStabiliser.reset();
-            activeNonSilentSamples = 0;
-            inPhraseBreath = false;
-        }
-        else
-        {
-            // Phrase breath — keep gate and beat tracker alive; arm crash on re-entry
-            inPhraseBreath = true;
-        }
+        onsetDetector.resetTempoLock();
+        beatTracker.reset();
+        tempoStabiliser.reset();
+        lastDrumPatternChangeSample = -1;
     }
-    else
+    if (gd.snapBeatNow)
     {
-        if (prevStructureSilent && inPhraseBreath)
-            patternPlayer.armTransitionCrash();
-
-        inPhraseBreath = false;
-        silenceSamples = 0;
-        activeNonSilentSamples += numSamples;
-        const float beatTrackerConfEarly = beatTracker.getConfidence();
-        const bool activeFallbackReady =
-            activeNonSilentSamples >= static_cast<int>(kActiveFallbackStartSec * sr);
-        const bool allowPlayback = beatTrackerLocked
-            || onsetDetector.isTempoLocked()
-            || (beatTrackerConfEarly >= kPlaybackConfidenceStart)
-            || activeFallbackReady;
-
-        if (allowPlayback != prevPlaybackGateOpen && allowPlayback)
-            pendingBeatSnap = true;
-
-        if (pendingBeatSnap)
-        {
-            const double currentPhase = beatTracker.getBeatPhase01();
-            pendingBeatSnapSamples += numSamples;
-            const bool timedOut = (pendingBeatSnapSamples > static_cast<int64_t>(sr * 2.0));
-            const bool fallbackSnap = activeFallbackReady && !beatTrackerLocked;
-            const bool beatBoundaryNow = fallbackSnap || (currentPhase < prevBeatPhase01) || timedOut;
-            if (beatBoundaryNow)
-            {
-                patternPlayer.snapBpm(bpmForPlayer);
-                patternPlayer.snapToBarStart();
-                playbackGateOpen = true;
-                pendingBeatSnap = false;
-                pendingBeatSnapSamples = 0;
-            }
-        }
-        else
-        {
-            playbackGateOpen = allowPlayback;
-        }
-
-        prevPlaybackGateOpen = allowPlayback;
-        prevBeatPhase01 = beatTracker.getBeatPhase01();
+        patternPlayer.snapBpm(bpmForPlayer);
+        patternPlayer.snapToBarStart();
     }
 
     FeatureVector fv;
@@ -601,7 +540,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     if (previewAudible)
         debugPreviewSamplesRemaining.store(juce::jmax(0, previewRem - numSamples), std::memory_order_release);
 
-    const bool trulySilent = (st == StructureState::SILENT && !inPhraseBreath) || !playbackGateOpen;
+    const bool trulySilent = !gd.gateOpen;
     patternPlayer.setStructureSilent(trulySilent && !previewAudible);
 
     if (silencePolicy)
@@ -693,7 +632,7 @@ void AccompanimentProcessor::processBlockBypassed(
     patternPlayer.reset();
     beatTracker.reset();
     tempoStabiliser.reset();
-    activeNonSilentSamples = 0;
+    playbackGate.reset();
 
     const int n = buffer.getNumSamples();
     if (buffer.getNumChannels() >= 2 && n > 0)
