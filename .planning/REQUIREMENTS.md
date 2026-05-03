@@ -26,6 +26,13 @@
 - [ ] **RHY-ML-01**: `docs/ONNX_IO.md`, `validate_onnx_contract.py`, exporters match expanded inputs after Phase 29 semantics freeze  
 - [ ] **RHY-ML-02**: Models promoted to `assets/`; `MA_ENABLE_ONNX=ON` build; jam checklist vs v0.4 behavior baseline  
 
+### Architecture Deepening — Phase 31
+
+- [ ] **ARCH-01**: `PlaybackGate` extracted to `src/analysis/`; `AccompanimentProcessor` loses 8 gate private fields; unit tests cover phrase-breath/beat-snap directly  
+- [ ] **ARCH-02**: `StablePitchTracker` extracted to `src/analysis/`; `AccompanimentProcessor` loses 5 pitch-stability fields (`heldPitchRootMidi`, `heldPitchConfidence`, `pitchHoldValid`, `pitchStableCounterSamples`, `lastStablePitchMidi`; `lastBassUpdateSample` is retained — it is inference-thread bass hold guard state, not pitch stability); unit tests verify pitch-class window and semitone mapping  
+- [ ] **ARCH-03**: Shared `pattern_rules.h` in `src/inference/`; duplicated rule logic eliminated from both `RuleBasedInference.cpp` and `OnnxInference.cpp`  
+- [ ] **ARCH-04**: `TempoStabiliser` extracted to `src/analysis/`; `AccompanimentProcessor` loses 3 BPM-hysteresis fields; unit tests drive stabilizer with synthetic candidates  
+
 ## Deferred / backlog
 
 See roadmap Future/out-of-scope for Windows-only builds and waveform generation — unchanged global constraints.
@@ -41,6 +48,10 @@ See roadmap Future/out-of-scope for Windows-only builds and waveform generation 
 | RHY-FEAT-01  | 29    |                               |
 | RHY-FILL-01  | 29    |                               |
 | RHY-ML-*     | 30    |                               |
+| ARCH-01      | 31    |                               |
+| ARCH-02      | 31    |                               |
+| ARCH-03      | 31    |                               |
+| ARCH-04      | 31    |                               |
 
 ---
 *Created from roadmap at v0.4.0 milestone close — 2026-04-29*
