@@ -145,6 +145,7 @@ target_sources(MetalAccompaniment PRIVATE
     src/analysis/StructureHoldSmoother.cpp
     src/analysis/PitchEstimator.cpp
     src/analysis/TempoStabiliser.cpp
+    src/analysis/PlaybackGate.cpp
 
     # Inference
     src/inference/RuleBasedInference.cpp
@@ -269,6 +270,7 @@ if(MA_BUILD_TESTS)
         tests/test_beat_tracker.cpp
         tests/test_pattern_rules.cpp
         tests/test_tempo_stabiliser.cpp
+        tests/test_playback_gate.cpp
 
         # Plugin sources compiled into the test executable
         src/analysis/OnsetDetector.cpp
@@ -278,6 +280,7 @@ if(MA_BUILD_TESTS)
         src/analysis/StructureHoldSmoother.cpp
         src/analysis/PitchEstimator.cpp
         src/analysis/TempoStabiliser.cpp
+        src/analysis/PlaybackGate.cpp
         src/inference/RuleBasedInference.cpp
         src/inference/RuleStructureInference.cpp
         src/midi/MidiPatternLibrary.cpp
