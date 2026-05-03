@@ -17,8 +17,6 @@ constexpr float kMinPitchConfidence = 0.35f;
 // Playback may start on early tracker confidence, but BPM display/playback only trust a locked tracker.
 constexpr float kPlaybackConfidenceStart = 0.35f;
 constexpr double kActiveFallbackStartSec = 0.35;
-constexpr float kTempoChangeDeadbandBpm = 4.0f;
-constexpr double kTempoChangeHoldSec = 2.0;
 // Clean DI guitar has natural gaps between attacks; do not wipe groove memory on a one-beat breath.
 constexpr double kPhraseBreathHoldSec = 2.0;
 
@@ -37,47 +35,6 @@ float foldTrackerAliasTowardOnset(float trackerBpm, float onsetBpm) noexcept
         reconciled *= 2.0f;
 
     return reconciled;
-}
-
-float stabilizePlaybackBpm(float candidateBpm,
-                           float currentStableBpm,
-                           float& pendingCandidateBpm,
-                           int& pendingCandidateSamples,
-                           int numSamples,
-                           double sampleRate,
-                           bool playbackOpen) noexcept
-{
-    const float candidate = juce::jlimit(80.0f, 220.0f, candidateBpm);
-
-    if (!playbackOpen)
-    {
-        pendingCandidateBpm = candidate;
-        pendingCandidateSamples = 0;
-        return candidate;
-    }
-
-    if (std::abs(candidate - currentStableBpm) <= kTempoChangeDeadbandBpm)
-    {
-        pendingCandidateBpm = candidate;
-        pendingCandidateSamples = 0;
-        return currentStableBpm + 0.05f * (candidate - currentStableBpm);
-    }
-
-    if (std::abs(candidate - pendingCandidateBpm) > kTempoChangeDeadbandBpm)
-    {
-        pendingCandidateBpm = candidate;
-        pendingCandidateSamples = 0;
-    }
-
-    pendingCandidateSamples += numSamples;
-    const int holdSamples = static_cast<int>(kTempoChangeHoldSec * sampleRate);
-    if (pendingCandidateSamples >= holdSamples)
-    {
-        pendingCandidateSamples = 0;
-        return candidate;
-    }
-
-    return currentStableBpm;
 }
 
 void maBeatFluxSink(void* user, float flux, int64_t totalSamples) noexcept
@@ -208,9 +165,7 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     lastDrumPatternChangeSample = -1;
     playbackGateOpen = false;
     prevPlaybackGateOpen = false;
-    stablePlaybackBpm = 120.0f;
-    pendingTempoCandidateBpm = 120.0f;
-    pendingTempoCandidateSamples = 0;
+    tempoStabiliser.reset();
     pendingBeatSnap = false;
     prevBeatPhase01 = 0.0;
     pendingBeatSnapSamples = 0;
@@ -503,14 +458,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         ? foldTrackerAliasTowardOnset(beatTracker.getBpm(), onsetBpm)
         : onsetBpm;
     const double sr = cachedSampleRate.load(std::memory_order_relaxed);
-    stablePlaybackBpm = stabilizePlaybackBpm(
-        tempoCandidateBpm,
-        stablePlaybackBpm,
-        pendingTempoCandidateBpm,
-        pendingTempoCandidateSamples,
-        numSamples,
-        sr,
-        playbackGateOpen);
+    const float stablePlaybackBpm = tempoStabiliser.update(tempoCandidateBpm, playbackGateOpen,
+                                                            numSamples, sr);
     const float bpmForPlayer = stablePlaybackBpm;
 
     if (st == StructureState::SILENT)
@@ -531,9 +480,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             prevBeatPhase01 = 0.0;
             pendingBeatSnapSamples = 0;
             lastDrumPatternChangeSample = -1;
-            stablePlaybackBpm = 120.0f;
-            pendingTempoCandidateBpm = 120.0f;
-            pendingTempoCandidateSamples = 0;
+            tempoStabiliser.reset();
             activeNonSilentSamples = 0;
             inPhraseBreath = false;
         }
@@ -745,9 +692,7 @@ void AccompanimentProcessor::processBlockBypassed(
         midi.addEvent(juce::MidiMessage::allNotesOff(ch), 0);
     patternPlayer.reset();
     beatTracker.reset();
-    stablePlaybackBpm = 120.0f;
-    pendingTempoCandidateBpm = 120.0f;
-    pendingTempoCandidateSamples = 0;
+    tempoStabiliser.reset();
     activeNonSilentSamples = 0;
 
     const int n = buffer.getNumSamples();
