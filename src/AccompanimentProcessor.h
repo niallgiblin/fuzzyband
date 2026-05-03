@@ -13,6 +13,7 @@
 #include "analysis/BeatTracker.h"
 #include "analysis/TempoStabiliser.h"
 #include "analysis/PlaybackGate.h"
+#include "analysis/StablePitchTracker.h"
 #include "analysis/FeatureVector.h"
 #include "inference/IInference.h"
 #include "inference/IStructureInference.h"
@@ -101,6 +102,7 @@ private:
     PitchEstimator pitchEstimator;
     BeatTracker beatTracker;
     TempoStabiliser tempoStabiliser;
+    StablePitchTracker stablePitchTracker;
     MidiPatternLibrary patternLibrary;
     PatternPlayer patternPlayer;
 
@@ -140,11 +142,7 @@ private:
     int64_t hostSampleTime = 0;
     int64_t lastFeatureSampleTs = -1;
 
-    float heldPitchRootMidi = 40.0f;
-    float heldPitchConfidence = 0.0f;
-    bool pitchHoldValid = false;
-    int pitchStableCounterSamples = 0;
-    float lastStablePitchMidi = 40.0f;
+    // lastBassUpdateSample: inference-thread hold guard only — not pitch stability (stays here per ARCH-02)
     int64_t lastBassUpdateSample = -1;   // -1 = never committed
     int64_t lastDrumPatternChangeSample = -1; // -1 = never committed; inference thread
 
