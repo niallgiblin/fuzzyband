@@ -11,6 +11,7 @@
 #include "analysis/StructureTagger.h"
 #include "analysis/PitchEstimator.h"
 #include "analysis/BeatTracker.h"
+#include "analysis/TempoStabiliser.h"
 #include "analysis/FeatureVector.h"
 #include "inference/IInference.h"
 #include "inference/IStructureInference.h"
@@ -98,6 +99,7 @@ private:
     StructureTagger structureTagger;
     PitchEstimator pitchEstimator;
     BeatTracker beatTracker;
+    TempoStabiliser tempoStabiliser;
     MidiPatternLibrary patternLibrary;
     PatternPlayer patternPlayer;
 
@@ -148,9 +150,6 @@ private:
     /** @brief When true, drummer may sound (tracker gate replaces 4-onset count-in). */
     bool playbackGateOpen     = false;
     bool prevPlaybackGateOpen = false;
-    float stablePlaybackBpm = 120.0f;
-    float pendingTempoCandidateBpm = 120.0f;
-    int pendingTempoCandidateSamples = 0;
 
     float prevBlockRms = 0.0f;
 
