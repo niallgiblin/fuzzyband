@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build proxy tensors from filtered Lakh MIDI files (Phase 25 DATA-08).
+"""Build proxy tensors from filtered Lakh MIDI files (Phase 25 DATA-08, updated Phase 32).
 
 Extracts 5-float proxy rows in GMD-compatible format using 3-class state
-(SILENT/SOFT/LOUD, per Phase 21 / D-25-01). Runs domain compatibility
-KS-test vs GMD train tensors (advisory only, per D-25-04).
+(SILENT/SOFT/LOUD, per Phase 21 / D-25-01). Assigns oracle labels via
+rule-oracle + Breakdown heuristic (Phase 32 label correction). Runs domain
+compatibility KS-test vs GMD train tensors (advisory only, per D-25-04).
 """
 
 from __future__ import annotations
@@ -84,15 +85,31 @@ def _compute_proxy_row(events: list[dict], bpm_raw: float) -> np.ndarray:
     return np.array([bpm, rms, cent, hf, state], dtype=np.float64)
 
 
-def _activity_score(row: np.ndarray, events: list[dict]) -> float:
-    """Scalar groove-intensity score for quantile binning (D-25-02)."""
-    bpm = float(row[0])
-    ons = [e for e in events if e.get("type") == "note_on"]
-    dens = len(ons) / _duration_beats(events, bpm)
-    rms = float(row[1])
-    hf = float(row[3])
-    st = float(row[4])
-    return 0.5 * dens + 2.0 * rms + 0.5 * hf + 0.2 * st
+_K_SOFT_MID_BPM  = 120.0   # mirrors kSoftMidBpmThreshold from src/inference/pattern_rules.h
+_K_SOFT_LOUD_BPM = 160.0   # mirrors kSoftLoudBpmThreshold
+
+
+def _rule_pattern_for_state(bpm: float, state_float: float, policy_intensity: float = 0.5) -> int:
+    adj_bpm = bpm + (policy_intensity - 0.5) * 40.0
+    state = min(int(state_float), 2)
+    if state == 0: return 0
+    elif state == 1:
+        if adj_bpm < _K_SOFT_MID_BPM: return 1
+        if adj_bpm < _K_SOFT_LOUD_BPM: return 2
+        return 3
+    elif state == 2:
+        return 4 if adj_bpm < _K_SOFT_LOUD_BPM else 5
+    return 0
+
+
+def _oracle_label(bpm: float, state_float: float, events: list[dict]) -> int:
+    label = _rule_pattern_for_state(bpm, state_float)
+    if label != 0:
+        ons = [e for e in events if e.get("type") == "note_on"]
+        dens = len(ons) / _duration_beats(events, bpm)
+        if dens < 2.5 and bpm < 110.0:
+            label = 6
+    return label
 
 
 def main() -> int:
@@ -140,7 +157,7 @@ def main() -> int:
 
     # ── Extract proxies ───────────────────────────────────────────────────
     xs: list[np.ndarray] = []
-    scores: list[float] = []
+    Y_list: list[int] = []
     ids: list[str] = []
     failed = 0
 
@@ -170,10 +187,11 @@ def main() -> int:
             continue
 
         row = _compute_proxy_row(events, bpm)
-        score = _activity_score(row, events)
-
+        bpm_clamped = float(row[0])
+        state_float = float(row[4])
+        label = _oracle_label(bpm_clamped, state_float, events)
         xs.append(row)
-        scores.append(score)
+        Y_list.append(label)
         ids.append(rel_path)
 
     if not xs:
@@ -181,7 +199,7 @@ def main() -> int:
         return 1
 
     X = np.stack(xs, axis=0).astype(np.float32)
-    scores_all = np.asarray(scores, dtype=np.float64)
+    Y_all = np.asarray(Y_list, dtype=np.int64)
 
     print(f"\nLAKH TENSORS: {len(xs)} examples, shape {X.shape}", flush=True)
     print(f"  Failed/not found: {failed}", flush=True)
@@ -191,13 +209,19 @@ def main() -> int:
     torch.save(
         {
             "X": torch.from_numpy(X),
-            "scores": torch.from_numpy(scores_all),
+            "Y": torch.from_numpy(Y_all),
             "ids": ids,
             "meta": {"source": "lakh_lmd_matched"},
         },
         str(args.out),
     )
     print(f"  Saved: {args.out}", flush=True)
+
+    # ── Histogram (Lakh Y distribution — advisory) ─────────────────────────
+    counts_lakh = np.bincount(Y_all, minlength=7)
+    print("HISTOGRAM (Lakh Y distribution — advisory):", flush=True)
+    for i in range(7):
+        print(f"  class {i}: {int(counts_lakh[i])}", flush=True)
 
     # ── Domain compatibility (advisory KS-test, D-25-04) ──────────────────
     gmd_train_path = _TRAINING_DIR / "data/processed/train.pt"
