@@ -6,7 +6,8 @@
 - ✅ **v0.2.0 — Phase 2 ML + Generative** — Phases 9–16 (shipped 2026-04-17)
 - ✅ **v0.3.0 — Real ML Training Pipeline** — Phases 17–20 (shipped 2026-04-19; `EXP-02` human Reaper smoke still tracked — see `.planning/milestones/v0.3.0-REQUIREMENTS.md`)
 - ✅ **v0.4.0 — ML Playability & Simplification** — Phases 21–26 (shipped 2026-04-29)
-- 🔜 **v0.5.0 — Rhythmic Coherence** — Phases 27–30 (in progress; requirements: `.planning/REQUIREMENTS.md`)
+- 🔜 **v0.5.0 — Rhythmic Coherence** — Phases 27–31 (in progress; requirements: `.planning/REQUIREMENTS.md`)
+- 🔜 **v0.6.0 — ML Correctness & Evaluation** — Phases 32–36 (planned; requirements: TBD)
 
 ## Phases
 
@@ -256,6 +257,11 @@ Plans:
 | 29. Runtime coordination (C++) | v0.5.0 | 0/0 | Not started | - |
 | 30. ML retrain (12 features) | v0.5.0 | 0/0 | Not started | - |
 | 31. Architecture Deepening | v0.5.0 | 4/4 | Complete   | 2026-05-03 |
+| 32. Training Label Correction | v0.6.0 | 0/0 | Not started | - |
+| 33. Model Quality Gates | v0.6.0 | 0/0 | Not started | - |
+| 34. Domain Gap and Feature Capture | v0.6.0 | 0/0 | Not started | - |
+| 35. Inference Path Consistency | v0.6.0 | 0/0 | Not started | - |
+| 36. ONNX Evaluation and Default Readiness | v0.6.0 | 0/0 | Not started | - |
 
 ---
 
@@ -280,6 +286,82 @@ Plans:
 | Beat tracker false locks on polyrhythms / weak onsets | Medium | Hold 1-bar lock; fallback path; tune DP on real clips from research set |
 | Feature-count skew (train vs plugin) | High | Phase 30 gated on frozen `FeatureVector` layout + single validator for ONNX inputs |
 | Transition fills misfire on noisy structure | Medium | Hysteresis + direction from smoothed energy; fill length capped per RHY-FILL-01 tests |
+
+### v0.6.0 — ML Correctness & Evaluation (Phases 32–36)
+
+**Milestone goal:** Fix training label semantics so the pattern model is a learned approximation of the rule path (not an activity-quantile ranker); add quality gates to bass and structure models; close the MIDI-to-guitar domain gap with a real audio capture pipeline; align rule and ONNX inference paths on adjusted BPM and compatible exclusion logic; and establish a repeatable evaluation baseline that gates `MA_ENABLE_ONNX=ON` becoming the recommended default.
+
+**Source design document:** `CHANGES_PLAN.md` (Areas 1–5)
+
+**Dependency note:** Phases **32**, **33**, **34** can execute in parallel. Phase **35** depends on **32** (adjusted-BPM change requires a coordinated retrain). Phase **36** depends on all four preceding phases.
+
+#### Phase 32: Training Label Correction
+**Goal**: Pattern model training labels are derived from the rule oracle (`PatternRules`) rather than ordinal quantile bins; `build_dataset.py` and `build_lakh_dataset.py` updated; model retrained and promoted to `assets/`.
+**Depends on**: None (independent of v0.5.0 phases; can run in parallel with 33 and 34)
+**Requirements**: LABEL-01, LABEL-02, LABEL-03
+**Success criteria** (what must be TRUE):
+  1. `build_dataset.py` generates labels Y∈[0,6] by calling `PatternRules::rulePatternForState` on each proxy feature row; quantile-bin scoring removed
+  2. `training/FEATURE_PROXY.md` updated to document rule-oracle labeling approach; quantile-bin description retired
+  3. Retrained `accompaniment_model.onnx` promoted to `assets/`; `scripts/validate_onnx_contract.py --pattern` exits 0; DATA-06 histogram gate still passes
+**Plans**: 3 plans
+
+Plans:
+- [ ] 32-01-PLAN.md — Add rule oracle + Breakdown heuristic to build_dataset.py; unit tests (LABEL-01, Wave 1)
+- [ ] 32-02-PLAN.md — Oracle labeling for build_lakh_dataset.py; merge_datasets.py label passthrough; FEATURE_PROXY.md update (LABEL-01, LABEL-02, Wave 1)
+- [ ] 32-03-PLAN.md — Run full pipeline, retrain, validate ONNX contract, promote to assets/ (LABEL-03, Wave 2)
+
+#### Phase 33: Model Quality Gates
+**Goal**: Bass and structure models have hard quality gates that block export on poor convergence; structure model ONNX graph embeds its own normalization; per-step bass validation metrics logged.
+**Depends on**: None (can run in parallel with 32 and 34; coordinate retrain with Phase 35)
+**Requirements**: QGATE-01, QGATE-02, QGATE-03, QGATE-04
+**Success criteria** (what must be TRUE):
+  1. `train_bass.py` exits non-zero if `best_val_mse` exceeds a computed rule-baseline MSE threshold; no ONNX export produced on failure; per-step velocity-error and pitch-offset distribution written to `validation.json`
+  2. `train_structure.py` exits non-zero if val macro-F1 < rule-path agreement rate on the same split; `StructureOnnxExport` wrapper bakes mean/std normalisation into the ONNX graph (mirrors `PatternOnnxExport` pattern)
+  3. `OnnxStructureInference.cpp` reads normalisation from ONNX graph constants (external normalisation step removed)
+  4. `training/tests/test_onnx_contract.py` validates structure model I/O shape and dtype alongside pattern and bass model checks
+**Plans**: TBD (`/gsd-plan-phase 33`)
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 33 to break down)
+
+#### Phase 34: Domain Gap and Feature Capture
+**Goal**: A `FeatureVector` capture utility records real guitar audio features to disk; an offline evaluation harness measures rule-path vs ONNX accuracy on that data; the residual domain gap is quantified and documented.
+**Depends on**: None (capture pipeline is foundational for Phase 36 real-audio evaluation)
+**Requirements**: DOMAIN-01, DOMAIN-02, DOMAIN-03
+**Success criteria** (what must be TRUE):
+  1. Standalone utility (or plugin debug mode toggle) records `FeatureVector` values to a JSONL file from a live guitar session; output format documented
+  2. Offline evaluation script accepts a JSONL + human-annotated pattern labels; prints rule-path accuracy vs ONNX accuracy and per-class breakdown side-by-side
+  3. `training/FEATURE_PROXY.md` updated with quantitative distribution-shift estimates per feature (bpm, rms, centroid, hf_flux at minimum); residual domain gap documented with concrete numbers; worst-case divergence for spectral centroid proxy identified and proxy improved or explicitly accepted
+**Plans**: TBD (`/gsd-plan-phase 34`)
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 34 to break down)
+
+#### Phase 35: Inference Path Consistency
+**Goal**: Rule path and ONNX path use the same intensity-adjusted BPM input; exclusion modulo respects state compatibility (no accidental Breakdown on non-transition inputs); `structureBlend` semantics documented.
+**Depends on**: Phase 32 (adjusted-BPM tensor change requires coordinated model retrain with corrected labels)
+**Requirements**: INFC-01, INFC-02, INFC-03
+**Success criteria** (what must be TRUE):
+  1. `OnnxInference.cpp` packs `PatternRules::adjustedBpm(f)` (not raw `f.bpm`) into tensor column 0; pattern model retrained with adjusted BPM in the proxy column; `docs/ONNX_IO.md` and `training/FEATURE_PROXY.md` updated to document column 0 is adjusted BPM
+  2. D-23-04 exclusion logic walks forward modulo 7 until `isPatternCompatibleWithState` passes, rather than blind `(last+1)%7`; `test_rule_based_inference.cpp` asserts exclusion never returns an incompatible pattern for any state
+  3. `structureBlend` semantics documented (inline comment or `docs/` entry): rule state is authoritative for silence detection and gate; ONNX shadow only shapes non-silent pattern decisions at `blend > 0.5`
+**Plans**: TBD (`/gsd-plan-phase 35`)
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 35 to break down)
+
+#### Phase 36: ONNX Evaluation and Default Readiness
+**Goal**: Repeatable ONNX latency benchmark exists and runs in CI; A/B comparison tool works on captured feature logs; `docs/ONNX_READINESS.md` documents exact flip criteria; all six readiness conditions are met or have a clear tracked path.
+**Depends on**: Phases 32, 33, 34, 35
+**Requirements**: ONNXEVAL-01, ONNXEVAL-02, ONNXEVAL-03
+**Success criteria** (what must be TRUE):
+  1. CTest or standalone benchmark runs 10,000 inference calls per model (all three); all complete a single call in < 5 ms on reference M-series hardware; benchmark added to CI and fails if any model exceeds the gate
+  2. A/B comparison script accepts a JSONL of `FeatureVector` values and prints `RuleBasedInference` vs `OnnxInference` pattern selections side-by-side with agreement rate summary
+  3. `docs/ONNX_READINESS.md` exists with the six flip criteria (pattern macro-F1 ≥ 0.65 on real-audio set, ≥ 80% rule agreement, latency < 5 ms, bass gate passing, structure normalisation baked, ONNX contract tests passing); current pass/fail status tracked per criterion; `MA_ENABLE_ONNX` default flipped to ON when all criteria pass
+**Plans**: TBD (`/gsd-plan-phase 36`)
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 36 to break down)
 
 ---
 
