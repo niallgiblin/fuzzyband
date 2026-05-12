@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge GMD + Lakh tensors with joint quantile label recomputation (Phase 25 DATA-09).
+"""Merge GMD + Lakh tensors with oracle label passthrough (Phase 32, updated from Phase 25 DATA-09).
 
 Preserves a GMD-only validation fold (val_gmd.pt) alongside merged train.pt.
 Recalibrates norm_stats.json on the merged distribution.
@@ -31,19 +31,6 @@ _FEATURE_ORDER = [
 
 def _repo_root() -> Path:
     return _TRAINING_DIR.parent
-
-
-def _activity_score_from_row(row: np.ndarray) -> float:
-    """Approximate activity score from a 5-float proxy row (no event data needed).
-
-    Uses a dens_est proxy from state/hf/rms to approximate the original
-    `0.5*dens + 2*rms + 0.5*hf + 0.2*state` formula.
-    """
-    rms = float(row[1])
-    hf = float(row[3])
-    state = float(row[4])
-    dens_est = state * 4.0 + hf * 2.0 + rms * 6.0
-    return 0.5 * dens_est + 2.0 * rms + 0.5 * hf + 0.2 * state
 
 
 def main() -> int:
@@ -112,10 +99,10 @@ def main() -> int:
 
     X_gmd_train_norm = gmd_train["X"].numpy().astype(np.float64)
     X_gmd_val_norm = gmd_val["X"].numpy().astype(np.float64)
-    Y_gmd_train_old = gmd_train["Y"].numpy()
-    Y_gmd_val_old = gmd_val["Y"].numpy()
+    Y_gmd_train_old = gmd_train["Y"].numpy()   # oracle labels from build_dataset.py train split
+    Y_gmd_val_old = gmd_val["Y"].numpy()       # oracle labels from build_dataset.py val split
     X_lakh_raw = lakh_data["X"].numpy().astype(np.float64)
-    scores_lakh = lakh_data["scores"].numpy()
+    Y_lakh = lakh_data["Y"].numpy()   # oracle labels from build_lakh_dataset.py
 
     old_mean = np.asarray(old_norm["mean"], dtype=np.float64)
     old_std = np.asarray(old_norm["std"], dtype=np.float64)
@@ -124,23 +111,12 @@ def main() -> int:
     X_gmd_train_raw = X_gmd_train_norm * old_std + old_mean
     X_gmd_val_raw = X_gmd_val_norm * old_std + old_mean
 
-    # ── Recompute activity scores for GMD ─────────────────────────────────
-    scores_gmd_train = np.array(
-        [_activity_score_from_row(row) for row in X_gmd_train_raw],
-        dtype=np.float64,
-    )
-    scores_gmd_val = np.array(
-        [_activity_score_from_row(row) for row in X_gmd_val_raw],
-        dtype=np.float64,
-    )
-
-    # ── Joint quantile recomputation (merged GMD train + Lakh) ────────────
-    scores_merged = np.concatenate([scores_gmd_train, scores_lakh])
-    qt = np.quantile(scores_merged, [1 / 7, 2 / 7, 3 / 7, 4 / 7, 5 / 7, 6 / 7])
-
-    Y_gmd_train_new = np.searchsorted(qt, scores_gmd_train, side="right").astype(np.int64)
-    Y_lakh_new = np.searchsorted(qt, scores_lakh, side="right").astype(np.int64)
-    Y_gmd_val_new = np.searchsorted(qt, scores_gmd_val, side="right").astype(np.int64)
+    # ── Oracle label passthrough (Phase 32) ───────────────────────────────────────
+    # Oracle labels are computed in build_dataset.py and build_lakh_dataset.py.
+    # merge_datasets.py concatenates them directly — no quantile recomputation.
+    Y_gmd_train_new = Y_gmd_train_old   # oracle labels from build_dataset.py train split
+    Y_lakh_new      = Y_lakh            # oracle labels from build_lakh_dataset.py
+    Y_gmd_val_new   = Y_gmd_val_old    # oracle labels from build_dataset.py val split
 
     # ── Merge features ────────────────────────────────────────────────────
     X_merged_raw = np.concatenate([X_gmd_train_raw, X_lakh_raw], axis=0)
@@ -159,7 +135,6 @@ def main() -> int:
     print(f"GMD val:            {len(X_gmd_val_raw):>6} examples", flush=True)
     print(f"Lakh:               {len(X_lakh_raw):>6} examples", flush=True)
     print(f"MERGED train:       {len(X_merged_raw):>6} examples", flush=True)
-    print(f"Quantile edges:     {np.round(qt, 4).tolist()}", flush=True)
 
     # ── Class counts (old vs new) ─────────────────────────────────────────
     old_counts = np.bincount(Y_gmd_train_old, minlength=7)

@@ -32,18 +32,47 @@ Constructor order in `MidiPatternLibrary.cpp` (`patterns.push_back`):
 5. **Chorus fast** — `Chorus fast`  
 6. **Breakdown** — `Breakdown`
 
-## Hybrid oracle — overview
+## Label oracle — Y ∈ [0, 6]
 
-- **(A) MIDI-derived heuristics:** **note density** (onsets per beat), **syncopation** (off-beat snare weight), **tempo-relative** onset spacing (std of inter-onset intervals in beats). These yield a **coarse class guess** `h ∈ {0,…,6}`.
-- **(B) Seed similarity:** For each library index **i**, build a **synthetic one-bar MIDI loop** that reflects the **relative** density/energy of pattern **i**, run **`prep_midi._events_from_file`**, compute the **same five proxies**, **L2-normalize** the 5-vector (ε=1e-8), and store **seed vector** `s_i`. **Alignment:** seeds use the **same proxy definitions** as (A) and the **same index order** as the table above.
+Labels are assigned by a Python port of `PatternRules::rulePatternForState`
+(`src/inference/pattern_rules.h`) applied to each proxy row. This makes the
+pattern model a learned distillation of the rule path, not an activity ranker.
 
-**Combined score:** Let `x̂` be the L2-normalized proxy vector for an example. Let `ŝ_i` be normalized `s_i`. **Default** **α = 0.5** (equal weight).  
-`score_i = (1−α) · cosine_sim(x̂, ŝ_i) + α · one_hot(h)[i]`  
-**Label** = `argmax_i score_i` (NumPy **`argmax`** breaks ties by **lowest index**).
+### policyIntensity assumption
 
-### Implementation note — `build_dataset.py` (Phase 17)
+Training proxy rows have no `policyIntensity` field. The oracle assumes neutral
+intensity (0.5), which produces `adjustedBpm = raw_bpm` (zero offset). This is
+**intentional** — not an oversight. Phase 35 will pack `adjustedBpm` into X[0]
+and retrain with it; Phase 32 changes only label semantics.
 
-For **DATA-06** (histogram gate, grouped train/val split), **`build_dataset.py`** assigns **Y** using **train-split quantile binning** on a scalar **activity score** derived from the same events as the proxies: `0.5·dens + 2·rms + 0.5·hf + 0.2·state` (dens = note_on count / duration in beats; rms/hf/state from the five-float row). **Quantile thresholds** use **`np.quantile(scores_train, [1/7 … 6/7])`** so **train** rows are **approximately** evenly spread across **0–6**; **validation** labels use the **same** edges. **Ordinal** meaning: **0** = lowest activity, **6** = highest — a practical stand-in for the seven **MidiPatternLibrary** slots when **seed cosine** would collapse (synthetic seeds were ~identical in normalized proxy space). Phase **18** can treat **Y** as a **7-way** target; domain alignment with live audio remains **out of scope** for this doc.
+### Rule oracle (classes 0–5)
+
+| Condition | Label |
+|-----------|-------|
+| state = SILENT (0) | 0 |
+| state = SOFT (1) AND bpm < 120 | 1 |
+| state = SOFT (1) AND 120 ≤ bpm < 160 | 2 |
+| state = SOFT (1) AND bpm ≥ 160 | 3 |
+| state = LOUD (2) AND bpm < 160 | 4 |
+| state = LOUD (2) AND bpm ≥ 160 | 5 |
+
+Thresholds: `kSoftMidBpmThreshold = 120.0`, `kSoftLoudBpmThreshold = 160.0`
+(mirrored exactly from `src/inference/pattern_rules.h`).
+
+GMD-specific note: `build_dataset.py`'s `_compute_proxy_row` can emit `state = 3.0`
+(low-density, kick-heavy rows). The oracle clamps this to `min(int(state), 2) = SOFT`
+before lookup. `build_lakh_dataset.py` uses strict 3-class state and is unaffected.
+
+### Breakdown heuristic (class 6)
+
+After the rule oracle assigns a label, a narrow override promotes to class 6
+when all three conditions hold:
+- `state != SILENT` (rule oracle result ≠ 0)
+- note density < 2.5 onsets/beat
+- bpm < 110
+
+This is a post-oracle override: the state guard ensures SILENT rows (class 0)
+are never overridden to Breakdown.
 
 ## Heuristic detail (implementation-facing)
 
@@ -53,19 +82,11 @@ For **DATA-06** (histogram gate, grouped train/val split), **`build_dataset.py`*
 - **HF flux proxy (index 3):** Standard deviation of **beat-scaled** inter-onset gaps for **high** drums, capped at **1.0**.
 - **`float(state)` (index 4):** Discrete **0–2** rules above; cast to float for the fifth column.
 
-**Heuristic class guess `h` (coarse):** For **Phase 17** tensors, see **Implementation note** above (quantile bins on activity score). The **density / energy band** story still describes how **Phase 18** may **interpret** classes **0–6** relative to pattern names.
+**Heuristic class guess `h` (coarse):** Labels are assigned by rule-oracle + Breakdown heuristic. See **Label oracle** section above.
 
-## Tie-breaks and failure modes
+## Failure modes
 
-- **Ties on `argmax`:** **`numpy.argmax`** returns the **first** maximum → **lowest class index** among ties.
-- **Ambiguous / low confidence:** If **max score < 0.25** (all signals weak), fall back to **Verse mid (2)** — the dataset’s default “central” class.
 - **Empty or parse-failed MIDI:** Treat as **Silent** for labeling purposes (**Y = 0**) and **zero/low** proxies where defined; **RMS** 0, **centroid** 0, **HF flux** 0, **state** 0.
-
-## Seed similarity
-
-- **Metric:** **Cosine similarity** on **L2-normalized** 5-vectors (per-dimension ε **1e-8** before normalize).
-- **α default:** **0.5** — `build_dataset.py` uses this default unless overridden later in Phase 18.
-- **Seeds:** Seven vectors from **synthetic MIDI** loops (see Hybrid oracle), recomputed deterministically in code.
 
 ## References
 
