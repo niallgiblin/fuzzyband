@@ -267,7 +267,8 @@ def main() -> int:
     print("\nCLASS-WISE F1 (best model on val set):", flush=True)
     for c in range(7):
         count = sum(1 for lb in final_labels if lb == c)
-        print(f"  class {c}: F1={class_f1[c]:.4f}  (n={count})", flush=True)
+        f1_val = float(class_f1[c]) if c < len(class_f1) else 0.0
+        print(f"  class {c}: F1={f1_val:.4f}  (n={count})", flush=True)
 
     print("\nCONFUSION MATRIX (rows=true, cols=pred):", flush=True)
     header = "      " + " ".join(f"pred{c:>4d}" for c in range(7))
