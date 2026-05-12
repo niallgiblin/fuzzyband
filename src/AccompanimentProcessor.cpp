@@ -8,11 +8,11 @@
 #include "inference/OnnxStructureInference.h"
 #endif
 #include <chrono>
+#include <climits>
 #include <cmath>
 
 namespace
 {
-constexpr float kMinPitchConfidence = 0.35f;
 
 float foldTrackerAliasTowardOnset(float trackerBpm, float onsetBpm) noexcept
 {
@@ -150,11 +150,7 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     structureTagger.prepare(sr);
     pitchEstimator.prepare(sr, samplesPerBlock);
     pitchEstimator.reset();
-    heldPitchRootMidi = 40.0f;
-    heldPitchConfidence = 0.0f;
-    pitchHoldValid = false;
-    pitchStableCounterSamples = 0;
-    lastStablePitchMidi = 40.0f;
+    stablePitchTracker.reset();
     lastBassUpdateSample = -1;
     lastDrumPatternChangeSample = -1;
     playbackGate.reset();
@@ -418,27 +414,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const bool digitalSilence = (rms < 1.0e-6f);
     const bool silencePolicy = (st == StructureState::SILENT) || digitalSilence;
 
-    if (silencePolicy)
-    {
-        heldPitchRootMidi = 40.0f;
-        heldPitchConfidence = 0.0f;
-        pitchHoldValid = false;
-    }
-    else if (rawConf < kMinPitchConfidence)
-    {
-        if (!pitchHoldValid)
-        {
-            heldPitchRootMidi = 40.0f;
-            heldPitchConfidence = 0.0f;
-        }
-    }
-    else
-    {
-        heldPitchRootMidi = rawMidi;
-        heldPitchConfidence = rawConf;
-        pitchHoldValid = true;
-    }
-
     const bool beatTrackerLocked = beatTracker.isLocked();
     const float onsetBpm = onsetDetector.getCurrentBpm();
     const float tempoCandidateBpm = beatTrackerLocked
@@ -480,53 +455,20 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     fv.highFreqFlux = hfFlux;
     fv.state = st;
     fv.sampleTimestamp = hostSampleTime;
-    fv.pitchRootMidi = heldPitchRootMidi;
-    fv.pitchConfidence = heldPitchConfidence;
+    fv.pitchRootMidi = rawMidi;
+    fv.pitchConfidence = rawConf;
     fv.rmsDelta = rmsDelta;
 
     if (auto* rawIntensity = apvts.getRawParameterValue("intensity"))
         fv.policyIntensity = rawIntensity->load();
 
-    if (fv.pitchConfidence <= 0.0f || fv.pitchConfidence < kMinPitchConfidence)
     {
-        pitchStableCounterSamples = 0;
-        patternPlayer.setBassSemitoneOffset(0);
-    }
-    else
-    {
-        const float currentMidi = fv.pitchRootMidi;
-        // Compare pitch class so YIN octave flips (E2↔E3) don't reset the counter.
-        const int currentPc = (static_cast<int>(std::round(currentMidi)) % 12 + 12) % 12;
-        const int lastPc    = (static_cast<int>(std::round(lastStablePitchMidi)) % 12 + 12) % 12;
-        if (currentPc == lastPc)
-        {
-            pitchStableCounterSamples += numSamples;
-        }
-        else
-        {
-            pitchStableCounterSamples = 0;
-            lastStablePitchMidi = currentMidi;
-        }
-
-        // One beat duration in samples at current BPM.
-        const float bpmNow = bpmForPlayer;
-        const int oneBeatSamples = (bpmNow > 0.0f)
-            ? static_cast<int>((60.0f / bpmNow) * static_cast<float>(cachedSampleRate.load(std::memory_order_relaxed)))
-            : static_cast<int>(cachedSampleRate.load(std::memory_order_relaxed) / 2);
-
-        if (pitchStableCounterSamples >= oneBeatSamples)
-        {
-            // Map detected pitch class to nearest semitone offset from kBassRoot (MIDI 40 = E2),
-            // clamped to ±6 so bass stays in register regardless of which octave the guitar played.
-            const int rounded    = static_cast<int>(std::lround(static_cast<double>(currentMidi)));
-            const int pc         = (rounded % 12 + 12) % 12;
-            const int bassRootPc = 40 % 12; // 4 = E
-            int delta = pc - bassRootPc;
-            if (delta > 6)  delta -= 12;
-            if (delta < -6) delta += 12;
-            patternPlayer.setBassSemitoneOffset(delta);
-        }
-        // else: hold the previous offset — do not call setBassSemitoneOffset.
+        const int semitoneOffset = stablePitchTracker.update(
+            rawMidi, rawConf, bpmForPlayer, numSamples, sr, silencePolicy);
+        if (semitoneOffset != INT_MIN)
+            patternPlayer.setBassSemitoneOffset(semitoneOffset);
+        else if (silencePolicy)
+            patternPlayer.setBassSemitoneOffset(0);
     }
 
     (void)featureQueue.try_enqueue(fv);

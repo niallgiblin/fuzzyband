@@ -214,10 +214,10 @@ Plans:
 **Plans**: 4 plans in 2 waves
 
 Plans:
-- [ ] 31-01-PLAN.md — PatternSelectionRules header-only extraction (ARCH-03, Wave 1)
-- [ ] 31-02-PLAN.md — TempoStabiliser extraction (ARCH-04, Wave 1)
-- [ ] 31-03-PLAN.md — PlaybackGate extraction (ARCH-01, Wave 2)
-- [ ] 31-04-PLAN.md — StablePitchTracker extraction + version bump to 0.5.0 (ARCH-02, Wave 2)
+- [x] 31-01-PLAN.md — PatternSelectionRules header-only extraction (ARCH-03, Wave 1)
+- [x] 31-02-PLAN.md — TempoStabiliser extraction (ARCH-04, Wave 1)
+- [x] 31-03-PLAN.md — PlaybackGate extraction (ARCH-01, Wave 2)
+- [x] 31-04-PLAN.md — StablePitchTracker extraction + version bump to 0.5.0 (ARCH-02, Wave 2)
 
 ---
 
@@ -255,7 +255,7 @@ Plans:
 | 28. Beat tracker & bass sequencer | v0.5.0 | 0/2 | Not started | - |
 | 29. Runtime coordination (C++) | v0.5.0 | 0/0 | Not started | - |
 | 30. ML retrain (12 features) | v0.5.0 | 0/0 | Not started | - |
-| 31. Architecture Deepening | v0.5.0 | 0/4 | Not started | - |
+| 31. Architecture Deepening | v0.5.0 | 4/4 | Complete   | 2026-05-03 |
 
 ---
 
@@ -291,7 +291,7 @@ Plans:
 
 > **Superseded for execution:** Core themes shipped as **Phase 9** (DATA-*) in v0.2.0. Traceability: `.planning/milestones/v0.2.0-REQUIREMENTS.md`.
 
-**Plans:** 1/1 plans complete
+**Plans:** 4/4 plans complete
 
 Plans:
 - [x] Executed under Phase 9 / v0.2.0 (see phase 9 plans and `docs/DATASET_AUDIT.md`)
