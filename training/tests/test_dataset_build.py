@@ -115,3 +115,71 @@ class TestComputeProxyRow:
         assert isinstance(row, np.ndarray)
         assert row.shape == (5,)
         assert not np.any(np.isnan(row))
+
+
+# ─── _rule_pattern_for_state ─────────────────────────────────────────────────
+
+class TestRulePatternForState:
+    def test_silent_returns_0(self, build_dataset_module) -> None:
+        bd = build_dataset_module
+        assert bd._rule_pattern_for_state(120.0, 0.0) == 0
+
+    def test_soft_slow_returns_1(self, build_dataset_module) -> None:
+        bd = build_dataset_module
+        assert bd._rule_pattern_for_state(100.0, 1.0) == 1
+
+    def test_soft_mid_returns_2(self, build_dataset_module) -> None:
+        # bpm=140 is between _K_SOFT_MID_BPM (120) and _K_SOFT_LOUD_BPM (160)
+        bd = build_dataset_module
+        assert bd._rule_pattern_for_state(140.0, 1.0) == 2
+
+    def test_soft_fast_returns_3(self, build_dataset_module) -> None:
+        # bpm=170 >= _K_SOFT_LOUD_BPM (160)
+        bd = build_dataset_module
+        assert bd._rule_pattern_for_state(170.0, 1.0) == 3
+
+    def test_loud_mid_returns_4(self, build_dataset_module) -> None:
+        bd = build_dataset_module
+        assert bd._rule_pattern_for_state(140.0, 2.0) == 4
+
+    def test_loud_fast_returns_5(self, build_dataset_module) -> None:
+        bd = build_dataset_module
+        assert bd._rule_pattern_for_state(170.0, 2.0) == 5
+
+    def test_gmd_state3_clamped_to_soft(self, build_dataset_module) -> None:
+        # GMD uses a 4-class state (0-3). state=3 is "sparse/breakdown" which the GMD
+        # labels separately from LOUD. We clamp it to SOFT (1) because GMD has no true
+        # BREAKDOWN category corresponding to SILENT — sparse GMD patterns are quiet SOFT grooves.
+        bd = build_dataset_module
+        assert bd._rule_pattern_for_state(100.0, 3.0) == 1
+
+
+# ─── _oracle_label ───────────────────────────────────────────────────────────
+
+class TestOracleLabel:
+    def test_breakdown_override_fires(self, build_dataset_module) -> None:
+        # 5 sparse note_on events spread over 4 seconds at 80 BPM.
+        # duration_beats = 4.0 * 80/60 = 5.33 beats; density = 5/5.33 ~= 0.94 < 2.5.
+        # bpm=80 < 110 => Breakdown override fires => label == 6.
+        bd = build_dataset_module
+        events = [
+            {"type": "note_on", "time_sec": 0.0, "note": 36, "velocity": 64},
+            {"type": "note_on", "time_sec": 1.0, "note": 36, "velocity": 64},
+            {"type": "note_on", "time_sec": 2.0, "note": 36, "velocity": 64},
+            {"type": "note_on", "time_sec": 3.0, "note": 36, "velocity": 64},
+            {"type": "note_on", "time_sec": 4.0, "note": 36, "velocity": 64},
+        ]
+        assert bd._oracle_label(80.0, 1.0, events) == 6
+
+    def test_silent_never_overridden(self, build_dataset_module) -> None:
+        # Same sparse events but state_float=0.0 (SILENT). D-04: SILENT rows must
+        # never be overridden to Breakdown — oracle label stays 0.
+        bd = build_dataset_module
+        events = [
+            {"type": "note_on", "time_sec": 0.0, "note": 36, "velocity": 64},
+            {"type": "note_on", "time_sec": 1.0, "note": 36, "velocity": 64},
+            {"type": "note_on", "time_sec": 2.0, "note": 36, "velocity": 64},
+            {"type": "note_on", "time_sec": 3.0, "note": 36, "velocity": 64},
+            {"type": "note_on", "time_sec": 4.0, "note": 36, "velocity": 64},
+        ]
+        assert bd._oracle_label(80.0, 0.0, events) == 0
