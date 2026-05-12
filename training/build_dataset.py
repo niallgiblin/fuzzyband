@@ -91,23 +91,56 @@ def _compute_proxy_row(events: list[dict], bpm_raw: float) -> np.ndarray:
     return np.array([bpm, rms, cent, hf, state], dtype=np.float64)
 
 
-def _activity_score(row: np.ndarray, events: list[dict]) -> float:
-    """Scalar “groove intensity” for binning: low → class 0, high → class 6 (ordinal, not exact pattern names)."""
-    bpm = float(row[0])
-    ons = [e for e in events if e.get("type") == "note_on"]
-    dens = len(ons) / _duration_beats(events, bpm)
-    rms = float(row[1])
-    hf = float(row[3])
-    st = float(row[4])
-    return 0.5 * dens + 2.0 * rms + 0.5 * hf + 0.2 * st
+# ─── Oracle label constants (mirrors src/inference/pattern_rules.h lines 18-19) ───
+_K_SOFT_MID_BPM  = 120.0  # mirrors kSoftMidBpmThreshold from src/inference/pattern_rules.h
+_K_SOFT_LOUD_BPM = 160.0  # mirrors kSoftLoudBpmThreshold
 
 
-def _labels_from_train_quantiles(scores_train: np.ndarray, scores_query: np.ndarray) -> np.ndarray:
-    """Map scores to 0..6 using train-split quantile edges (stable under GroupShuffleSplit)."""
-    if scores_train.size == 0:
-        return np.zeros(0, dtype=np.int64)
-    qt = np.quantile(scores_train, [1 / 7, 2 / 7, 3 / 7, 4 / 7, 5 / 7, 6 / 7])
-    return np.searchsorted(qt, scores_query, side="right").astype(np.int64)
+def _rule_pattern_for_state(bpm: float, state_float: float, policy_intensity: float = 0.5) -> int:
+    """Return the rule-based pattern index [0..5] for the given BPM and structural state.
+
+    Ports PatternRules::rulePatternForState from src/inference/pattern_rules.h.
+
+    D-06: policyIntensity=0.5 neutral assumption. Phase 35 will pass adjustedBpm into X[0]
+    as an explicit feature; for now the offset is absorbed here at label-generation time only.
+
+    GMD dataset records state as 0..3 floats. state=3.0 (sparse/breakdown) is clamped to
+    SOFT (state=1) per research finding: the GMD does not have a true BREAKDOWN category
+    that maps to silence, so we treat sparse GMD patterns as quiet SOFT grooves.
+    """
+    adj_bpm = bpm + (policy_intensity - 0.5) * 40.0
+    # Clamp GMD state=3.0 to SOFT (1): see comment above — GMD 4-class state has no true BREAKDOWN.
+    # int(state_float) in {0,1,2} passes through; 3 maps to SOFT (1) not LOUD (2).
+    raw_state = int(state_float)
+    state = raw_state if raw_state <= 2 else 1
+    if state == 0:
+        return 0
+    if state == 1:
+        if adj_bpm < _K_SOFT_MID_BPM:
+            return 1
+        if adj_bpm < _K_SOFT_LOUD_BPM:
+            return 2
+        return 3
+    if state == 2:
+        return 4 if adj_bpm < _K_SOFT_LOUD_BPM else 5
+    return 0  # unreachable fallback
+
+
+def _oracle_label(bpm: float, state_float: float, events: list[dict]) -> int:
+    """Return the oracle class label [0..6] for the given row.
+
+    D-03: Breakdown override — non-SILENT rows with sparse notes at slow BPM get class 6.
+    D-04: SILENT state guard — state=0 rows are never overridden to Breakdown.
+    D-06: neutral policyIntensity=0.5 used for label generation.
+    """
+    label = _rule_pattern_for_state(bpm, state_float)
+    # Breakdown override guard: only applies to non-SILENT rows.
+    if label != 0:
+        ons = [e for e in events if e.get("type") == "note_on"]
+        dens = len(ons) / _duration_beats(events, bpm)
+        if dens < 2.5 and bpm < 110.0:
+            label = 6
+    return label
 
 
 def _midi_bytes_from_tfds(example: object) -> bytes:
@@ -180,7 +213,7 @@ def main() -> int:
     )
 
     xs: list[np.ndarray] = []
-    scores: list[float] = []
+    Y_all_list: list[int] = []
     groups: list[str] = []
     ids: list[str] = []
 
@@ -197,7 +230,9 @@ def main() -> int:
         tmp.write_bytes(raw)
         events = _events_from_file(tmp)
         row = _compute_proxy_row(events, bpm)
-        scores.append(_activity_score(row, events))
+        bpm_clamped = float(row[0])
+        state_float = float(row[4])
+        Y_all_list.append(_oracle_label(bpm_clamped, state_float, events))
         gid = eid.split(":", 1)[0] if ":" in eid else eid
 
         xs.append(row)
@@ -216,7 +251,7 @@ def main() -> int:
         return 1
 
     X = np.stack(xs, axis=0).astype(np.float64)
-    scores_all = np.asarray(scores, dtype=np.float64)
+    Y_all = np.asarray(Y_all_list, dtype=np.int64)
     groups = np.asarray(groups, dtype=object)
 
     gss = GroupShuffleSplit(
@@ -228,12 +263,10 @@ def main() -> int:
     y_placeholder = np.zeros(len(X), dtype=np.int64)
     tr_idx, va_idx = next(gss.split(X, y_placeholder, groups=groups))
 
-    scores_tr = scores_all[tr_idx]
-    scores_va = scores_all[va_idx]
     X_train = X[tr_idx]
     X_val = X[va_idx]
-    Y_train = _labels_from_train_quantiles(scores_tr, scores_tr)
-    Y_val = _labels_from_train_quantiles(scores_tr, scores_va)
+    Y_train = Y_all[tr_idx]
+    Y_val = Y_all[va_idx]
 
     mean = np.mean(X_train, axis=0)
     std = np.std(X_train, axis=0, ddof=0)
