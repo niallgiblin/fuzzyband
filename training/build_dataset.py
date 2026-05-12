@@ -319,16 +319,17 @@ def main() -> int:
     _write_manifest(out_dir / "manifest_val.jsonl", va_idx, Y_val, "val")
 
     counts = np.bincount(Y_train, minlength=7)
-    print("HISTOGRAM (train split labels)")
+    print("HISTOGRAM (train split labels — advisory; gate enforced in merge_datasets.py)")
     for i in range(7):
         print(f"  class {i}: {int(counts[i])}")
     if np.any(counts < 50):
         print(
-            "FAIL: HISTOGRAM — at least one class below 50 examples in train split (below 50)",
+            "INFO: HISTOGRAM — at least one class below 50 in GMD-only train split"
+            " (advisory; DATA-06 gate will run after GMD+Lakh merge in merge_datasets.py)",
             flush=True,
         )
-        sys.exit(3)
-    print("PASS: HISTOGRAM — all classes >= 50 in train split", flush=True)
+    else:
+        print("INFO: HISTOGRAM — all classes >= 50 in GMD-only train split", flush=True)
     return 0
 
 
