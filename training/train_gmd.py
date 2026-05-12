@@ -260,9 +260,16 @@ def main() -> int:
             final_preds.extend(torch.argmax(logits, dim=-1).cpu().numpy().tolist())
             final_labels.extend(by.cpu().numpy().tolist())
 
-    class_f1 = f1_score(final_labels, final_preds, average=None, zero_division=0)
+    report_labels = list(range(7))
+    class_f1 = f1_score(
+        final_labels,
+        final_preds,
+        labels=report_labels,
+        average=None,
+        zero_division=0,
+    )
     from sklearn.metrics import confusion_matrix as sk_confusion_matrix
-    cm = sk_confusion_matrix(final_labels, final_preds, labels=list(range(7)))
+    cm = sk_confusion_matrix(final_labels, final_preds, labels=report_labels)
 
     print("\nCLASS-WISE F1 (best model on val set):", flush=True)
     for c in range(7):

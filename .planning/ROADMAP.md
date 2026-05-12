@@ -257,7 +257,7 @@ Plans:
 | 29. Runtime coordination (C++) | v0.5.0 | 0/0 | Not started | - |
 | 30. ML retrain (12 features) | v0.5.0 | 0/0 | Not started | - |
 | 31. Architecture Deepening | v0.5.0 | 4/4 | Complete   | 2026-05-03 |
-| 32. Training Label Correction | v0.6.0 | 0/0 | Not started | - |
+| 32. Training Label Correction | v0.6.0 | 3/3 | Complete   | 2026-05-12 |
 | 33. Model Quality Gates | v0.6.0 | 0/0 | Not started | - |
 | 34. Domain Gap and Feature Capture | v0.6.0 | 0/0 | Not started | - |
 | 35. Inference Path Consistency | v0.6.0 | 0/0 | Not started | - |
@@ -306,9 +306,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 32-01-PLAN.md — Add rule oracle + Breakdown heuristic to build_dataset.py; unit tests (LABEL-01, Wave 1)
-- [ ] 32-02-PLAN.md — Oracle labeling for build_lakh_dataset.py; merge_datasets.py label passthrough; FEATURE_PROXY.md update (LABEL-01, LABEL-02, Wave 1)
-- [ ] 32-03-PLAN.md — Run full pipeline, retrain, validate ONNX contract, promote to assets/ (LABEL-03, Wave 2)
+- [x] 32-01-PLAN.md — Add rule oracle + Breakdown heuristic to build_dataset.py; unit tests (LABEL-01, Wave 1)
+- [x] 32-02-PLAN.md — Oracle labeling for build_lakh_dataset.py; merge_datasets.py label passthrough; FEATURE_PROXY.md update (LABEL-01, LABEL-02, Wave 1)
+- [x] 32-03-PLAN.md — Run full pipeline, retrain, validate ONNX contract, promote to assets/ (LABEL-03, Wave 2)
 
 #### Phase 33: Model Quality Gates
 **Goal**: Bass and structure models have hard quality gates that block export on poor convergence; structure model ONNX graph embeds its own normalization; per-step bass validation metrics logged.

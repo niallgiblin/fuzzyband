@@ -27,10 +27,32 @@ _FEATURE_ORDER = [
     "highFreqFlux",
     "state_float",
 ]
+_MIN_EXAMPLES_PER_CLASS = 50
+_GATE_CLASSES = [1, 2, 3, 4, 5, 6]
 
 
 def _repo_root() -> Path:
     return _TRAINING_DIR.parent
+
+
+def _oversample_minority_class(
+    X: np.ndarray,
+    Y: np.ndarray,
+    class_index: int,
+    min_examples: int,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    count = int(np.sum(Y == class_index))
+    if count == 0 or count >= min_examples:
+        return X, Y, 0
+
+    needed = min_examples - count
+    class_rows = np.flatnonzero(Y == class_index)
+    repeats = np.resize(class_rows, needed)
+    return (
+        np.concatenate([X, X[repeats]], axis=0),
+        np.concatenate([Y, Y[repeats]], axis=0),
+        needed,
+    )
 
 
 def main() -> int:
@@ -74,6 +96,31 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    backup_dir = args.out_dir / "gmd_original_backup"
+    default_gmd_train = _PROCESSED_DIR / "train.pt"
+    if args.gmd_train == default_gmd_train and args.gmd_train.exists():
+        try:
+            current_train_meta = torch.load(
+                str(args.gmd_train),
+                map_location="cpu",
+                weights_only=True,
+            ).get("meta", {})
+        except Exception:
+            current_train_meta = {}
+        backup_train = backup_dir / "train.pt"
+        backup_val = backup_dir / "val.pt"
+        backup_norm = backup_dir / "norm_stats.json"
+        if (
+            isinstance(current_train_meta, dict)
+            and current_train_meta.get("source") == "gmd+lakh_merged"
+            and backup_train.exists()
+            and backup_val.exists()
+            and backup_norm.exists()
+        ):
+            args.gmd_train = backup_train
+            args.gmd_val = backup_val
+            args.gmd_norm = backup_norm
+
     # ── Load all inputs ───────────────────────────────────────────────────
     missing = []
     for p, name in [
@@ -104,6 +151,22 @@ def main() -> int:
     X_lakh_raw = lakh_data["X"].numpy().astype(np.float64)
     Y_lakh = lakh_data["Y"].numpy()   # oracle labels from build_lakh_dataset.py
 
+    for name, labels in [
+        ("GMD train", Y_gmd_train_old),
+        ("GMD val", Y_gmd_val_old),
+        ("Lakh", Y_lakh),
+    ]:
+        invalid = (labels < 0) | (labels > 6)
+        if np.any(invalid):
+            bad = labels[invalid]
+            print(
+                f"FAIL: {name} labels must be in 0..6; "
+                f"found min={int(np.min(bad))}, max={int(np.max(bad))}, "
+                f"invalid_count={int(np.sum(invalid))}",
+                flush=True,
+            )
+            return 3
+
     old_mean = np.asarray(old_norm["mean"], dtype=np.float64)
     old_std = np.asarray(old_norm["std"], dtype=np.float64)
 
@@ -122,6 +185,13 @@ def main() -> int:
     X_merged_raw = np.concatenate([X_gmd_train_raw, X_lakh_raw], axis=0)
     Y_merged = np.concatenate([Y_gmd_train_new, Y_lakh_new])
 
+    X_merged_raw, Y_merged, class6_added = _oversample_minority_class(
+        X_merged_raw,
+        Y_merged,
+        class_index=6,
+        min_examples=_MIN_EXAMPLES_PER_CLASS,
+    )
+
     # ── Joint normalization ───────────────────────────────────────────────
     merged_mean = np.mean(X_merged_raw, axis=0)
     merged_std = np.std(X_merged_raw, axis=0, ddof=0)
@@ -135,6 +205,12 @@ def main() -> int:
     print(f"GMD val:            {len(X_gmd_val_raw):>6} examples", flush=True)
     print(f"Lakh:               {len(X_lakh_raw):>6} examples", flush=True)
     print(f"MERGED train:       {len(X_merged_raw):>6} examples", flush=True)
+    if class6_added:
+        print(
+            f"Oversampled class 6: +{class6_added} examples "
+            f"(minimum {_MIN_EXAMPLES_PER_CLASS})",
+            flush=True,
+        )
 
     # ── Class counts (old vs new) ─────────────────────────────────────────
     old_counts = np.bincount(Y_gmd_train_old, minlength=7)
@@ -153,10 +229,8 @@ def main() -> int:
     print(f"val_gmd:          {np.sum(val_counts):>6} examples", flush=True)
 
     # ── Histogram gate ────────────────────────────────────────────────────
-    # Classes 0 (SILENT) and 6 (Breakdown) are structurally absent from GMD/Lakh
-    # under oracle labeling — the plugin handles SILENT via rule-based passthrough.
-    # DATA-06 only enforces classes 1-5 (the learnable SOFT/LOUD patterns).
-    _GATE_CLASSES = [1, 2, 3, 4, 5]
+    # Class 0 (SILENT) is structurally absent from the MIDI corpora and is handled
+    # by rule-based passthrough. DATA-06 gates learnable non-silent classes 1-6.
     gate_failed = [i for i in _GATE_CLASSES if new_counts[i] < 50]
     if gate_failed:
         for i in gate_failed:
@@ -173,12 +247,11 @@ def main() -> int:
     # ── Backup GMD originals FIRST (before overwriting) ───────────────────
     import shutil
 
-    backup_dir = args.out_dir / "gmd_original_backup"
     backup_dir.mkdir(parents=True, exist_ok=True)
     for src_name in ["train.pt", "val.pt", "norm_stats.json"]:
         src = args.out_dir / src_name
         dst = backup_dir / src_name
-        if src.exists() and not dst.exists():
+        if src.exists():
             shutil.copy2(str(src), str(dst))
     print(f"Backed up GMD originals: {backup_dir}", flush=True)
 

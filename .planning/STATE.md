@@ -1,16 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.5.0
-milestone_name: — Rhythmic Coherence
+milestone: v0.6.0
+milestone_name: — ML Correctness & Evaluation
 status: ready_to_execute
-last_updated: "2026-04-29T23:59:00.000Z"
-last_activity: 2026-04-29 — Phase **28** planned (`28-01-PLAN.md`, `28-02-PLAN.md`, `28-RESEARCH.md`); next **`/gsd-execute-phase 28`**
+last_updated: "2026-05-12T15:45:00.000Z"
 progress:
-  total_phases: 4
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 0
-  percent: 25
+  total_phases: 11
+  completed_phases: 2
+  total_plans: 11
+  completed_plans: 9
+  percent: 18
 ---
 
 # STATE — Metal Accompaniment
@@ -24,15 +23,16 @@ See: `.planning/PROJECT.md` (updated 2026-04-29)
 **Version string in the plugin UI** comes from **`CMakeLists.txt`** `project(MetalAccompaniment VERSION …)` (JUCE `ProjectInfo::versionString`). **GSD phase/milestone authority** is this file plus **`.planning/ROADMAP.md`**.
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** v0.5.0 — rhythmic coherence (**Phase 28** plans ready). Next: **`/gsd-execute-phase 28`**.
+**Current focus:** Phase 33 — model-quality-gates
 
 ---
 
 ## Current position
 
-Phase: **28** — Beat tracker & bass sequencer (**plans** `28-01-PLAN.md`, `28-02-PLAN.md`; **research** `28-RESEARCH.md`)  
-Milestone: **v0.5.0**  
-Requirements: `.planning/REQUIREMENTS.md` (RHY-*)
+Phase: 32 (training-label-correction) — EXECUTED; verification recorded in `.planning/phases/32-training-label-correction/32-VERIFICATION.md`
+Next: Phase 33 (model-quality-gates)
+Milestone: **v0.6.0 ML Correctness & Evaluation**  
+Completed requirements: LABEL-01, LABEL-02, LABEL-03
 
 ---
 
@@ -58,6 +58,8 @@ Requirements: `.planning/REQUIREMENTS.md` (RHY-*)
 
 - **2026-04-29 — Phase 28 discuss-phase:** Beat-primary + IOI fallback with tests; tracker-based start gate; bar-aligned 16-step bass; synthetic-first ±5 BPM tests; debug getters OK, no `FeatureVector` expansion until Phase 29; module boundary planner discretion — see `28-CONTEXT.md`.
 - **2026-04-29 — v0.4.0 milestone archived:** `.planning/milestones/v0.4.0-ROADMAP.md`, `v0.4.0-REQUIREMENTS.md`; living `REQUIREMENTS.md` reset to **v0.5.0** RHY-* scope; `STATE.md` milestone pointer → v0.5.0.
+- **2026-05-12 — v0.6.0 ML Correctness & Evaluation phases added (32–36):** Phases derived from `ML_REPORT.md` analysis and `CHANGES_PLAN.md` (5 areas). Phase 32 (label correction), 33 (quality gates), 34 (domain gap + capture), 35 (inference path consistency — depends on 32), 36 (evaluation + default readiness — depends on 32–35). Phases 32–34 can execute in parallel after v0.5.0 ships.
+- **2026-05-12 — Phase 32 Plan 03 verification gap closed:** Stale Lakh labels were repaired to rule-oracle labels in 0..6, `merge_datasets.py` now rejects invalid labels before gating, class 6 is deterministically oversampled to the 50-example DATA-06 minimum, and the pattern model was retrained/promoted from merged data with best macro-F1 0.8095. Class 0 remains an accepted structural absence handled by rule-based passthrough.
 
 *(Older entries remain in git history and phase directories.)*
 

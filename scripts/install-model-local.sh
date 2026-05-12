@@ -100,8 +100,12 @@ if ! python3 "${REPO_ROOT}/scripts/validate_onnx_contract.py" --pattern "$PATTER
 fi
 
 mkdir -p "${REPO_ROOT}/assets"
-cp -f "$PATTERN_RESOLVED" "${REPO_ROOT}/assets/accompaniment_model.onnx"
-cp -f "$BASS_RESOLVED" "${REPO_ROOT}/assets/bass_model.onnx"
+if ! cmp -s "$PATTERN_RESOLVED" "${REPO_ROOT}/assets/accompaniment_model.onnx"; then
+  cp -f "$PATTERN_RESOLVED" "${REPO_ROOT}/assets/accompaniment_model.onnx"
+fi
+if ! cmp -s "$BASS_RESOLVED" "${REPO_ROOT}/assets/bass_model.onnx"; then
+  cp -f "$BASS_RESOLVED" "${REPO_ROOT}/assets/bass_model.onnx"
+fi
 
 if [[ "$COPY_STATS" -eq 1 ]]; then
   _pat_dir="$(cd "$(dirname "$PATTERN_RESOLVED")" && pwd)"
