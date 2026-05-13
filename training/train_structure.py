@@ -293,7 +293,7 @@ def main() -> int:
 
     torch.save({"state_dict": best_state, "best_macro_f1": best_f1}, out_dir / "best_model.pt")
 
-    export = StructureOnnxExport(net_cpu)
+    export = StructureOnnxExport.from_norm_stats(struct_norm_path, net_cpu)
     export.eval()
     onnx_path = out_dir / "structure_trained.onnx"
     dummy_x = torch.zeros(1, 12, 7, dtype=torch.float32)
