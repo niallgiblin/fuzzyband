@@ -116,6 +116,18 @@ start_seconds,end_seconds,label_index,label_name
 
 The evaluator fails fast on bad capture schema, bad annotation ranges, label name/index mismatches, missing required capture fields, and ONNX accuracy below the threshold when captured ONNX predictions are available.
 
+Compare captured feature distributions against pattern proxy tensors:
+
+```bash
+source training/.venv/bin/activate
+python3 training/analyze_feature_proxy_gap.py \
+  --capture ~/Documents/MetalAccompaniment/captures/feature_capture_SESSION.jsonl \
+  --markdown-out training/artifacts/feature_proxy_gap.md \
+  --json-out training/artifacts/feature_proxy_gap.json
+```
+
+Pass `--proxy-tensor PATH` one or more times to override the default proxy search order: `training/data/processed/train_merged.pt`, `training/data/processed/train.pt`, then `training/data/lakh/lakh_tensors.pt`.
+
 ## Phase 19 — Bass model training (BMODEL-01/02)
 
 No prerequisite — synthetic data is generated in-script (no external corpus required).
