@@ -210,11 +210,70 @@ def main() -> int:
         print("error: no model state captured", file=sys.stderr)
         return 1
 
-    val_report = {"best_val_mse": float(best_val_mse)}
+    # ── Baseline MSE computation (D-03) ─────────────────────────────────
+    # Baseline: mean 32-step target from the TRAINING split, broadcast over val.
+    # Must use y_tr (training targets), not y_va — Pitfall 1 guard.
+    baseline_pred = y_tr.mean(dim=0, keepdim=True)  # [1, 32]
+    baseline_broadcast = baseline_pred.expand(y_va.shape[0], -1)  # [N_val, 32]
+    baseline_mse = float(nn.functional.mse_loss(baseline_broadcast, y_va, reduction="mean"))
+    gate_mse = baseline_mse * 0.90  # D-02: model must beat baseline by 10%
+    gate_passed = best_val_mse <= gate_mse
+
+    # ── Per-step informational metrics (D-05) ───────────────────────────
+    # Run a single forward pass over the val set using the best model state.
+    bass_cpu_eval = BassNet()
+    bass_cpu_eval.load_state_dict(best_state)
+    bass_cpu_eval.eval()
+
+    all_preds: list[torch.Tensor] = []
+    with torch.no_grad():
+        for bx, _ in DataLoader(TensorDataset(x_va, y_va), batch_size=args.batch_size, shuffle=False):
+            all_preds.append(bass_cpu_eval(bx))
+    preds = torch.cat(all_preds, dim=0)  # [N_val, 32]
+
+    pitch_pred = preds[:, 0::2]     # [N_val, 16]
+    vel_pred = preds[:, 1::2]       # [N_val, 16]
+    pitch_true = y_va[:, 0::2]      # [N_val, 16]
+    vel_true = y_va[:, 1::2]        # [N_val, 16]
+
+    per_step_mse = ((pitch_pred - pitch_true) ** 2 + (vel_pred - vel_true) ** 2).mean(dim=0).tolist()
+    per_step_mae = (torch.abs(pitch_pred - pitch_true) + torch.abs(vel_pred - vel_true)).mean(dim=0).tolist()
+
+    pitch_pred_np = pitch_pred.detach().numpy().flatten()
+    pitch_hist, pitch_edges = np.histogram(pitch_pred_np, bins=25, range=(-12.0, 12.0))
+    pitch_offset_histogram = {
+        "counts": pitch_hist.tolist(),
+        "bin_edges": pitch_edges.tolist(),
+    }
+
+    # ── Gate report + per-step metrics → validation.json (D-04, D-05) ──
+    val_report = {
+        "gate": {
+            "best_val_mse": float(best_val_mse),
+            "baseline_mse": float(baseline_mse),
+            "gate_mse": float(gate_mse),
+            "passed": gate_passed,
+            "baseline_method": "mean_32step_train_target",
+        },
+        "per_step_mse": per_step_mse,
+        "per_step_mae": per_step_mae,
+        "pitch_offset_histogram": pitch_offset_histogram,
+    }
     (out_dir / "validation.json").write_text(
         json.dumps(val_report, indent=2) + "\n", encoding="utf-8"
     )
 
+    # ── QGATE-01 gate enforcement (D-01, D-02, D-06) ────────────────────
+    # Gate must precede torch.onnx.export — Pitfall 2 guard.
+    if not gate_passed:
+        print(
+            f"error: QGATE-01 failed — best_val_mse {best_val_mse:.6f} > gate_mse {gate_mse:.6f} "
+            f"(baseline {baseline_mse:.6f} * 0.90)",
+            file=sys.stderr,
+        )
+        return 1
+
+    # ── ONNX export (reached only when gate passes) ───────────────────────
     bass_cpu = BassNet()
     bass_cpu.load_state_dict(best_state)
     bass_cpu.eval()
