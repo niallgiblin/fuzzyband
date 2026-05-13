@@ -72,3 +72,12 @@ Rules:
 Phase 34 evaluator input is the capture JSONL plus the annotation CSV. The evaluator reports rule accuracy, ONNX accuracy when available, rule-vs-ONNX agreement, per-class accuracy, confusion matrices, annotation coverage, and top disagreement rows.
 
 The default ONNX threshold is passed as `--min-onnx-accuracy 0.65`.
+
+Example:
+
+```bash
+training/.venv/bin/python training/evaluate_feature_capture.py \
+  --capture ~/Documents/MetalAccompaniment/captures/feature_capture_SESSION.jsonl \
+  --annotations path/to/labels.csv \
+  --min-onnx-accuracy 0.65
+```

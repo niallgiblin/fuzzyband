@@ -95,6 +95,27 @@ python3 scripts/validate_onnx_contract.py --pattern /absolute/path/to/pattern_tr
 
 Optional **`--data-dir`** defaults to **`training/data/processed`**. Runs outside **`training/`** are allowed but warned — only use trusted paths.
 
+## Phase 34 — Feature capture evaluation
+
+Evaluate a real plugin `feature_capture.v1` JSONL file against human time-range annotations:
+
+```bash
+source training/.venv/bin/activate
+python3 training/evaluate_feature_capture.py \
+  --capture ~/Documents/MetalAccompaniment/captures/feature_capture_SESSION.jsonl \
+  --annotations path/to/labels.csv \
+  --min-onnx-accuracy 0.65 \
+  --top-disagreements 20
+```
+
+The annotation CSV header is:
+
+```csv
+start_seconds,end_seconds,label_index,label_name
+```
+
+The evaluator fails fast on bad capture schema, bad annotation ranges, label name/index mismatches, missing required capture fields, and ONNX accuracy below the threshold when captured ONNX predictions are available.
+
 ## Phase 19 — Bass model training (BMODEL-01/02)
 
 No prerequisite — synthetic data is generated in-script (no external corpus required).
