@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.5.1)
+project(MetalAccompaniment VERSION 0.5.2)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -136,6 +136,7 @@ target_sources(MetalAccompaniment PRIVATE
     # Plugin entry points
     src/AccompanimentProcessor.cpp
     src/AccompanimentEditor.cpp
+    src/capture/FeatureCapture.cpp
 
     # Analysis
     src/analysis/OnsetDetector.cpp
@@ -183,6 +184,7 @@ target_compile_definitions(MetalAccompaniment PUBLIC
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     $<$<BOOL:${MA_ENABLE_ONNX}>:MA_ENABLE_ONNX=1>
+    MA_PLUGIN_VERSION="${PROJECT_VERSION}"
 )
 
 # ─────────────────────────────────────────────────────────────────
@@ -273,8 +275,10 @@ if(MA_BUILD_TESTS)
         tests/test_tempo_stabiliser.cpp
         tests/test_playback_gate.cpp
         tests/test_stable_pitch_tracker.cpp
+        tests/test_feature_capture.cpp
 
         # Plugin sources compiled into the test executable
+        src/capture/FeatureCapture.cpp
         src/analysis/OnsetDetector.cpp
         src/analysis/BeatTracker.cpp
         src/analysis/EnergyAnalyser.cpp
@@ -299,6 +303,7 @@ if(MA_BUILD_TESTS)
     target_compile_definitions(MetalAccompanimentTests PRIVATE
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
+        MA_PLUGIN_VERSION="${PROJECT_VERSION}"
     )
 
     if(APPLE)

@@ -159,6 +159,8 @@ private:
     juce::Label inferenceLabel;
 
     juce::TextButton debugPatternButton{ "Next pattern (preview 5s)" };
+    juce::ToggleButton captureFeaturesButton{ "Capture features" };
+    juce::Label captureStatusLabel;
     juce::Label helpCaptionLabel;
 
     FuzzybandLookAndFeel lookAndFeel;

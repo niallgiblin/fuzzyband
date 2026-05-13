@@ -22,7 +22,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
 {
     setLookAndFeel(&lookAndFeel);
 
-    setSize(520, 600);
+    setSize(520, 640);
 
     titleLabel.setText("fuzzyband", juce::dontSendNotification);
     titleLabel.setJustificationType(juce::Justification::centredLeft);
@@ -99,6 +99,20 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     debugPatternButton.onClick = [this] { audioProcessorRef.bumpDebugPattern(); };
     addAndMakeVisible(debugPatternButton);
 
+    captureFeaturesButton.setButtonText("Capture features");
+    captureFeaturesButton.setClickingTogglesState(true);
+    captureFeaturesButton.onClick = [this]
+    {
+        audioProcessorRef.setFeatureCaptureEnabled(captureFeaturesButton.getToggleState());
+    };
+    addAndMakeVisible(captureFeaturesButton);
+
+    captureStatusLabel.setJustificationType(juce::Justification::centredLeft);
+    captureStatusLabel.setFont(juce::FontOptions(11.0f));
+    captureStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xff8aaa80));
+    captureStatusLabel.setMinimumHorizontalScale(0.75f);
+    addAndMakeVisible(captureStatusLabel);
+
     helpCaptionLabel.setText(
         "MIDI outputs on drum (ch.10) and bass (ch.2) — route this track in your DAW; full steps in README.md and CONTRIBUTING.md.",
         juce::dontSendNotification);
@@ -127,6 +141,14 @@ void AccompanimentEditor::timerCallback()
     hfFluxLabel.setText("HF Flux: " + juce::String(audioProcessorRef.getDisplayHfFlux(), 4), juce::dontSendNotification);
 
     inferenceLabel.setText("Inference: " + audioProcessorRef.getActiveInferenceName(), juce::dontSendNotification);
+    captureFeaturesButton.setToggleState(audioProcessorRef.isFeatureCaptureEnabled(), juce::dontSendNotification);
+    const auto path = juce::File(audioProcessorRef.getFeatureCapturePath()).getFileName();
+    const auto fileText = path.isEmpty() ? juce::String("no file") : path;
+    captureStatusLabel.setText(
+        juce::String(audioProcessorRef.isFeatureCaptureEnabled() ? "Capture: on" : "Capture: off")
+            + " | dropped: " + juce::String(static_cast<juce::int64>(audioProcessorRef.getFeatureCaptureDroppedRows()))
+            + " | " + fileText,
+        juce::dontSendNotification);
 }
 
 void AccompanimentEditor::paint(juce::Graphics& g)
@@ -185,6 +207,9 @@ void AccompanimentEditor::resized()
     hfFluxLabel.setBounds(r.removeFromTop(24));
     r.removeFromTop(8);
     debugPatternButton.setBounds(r.removeFromTop(32));
+    r.removeFromTop(8);
+    captureFeaturesButton.setBounds(r.removeFromTop(28));
+    captureStatusLabel.setBounds(r.removeFromTop(24));
     r.removeFromTop(8);
     inferenceLabel.setBounds(r.removeFromTop(20));
     r.removeFromTop(4);
