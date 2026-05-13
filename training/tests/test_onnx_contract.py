@@ -103,6 +103,36 @@ class TestStructureModelContract:
         assert len(dims) == 2
         assert dims[1] == 3 or dims[1] == 0
 
+    def test_input_X_struct_shape_is_1x12x7(self) -> None:
+        import onnx
+        from onnx import shape_inference
+        raw = onnx.load(str(_STRUCTURE_ONNX))
+        inferred = shape_inference.infer_shapes(raw)
+        x = next(vi for vi in inferred.graph.input if vi.name == "X_struct")
+        dims = [d.dim_value for d in x.type.tensor_type.shape.dim]
+        assert len(dims) == 3
+        assert dims[1] == 12 or dims[1] == 0
+        assert dims[2] == 7 or dims[2] == 0
+
+    def test_input_X_struct_is_float32(self) -> None:
+        import onnx
+        from onnx import TensorProto
+        raw = onnx.load(str(_STRUCTURE_ONNX))
+        x = next(vi for vi in raw.graph.input if vi.name == "X_struct")
+        assert x.type.tensor_type.elem_type == TensorProto.FLOAT
+
+    def test_structure_normalization_is_baked(self) -> None:
+        import numpy as np
+        import onnx
+        model = onnx.load(str(_STRUCTURE_ONNX))
+        init_names = {init.name for init in model.graph.initializer}
+        assert "mean" in init_names, "mean buffer not found in structure ONNX graph - normalization not baked"
+        assert "std" in init_names, "std buffer not found in structure ONNX graph - normalization not baked"
+        mean_init = next(i for i in model.graph.initializer if i.name == "mean")
+        std_init = next(i for i in model.graph.initializer if i.name == "std")
+        assert np.prod(list(mean_init.dims)) == 7
+        assert np.prod(list(std_init.dims)) == 7
+
 
 # ─── Bass model (v0.4.0: Y_bass [1,32]) ──────────────────────────────────────
 
