@@ -175,6 +175,9 @@ void OnnxStructureInference::process(const FeatureVector& fv, double dtSec)
 
     std::array<float, 1 * 12 * 7> inputData{};
     float* dst = inputData.data();
+    // QGATE-03: structure ONNX graph applies its own mean/std normalization
+    // (baked via StructureOnnxExport.from_norm_stats in training/models/structure_model.py).
+    // Feed raw FeatureVector windows here; do not subtract or divide by mean/std in C++.
     for (int t = 0; t < 12; ++t)
     {
         float row[7];
