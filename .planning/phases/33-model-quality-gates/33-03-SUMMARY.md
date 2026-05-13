@@ -151,6 +151,22 @@ None — no new network endpoints, auth paths, file access patterns, or schema c
 - Phase 34 (domain gap + real guitar capture) can proceed against the new normalized structure ONNX
 - Phase 35 (inference path consistency — coordinated retrain) has a correct structure export path to build on
 
+## Self-Check: PASSED
+
+- [x] `training/models/structure_model.py` — modified (StructureOnnxExport with from_norm_stats + (1,1,7) buffers)
+- [x] `training/train_structure.py` — modified (StructureOnnxExport.from_norm_stats(struct_norm_path, net_cpu))
+- [x] `training/tests/test_onnx_contract.py` — modified (3 new tests: shape, dtype, normalization_is_baked)
+- [x] `src/inference/OnnxStructureInference.cpp` — modified (QGATE-03 comment above packSnapshot)
+- [x] `assets/structure_model.onnx` — promoted (33.6 KB; mean/std at [1,1,7])
+- [x] `CMakeLists.txt` — version 0.5.0 → 0.5.1
+- [x] `.planning/phases/33-model-quality-gates/33-03-SUMMARY.md` — this file
+
+Commits:
+- [x] `bf68b80` — Task 1: StructureOnnxExport wrapper
+- [x] `4abe0b0` — Task 2: train_structure.py wiring + C++ comment
+- [x] `fc70543` — Task 3: contract tests + ONNX promotion + version bump
+- [x] `80d2262` — SUMMARY.md
+
 ---
 *Phase: 33-model-quality-gates*
 *Completed: 2026-05-13*
