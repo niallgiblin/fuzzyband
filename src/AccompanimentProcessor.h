@@ -15,6 +15,7 @@
 #include "analysis/PlaybackGate.h"
 #include "analysis/StablePitchTracker.h"
 #include "analysis/FeatureVector.h"
+#include "capture/FeatureCapture.h"
 #include "inference/IInference.h"
 #include "inference/IStructureInference.h"
 #include "inference/OnnxBassInference.h"
@@ -78,6 +79,11 @@ public:
     /** @brief Human-readable name of the active inference backend (for UI label per D-26-09). */
     const std::string& getActiveInferenceName() const noexcept { return activeInferenceName; }
 
+    void setFeatureCaptureEnabled(bool enabled);
+    bool isFeatureCaptureEnabled() const noexcept { return featureCapture.isCapturing(); }
+    std::string getFeatureCapturePath() const { return featureCapture.getCapturePath(); }
+    uint64_t getFeatureCaptureDroppedRows() const noexcept { return featureCapture.getDroppedRows(); }
+
     // Phase 23 rejection signal: written by message thread (Phase 24 button), read/decremented by inference thread.
     std::atomic<int> patternRejectionCount{ 0 };
 
@@ -105,6 +111,7 @@ private:
     StablePitchTracker stablePitchTracker;
     MidiPatternLibrary patternLibrary;
     PatternPlayer patternPlayer;
+    FeatureCapture featureCapture;
 
     std::unique_ptr<IInference> inference;
     std::unique_ptr<IStructureInference> structureInference;

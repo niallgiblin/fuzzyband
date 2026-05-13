@@ -3,6 +3,7 @@
 #include "inference/IStructureInference.h"
 #include "inference/RuleBasedInference.h"
 #include "inference/RuleStructureInference.h"
+#include "inference/pattern_rules.h"
 #if defined(MA_ENABLE_ONNX)
 #include "inference/OnnxInference.h"
 #include "inference/OnnxStructureInference.h"
@@ -163,6 +164,7 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
 
     if (inference)
         inference->prepare(sr);
+    featureCapture.prepare(sr, samplesPerBlock, activeInferenceName);
 
     lastFeatureSampleTs = -1;
     if (structureInference)
@@ -240,6 +242,8 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         }
 
         const int idx = inference->selectPattern(patternFeatures, excludeParam);
+        const int ruleIdx = PatternRules::rulePatternForState(patternFeatures);
+        const bool onnxAvailable = (activeInferenceName.find("ONNX") != std::string::npos);
 
         // 2-bar hold guard for drum pattern index: 8 beats * 60/bpm * sampleRate samples.
         const double srDrum = cachedSampleRate.load(std::memory_order_acquire);
@@ -266,6 +270,31 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         }
         // Always update display so UI shows inference intent even during hold.
         displayPatternIndex.store(idx, std::memory_order_relaxed);
+
+        if (featureCapture.isCapturing())
+        {
+            FeatureCaptureRow row{};
+            row.bpm = latest.bpm;
+            row.rmsEnergy = latest.rmsEnergy;
+            row.spectralCentroid = latest.spectralCentroid;
+            row.highFreqFlux = latest.highFreqFlux;
+            row.state = patternFeatures.state;
+            row.sampleTimestamp = latest.sampleTimestamp;
+            row.pitchRootMidi = latest.pitchRootMidi;
+            row.pitchConfidence = latest.pitchConfidence;
+            row.policyIntensity = latest.policyIntensity;
+            row.rmsDelta = latest.rmsDelta;
+            row.elapsedSeconds = (sr > 0.0) ? static_cast<double>(latest.sampleTimestamp) / sr : 0.0;
+            row.rulePatternIndex = ruleIdx;
+            row.activePatternIndex = idx;
+            row.onnxPatternIndex = onnxAvailable ? idx : -1;
+            row.onnxAvailable = onnxAvailable;
+            row.rulePatternName = patternLibrary.getPattern(ruleIdx).name;
+            row.activePatternName = patternLibrary.getPattern(idx).name;
+            row.onnxPatternName = onnxAvailable ? patternLibrary.getPattern(idx).name : std::string{};
+            row.modelMode = activeInferenceName;
+            featureCapture.tryPush(row);
+        }
 
         int generativeMode = 0;
         if (auto* modeParam = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("generativeBassMode")))
@@ -543,6 +572,14 @@ void AccompanimentProcessor::bumpDebugPattern()
     debugPreviewSamplesRemaining.store(dur, std::memory_order_release);
     // D-23-04: drive rejection signal instead of directly cycling index
     patternRejectionCount.fetch_add(1, std::memory_order_release);
+}
+
+void AccompanimentProcessor::setFeatureCaptureEnabled(bool enabled)
+{
+    if (enabled)
+        (void)featureCapture.start();
+    else
+        featureCapture.stop();
 }
 
 void AccompanimentProcessor::getStateInformation(juce::MemoryBlock& destData)
