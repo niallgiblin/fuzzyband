@@ -207,12 +207,44 @@ def main() -> int:
 
     print(f"\nBest val_macro_f1: {best_f1:.4f}", flush=True)
 
-    if best_f1 < 0.80:
-        print(
-            f"error: STRUC-04 gate failed — best_macro_f1 {best_f1:.4f} < 0.80",
-            file=sys.stderr,
-        )
-        return 1
+    # D-08: rule-path agreement — anchor row (index 11), column 4 = state_float
+    y_va_np = y_va.numpy()
+    anchor_state_norm = x_va[:, 11, 4].numpy()
+    rule_preds = np.array([int(np.clip(round(float(v)), 0, 2)) for v in anchor_state_norm])
+    rule_agreement_rate = float(f1_score(y_va_np, rule_preds, average="macro", zero_division=0))
+    print(f"Rule-path agreement rate (macro-F1): {rule_agreement_rate:.4f}", flush=True)
+
+    # D-07: dual gate — model must beat rule-path oracle AND clear fixed floor
+    fixed_macro_f1_floor = 0.80
+    f1_floor_passed = best_f1 >= fixed_macro_f1_floor
+    rule_gate_passed = best_f1 >= rule_agreement_rate
+    gate_passed = f1_floor_passed and rule_gate_passed
+
+    # Write norm stats (Plan 03 consumer) — run on every execution including gate failures
+    norm5_path = data_dir / "norm_stats.json"
+    norm5 = json.loads(norm5_path.read_text(encoding="utf-8"))
+    raw_mean5 = np.array(norm5["mean"], dtype=np.float32)
+    raw_std5 = np.array(norm5["std"], dtype=np.float32)
+    raw_mean7 = np.concatenate([raw_mean5, [60.0, 0.0]])
+    raw_std7 = np.concatenate([raw_std5, [1e-8, 1e-8]])
+    struct_norm_stats = {
+        "feature_order": [
+            "bpm",
+            "rmsEnergy",
+            "spectralCentroid",
+            "highFreqFlux",
+            "state_float",
+            "pitchRootMidi",
+            "pitchConfidence",
+        ],
+        "mean": raw_mean7.tolist(),
+        "std": raw_std7.tolist(),
+        "epsilon": 1e-8,
+        "note": "Features 5 (pitchRootMidi) and 6 (pitchConfidence) are constant training placeholders (60.0 and 0.0 respectively); std clamped to epsilon to avoid division by zero.",
+    }
+    struct_norm_path = out_dir / "structure_norm_stats.json"
+    struct_norm_path.write_text(json.dumps(struct_norm_stats, indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote {struct_norm_path.resolve()}", flush=True)
 
     net_cpu = StructureNet()
     net_cpu.load_state_dict(best_state)
@@ -242,10 +274,22 @@ def main() -> int:
 
     val_report = {
         "best_macro_f1": float(best_f1),
+        "rule_agreement_rate": rule_agreement_rate,
+        "fixed_macro_f1_floor": fixed_macro_f1_floor,
+        "gate_passed": gate_passed,
         "class_f1": [float(x) for x in class_f1],
         "confusion_matrix": cm.tolist(),
     }
     (out_dir / "validation.json").write_text(json.dumps(val_report, indent=2) + "\n", encoding="utf-8")
+
+    # D-07: enforce gate before ONNX export
+    if not gate_passed:
+        print(
+            f"error: QGATE-02 failed — best_macro_f1 {best_f1:.4f} "
+            f"(fixed_floor={fixed_macro_f1_floor:.2f}, rule_agreement_rate={rule_agreement_rate:.4f})",
+            file=sys.stderr,
+        )
+        return 1
 
     torch.save({"state_dict": best_state, "best_macro_f1": best_f1}, out_dir / "best_model.pt")
 
