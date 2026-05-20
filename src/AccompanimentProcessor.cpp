@@ -157,7 +157,6 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     playbackGate.reset();
     tempoStabiliser.reset();
     prevBlockRms = 0.0f;
-    prevStructureSilent = false;
 
     patternPlayer.prepare(sr, samplesPerBlock);
     patternPlayer.reset();
@@ -173,6 +172,8 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     if (bassInference)
         bassInference->prepare(sr);
     useGenerativeBass.store(false, std::memory_order_release);
+    BassStepFrame staleBassFrame{};
+    while (bassStepQueue.try_dequeue(staleBassFrame)) {}
 
     hostSampleTime = 0;
     latestPatternIndex.store(0, std::memory_order_relaxed);
@@ -321,21 +322,27 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             if (generativeMode == 2) // Off
             {
                 useGenerativeBass.store(false, std::memory_order_release);
-                genBassStepsReady.store(false, std::memory_order_release);
             }
             else if (p.valid && !silencePolicy && bassHoldExpired)
             {
-                // Deliver piano-roll steps to audio thread
+                BassStepFrame frame{};
                 for (int i = 0; i < 16; ++i)
                 {
-                    genBassPitchOffsets[i] = p.pitchOffset[i];
-                    genBassVelocities[i] = p.velocity[i];
+                    frame.pitchOffsets[static_cast<size_t>(i)] = p.pitchOffset[i];
+                    frame.velocities[static_cast<size_t>(i)] = p.velocity[i];
                 }
-                genBassRootMidi = latest.pitchRootMidi;
-                genBassStepsReady.store(true, std::memory_order_release);
-                useGenerativeBass.store(true, std::memory_order_release);
-                lastBassUpdateSample = latest.sampleTimestamp;
-                useGen = true;
+                frame.rootMidi = latest.pitchRootMidi;
+
+                if (bassStepQueue.try_enqueue(frame))
+                {
+                    useGenerativeBass.store(true, std::memory_order_release);
+                    lastBassUpdateSample = latest.sampleTimestamp;
+                    useGen = true;
+                }
+                else
+                {
+                    useGen = useGenerativeBass.load(std::memory_order_acquire);
+                }
             }
             else if (p.valid && !silencePolicy)
             {
@@ -346,20 +353,16 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             else
             {
                 useGenerativeBass.store(false, std::memory_order_release);
-                genBassStepsReady.store(false, std::memory_order_release);
             }
 
             if (generativeMode == 1) // On — force on regardless of validity
             {
                 useGenerativeBass.store(useGen, std::memory_order_release);
-                if (!useGen)
-                    genBassStepsReady.store(false, std::memory_order_release);
             }
         }
         else
         {
             useGenerativeBass.store(false, std::memory_order_release);
-            genBassStepsReady.store(false, std::memory_order_release);
         }
     }
 }
@@ -397,6 +400,20 @@ void AccompanimentProcessor::flushBackgroundInferenceForTests()
 void AccompanimentProcessor::resumeBackgroundInferenceForTests()
 {
     inferencePaused.store(false, std::memory_order_release);
+}
+
+uint64_t AccompanimentProcessor::getOnnxErrorCount() const noexcept
+{
+    uint64_t total = 0;
+#if defined(MA_ENABLE_ONNX)
+    if (auto* onnx = dynamic_cast<OnnxInference*>(inference.get()))
+        total += onnx->getLoadErrorCount() + onnx->getRunErrorCount();
+    if (auto* onnxStructure = dynamic_cast<OnnxStructureInference*>(structureInference.get()))
+        total += onnxStructure->getLoadErrorCount() + onnxStructure->getRunErrorCount();
+#endif
+    if (bassInference)
+        total += bassInference->getLoadErrorCount() + bassInference->getRunErrorCount();
+    return total;
 }
 
 void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -514,21 +531,20 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const bool trulySilent = !gd.gateOpen;
     patternPlayer.setStructureSilent(trulySilent && !previewAudible);
 
+    BassStepFrame latestBassFrame{};
+    bool gotBassFrame = false;
+    while (bassStepQueue.try_dequeue(latestBassFrame))
+        gotBassFrame = true;
+
+    const bool generativeBassActive = useGenerativeBass.load(std::memory_order_acquire);
     if (silencePolicy)
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
-    else if (genBassStepsReady.load(std::memory_order_acquire))
-    {
+    else if (generativeBassActive && gotBassFrame)
         patternPlayer.setGenerativeBassSteps(
-            genBassPitchOffsets,
-            genBassVelocities,
-            genBassRootMidi);
-        genBassStepsReady.store(false, std::memory_order_release);
-    }
-    else if (useGenerativeBass.load(std::memory_order_acquire))
-        patternPlayer.setGenerativeBassActive(true,
-            genBassRootMidi > 0.0f ? static_cast<int>(std::lround(genBassRootMidi)) : 40,
-            1.0f);
-    else
+            latestBassFrame.pitchOffsets.data(),
+            latestBassFrame.velocities.data(),
+            latestBassFrame.rootMidi);
+    else if (!generativeBassActive)
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
 
     int64_t hostPos = hostSampleTime;
@@ -555,7 +571,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     }
 
     hostSampleTime += static_cast<int64_t>(numSamples);
-    prevStructureSilent = (st == StructureState::SILENT);
 
     displayBpm.store(bpmForPlayer, std::memory_order_relaxed);
     displayBeatConfidence.store(beatTracker.getConfidence(), std::memory_order_relaxed);

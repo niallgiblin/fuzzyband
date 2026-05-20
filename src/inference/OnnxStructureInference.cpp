@@ -89,7 +89,10 @@ bool OnnxStructureInference::tryLoadModel()
     const char* data = BinaryData::structure_model_onnx;
     const int size = BinaryData::structure_model_onnxSize;
     if (data == nullptr || size <= 0)
+    {
+        loadErrorCount.fetch_add(1, std::memory_order_relaxed);
         return false;
+    }
 
     try
     {
@@ -107,11 +110,13 @@ bool OnnxStructureInference::tryLoadModel()
     catch (const Ort::Exception& e)
     {
         std::fprintf(stderr, "[OnnxStructureInference] ORT load failed: %s\n", e.what());
+        loadErrorCount.fetch_add(1, std::memory_order_relaxed);
         impl.reset();
         return false;
     }
     catch (...)
     {
+        loadErrorCount.fetch_add(1, std::memory_order_relaxed);
         impl.reset();
         return false;
     }
@@ -210,6 +215,7 @@ void OnnxStructureInference::process(const FeatureVector& fv, double dtSec)
 
         if (outputs.empty())
         {
+            runErrorCount.fetch_add(1, std::memory_order_relaxed);
             runRuleFallback(fv, useDt);
             lastSampleTimestamp = fv.sampleTimestamp;
             return;
@@ -248,12 +254,14 @@ void OnnxStructureInference::process(const FeatureVector& fv, double dtSec)
     catch (const Ort::Exception& e)
     {
         std::fprintf(stderr, "[OnnxStructureInference] ORT Run failed: %s\n", e.what());
+        runErrorCount.fetch_add(1, std::memory_order_relaxed);
         runRuleFallback(fv, useDt);
         lastSampleTimestamp = fv.sampleTimestamp;
         return;
     }
     catch (...)
     {
+        runErrorCount.fetch_add(1, std::memory_order_relaxed);
         runRuleFallback(fv, useDt);
         lastSampleTimestamp = fv.sampleTimestamp;
         return;

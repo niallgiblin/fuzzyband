@@ -35,7 +35,10 @@ bool OnnxBassInference::tryLoadModel()
     const char* data = BinaryData::bass_model_onnx;
     const int size = BinaryData::bass_model_onnxSize;
     if (data == nullptr || size <= 0)
+    {
+        loadErrorCount.fetch_add(1, std::memory_order_relaxed);
         return false;
+    }
 
     try
     {
@@ -60,6 +63,7 @@ bool OnnxBassInference::tryLoadModel()
             inputShape.size() != 2 || inputShape[0] != 1 || inputShape[1] != 7)
         {
             jassert(false); // D-23-01: contract mismatch on X_bass [1,7]
+            loadErrorCount.fetch_add(1, std::memory_order_relaxed);
             impl.reset();
             return false;
         }
@@ -73,6 +77,7 @@ bool OnnxBassInference::tryLoadModel()
             outputShape.size() != 2 || outputShape[0] != 1 || outputShape[1] != 32)
         {
             jassert(false); // D-23-01: contract mismatch on Y_bass [1,32]
+            loadErrorCount.fetch_add(1, std::memory_order_relaxed);
             impl.reset();
             return false;
         }
@@ -80,11 +85,13 @@ bool OnnxBassInference::tryLoadModel()
     catch (const Ort::Exception& e)
     {
         std::fprintf(stderr, "[OnnxBassInference] ORT load failed: %s\n", e.what());
+        loadErrorCount.fetch_add(1, std::memory_order_relaxed);
         impl.reset();
         return false;
     }
     catch (...)
     {
+        loadErrorCount.fetch_add(1, std::memory_order_relaxed);
         impl.reset();
         return false;
     }
@@ -141,7 +148,10 @@ void OnnxBassInference::propose(const FeatureVector& f)
             1);
 
         if (outputs.empty())
+        {
+            runErrorCount.fetch_add(1, std::memory_order_relaxed);
             return;
+        }
 
         const float* out = outputs[0].GetTensorData<float>();
 
@@ -157,7 +167,10 @@ void OnnxBassInference::propose(const FeatureVector& f)
         }
 
         if (!allFinite)
+        {
+            runErrorCount.fetch_add(1, std::memory_order_relaxed);
             return;
+        }
 
         for (int step = 0; step < BassOnnxProposal::kSteps; ++step)
         {
@@ -169,10 +182,12 @@ void OnnxBassInference::propose(const FeatureVector& f)
     catch (const Ort::Exception& e)
     {
         std::fprintf(stderr, "[OnnxBassInference] ORT Run failed: %s\n", e.what());
+        runErrorCount.fetch_add(1, std::memory_order_relaxed);
         last = {};
     }
     catch (...)
     {
+        runErrorCount.fetch_add(1, std::memory_order_relaxed);
         last = {};
     }
 }

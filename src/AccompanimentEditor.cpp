@@ -140,7 +140,12 @@ void AccompanimentEditor::timerCallback()
     centroidLabel.setText("Centroid: " + juce::String(audioProcessorRef.getDisplayCentroid(), 0) + " Hz", juce::dontSendNotification);
     hfFluxLabel.setText("HF Flux: " + juce::String(audioProcessorRef.getDisplayHfFlux(), 4), juce::dontSendNotification);
 
-    inferenceLabel.setText("Inference: " + audioProcessorRef.getActiveInferenceName(), juce::dontSendNotification);
+    const juce::String inferenceName(audioProcessorRef.getActiveInferenceName());
+    const auto onnxErrors = audioProcessorRef.getOnnxErrorCount();
+    juce::String inferenceText = "Inference: " + inferenceName;
+    if (onnxErrors > 0 || inferenceName.containsIgnoreCase("Onnx"))
+        inferenceText += " | ONNX errors: " + juce::String(static_cast<juce::int64>(onnxErrors));
+    inferenceLabel.setText(inferenceText, juce::dontSendNotification);
     captureFeaturesButton.setToggleState(audioProcessorRef.isFeatureCaptureEnabled(), juce::dontSendNotification);
     const auto path = juce::File(audioProcessorRef.getFeatureCapturePath()).getFileName();
     const auto fileText = path.isEmpty() ? juce::String("no file") : path;

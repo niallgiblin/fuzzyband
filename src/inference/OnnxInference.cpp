@@ -36,7 +36,10 @@ bool OnnxInference::tryLoadModel()
     const char* data = BinaryData::accompaniment_model_onnx;
     const int size = BinaryData::accompaniment_model_onnxSize;
     if (data == nullptr || size <= 0)
+    {
+        loadErrorCount.fetch_add(1, std::memory_order_relaxed);
         return false;
+    }
 
     try
     {
@@ -61,6 +64,7 @@ bool OnnxInference::tryLoadModel()
             inputShape.size() != 2 || inputShape[0] != 1 || inputShape[1] != 7)
         {
             jassert(false); // D-23-01: contract mismatch — no silent fallback
+            loadErrorCount.fetch_add(1, std::memory_order_relaxed);
             impl.reset();
             return false;
         }
@@ -74,17 +78,20 @@ bool OnnxInference::tryLoadModel()
             outputShape.size() != 1 || outputShape[0] != 1)
         {
             jassert(false); // D-23-01: contract mismatch — no silent fallback
+            loadErrorCount.fetch_add(1, std::memory_order_relaxed);
             impl.reset();
             return false;
         }
     }
     catch (const Ort::Exception&)
     {
+        loadErrorCount.fetch_add(1, std::memory_order_relaxed);
         impl.reset();
         return false;
     }
     catch (...)
     {
+        loadErrorCount.fetch_add(1, std::memory_order_relaxed);
         impl.reset();
         return false;
     }
@@ -145,7 +152,10 @@ int OnnxInference::selectPattern(const FeatureVector& f, int excludeIndex)
             1);
 
         if (outputs.empty())
-            return 0;
+        {
+            runErrorCount.fetch_add(1, std::memory_order_relaxed);
+            return PatternRules::applyExclusion(PatternRules::rulePatternForState(f), excludeIndex);
+        }
 
         const int64_t* out = outputs[0].GetTensorData<int64_t>();
         const int64_t raw = out[0];
@@ -159,6 +169,7 @@ int OnnxInference::selectPattern(const FeatureVector& f, int excludeIndex)
     }
     catch (...)
     {
+        runErrorCount.fetch_add(1, std::memory_order_relaxed);
         // D-23-04: never return excluded index even on error
         return PatternRules::applyExclusion(PatternRules::rulePatternForState(f), excludeIndex);
     }

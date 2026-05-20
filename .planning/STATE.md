@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: — ML Correctness & Evaluation
 status: ready_to_execute
-last_updated: "2026-05-13T11:33:37.298Z"
+last_updated: "2026-05-20T09:02:26.904Z"
 progress:
   total_phases: 6
   completed_phases: 2
@@ -15,6 +15,8 @@ progress:
 # STATE — Metal Accompaniment
 
 > Project memory. Updated at phase transitions and milestone boundaries.
+
+Last activity: 2026-05-20 - Completed quick task 260520-dy1: Apply JUCE audio audit fixes
 
 ## Project Reference
 
@@ -93,6 +95,7 @@ Resume: `/gsd-execute-phase 34` — `.planning/phases/34-domain-gap-and-feature-
 | 260420-422 | Rebrand UI to fuzzyband with Pacific NW mossy aesthetic | 2026-04-20 | 22ac48d | [260420-422-fuzzyband-ui-rebrand](./quick/260420-422-fuzzyband-ui-rebrand/) |
 | 260427-t42 | Drum count-in gate (4 onsets) and 2-bar pattern hold | 2026-04-27 | 09a92c4 | [260427-t42-drum-timing-countin-gate-2bar-hold](./quick/260427-t42-drum-timing-countin-gate-2bar-hold/) |
 | 260427-t43 | BPM lock-in, 5-BPM quantization, 80ms onset refractory | 2026-04-27 | 1c02d3e | [260427-t43-onset-tempo-stability](./quick/260427-t43-onset-tempo-stability/) |
+| 260520-dy1 | Apply JUCE audio audit fixes | 2026-05-20 | uncommitted | [260520-dy1-apply-juce-audio-audit-fixes-harden-gene](./quick/260520-dy1-apply-juce-audio-audit-fixes-harden-gene/) |
 
 ---
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "analysis/FeatureVector.h"
+#include <atomic>
+#include <cstdint>
 #include <memory>
 
 /**
@@ -39,6 +41,8 @@ public:
     void propose(const FeatureVector& fv);
 
     const BassOnnxProposal& getLastProposal() const noexcept { return last; }
+    uint64_t getLoadErrorCount() const noexcept { return loadErrorCount.load(std::memory_order_relaxed); }
+    uint64_t getRunErrorCount() const noexcept { return runErrorCount.load(std::memory_order_relaxed); }
 
 private:
 #if defined(MA_ENABLE_ONNX)
@@ -46,4 +50,6 @@ private:
     std::unique_ptr<Impl> impl;
 #endif
     BassOnnxProposal last{};
+    std::atomic<uint64_t> loadErrorCount{ 0 };
+    std::atomic<uint64_t> runErrorCount{ 0 };
 };
