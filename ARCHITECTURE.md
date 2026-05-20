@@ -8,34 +8,93 @@
 
 ## High-Level Overview
 
-```
-Guitar signal (audio in)
-        │
-        ▼
-┌─────────────────────────────────────────────────┐
-│                  JUCE Plugin                     │
-│                                                  │
-│  Audio Thread (real-time, hard deadline)         │
-│  ┌────────────┐   ┌──────────────┐              │
-│  │  OnsetDet  │   │ EnergyAnal   │              │
-│  └─────┬──────┘   └──────┬───────┘              │
-│        └────────┬─────────┘                      │
-│                 ▼                                │
-│         FeatureVector  ──► lock-free queue       │
-│                 ▲                                │
-│         atomic<int>  ◄── pattern index           │
-│                 │                                │
-│         PatternPlayer  ──► MidiBuffer            │
-│                                                  │
-│  Background Thread (50Hz inference loop)         │
-│  ┌──────────────────────┐                        │
-│  │  IInference          │                        │
-│  │  (RuleBased / ONNX)  │                        │
-│  └──────────────────────┘                        │
-└─────────────────────────────────────────────────┘
-        │
-        ▼
-MIDI out ──► Drum VSTi (ch 10) + Bass VSTi (ch 2)
+```mermaid
+flowchart LR
+    Guitarist["Guitarist plays dry guitar"] --> HostTrack["DAW guitar track"]
+    HostTrack --> Plugin["Metal Accompaniment<br/>JUCE VST3 / AU"]
+    Plugin --> DryOut["Dry guitar pass-through<br/>with output gain"]
+    Plugin --> MidiOut["MIDI out<br/>drums ch.10 + bass ch.2"]
+    MidiOut --> DrumInstrument["Drum instrument"]
+    MidiOut --> BassInstrument["Bass instrument"]
+    DryOut --> AmpFx["Amp / cab / FX after plugin"]
+
+    subgraph PluginInternals["AccompanimentProcessor owns the runtime"]
+        Params["APVTS parameters<br/>outputGain, intensity,<br/>structureBlend, generativeBassMode"]
+        Editor["AccompanimentEditor<br/>diagnostics + debug controls"]
+
+        subgraph AudioThread["Audio thread: processBlock, real-time"]
+            InputGuard["Scrub NaN / clip input"]
+            Onsets["OnsetDetector"]
+            Beat["BeatTracker"]
+            Tempo["TempoStabiliser"]
+            Energy["EnergyAnalyser"]
+            Structure["StructureTagger"]
+            Pitch["PitchEstimator"]
+            StablePitch["StablePitchTracker"]
+            Gate["PlaybackGate"]
+            Features["FeatureVector snapshot"]
+            Player["PatternPlayer"]
+        end
+
+        subgraph SharedState["Lock-free / atomic handoff"]
+            Queue["ReaderWriterQueue&lt;FeatureVector&gt;"]
+            PatternAtomic["latestPatternIndex atomic"]
+            BassHandoff["generative bass handoff"]
+            DisplayAtomics["display atomics"]
+        end
+
+        subgraph InferenceThread["Background inference thread: about 50 Hz"]
+            Drain["Drain newest FeatureVector"]
+            StructureShadow["Rule/ONNX structure shadow"]
+            PatternInference["IInference<br/>RuleBased or ONNX pattern"]
+            BassInference["Optional ONNX bass proposal"]
+            CaptureRows["FeatureCapture row builder"]
+        end
+
+        subgraph CaptureThread["Capture writer thread, optional"]
+            CaptureQueue["Bounded capture queue"]
+            Jsonl["feature_capture JSONL"]
+        end
+    end
+
+    Plugin --> InputGuard
+    InputGuard --> Onsets
+    InputGuard --> Energy
+    InputGuard --> Pitch
+    Onsets --> Beat
+    Onsets --> Tempo
+    Beat --> Tempo
+    Energy --> Structure
+    Structure --> Gate
+    Beat --> Gate
+    Tempo --> Features
+    Energy --> Features
+    Structure --> Features
+    Pitch --> Features
+    Pitch --> StablePitch
+    StablePitch --> Player
+    Gate --> Player
+    Features --> Queue
+    Queue --> Drain
+    Drain --> StructureShadow
+    StructureShadow --> PatternInference
+    Drain --> PatternInference
+    Drain --> BassInference
+    PatternInference --> PatternAtomic
+    BassInference --> BassHandoff
+    PatternAtomic --> Player
+    BassHandoff --> Player
+    Player --> MidiOut
+    Params --> Features
+    Params --> PatternInference
+    Params --> BassInference
+    Editor --> Params
+    Editor --> DisplayAtomics
+    Features --> DisplayAtomics
+    PatternInference --> DisplayAtomics
+    Drain --> CaptureRows
+    CaptureRows --> CaptureQueue
+    CaptureQueue --> Jsonl
 ```
 
 ---
