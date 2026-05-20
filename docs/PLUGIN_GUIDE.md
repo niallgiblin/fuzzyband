@@ -107,45 +107,37 @@ These are defined in `src/midi/MidiPatternLibrary.cpp`. The ONNX model outputs a
 
 ---
 
-## The playback gate — why the drums come in at the wrong time
+## The playback gate — how the drums decide when to enter
 
-This is the most important thing to understand about the current behaviour.
+The old gate logic started playback as soon as confidence crossed a threshold. That made the internal beat clock reset immediately, so the first kick could land wherever the guitarist happened to be in the phrase. That behavior has been replaced.
 
-### Current broken behaviour
+The current implementation is split into two pieces:
 
-The gate logic is in `AccompanimentProcessor::processBlock()`, around line 426:
+- `PlaybackGate` (`src/analysis/PlaybackGate.*`) owns the state machine for silence, phrase-breath holds, confidence gating, deferred beat snaps, and reset decisions.
+- `AccompanimentProcessor::processBlock()` applies the returned `GateDecision`: it can arm a crash, reset trackers, call `patternPlayer.snapBpm()`, call `patternPlayer.snapToBarStart()`, and mute/unmute `PatternPlayer`.
+
+The important current call site looks like this:
 
 ```cpp
-// AccompanimentProcessor.cpp ~426-436
-const float beatTrackerConfEarly = beatTracker.getConfidence();
-const bool allowPlayback = beatTracker.isLocked()
-    || (beatTrackerConfEarly >= kPlaybackConfidenceStart);  // 0.50
+const GateDecision gd = playbackGate.update(
+    st,
+    beatTracker.getBeatPhase01(),
+    beatTracker.isLocked(),
+    onsetDetector.isTempoLocked(),
+    beatTracker.getConfidence(),
+    numSamples,
+    sr);
 
-if (allowPlayback != prevPlaybackGateOpen && allowPlayback)
-    patternPlayer.snapToBarStart();   // resets beatPosition to 0.0 immediately
-
-prevPlaybackGateOpen = allowPlayback;
-playbackGateOpen = allowPlayback;
-```
-
-`snapToBarStart()` is defined in `PatternPlayer.cpp:79`:
-```cpp
-void PatternPlayer::snapToBarStart()
+if (gd.snapBeatNow)
 {
-    beatPosition = 0.0;
-    pendingPatternIndex = -1;
+    patternPlayer.snapBpm(bpmForPlayer);
+    patternPlayer.snapToBarStart();
 }
+
+patternPlayer.setStructureSilent(!gd.gateOpen && !previewAudible);
 ```
 
-It fires the moment the confidence threshold is crossed, resetting the internal beat clock to 0. The PatternPlayer immediately starts emitting events from beat 0 of the pattern — regardless of where the guitarist actually is in their bar. If you're on beat 3, the kick fires on beat 3.
-
-`playbackGateOpen` also controls whether the player is muted:
-```cpp
-// ~line 509
-patternPlayer.setStructureSilent((st == StructureState::SILENT || !playbackGateOpen) && !previewAudible);
-```
-
-So the player is silent until `playbackGateOpen = true`, at which point both the unmute and the snap to beat 0 happen in the same block.
+The result is that the player stays muted while the gate is waiting for a musically useful entry point. When the gate opens, the `PatternPlayer` clock is snapped to the bar start and the BPM is set directly for the first block, avoiding the initial EMA drift.
 
 ### What `BeatTracker::getBeatPhase01()` actually is
 
@@ -158,79 +150,15 @@ beatPhase01 = std::fmod(static_cast<double>(hopCounter) / periodHops, 1.0);
 
 However, because the autocorrelation peaks at the onset period, phase 0 is statistically correlated with when strong beats occur in the audio. When `beatPhase01` wraps from ~1.0 back to ~0.0, that crossing corresponds to a beat boundary in the BeatTracker's estimation.
 
-### The fix: deferred beat-boundary snap
+### Historical note
 
-**Instead of snapping immediately when confidence is reached, wait for the next beat boundary crossing, then snap.**
-
-This requires two new private members in `AccompanimentProcessor` (add to `AccompanimentProcessor.h` in the private section):
-
-```cpp
-bool pendingBeatSnap = false;
-double prevBeatPhase01 = 0.0;
-```
-
-Initialize both in `prepareToPlay()`:
-```cpp
-pendingBeatSnap = false;
-prevBeatPhase01 = 0.0;
-```
-
-Replace the current gate block in `processBlock()` with:
-
-```cpp
-const float beatTrackerConfEarly = beatTracker.getConfidence();
-const bool allowPlayback = beatTracker.isLocked()
-    || (beatTrackerConfEarly >= kPlaybackConfidenceStart);
-
-if (allowPlayback != prevPlaybackGateOpen && allowPlayback)
-{
-    // Confidence threshold just crossed — arm the deferred snap, don't start yet.
-    pendingBeatSnap = true;
-}
-
-if (pendingBeatSnap)
-{
-    const double currentPhase = beatTracker.getBeatPhase01();
-    const bool beatBoundaryNow = (currentPhase < prevBeatPhase01);  // phase wrapped → beat boundary
-    if (beatBoundaryNow)
-    {
-        patternPlayer.snapBpm(bpmForPlayer);   // NEW METHOD — see below
-        patternPlayer.snapToBarStart();
-        playbackGateOpen = true;
-        pendingBeatSnap = false;
-    }
-    // else: keep silent (playbackGateOpen stays false) until boundary fires
-}
-else
-{
-    playbackGateOpen = allowPlayback;
-}
-
-prevPlaybackGateOpen = allowPlayback;
-prevBeatPhase01 = beatTracker.getBeatPhase01();
-```
-
-**Important**: when `pendingBeatSnap` is true and the boundary hasn't fired yet, `playbackGateOpen` must stay `false` so the player stays muted. The `prevPlaybackGateOpen` update must still happen each block so the edge-detect works correctly.
-
-Also reset on SILENT transition (already at ~line 417, add the new fields):
-```cpp
-if (st == StructureState::SILENT)
-{
-    onsetDetector.resetTempoLock();
-    beatTracker.reset();
-    playbackGateOpen = false;
-    prevPlaybackGateOpen = false;
-    pendingBeatSnap = false;      // ADD
-    prevBeatPhase01 = 0.0;        // ADD
-    lastDrumPatternChangeSample = -1;
-}
-```
+Older notes in this guide described `pendingBeatSnap` fields living directly in `AccompanimentProcessor`. That design was superseded by the `PlaybackGate` module so the state machine can be tested independently (`tests/test_playback_gate.cpp`) and the processor can stay closer to a real-time coordinator.
 
 ---
 
 ## Tempo tracking — BPM snap on entry
 
-### Current problem
+### Current behavior
 
 Two parallel BPM sources exist:
 
@@ -238,14 +166,17 @@ Two parallel BPM sources exist:
 
 2. **BeatTracker** (`src/analysis/BeatTracker.cpp`): Autocorrelation of spectral flux. Evaluates all integer BPMs 80–220 every hop. Slower to lock but more stable. Has `.getConfidence()` and `.isLocked()`.
 
-The processor selects between them (~line 438):
+The processor reconciles the two sources before sending tempo to `PatternPlayer`:
 ```cpp
-const float bpmForPlayer = (beatTrackerConf >= kTrackerBpmConfidenceFloor)  // 0.45
-    ? beatTracker.getBpm()
-    : onsetDetector.getCurrentBpm();
+const float onsetBpm = onsetDetector.getCurrentBpm();
+const float tempoCandidateBpm = beatTrackerLocked
+    ? foldTrackerAliasTowardOnset(beatTracker.getBpm(), onsetBpm)
+    : onsetBpm;
+const float stablePlaybackBpm = tempoStabiliser.update(
+    tempoCandidateBpm, playbackGate.isGateOpen(), numSamples, sr);
 ```
 
-Then `PatternPlayer::setBpm()` at `PatternPlayer.cpp:64` applies a **10% EMA**:
+`PatternPlayer::setBpm()` still applies a 10% EMA during normal playback:
 ```cpp
 void PatternPlayer::setBpm(float newBpm)
 {
@@ -254,98 +185,17 @@ void PatternPlayer::setBpm(float newBpm)
 }
 ```
 
-`PatternPlayer::bpm` starts at `120.0f` (set in `reset()`). At 10% convergence per block, if the actual tempo is 100 BPM it takes ~22 blocks (~120ms at 256 samples/48kHz) to get within 1 BPM. During those blocks the beat clock ticks at the wrong rate and events misfire.
-
-### The fix: `snapBpm()`
-
-Add a new method to `PatternPlayer` that sets `bpm` directly, bypassing the EMA. Used exactly once at gate-open.
-
-Add to `PatternPlayer.h` public section:
-```cpp
-/** @brief Set BPM directly with no EMA smoothing. Use only at gate-open. Audio thread safe. */
-void snapBpm(float newBpm);
-```
-
-Add to `PatternPlayer.cpp`:
-```cpp
-void PatternPlayer::snapBpm(float newBpm)
-{
-    bpm = juce::jlimit(40.0f, 320.0f, newBpm);
-}
-```
-
-Call it from `AccompanimentProcessor::processBlock()` at the same point as `snapToBarStart()` (shown in the fix above). After that point, `setBpm()` resumes normal EMA tracking.
-
-### Code ordering note
-
-`bpmForPlayer` is currently computed **after** the gate block in `processBlock`. The deferred snap fires inside the gate block, so `bpmForPlayer` is not yet in scope there. Fix: move the BPM selection lines to **before** the gate block. These three lines are safe to move — they only read from `beatTracker` and `onsetDetector`, which are both updated earlier in the same function:
-
-```cpp
-// Move these lines to BEFORE the gate block:
-const float beatTrackerConf = beatTracker.getConfidence();
-const float bpmForPlayer = (beatTrackerConf >= kTrackerBpmConfidenceFloor)
-    ? beatTracker.getBpm()
-    : onsetDetector.getCurrentBpm();
-```
-
-### Edge case: beat phase never wraps
-
-If BPM estimation is unstable or the guitarist stops before the phase crosses zero, `pendingBeatSnap` would stay true indefinitely and playback would never start. Add a timeout: if `pendingBeatSnap` has been true for more than 2 seconds worth of samples, fire the snap unconditionally. Track this with a `pendingBeatSnapSamples` counter (int64_t) in `AccompanimentProcessor`:
-
-```cpp
-int64_t pendingBeatSnapSamples = 0;
-
-// Inside the pendingBeatSnap block, before the phase check:
-pendingBeatSnapSamples += numSamples;
-const double sr = cachedSampleRate.load(std::memory_order_relaxed);
-const bool timedOut = (pendingBeatSnapSamples > static_cast<int64_t>(sr * 2.0));
-
-const bool beatBoundaryNow = (currentPhase < prevBeatPhase01) || timedOut;
-```
-
-Reset `pendingBeatSnapSamples = 0` wherever `pendingBeatSnap` is set to `false`.
+On gate entry, `PlaybackGate` can request `snapBpm()`, which bypasses the EMA once so the first audible block is not dragged from the default 120 BPM. After that, normal `setBpm()` smoothing resumes.
 
 ---
 
 ## Tests
 
-### Existing tests affected by these changes
+### Relevant test coverage
 
-- `tests/test_pattern_player.cpp` — tests `setBpm()`, `snapToBarStart()`, `setStructureSilent()`. Adding `snapBpm()` does not break any of these; it's additive.
-- `tests/test_pattern_player_generative_bass.cpp` — calls `setBpm()` and `snapToBarStart()` directly. No changes needed.
-- `tests/test_processor_pipeline.cpp` — integration tests that call `prepareToPlay()` and `processBlock()`. These may need `pendingBeatSnap = false` and `prevBeatPhase01 = 0.0` added to the `prepareToPlay()` initialisation block (already specified above).
-
-### New test to write for `snapBpm()`
-
-Add to `tests/test_pattern_player.cpp`:
-
-```cpp
-TEST_CASE("PatternPlayer::snapBpm sets BPM immediately without EMA", "[midi]")
-{
-    MidiPatternLibrary lib;
-    PatternPlayer player;
-    player.setPatternLibrary(&lib);
-    player.prepare(48000.0, 256);
-    // Internal bpm starts at 120.0f after reset()
-    player.snapBpm(100.0f);
-    // One call to setBpm with a large delta would still be ~108 with EMA,
-    // but snapBpm should have landed at exactly 100.
-    // Verify by rendering a bar and checking kick timing:
-    // At 100 BPM, one beat = 48000*60/100 = 28800 samples. Beat 0 kick fires at sample 0.
-    player.setPatternIndex(1); // VerseSlow — kick at beat 0
-    player.setStructureSilent(false);
-    juce::MidiBuffer midi;
-    player.process(midi, 29000, 0);
-    bool foundKick = false;
-    for (const auto meta : midi)
-    {
-        const auto msg = meta.getMessage();
-        if (msg.isNoteOn() && msg.getChannel() == 10 && msg.getNoteNumber() == 36)
-            foundKick = true;
-    }
-    REQUIRE(foundKick);
-}
-```
+- `tests/test_pattern_player.cpp` covers `setBpm()`, `snapBpm()`, `snapToBarStart()`, and silence behavior.
+- `tests/test_playback_gate.cpp` covers deferred beat-snap entry, phrase-breath holds, reset behavior, and gate decisions.
+- `tests/test_processor_pipeline.cpp` exercises processor-level `prepareToPlay()` and `processBlock()` integration.
 
 ---
 
@@ -404,8 +254,8 @@ To add a pattern: add a `buildXxx()` function at the top of `MidiPatternLibrary.
 
 ## What would make it feel like a real bandmate — ranked by impact
 
-### 1. Beat-phase-aligned entry (highest impact)
-Fix the playback gate to start the PatternPlayer at the next actual beat boundary rather than immediately resetting to beat 0. This is the single biggest improvement to "comes in at the wrong time."
+### 1. Tighten beat-phase entry feel
+The gate now waits for a beat-boundary snap through `PlaybackGate`. The next improvement is musical phrasing: making the entry feel like a drummer choosing a bar-length count-in or fill, not just the earliest safe beat.
 
 ### 2. Add a half-time groove pattern
 For sludge, the half-time feel is more fundamental than the straight-8ths "Verse Slow" pattern. Add `buildHalfTime()` and route SOFT+low-BPM to it.
@@ -413,8 +263,8 @@ For sludge, the half-time feel is more fundamental than the straight-8ths "Verse
 ### 3. Enable the Breakdown pattern automatically
 Wire the breakdown pattern to a "long SOFT section" detector — e.g., if the state has been SOFT for > 8 bars and BPM is below 110, select breakdown. It's currently only reachable by clicking the button.
 
-### 4. Faster BPM convergence at gate-open
-When the playback gate first opens, optionally snap the PatternPlayer's internal BPM to the BeatTracker BPM directly instead of always going through the EMA. After the first bar, revert to EMA smoothing.
+### 4. Tune tempo stabilisation after gate-open
+Gate entry already uses `snapBpm()` to avoid first-block EMA drag. The remaining tuning area is how quickly `TempoStabiliser` and `PatternPlayer::setBpm()` should follow real tempo changes once the groove is underway.
 
 ### 5. Tuned RMS thresholds for your rig
 The SOFT/LOUD threshold at 0.08 RMS is almost certainly wrong for your signal chain. Tune it once with a metering plugin and you'll get much more accurate structure detection.
@@ -460,7 +310,7 @@ The version number appears in the plugin UI top-right. Always bump before buildi
 
 | Symptom | Likely cause | Where to look |
 |---|---|---|
-| Drums come in at wrong beat | `snapToBarStart()` ignores beat phase | `AccompanimentProcessor.cpp:431`, `PatternPlayer.cpp:79` |
+| Drums come in at wrong beat | BeatTracker phase/gate confidence is anchoring poorly for the performance | `PlaybackGate.*`, `BeatTracker.*`, `AccompanimentProcessor::processBlock()` |
 | Drums never start | BeatTracker confidence stays below 0.50 | Check `displayBeatConfidence` in editor; tune `kPlaybackConfidenceStart` in AccompanimentProcessor.cpp:18 |
 | BPM reads wrong | IOI median confused by fuzz harmonics | Lower `kAdaptiveK` in `OnsetDetector.h:89` or raise confidence floor |
 | Wrong pattern for your energy level | RMS thresholds don't match your rig | `StructureTagger.h`: `kLoudRms`, `kSilentRms` |

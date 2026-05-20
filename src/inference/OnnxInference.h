@@ -6,6 +6,8 @@
  */
 
 #include "IInference.h"
+#include <atomic>
+#include <cstdint>
 #include <memory>
 
 /**
@@ -26,8 +28,12 @@ public:
     void prepare(double sampleRate) override;
     int selectPattern(const FeatureVector& features, int excludeIndex = -1) override;
     std::string getName() const override;
+    uint64_t getLoadErrorCount() const noexcept { return loadErrorCount.load(std::memory_order_relaxed); }
+    uint64_t getRunErrorCount() const noexcept { return runErrorCount.load(std::memory_order_relaxed); }
 
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;
+    std::atomic<uint64_t> loadErrorCount{ 0 };
+    std::atomic<uint64_t> runErrorCount{ 0 };
 };

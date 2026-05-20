@@ -22,7 +22,9 @@
 #include "midi/MidiPatternLibrary.h"
 #include "midi/PatternPlayer.h"
 #include "readerwriterqueue.h"
+#include <array>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -78,6 +80,7 @@ public:
 
     /** @brief Human-readable name of the active inference backend (for UI label per D-26-09). */
     const std::string& getActiveInferenceName() const noexcept { return activeInferenceName; }
+    uint64_t getOnnxErrorCount() const noexcept;
 
     void setFeatureCaptureEnabled(bool enabled);
     bool isFeatureCaptureEnabled() const noexcept { return featureCapture.isCapturing(); }
@@ -95,6 +98,13 @@ public:
     void resumeBackgroundInferenceForTests();
 
 private:
+    struct BassStepFrame
+    {
+        std::array<float, 16> pitchOffsets{};
+        std::array<float, 16> velocities{};
+        float rootMidi = 40.0f;
+    };
+
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     void inferenceLoop();
@@ -123,13 +133,7 @@ private:
     std::atomic<int> latestPatternIndex{ 0 };
 
     std::atomic<bool> useGenerativeBass{ false };
-
-    // Phase 23 piano-roll bass: written by inference thread, read by audio thread.
-    // Single-producer single-consumer — inference writes, audio reads + clears.
-    float genBassPitchOffsets[16] = {};
-    float genBassVelocities[16] = {};
-    float genBassRootMidi = 40.0f;
-    std::atomic<bool> genBassStepsReady{ false };
+    moodycamel::ReaderWriterQueue<BassStepFrame> bassStepQueue{ 32 };
 
     std::atomic<float> displayBpm{ 120.0f };
     std::atomic<int> displayStateIndex{ 0 };
@@ -156,8 +160,6 @@ private:
     PlaybackGate playbackGate;
 
     float prevBlockRms = 0.0f;
-
-    bool prevStructureSilent = false;
 
     std::atomic<double> cachedSampleRate{ 44100.0 };
     std::atomic<int> debugPreviewSamplesRemaining{ 0 };
