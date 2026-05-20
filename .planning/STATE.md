@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: — ML Correctness & Evaluation
 status: ready_to_execute
-last_updated: "2026-05-12T15:45:00.000Z"
+last_updated: "2026-05-13T11:33:37.298Z"
 progress:
-  total_phases: 11
+  total_phases: 6
   completed_phases: 2
-  total_plans: 11
-  completed_plans: 9
-  percent: 18
+  total_plans: 9
+  completed_plans: 6
+  percent: 67
 ---
 
 # STATE — Metal Accompaniment
@@ -23,16 +23,17 @@ See: `.planning/PROJECT.md` (updated 2026-04-29)
 **Version string in the plugin UI** comes from **`CMakeLists.txt`** `project(MetalAccompaniment VERSION …)` (JUCE `ProjectInfo::versionString`). **GSD phase/milestone authority** is this file plus **`.planning/ROADMAP.md`**.
 
 **Core value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.  
-**Current focus:** Phase 33 — model-quality-gates
+**Current focus:** Phase 34 — domain-gap-and-feature-capture
 
 ---
 
 ## Current position
 
-Phase: 32 (training-label-correction) — EXECUTED; verification recorded in `.planning/phases/32-training-label-correction/32-VERIFICATION.md`
-Next: Phase 33 (model-quality-gates)
+Phase: 33 (model-quality-gates) — EXECUTED; summaries recorded in `.planning/phases/33-model-quality-gates/`
+Phase: 34 (domain-gap-and-feature-capture) — PLANNED; plans recorded in `.planning/phases/34-domain-gap-and-feature-capture/`
+Next: Execute Phase 34 (`/gsd-execute-phase 34`)
 Milestone: **v0.6.0 ML Correctness & Evaluation**  
-Completed requirements: LABEL-01, LABEL-02, LABEL-03
+Completed requirements: LABEL-01, LABEL-02, LABEL-03, QGATE-01, QGATE-02, QGATE-03, QGATE-04
 
 ---
 
@@ -60,6 +61,8 @@ Completed requirements: LABEL-01, LABEL-02, LABEL-03
 - **2026-04-29 — v0.4.0 milestone archived:** `.planning/milestones/v0.4.0-ROADMAP.md`, `v0.4.0-REQUIREMENTS.md`; living `REQUIREMENTS.md` reset to **v0.5.0** RHY-* scope; `STATE.md` milestone pointer → v0.5.0.
 - **2026-05-12 — v0.6.0 ML Correctness & Evaluation phases added (32–36):** Phases derived from `ML_REPORT.md` analysis and `CHANGES_PLAN.md` (5 areas). Phase 32 (label correction), 33 (quality gates), 34 (domain gap + capture), 35 (inference path consistency — depends on 32), 36 (evaluation + default readiness — depends on 32–35). Phases 32–34 can execute in parallel after v0.5.0 ships.
 - **2026-05-12 — Phase 32 Plan 03 verification gap closed:** Stale Lakh labels were repaired to rule-oracle labels in 0..6, `merge_datasets.py` now rejects invalid labels before gating, class 6 is deterministically oversampled to the 50-example DATA-06 minimum, and the pattern model was retrained/promoted from merged data with best macro-F1 0.8095. Class 0 remains an accepted structural absence handled by rule-based passthrough.
+- **2026-05-13 — Phase 33 Model Quality Gates completed:** Bass and structure training now enforce hard quality gates before ONNX export, structure normalization is baked into the ONNX graph, structure contract tests validate `X_struct` shape/dtype and baked mean/std initializers, and `assets/structure_model.onnx` was promoted with version bump 0.5.0 → 0.5.1. See `33-01-SUMMARY.md`, `33-02-SUMMARY.md`, and `33-03-SUMMARY.md`.
+- **2026-05-13 — Phase 34 planned:** Three executable plans cover runtime feature capture, offline human-label evaluation, and captured-vs-proxy domain-gap documentation. Decision coverage passed for all 21 Phase 34 context decisions.
 
 *(Older entries remain in git history and phase directories.)*
 
@@ -78,7 +81,7 @@ Completed requirements: LABEL-01, LABEL-02, LABEL-03
 
 ## Session continuity
 
-Resume: `/gsd-execute-phase 28` — `.planning/phases/28-beat-tracker-bass-sequencer/`; Phase **27** summary `.planning/phases/27-rhythmic-coherence-documentation/27-SUMMARY.md`.
+Resume: `/gsd-execute-phase 34` — `.planning/phases/34-domain-gap-and-feature-capture/`; plans `34-01-PLAN.md` through `34-03-PLAN.md`.
 
 ---
 

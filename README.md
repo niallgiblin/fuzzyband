@@ -6,6 +6,10 @@ JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + ba
 
 Put the plug-in on your **dry guitar track *before*** amp/cab sims and heavy FX (**guitar → Metal Accompaniment → FX**) so onset/tempo/analysis match what this build assumes. Quick reference: **[`plugin/README.md`](plugin/README.md)** · contributor entry **[`docs/PLUGIN_HOSTING.md`](docs/PLUGIN_HOSTING.md)**.
 
+## Learning the codebase
+
+If you are new to C++/JUCE/audio plugins, start with **[`docs/DOCS_INDEX.md`](docs/DOCS_INDEX.md)**. It links a plain-English codebase walkthrough, runtime architecture map, C++/JUCE/audio-thread audit, and modularity/bloat review.
+
 ## Version & roadmap (source of truth)
 
 
@@ -181,4 +185,3 @@ rm -rf "$DEST"
 mkdir -p "$HOME/Library/Audio/Plug-Ins/VST3"
 cp -R "$DEST/Metal Accompaniment.vst3" "$HOME/Library/Audio/Plug-Ins/VST3/"
 ```
-

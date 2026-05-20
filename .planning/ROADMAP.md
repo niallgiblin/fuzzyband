@@ -258,8 +258,8 @@ Plans:
 | 30. ML retrain (12 features) | v0.5.0 | 0/0 | Not started | - |
 | 31. Architecture Deepening | v0.5.0 | 4/4 | Complete   | 2026-05-03 |
 | 32. Training Label Correction | v0.6.0 | 3/3 | Complete   | 2026-05-12 |
-| 33. Model Quality Gates | v0.6.0 | 0/0 | Not started | - |
-| 34. Domain Gap and Feature Capture | v0.6.0 | 0/0 | Not started | - |
+| 33. Model Quality Gates | v0.6.0 | 3/3 | Complete   | 2026-05-13 |
+| 34. Domain Gap and Feature Capture | v0.6.0 | 3/3 | Planned | 2026-05-13 |
 | 35. Inference Path Consistency | v0.6.0 | 0/0 | Not started | - |
 | 36. ONNX Evaluation and Default Readiness | v0.6.0 | 0/0 | Not started | - |
 
@@ -319,10 +319,15 @@ Plans:
   2. `train_structure.py` exits non-zero if val macro-F1 < rule-path agreement rate on the same split; `StructureOnnxExport` wrapper bakes mean/std normalisation into the ONNX graph (mirrors `PatternOnnxExport` pattern)
   3. `OnnxStructureInference.cpp` reads normalisation from ONNX graph constants (external normalisation step removed)
   4. `training/tests/test_onnx_contract.py` validates structure model I/O shape and dtype alongside pattern and bass model checks
-**Plans**: TBD (`/gsd-plan-phase 33`)
+**Plans**: 3 plans in 2 waves
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 33 to break down)
+**Wave 1**
+- [x] 33-01-PLAN.md — Bass quality gate: baseline MSE, per-step metrics, validation.json (QGATE-01, Wave 1)
+- [x] 33-02-PLAN.md — Structure dual gate + structure_norm_stats.json output (QGATE-02, Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 33-03-PLAN.md — StructureOnnxExport baked normalization + contract tests + promote asset (QGATE-02, QGATE-03, QGATE-04, Wave 2)
 
 #### Phase 34: Domain Gap and Feature Capture
 **Goal**: A `FeatureVector` capture utility records real guitar audio features to disk; an offline evaluation harness measures rule-path vs ONNX accuracy on that data; the residual domain gap is quantified and documented.
@@ -332,10 +337,17 @@ Plans:
   1. Standalone utility (or plugin debug mode toggle) records `FeatureVector` values to a JSONL file from a live guitar session; output format documented
   2. Offline evaluation script accepts a JSONL + human-annotated pattern labels; prints rule-path accuracy vs ONNX accuracy and per-class breakdown side-by-side
   3. `training/FEATURE_PROXY.md` updated with quantitative distribution-shift estimates per feature (bpm, rms, centroid, hf_flux at minimum); residual domain gap documented with concrete numbers; worst-case divergence for spectral centroid proxy identified and proxy improved or explicitly accepted
-**Plans**: TBD (`/gsd-plan-phase 34`)
+**Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 34 to break down)
+**Wave 1**
+- [ ] 34-01-PLAN.md — Runtime FeatureVector capture component, plugin debug toggle, JSONL schema docs (DOMAIN-01, Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 34-02-PLAN.md — Offline capture evaluator with annotation CSV, rule/ONNX accuracy, confusion matrices, disagreement output (DOMAIN-02, Wave 2)
+
+**Wave 3** *(blocked on Waves 1-2 completion)*
+- [ ] 34-03-PLAN.md — Captured-vs-proxy gap analyzer and FEATURE_PROXY.md quantitative verdicts (DOMAIN-03, Wave 3)
 
 #### Phase 35: Inference Path Consistency
 **Goal**: Rule path and ONNX path use the same intensity-adjusted BPM input; exclusion modulo respects state compatibility (no accidental Breakdown on non-transition inputs); `structureBlend` semantics documented.
