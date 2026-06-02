@@ -193,7 +193,12 @@ Plans:
   1. Drum pattern changes and bass updates align to the same bar boundary policy (documented + unit/integration coverage)
   2. `FeatureVector` (and lock-free queue payload) includes the five new fields populated on the audio thread without allocation
   3. At least four fill patterns mapped by section-direction; audible overlap or fill bar before new groove (exact behavior per research docs)
-**Plans**: TBD (`/gsd-plan-phase 29`)
+**Plans**: 3 plans in `.planning/phases/29-runtime-coordination-c/`
+
+Plans:
+- [x] 29-01-PLAN.md — Rescope audit, RHY-FEAT-01 supersession, and shared commit policy documentation
+- [ ] 29-02-PLAN.md — Shared fixed-size pending groove commit for drum pattern plus generated bass activation
+- [ ] 29-03-PLAN.md — Four minimal directional transition fills through the shared commit path
 
 #### Phase 30: ML retrain (12-feature input)
 **Goal**: ONNX models and training code match the expanded feature vector; shipped artifacts pass contract validation and brief DAW smoke.
@@ -255,7 +260,7 @@ Plans:
 | 26. Retrain + Validate | v0.4.0 | 3/3 | Complete | 2026-04-29 |
 | 27. Rhythmic coherence documentation | v0.5.0 | 2/2 | Complete | 2026-04-29 |
 | 28. Beat tracker & bass sequencer | v0.5.0 | 0/2 | Not started | - |
-| 29. Runtime coordination (C++) | v0.5.0 | 0/0 | Not started | - |
+| 29. Runtime coordination (C++) | v0.5.0 | 1/3 | In progress | - |
 | 30. ML retrain (12 features) | v0.5.0 | 0/0 | Not started | - |
 | 31. Architecture Deepening | v0.5.0 | 4/4 | Complete   | 2026-05-03 |
 | 32. Training Label Correction | v0.6.0 | 3/3 | Complete   | 2026-05-12 |

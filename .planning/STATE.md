@@ -3,19 +3,21 @@ gsd_state_version: 1.0
 milestone: M001
 milestone_name: Creative Companion (Playability Pivot)
 status: in_progress
-last_updated: "2026-06-02T17:12:00.000Z"
+last_updated: "2026-06-02T20:29:30.000Z"
 last_activity: 2026-06-02
 progress:
-  total_slices: 4
-  completed_slices: 0
-  percent: 0
+  total_phases: 11
+  completed_phases: 8
+  total_plans: 27
+  completed_plans: 26
+  percent: 96
 ---
 
 # STATE — Metal Accompaniment
 
 > Project memory. Updated at phase transitions and milestone boundaries.
 
-Last activity: 2026-06-02 — v0.6.0 milestone closed
+Last activity: 2026-06-02
 
 ## Project Reference
 
@@ -31,6 +33,8 @@ See: `.planning/PROJECT.md` (updated 2026-06-02)
 
 ## Current position
 
+Phase: 29 (runtime-coordination-c) — EXECUTING
+Plan: 2 of 3
 Milestone: **M001 Creative Companion (Playability Pivot)** — planned, 4 slices pending
 
 | Slice | Title | Risk | Status |
@@ -60,7 +64,9 @@ Next: `/gsd-execute-phase S01` to begin tempo stability work
 - v0.5.0 beat-tracker & bass sequencer (Phases 28–30) — deferred until tempo/section semantics freeze
 
 ## Recent Decisions
+
 - M001 planned 2026-06-02: ONNX-first inference stability pivot (4 slices)
+- Phase 29 Plan 1 completed 2026-06-02: RHY-FEAT-01 recorded as paused/superseded for Phase 29 and shared next-bar groove commit policy documented
 - D001: ONNX-first inference path — rule-based is fallback only
 - D002: Inference-driven tempo with stability smoothing, not hard lock
 - D003: ML-driven structure detection with stability improvements, not manual controls
@@ -69,7 +75,9 @@ Next: `/gsd-execute-phase S01` to begin tempo stability work
 - MA_ENABLE_ONNX default ON — rule-based fallback retained per D-12
 
 ## Blockers
+
 - None
 
 ## Next Action
-Plan S01 (Tempo Stability): `/gsd-plan-phase S01` or `/gsd-execute-phase S01`
+
+Continue Phase 29 Plan 2: shared fixed-size pending groove commit for drum pattern plus generated bass activation
