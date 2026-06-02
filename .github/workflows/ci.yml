@@ -58,6 +58,15 @@ jobs:
         working-directory: training
         run: python3 -m pytest tests/ -v --tb=short
 
+      - name: Readiness fixture evaluation (ONNXEVAL-02)
+        run: |
+          python3 training/evaluate_feature_capture.py \
+            --capture training/fixtures/readiness/feature_capture.jsonl \
+            --annotations training/fixtures/readiness/annotations.csv \
+            --min-onnx-macro-f1 0.65 \
+            --min-rule-onnx-agreement 0.80 \
+            --json-out /tmp/readiness_eval.json
+
       - name: ONNX contract validation (Phase 22)
         if: always()
         run: |
@@ -65,6 +74,7 @@ jobs:
           python3 scripts/build_minimal_bass_onnx.py
           python3 scripts/validate_onnx_contract.py --structure assets/structure_model.onnx
           python3 scripts/validate_onnx_contract.py --bass assets/bass_model.onnx
+          python3 scripts/validate_onnx_contract.py --pattern assets/accompaniment_model.onnx
           echo "ONNX contract validation passed"
 
       - name: Download ONNX Runtime (ONNX smoke)
@@ -85,9 +95,10 @@ jobs:
           cmake -B build-onnx -DCMAKE_BUILD_TYPE=Release \
             -DMA_ENABLE_ONNX=ON \
             -DONNXRUNTIME_ROOT="$ONNXRUNTIME_ROOT" \
-            -DMA_BUILD_TESTS=OFF \
+            -DMA_BUILD_TESTS=ON \
             -DMA_BUILD_STANDALONE=OFF
           cmake --build build-onnx --config Release --parallel
+          ctest --test-dir build-onnx --output-on-failure -L onnx
           echo "ONNX-enabled build smoke passed"
 
       - name: Prep MIDI smoke (Phase 9)

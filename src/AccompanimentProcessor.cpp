@@ -224,7 +224,9 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         if (structureInference)
         {
             const auto& m = structureInference->getLastShadowMetrics();
-            // Rule silence owns the audio gate. ONNX can shape non-silent sections only when explicitly favored.
+            // structureBlend threshold policy: > 0.5f → ML shadow for non-silent sections only;
+            // rule silence owns the playback gate (ONNX never overrides SILENT).
+            // See docs/ONNX_IO.md § structureBlend runtime policy
             if (!m.mlValid || rule == StructureState::SILENT || m.smoothedState == StructureState::SILENT)
                 effective = rule;
             else

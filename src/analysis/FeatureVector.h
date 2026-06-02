@@ -27,7 +27,8 @@ struct FeatureVector
     /** PITCH-02: [0,1] pitch reliability; 0 triggers D-11-04 hold/snap and zero bass offset. */
     float pitchConfidence = 0.0f;
 
-    /** PUI-01: intensity [0,1] — rule path uses BPM adjustment; ONNX tensor unchanged. */
+    /** PUI-01: intensity [0,1] — ONNX pattern input column 0 uses PatternRules::adjustedBpm(f),
+     *  which applies (policyIntensity - 0.5) * 40 BPM offset alongside the rule path. */
     float policyIntensity = 0.5f;
 
     /** Signed RMS ratio vs previous block: (rms - prevRms) / max(prevRms, 1e-6). Used for energy-delta bypass. */

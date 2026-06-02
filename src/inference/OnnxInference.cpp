@@ -121,7 +121,7 @@ int OnnxInference::selectPattern(const FeatureVector& f, int excludeIndex)
     }
 
     std::array<float, 7> inputData = {
-        f.bpm,
+        PatternRules::adjustedBpm(f),
         f.rmsEnergy,
         f.spectralCentroid,
         f.highFreqFlux,
@@ -154,24 +154,25 @@ int OnnxInference::selectPattern(const FeatureVector& f, int excludeIndex)
         if (outputs.empty())
         {
             runErrorCount.fetch_add(1, std::memory_order_relaxed);
-            return PatternRules::applyExclusion(PatternRules::rulePatternForState(f), excludeIndex);
+            const int fallback = PatternRules::rulePatternForState(f);
+            return PatternRules::applyExclusion(fallback, excludeIndex, f.state, fallback);
         }
 
         const int64_t* out = outputs[0].GetTensorData<int64_t>();
         const int64_t raw = out[0];
         const int clamped = static_cast<int>(std::clamp(raw, static_cast<int64_t>(0), static_cast<int64_t>(6)));
-        const int result = PatternRules::isPatternCompatibleWithState(clamped, f.state)
+        const int result = PatternRules::isOnnxPatternAcceptable(clamped, f)
             ? clamped
             : PatternRules::rulePatternForState(f);
 
-        // D-23-04: single-shot exclusion — if result matches excludeIndex, return next
-        return PatternRules::applyExclusion(result, excludeIndex);
+        const int fallback = PatternRules::rulePatternForState(f);
+        return PatternRules::applyExclusion(result, excludeIndex, f.state, fallback);
     }
     catch (...)
     {
         runErrorCount.fetch_add(1, std::memory_order_relaxed);
-        // D-23-04: never return excluded index even on error
-        return PatternRules::applyExclusion(PatternRules::rulePatternForState(f), excludeIndex);
+        const int fallback = PatternRules::rulePatternForState(f);
+        return PatternRules::applyExclusion(fallback, excludeIndex, f.state, fallback);
     }
 }
 

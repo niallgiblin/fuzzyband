@@ -25,7 +25,8 @@ static constexpr int   kPatternCount         = 7;
  */
 inline float adjustedBpm(const FeatureVector& f) noexcept
 {
-    return f.bpm + (f.policyIntensity - 0.5f) * 40.0f;
+    const float raw = f.bpm + (f.policyIntensity - 0.5f) * 40.0f;
+    return std::clamp(raw, 80.0f, 220.0f);
 }
 
 /**
@@ -64,15 +65,40 @@ inline bool isPatternCompatibleWithState(int patternIndex, StructureState state)
     return false;
 }
 
+static constexpr float kBreakdownBpmThreshold = 110.0f;
+
 /**
- * @brief D-23-04 single-shot exclusion: if result == excludeIndex, return next via modulo.
- * Pass excludeIndex == -1 (default) to disable.
+ * @brief Whether an ONNX class prediction may be used at runtime.
+ * Class 6 (Breakdown) is allowed for non-SILENT rows with raw BPM below the training oracle threshold.
+ * Exclusion cycling still uses isPatternCompatibleWithState (Breakdown never selected via wrap).
  */
-inline int applyExclusion(int result, int excludeIndex) noexcept
+inline bool isOnnxPatternAcceptable(int patternIndex, const FeatureVector& f) noexcept
 {
-    if (excludeIndex >= 0 && result == excludeIndex)
-        return (excludeIndex + 1) % kPatternCount;
-    return result;
+    if (patternIndex == 6)
+        return f.state != StructureState::SILENT && f.bpm < kBreakdownBpmThreshold;
+    return isPatternCompatibleWithState(patternIndex, f.state);
+}
+
+/**
+ * @brief D-23-04 single-shot exclusion: if result == excludeIndex, scan forward modulo-7
+ * for the next state-compatible pattern. Pass excludeIndex == -1 to disable.
+ * When no compatible candidate exists, returns fallbackPattern (rule/state default).
+ */
+inline int applyExclusion(
+    int result,
+    int excludeIndex,
+    StructureState state,
+    int fallbackPattern) noexcept
+{
+    if (excludeIndex < 0 || result != excludeIndex)
+        return result;
+    for (int step = 1; step <= kPatternCount; ++step)
+    {
+        const int candidate = (excludeIndex + step) % kPatternCount;
+        if (isPatternCompatibleWithState(candidate, state))
+            return candidate;
+    }
+    return fallbackPattern;
 }
 
 } // namespace PatternRules

@@ -1,0 +1,9 @@
+start_seconds,end_seconds,label_index,label_name
+0.000,15.000,2,Verse mid
+15.000,30.000,4,Chorus mid
+30.000,45.000,1,Verse slow
+45.000,60.000,5,Chorus fast
+60.000,75.000,6,Breakdown
+75.000,90.000,3,Verse fast
+90.000,105.000,0,Silent
+105.000,120.000,2,Verse mid

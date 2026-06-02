@@ -39,14 +39,14 @@ On the audio thread, **`FeatureVector::policyIntensity`** is set from the **`int
 |--------------|---------|--------|
 | `MA_BUILD_TESTS` | ON | Unit tests (`MetalAccompanimentTests`) |
 | `MA_BUILD_STANDALONE` | ON | Standalone app target |
-| `MA_ENABLE_ONNX` | OFF | Phase 2 — ONNX Runtime |
+| `MA_ENABLE_ONNX` | OFF | ONNX Runtime — see [`docs/ONNX_READINESS.md`](docs/ONNX_READINESS.md) |
 | `ONNXRUNTIME_ROOT` | — | Required when `MA_ENABLE_ONNX=ON` (path to ONNX Runtime root with `include/` and `lib/`) |
 
-### ONNX Runtime (optional — Phase 10)
+### ONNX Runtime (optional)
 
 1. Download a **macOS** ONNX Runtime archive from [onnxruntime releases](https://github.com/microsoft/onnxruntime/releases) (CPU, matching your architecture).
 2. Extract and set `ONNXRUNTIME_ROOT` to the folder that contains `include/onnxruntime_cxx_api.h` and `lib/libonnxruntime.dylib`.
-3. The bundled models are `assets/accompaniment_model.onnx` (minimal pattern stub), `assets/structure_model.onnx` (Phase 12 structure head), and `assets/bass_model.onnx` (Phase 13 generative bass stub). Regenerate with:
+3. The bundled models are `assets/accompaniment_model.onnx` (pattern selector), `assets/structure_model.onnx` (structure classifier), and `assets/bass_model.onnx` (generative bass). Regenerate with:
    ```bash
    training/.venv/bin/python scripts/build_minimal_pattern_onnx.py
    training/.venv/bin/python scripts/build_minimal_structure_onnx.py
@@ -64,9 +64,9 @@ cmake --build build-onnx --parallel
 
 If `tryLoadModel()` fails at runtime, the processor falls back to `RuleBasedInference` (same as `MA_ENABLE_ONNX=OFF`).
 
-Before running **`scripts/build_minimal_*.py`**, Phase 15 training scripts, or export helpers, set up the **locked** Python environment described in **`training/README.md`** (venv + `pip install -r training/requirements.txt`). **`training/requirements.txt`** is the **single source of truth** for pinned prep/training Python dependencies.
+Before running **`scripts/build_minimal_*.py`**, training scripts, or export helpers, set up the **locked** Python environment described in **`training/README.md`** (venv + `pip install -r training/requirements.txt`). **`training/requirements.txt`** is the **single source of truth** for pinned prep/training Python dependencies.
 
-**Generative bass (Phase 13):** When the bass ONNX bundle is present, the inference thread performs an extra `Run` per drained feature (same cadence as other inference heads). If the bass ONNX fails to load or confidence gating rejects the proposal, playback uses **library pattern bass only** — see the **Generative bass** subsection in the **[README](README.md)** for performance and fallback behavior.
+**Generative bass:** When the bass ONNX bundle is present, the inference thread performs an extra `Run` per drained feature (same cadence as other inference heads). If the bass ONNX fails to load or confidence gating rejects the proposal, playback uses **library pattern bass only** — see the **Generative bass** subsection in the **[README](README.md)** for performance and fallback behavior.
 
 Example with tests off:
 
@@ -95,8 +95,8 @@ cmake --build build --config Release --parallel
 ctest --test-dir build --output-on-failure --config Release
 ```
 
-Expect to install distro packages for ALSA, X11, and OpenGL as required by JUCE. Phase 1 ONNX (`MA_ENABLE_ONNX`) remains off by default; set `ONNXRUNTIME_ROOT` when you enable it for Phase 2 work.
+Expect to install distro packages for ALSA, X11, and OpenGL as required by JUCE. `MA_ENABLE_ONNX` remains off by default; set `ONNXRUNTIME_ROOT` when you enable it.
 
 ## Windows
 
-Not part of Phase 1 contributor workflow; see project roadmap for later milestones.
+Not part of the primary contributor workflow; see project roadmap for later milestones.

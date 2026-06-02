@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.5.3)
+project(MetalAccompaniment VERSION 0.6.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,7 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(MA_BUILD_TESTS       "Build unit tests"                  ON)
 option(MA_BUILD_STANDALONE  "Build standalone app target"       ON)
-option(MA_ENABLE_ONNX       "Enable ONNX Runtime (Phase 2)"     OFF)
+option(MA_ENABLE_ONNX       "Enable ONNX Runtime (v0.6.0 default: ON)"     ON)
 
 # ─────────────────────────────────────────────────────────────────
 # JUCE — fetch if not found locally
@@ -272,6 +272,7 @@ if(MA_BUILD_TESTS)
         tests/test_pattern_player_generative_bass.cpp
         tests/test_beat_tracker.cpp
         tests/test_pattern_rules.cpp
+        tests/test_onnx_inference.cpp
         tests/test_tempo_stabiliser.cpp
         tests/test_playback_gate.cpp
         tests/test_stable_pitch_tracker.cpp
@@ -318,6 +319,25 @@ if(MA_BUILD_TESTS)
         Catch2::Catch2WithMain
         ${JUCE_MODULES}
     )
+
+    if(MA_ENABLE_ONNX)
+        target_sources(MetalAccompanimentTests PRIVATE
+            tests/test_onnx_latency_benchmark.cpp
+            src/inference/OnnxInference.cpp
+        )
+        target_compile_definitions(MetalAccompanimentTests PRIVATE MA_ENABLE_ONNX=1)
+        target_include_directories(MetalAccompanimentTests PRIVATE "${ONNX_INCLUDE_DIR}")
+        target_link_libraries(MetalAccompanimentTests PRIVATE "${ONNX_LIB}")
+        if(BINARY_DATA_SOURCES)
+            target_link_libraries(MetalAccompanimentTests PRIVATE MetalAccompanimentData)
+        endif()
+        add_test(
+            NAME onnx_latency_benchmark
+            COMMAND MetalAccompanimentTests "[onnx][latency][benchmark]"
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        )
+        set_tests_properties(onnx_latency_benchmark PROPERTIES LABELS "onnx;benchmark")
+    endif()
 
     # ── Integration + E2E tests ────────────────────────────────────────────────
     # Links the full MetalAccompaniment plugin target (avoids compiling

@@ -114,6 +114,32 @@ def _torch_load(path: Path) -> Any:
     return torch.load(str(path), map_location="cpu", weights_only=True)
 
 
+def _load_norm_stats(tensor_path: Path) -> dict[str, Any] | None:
+    candidates = [
+        tensor_path.parent / "norm_stats.json",
+        tensor_path.parent.parent / "processed" / "norm_stats.json",
+    ]
+    for path in candidates:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    return None
+
+
+def _denormalize_rows(rows: list[list[float]], stats: dict[str, Any]) -> list[list[float]]:
+    mean = stats.get("mean")
+    std = stats.get("std")
+    if not mean or not std or len(mean) < 5 or len(std) < 5:
+        return rows
+    out: list[list[float]] = []
+    for row in rows:
+        restored = [
+            float(row[i]) * float(std[i]) + float(mean[i])
+            for i in range(min(5, len(row)))
+        ]
+        out.append(restored)
+    return out
+
+
 def load_proxy_tensors(paths: list[Path]) -> tuple[list[list[float]], list[str]]:
     matrices: list[list[list[float]]] = []
     used: list[str] = []
@@ -127,7 +153,22 @@ def load_proxy_tensors(paths: list[Path]) -> tuple[list[list[float]], list[str]]
         rows = tensor.tolist()
         if rows and isinstance(rows[0], (int, float)):
             rows = [rows]
-        matrices.append([[float(v) for v in row[:5]] for row in rows])
+        raw_rows = [[float(v) for v in row[:5]] for row in rows]
+        meta = obj.get("meta") if isinstance(obj, dict) else None
+        looks_normalized = (
+            isinstance(meta, dict)
+            and "norm" in str(meta.get("norm", "")).lower()
+        ) or (
+            raw_rows
+            and abs(raw_rows[0][0]) < 50.0
+            and float(max(v for row in raw_rows for v in row)) < 100.0
+            and float(min(v for row in raw_rows for v in row)) < 0.0
+        )
+        if looks_normalized:
+            stats = _load_norm_stats(path)
+            if stats is not None:
+                raw_rows = _denormalize_rows(raw_rows, stats)
+        matrices.append(raw_rows)
         used.append(str(path))
     values = [row for matrix in matrices for row in matrix]
     if not values:
@@ -155,7 +196,11 @@ def analyze(captures: list[Path], proxy_tensors: list[Path] | None) -> dict[str,
         proxy_values = [float(row[proxy_index]) for row in proxy_rows]
         captured_stats = stats(captured_values)
         proxy_stats = stats(proxy_values)
-        abs_delta = abs(float(captured_stats["mean"]) - float(proxy_stats["mean"]))
+        if name == "spectralCentroid":
+            # Phase 36: p50 is the authoritative guitar capture statistic (see FEATURE_PROXY.md)
+            abs_delta = abs(float(captured_stats["p50"]) - float(proxy_stats["p50"]))
+        else:
+            abs_delta = abs(float(captured_stats["mean"]) - float(proxy_stats["mean"]))
         standardized_mean_delta = abs_delta / max(float(proxy_stats["std"]), 1.0e-8)
         features.append({
             "feature": name,

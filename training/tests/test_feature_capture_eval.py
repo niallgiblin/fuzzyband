@@ -63,7 +63,12 @@ def test_valid_fixture_reports_metrics_and_confusion_matrix(tmp_path: Path, caps
     _write_capture(capture, [_feature_row(0.25, 2, 2), _feature_row(1.25, 5, 4)])
     _write_annotations(annotations)
 
-    rc = efc.main(["--capture", str(capture), "--annotations", str(annotations), "--json-out", str(json_out)])
+    rc = efc.main([
+        "--capture", str(capture),
+        "--annotations", str(annotations),
+        "--json-out", str(json_out),
+        "--min-rule-onnx-agreement", "0.0",
+    ])
 
     assert rc == 0
     stdout = capsys.readouterr().out
@@ -79,13 +84,34 @@ def test_valid_fixture_reports_metrics_and_confusion_matrix(tmp_path: Path, caps
     assert "Verse mid" in report["rule_per_class_accuracy"]
 
 
+def test_json_out_creates_parent_directory(tmp_path: Path) -> None:
+    capture = tmp_path / "capture.jsonl"
+    annotations = tmp_path / "labels.csv"
+    json_out = tmp_path / "nested" / "reports" / "feature_capture_eval.json"
+    _write_capture(capture, [_feature_row(0.25, 2, 2)])
+    _write_annotations(annotations, ["0.0,1.0,2,Verse mid"])
+
+    rc = efc.main(["--capture", str(capture), "--annotations", str(annotations), "--json-out", str(json_out)])
+
+    assert rc == 0
+    assert json_out.exists()
+
+
 def test_rows_outside_annotations_are_ignored_and_coverage_reported(tmp_path: Path) -> None:
     capture = tmp_path / "capture.jsonl"
     annotations = tmp_path / "labels.csv"
     _write_capture(capture, [_feature_row(0.25, 2, 2), _feature_row(3.0, 2, 2)])
     _write_annotations(annotations, ["0.0,1.0,2,Verse mid"])
 
-    report, rc = efc.evaluate(capture, annotations, onnx=None, min_onnx_accuracy=0.65, top_disagreements=20)
+    report, rc = efc.evaluate(
+        capture,
+        annotations,
+        onnx=None,
+        min_onnx_accuracy=0.65,
+        min_onnx_macro_f1=0.65,
+        min_rule_onnx_agreement=0.80,
+        top_disagreements=20,
+    )
 
     assert rc == 0
     assert report["annotated_rows"] == 1
@@ -112,17 +138,6 @@ def test_missing_required_capture_field_fails(tmp_path: Path) -> None:
     assert efc.main(["--capture", str(capture), "--annotations", str(annotations)]) == 1
 
 
-def test_onnx_threshold_failure_exits_nonzero(tmp_path: Path) -> None:
-    capture = tmp_path / "capture.jsonl"
-    annotations = tmp_path / "labels.csv"
-    _write_capture(capture, [_feature_row(0.25, 2, 1), _feature_row(1.25, 4, 1)])
-    _write_annotations(annotations)
-
-    rc = efc.main(["--capture", str(capture), "--annotations", str(annotations), "--min-onnx-accuracy", "0.65"])
-
-    assert rc == 2
-
-
 def test_top_disagreement_output_includes_elapsed_seconds_and_feature_context(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     capture = tmp_path / "capture.jsonl"
     annotations = tmp_path / "labels.csv"
@@ -136,3 +151,78 @@ def test_top_disagreement_output_includes_elapsed_seconds_and_feature_context(tm
     assert "bpm=" in stdout
     assert "centroid=" in stdout
     assert "hf_flux=" in stdout
+
+
+def test_onnx_threshold_failure_exits_nonzero(tmp_path: Path) -> None:
+    capture = tmp_path / "capture.jsonl"
+    annotations = tmp_path / "labels.csv"
+    _write_capture(capture, [_feature_row(0.25, 2, 1), _feature_row(1.25, 4, 1)])
+    _write_annotations(annotations)
+
+    rc = efc.main([
+        "--capture", str(capture),
+        "--annotations", str(annotations),
+        "--min-onnx-accuracy", "0.65",
+        "--min-onnx-macro-f1", "0.65",
+    ])
+
+    assert rc == 2
+
+
+def test_macro_f1_gate_failure_exits_nonzero(tmp_path: Path) -> None:
+    capture = tmp_path / "capture.jsonl"
+    annotations = tmp_path / "labels.csv"
+    _write_capture(capture, [_feature_row(0.25, 2, 1), _feature_row(1.25, 4, 1)])
+    _write_annotations(annotations)
+
+    rc = efc.main([
+        "--capture", str(capture),
+        "--annotations", str(annotations),
+        "--min-onnx-macro-f1", "0.99",
+    ])
+
+    assert rc == 2
+
+
+def test_agreement_gate_failure_exits_nonzero(tmp_path: Path) -> None:
+    capture = tmp_path / "capture.jsonl"
+    annotations = tmp_path / "labels.csv"
+    _write_capture(capture, [_feature_row(0.25, 2, 5), _feature_row(1.25, 4, 1)])
+    _write_annotations(annotations)
+
+    rc = efc.main([
+        "--capture", str(capture),
+        "--annotations", str(annotations),
+        "--min-rule-onnx-agreement", "0.99",
+    ])
+
+    assert rc == 2
+
+
+def test_replay_mode_prints_side_by_side(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    capture = tmp_path / "capture.jsonl"
+    _write_capture(capture, [_feature_row(0.25, 2, 2), _feature_row(1.25, 4, 4)])
+
+    rc = efc.main(["--capture", str(capture), "--replay"])
+
+    assert rc == 0
+    stdout = capsys.readouterr().out
+    assert "rule=" in stdout
+    assert "onnx=" in stdout
+
+
+def test_readiness_fixture_smoke() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    capture = repo_root / "training/fixtures/readiness/feature_capture.jsonl"
+    annotations = repo_root / "training/fixtures/readiness/annotations.csv"
+    if not capture.exists():
+        pytest.skip("readiness fixture not checked in")
+
+    rc = efc.main([
+        "--capture", str(capture),
+        "--annotations", str(annotations),
+        "--min-onnx-macro-f1", "0.0",
+        "--min-rule-onnx-agreement", "0.0",
+    ])
+
+    assert rc == 0

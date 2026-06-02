@@ -77,6 +77,19 @@ std::string patternNameOrNull(const std::string& name)
     return name.empty() ? "null" : quoted(name);
 }
 
+bool canWriteToDirectory(const juce::File& dir)
+{
+    if (!dir.createDirectory().wasOk() && !dir.isDirectory())
+        return false;
+
+    auto probe = dir.getChildFile(".feature_capture_write_test_"
+        + juce::String(juce::Time::getMillisecondCounter()) + ".tmp");
+    if (!probe.replaceWithText("ok"))
+        return false;
+
+    return probe.deleteFile();
+}
+
 juce::File resolveCaptureDirectory()
 {
     const juce::File roots[] = {
@@ -90,8 +103,7 @@ juce::File resolveCaptureDirectory()
     for (const auto& root : roots)
     {
         auto dir = root.getChildFile("MetalAccompaniment").getChildFile("captures");
-        const auto result = dir.createDirectory();
-        if (result.wasOk() || dir.isDirectory())
+        if (canWriteToDirectory(dir))
             return dir;
     }
 

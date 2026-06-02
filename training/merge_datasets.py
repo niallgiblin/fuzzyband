@@ -55,6 +55,23 @@ def _oversample_minority_class(
     )
 
 
+def _remap_centroid_column(X: np.ndarray) -> np.ndarray:
+    """Phase 36: remap legacy MIDI brightness proxy to capture-calibrated Hz."""
+    out = X.copy()
+    col = out[:, 2]
+    for i in range(col.shape[0]):
+        value = float(col[i])
+        if value <= 0.0:
+            out[i, 2] = 9853.0
+            continue
+        if value >= 800.0:
+            mean_note = max(0.0, min(127.0, (value - 400.0) / 6000.0 * 127.0))
+            out[i, 2] = 8750.0 + (mean_note / 127.0) * 2450.0
+        else:
+            out[i, 2] = value
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Merge GMD + Lakh tensors (Phase 25 DATA-09)."
@@ -171,8 +188,9 @@ def main() -> int:
     old_std = np.asarray(old_norm["std"], dtype=np.float64)
 
     # ── De-normalize GMD ──────────────────────────────────────────────────
-    X_gmd_train_raw = X_gmd_train_norm * old_std + old_mean
-    X_gmd_val_raw = X_gmd_val_norm * old_std + old_mean
+    X_gmd_train_raw = _remap_centroid_column(X_gmd_train_norm * old_std + old_mean)
+    X_gmd_val_raw = _remap_centroid_column(X_gmd_val_norm * old_std + old_mean)
+    X_lakh_raw = _remap_centroid_column(X_lakh_raw)
 
     # ── Oracle label passthrough (Phase 32) ───────────────────────────────────────
     # Oracle labels are computed in build_dataset.py and build_lakh_dataset.py.
