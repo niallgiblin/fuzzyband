@@ -147,6 +147,20 @@ The inference thread writes `latestPatternIndex`; the audio thread reads it (`sr
 
 `PatternPlayer` then stores it as a requested pattern and commits at the next bar boundary (`src/midi/PatternPlayer.cpp:429`). This separates "decision time" from "musical change time."
 
+### Shared Groove Commit Policy
+
+Phase 29 resolves `RHY-FEAT-01` as paused and superseded for this phase by D-04 and D-05 in `.planning/phases/29-runtime-coordination-c/29-CONTEXT.md`. The current `FeatureVector` remains the C++ analysis snapshot for inference handoff and must not be expanded for ONNX/model input in Phase 29.
+
+Phase 29 must not change `docs/ONNX_IO.md`, ONNX contract validators, exporters, model tensor definitions, or training tensor contracts. The v0.7 context freezes the old 12-feature pattern-input path until tempo, section, and override semantics are intentionally redesigned.
+
+Accepted runtime decisions should become audible through one fixed-size C++ groove commit containing:
+
+- target drum pattern index
+- optional generated bass frame
+- optional transition fill
+
+`PatternPlayer` owns audible activation of that groove commit at the next bar boundary, so the drum pattern, generated bass frame, and transition fill activate as one musical event instead of as mixed old/new state. The audio-thread side of this policy must remain real-time safe: `processBlock()` and `PatternPlayer::process()` must not block, take locks, allocate heap memory, call ONNX, or perform file I/O.
+
 ### Display Handoff
 
 Display values are atomics (`displayBpm`, `displayStateIndex`, `displayPatternIndex`, RMS, centroid, HF flux, beat confidence). The audio thread writes them; the UI thread reads them through processor getters.
