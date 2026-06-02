@@ -172,8 +172,8 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     if (bassInference)
         bassInference->prepare(sr);
     useGenerativeBass.store(false, std::memory_order_release);
-    BassStepFrame staleBassFrame{};
-    while (bassStepQueue.try_dequeue(staleBassFrame)) {}
+    PatternPlayer::GrooveCommit staleCommit{};
+    while (grooveCommitQueue.try_dequeue(staleCommit)) {}
 
     hostSampleTime = 0;
     latestPatternIndex.store(0, std::memory_order_relaxed);
@@ -247,6 +247,11 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         const int idx = inference->selectPattern(patternFeatures, excludeParam);
         const int ruleIdx = PatternRules::rulePatternForState(patternFeatures);
         const bool onnxAvailable = (activeInferenceName.find("ONNX") != std::string::npos);
+        PatternPlayer::GrooveCommit commit{};
+        commit.patternIndex = currentPat;
+        bool hasGrooveCommit = false;
+        bool acceptedDrumPattern = false;
+        bool acceptedBassFrame = false;
 
         // 2-bar hold guard for drum pattern index: 8 beats * 60/bpm * sampleRate samples.
         const double srDrum = cachedSampleRate.load(std::memory_order_acquire);
@@ -268,8 +273,9 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
 
         if (drumHoldExpired || excludeParam >= 0 || transitionEvent || autoChangeReady)
         {
-            latestPatternIndex.store(idx, std::memory_order_release);
-            lastDrumPatternChangeSample = latest.sampleTimestamp;
+            commit.patternIndex = idx;
+            hasGrooveCommit = true;
+            acceptedDrumPattern = true;
         }
         // Always update display so UI shows inference intent even during hold.
         displayPatternIndex.store(idx, std::memory_order_relaxed);
@@ -327,24 +333,16 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             }
             else if (p.valid && !silencePolicy && bassHoldExpired)
             {
-                BassStepFrame frame{};
                 for (int i = 0; i < 16; ++i)
                 {
-                    frame.pitchOffsets[static_cast<size_t>(i)] = p.pitchOffset[i];
-                    frame.velocities[static_cast<size_t>(i)] = p.velocity[i];
+                    commit.bassPitchOffset[i] = p.pitchOffset[i];
+                    commit.bassVelocity[i] = p.velocity[i];
                 }
-                frame.rootMidi = latest.pitchRootMidi;
-
-                if (bassStepQueue.try_enqueue(frame))
-                {
-                    useGenerativeBass.store(true, std::memory_order_release);
-                    lastBassUpdateSample = latest.sampleTimestamp;
-                    useGen = true;
-                }
-                else
-                {
-                    useGen = useGenerativeBass.load(std::memory_order_acquire);
-                }
+                commit.bassRootMidi = latest.pitchRootMidi;
+                commit.hasBassFrame = true;
+                hasGrooveCommit = true;
+                acceptedBassFrame = true;
+                useGen = true;
             }
             else if (p.valid && !silencePolicy)
             {
@@ -365,6 +363,20 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         else
         {
             useGenerativeBass.store(false, std::memory_order_release);
+        }
+
+        if (hasGrooveCommit && grooveCommitQueue.try_enqueue(commit))
+        {
+            if (acceptedDrumPattern)
+            {
+                latestPatternIndex.store(idx, std::memory_order_release);
+                lastDrumPatternChangeSample = latest.sampleTimestamp;
+            }
+            if (acceptedBassFrame)
+            {
+                useGenerativeBass.store(true, std::memory_order_release);
+                lastBassUpdateSample = latest.sampleTimestamp;
+            }
         }
     }
 }
@@ -533,21 +545,19 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const bool trulySilent = !gd.gateOpen;
     patternPlayer.setStructureSilent(trulySilent && !previewAudible);
 
-    BassStepFrame latestBassFrame{};
-    bool gotBassFrame = false;
-    while (bassStepQueue.try_dequeue(latestBassFrame))
-        gotBassFrame = true;
+    PatternPlayer::GrooveCommit latestGrooveCommit{};
+    bool gotGrooveCommit = false;
+    while (grooveCommitQueue.try_dequeue(latestGrooveCommit))
+        gotGrooveCommit = true;
 
     const bool generativeBassActive = useGenerativeBass.load(std::memory_order_acquire);
     if (silencePolicy)
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
-    else if (generativeBassActive && gotBassFrame)
-        patternPlayer.setGenerativeBassSteps(
-            latestBassFrame.pitchOffsets.data(),
-            latestBassFrame.velocities.data(),
-            latestBassFrame.rootMidi);
     else if (!generativeBassActive)
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
+
+    if (gotGrooveCommit)
+        patternPlayer.queueGrooveCommit(latestGrooveCommit);
 
     int64_t hostPos = hostSampleTime;
     if (auto* ph = getPlayHead())
