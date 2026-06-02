@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: M001
 milestone_name: Creative Companion (Playability Pivot)
 status: in_progress
-last_updated: "2026-06-02T20:29:30.000Z"
+last_updated: "2026-06-02T20:46:36.375Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 11
   completed_phases: 8
   total_plans: 27
-  completed_plans: 26
-  percent: 96
+  completed_plans: 27
+  percent: 100
 ---
 
 # STATE — Metal Accompaniment
@@ -34,7 +34,7 @@ See: `.planning/PROJECT.md` (updated 2026-06-02)
 ## Current position
 
 Phase: 29 (runtime-coordination-c) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Milestone: **M001 Creative Companion (Playability Pivot)** — planned, 4 slices pending
 
 | Slice | Title | Risk | Status |
@@ -65,6 +65,7 @@ Next: `/gsd-execute-phase S01` to begin tempo stability work
 
 ## Recent Decisions
 
+- Phase 29 Plan 2 completed 2026-06-02: drum pattern and generated bass proposals now cross the inference/audio boundary as one `PatternPlayer::GrooveCommit` payload.
 - M001 planned 2026-06-02: ONNX-first inference stability pivot (4 slices)
 - Phase 29 Plan 1 completed 2026-06-02: RHY-FEAT-01 recorded as paused/superseded for Phase 29 and shared next-bar groove commit policy documented
 - D001: ONNX-first inference path — rule-based is fallback only
@@ -80,4 +81,4 @@ Next: `/gsd-execute-phase S01` to begin tempo stability work
 
 ## Next Action
 
-Continue Phase 29 Plan 2: shared fixed-size pending groove commit for drum pattern plus generated bass activation
+Continue Phase 29 Plan 3: four minimal directional transition fills through the shared commit path

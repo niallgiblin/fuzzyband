@@ -197,7 +197,7 @@ Plans:
 
 Plans:
 - [x] 29-01-PLAN.md — Rescope audit, RHY-FEAT-01 supersession, and shared commit policy documentation
-- [ ] 29-02-PLAN.md — Shared fixed-size pending groove commit for drum pattern plus generated bass activation
+- [x] 29-02-PLAN.md — Shared fixed-size pending groove commit for drum pattern plus generated bass activation
 - [ ] 29-03-PLAN.md — Four minimal directional transition fills through the shared commit path
 
 #### Phase 30: ML retrain (12-feature input)
@@ -260,7 +260,7 @@ Plans:
 | 26. Retrain + Validate | v0.4.0 | 3/3 | Complete | 2026-04-29 |
 | 27. Rhythmic coherence documentation | v0.5.0 | 2/2 | Complete | 2026-04-29 |
 | 28. Beat tracker & bass sequencer | v0.5.0 | 0/2 | Not started | - |
-| 29. Runtime coordination (C++) | v0.5.0 | 1/3 | In progress | - |
+| 29. Runtime coordination (C++) | v0.5.0 | 2/3 | In progress | - |
 | 30. ML retrain (12 features) | v0.5.0 | 0/0 | Not started | - |
 | 31. Architecture Deepening | v0.5.0 | 4/4 | Complete   | 2026-05-03 |
 | 32. Training Label Correction | v0.6.0 | 3/3 | Complete   | 2026-05-12 |
