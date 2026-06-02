@@ -1,5 +1,8 @@
 #include "PatternPlayer.h"
 #include <cmath>
+#include <type_traits>
+
+static_assert(std::is_trivially_copyable_v<PatternPlayer::GrooveCommit>);
 
 void PatternPlayer::prepare(double newSampleRate, int blockSize)
 {
@@ -15,6 +18,8 @@ void PatternPlayer::reset()
     sampleCounter = 0;
     activePatternIndex = patternIndex.load(std::memory_order_relaxed);
     pendingPatternIndex = -1;
+    pendingGrooveCommitValid = false;
+    pendingGrooveCommit = GrooveCommit{};
     wasSilent = false;
     bassSemitoneOffset = 0;
     generativeBassActive = false;
@@ -60,6 +65,14 @@ void PatternPlayer::setGenerativeBassSteps(const float pitchOffset[16],
     genBassAbsNoteOffSample = -1; // mutual exclusion with piano-roll steps defers on separate store
 }
 
+void PatternPlayer::queueGrooveCommit(const GrooveCommit& commit) noexcept
+{
+    pendingGrooveCommit = commit;
+    pendingGrooveCommitValid = true;
+    pendingPatternIndex = -1;
+    patternIndex.store(commit.patternIndex, std::memory_order_relaxed);
+}
+
 void PatternPlayer::setBpm(float newBpm)
 {
     const float clamped = juce::jlimit(40.0f, 320.0f, newBpm);
@@ -80,6 +93,8 @@ void PatternPlayer::snapToBarStart()
 {
     beatPosition = 0.0;
     pendingPatternIndex = -1;
+    pendingGrooveCommitValid = false;
+    pendingGrooveCommit = GrooveCommit{};
 }
 
 void PatternPlayer::snapBpm(float newBpm)
@@ -426,14 +441,29 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         }
     }
 
-    if (pendingPatternIndex >= 0)
+    if (pendingGrooveCommitValid || pendingPatternIndex >= 0)
     {
         const double barPhase = std::fmod(beatPosition, 4.0);
         const bool atBar = barPhase < 1.0e-4 || (4.0 - barPhase) < 1.0e-3;
         if (atBar)
         {
             const int prevIndex = activePatternIndex;
-            activePatternIndex = pendingPatternIndex;
+            if (pendingGrooveCommitValid)
+            {
+                activePatternIndex = pendingGrooveCommit.patternIndex;
+                if (pendingGrooveCommit.hasBassFrame)
+                {
+                    setGenerativeBassSteps(pendingGrooveCommit.bassPitchOffset,
+                                           pendingGrooveCommit.bassVelocity,
+                                           pendingGrooveCommit.bassRootMidi);
+                }
+                pendingGrooveCommitValid = false;
+                pendingGrooveCommit = GrooveCommit{};
+            }
+            else
+            {
+                activePatternIndex = pendingPatternIndex;
+            }
             pendingPatternIndex = -1;
             if (prevIndex != 0 && activePatternIndex != 0)
                 fireTransitionCrash = true;

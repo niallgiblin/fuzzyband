@@ -98,13 +98,6 @@ public:
     void resumeBackgroundInferenceForTests();
 
 private:
-    struct BassStepFrame
-    {
-        std::array<float, 16> pitchOffsets{};
-        std::array<float, 16> velocities{};
-        float rootMidi = 40.0f;
-    };
-
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     void inferenceLoop();
@@ -133,7 +126,7 @@ private:
     std::atomic<int> latestPatternIndex{ 0 };
 
     std::atomic<bool> useGenerativeBass{ false };
-    moodycamel::ReaderWriterQueue<BassStepFrame> bassStepQueue{ 32 };
+    moodycamel::ReaderWriterQueue<PatternPlayer::GrooveCommit> grooveCommitQueue{ 32 };
 
     std::atomic<float> displayBpm{ 120.0f };
     std::atomic<int> displayStateIndex{ 0 };

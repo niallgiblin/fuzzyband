@@ -17,6 +17,25 @@
 class PatternPlayer
 {
 public:
+    enum class TransitionFillKind
+    {
+        None,
+        Entry,
+        BuildUp,
+        Release,
+        BreakdownOrImpact
+    };
+
+    struct GrooveCommit
+    {
+        int patternIndex = 0;
+        bool hasBassFrame = false;
+        float bassPitchOffset[16] = {};
+        float bassVelocity[16] = {};
+        float bassRootMidi = 40.0f;
+        TransitionFillKind fillKind = TransitionFillKind::None;
+    };
+
     void setPatternLibrary(const MidiPatternLibrary* lib) { library = lib; }
 
     void prepare(double sampleRate, int blockSize);
@@ -42,6 +61,9 @@ public:
         @p pitchOffset[16] are relative semitone offsets; @p velocity[16] are 0=rest.
         @p rootMidi is the conditioned absolute root from X_bass. */
     void setGenerativeBassSteps(const float pitchOffset[16], const float velocity[16], float rootMidi);
+
+    /** @brief Queue a fixed-size drum/bass commit for the next bar boundary. Audio thread safe. */
+    void queueGrooveCommit(const GrooveCommit& commit) noexcept;
 
     /** @brief Fill @p midi for this audio block using host sample position for timing. */
     void process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition);
@@ -84,6 +106,8 @@ private:
     std::atomic<int> patternIndex{ 0 };
     int activePatternIndex = 0;
     int pendingPatternIndex = -1;
+    bool pendingGrooveCommitValid = false;
+    GrooveCommit pendingGrooveCommit{};
 
     double beatPosition = 0.0;
     int64_t sampleCounter = 0;
