@@ -27,6 +27,9 @@ _deps/
 # GSD planning (local only)
 .planning/
 
+# Claude/GSD worktrees (stale, local only)
+.claude/worktrees/
+
 # Python training venv (Phase 9+)
 training/.venv/
 # GMD + TFDS cache (Phase 17)

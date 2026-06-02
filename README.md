@@ -1,6 +1,6 @@
-# Metal Accompaniment
+# Fuzzyband — Metal Accompaniment
 
-JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + bass MIDI** in real time. **Default builds** use rule-based tempo, energy, and structure plus **optional ONNX** pattern/structure/bass when built with `MA_ENABLE_ONNX=ON` and models in `assets/` (see [CONTRIBUTING.md](CONTRIBUTING.md)). Pitch-aware bass routing is in the tree; generative bass needs ONNX + `bass_model.onnx`.
+JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + bass MIDI** in real time. Ships with a **rule-based** pipeline (onset detection, energy/structure tagging, tempo tracking) and a trained **ONNX** pattern/structure/bass pipeline behind `MA_ENABLE_ONNX`. Default builds use rule-based inference; ONNX path is gated behind a readiness checklist ([`docs/ONNX_READINESS.md`](docs/ONNX_READINESS.md)). Version **0.5.5** — milestone **v0.6.0 ML Correctness & Evaluation** in progress.
 
 ## Plugin hosting (insert order)
 
@@ -10,38 +10,59 @@ Put the plug-in on your **dry guitar track *before*** amp/cab sims and heavy FX 
 
 If you are new to C++/JUCE/audio plugins, start with **[`docs/DOCS_INDEX.md`](docs/DOCS_INDEX.md)**. It links a plain-English codebase walkthrough, runtime architecture map, C++/JUCE/audio-thread audit, and modularity/bloat review.
 
-## Version & roadmap (source of truth)
+## Version & roadmap
 
+| What | Where |
+|---|---|
+| GSD milestone & phase (current: v0.6.0, Phase 36) | [`.planning/STATE.md`](.planning/STATE.md) and [`.planning/ROADMAP.md`](.planning/ROADMAP.md) |
+| Plugin version string in the editor | **`CMakeLists.txt`** → `project(MetalAccompaniment VERSION 0.5.5)` — rebuild after changing |
+| Archived milestone narratives | [`.planning/milestones/`](.planning/milestones/) (v0.1.0 through v0.4.0) |
 
+**Milestone snapshot:**
 
-| What                                                                  | Where                                                                                                                                              |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **GSD milestone & phase** (e.g. v0.3.0, Phase 17 done, Phase 18 next) | `[.planning/STATE.md](.planning/STATE.md)` and `[.planning/ROADMAP.md](.planning/ROADMAP.md)`                                                      |
-| **Shipped v0.2.0 narrative** (Phases 9–16, archived)                  | `[.planning/milestones/v0.2.0-ROADMAP.md](.planning/milestones/v0.2.0-ROADMAP.md)`                                                                 |
-| **Plugin version string** in the editor                                                     | **`CMakeLists.txt`** → `project(MetalAccompaniment VERSION …)` — rebuild **`MetalAccompaniment_VST3`** / **`MetalAccompaniment_AU`** after changing it                                                            |
+| Milestone | Phases | Status |
+|---|---|---|
+| **v0.1.0** Rule MVP | 1–8 | ✅ Shipped |
+| **v0.2.0** ML + Generative | 9–16 | ✅ Shipped |
+| **v0.3.0** Real ML Training Pipeline | 17–20 | ✅ Shipped |
+| **v0.4.0** ML Playability & Simplification | 21–26 | ✅ Shipped |
+| **v0.5.0** Rhythmic Coherence | 27–31 | 🚧 Partial (27, 31 done; 28–30 parked) |
+| **v0.6.0** ML Correctness & Evaluation | 32–36 | 🔜 In progress (32–35 done; 36 executing) |
+| **v0.7.0** Creative Companion | TBD | 📋 Planned (brief at `.planning/milestones/v0.7.0-CONTEXT.md`) |
 
+## ML pipeline
 
-**Milestone snapshot:** **Shipped:** **v0.1.0** (Phases 1–8, rule MVP), **v0.2.0** (9–16, ML/generative optional), **v0.3.0** (17–20, GMD training → `assets/*.onnx`), **v0.4.0** (21–26, merged data + ONNX/C++ parity). **In progress:** **v0.5.0 Rhythmic Coherence** (Phases 27–30 — documentation, beat tracker, runtime coordination, ML retrain). Current phase/status: **[`.planning/STATE.md`](.planning/STATE.md)**.
+The plugin ships three trained ONNX models in `assets/`. They are active when built with `-DMA_ENABLE_ONNX=ON`; otherwise the rule-based pipeline runs. See [`docs/ONNX_READINESS.md`](docs/ONNX_READINESS.md) for the criteria gating the `MA_ENABLE_ONNX=ON` default flip.
 
-## Phase 2 data & training (prep)
+| Model | File | Tensor contract |
+|---|---|---|
+| Pattern selector | `assets/accompaniment_model.onnx` | [`docs/ONNX_IO.md`](docs/ONNX_IO.md) |
+| Structure classifier | `assets/structure_model.onnx` | [`docs/ONNX_IO.md`](docs/ONNX_IO.md) |
+| Generative bass | `assets/bass_model.onnx` | [`docs/BASS_ONNX_IO.md`](docs/BASS_ONNX_IO.md) |
 
-- **[Dataset audit & go/no-go](docs/DATASET_AUDIT.md)** — symbolic corpus shortlist and license checklist
-- **[Tokenization](docs/TOKENIZATION.md)** — event JSON/JSONL contract for offline prep
-- **[Training / prep tooling](training/README.md)** — Python venv, `prep_midi.py` CLI
+**Training pipeline:** Python venv with pinned deps — see [`training/README.md`](training/README.md) for dataset prep (GMD + Lakh MIDI), model training, ONNX export, contract validation, and feature-capture evaluation.
 
-## ONNX inference (Phase 10)
+**v0.6.0 ML correctness work (Phases 32–36):**
+- **Label correction (Phase 32):** Training labels derived from rule oracle, not quantile bins
+- **Quality gates (Phase 33):** Bass and structure models have hard export gates; structure normalization baked into ONNX graph
+- **Domain gap (Phase 34):** Runtime `FeatureVector` capture, offline evaluation, captured-vs-proxy gap docs
+- **Inference consistency (Phase 35):** Adjusted-BPM ONNX input, compatible exclusion logic, `structureBlend` docs
+- **Evaluation (Phase 36):** Latency benchmarks, A/B comparison, ONNX readiness checklist (in progress)
 
-- **[ONNX I/O contract](docs/ONNX_IO.md)** — frozen tensor names / shapes consumed by the plugin; training exports must match this contract
-- Optional ONNX Runtime builds are enabled with `-DMA_ENABLE_ONNX=ON` and `-DONNXRUNTIME_ROOT=/path/to/onnxruntime` — full setup is in **[CONTRIBUTING.md](CONTRIBUTING.md)** (§ONNX Runtime)
-- Default builds (and CI) leave `MA_ENABLE_ONNX=OFF`; the plugin falls back to `RuleBasedInference` when ONNX is disabled or model load fails
+## Architecture & learning the codebase
 
-## Generative bass (Phase 13)
+- **[`docs/DOCS_INDEX.md`](docs/DOCS_INDEX.md)** — recommended reading order (codebase walkthrough, runtime architecture, best-practices audit, modularity review)
+- **[`ARCHITECTURE.md`](ARCHITECTURE.md)** — component boundaries, threading model, data flow
+- **[`docs/PLUGIN_GUIDE.md`](docs/PLUGIN_GUIDE.md)** — practical reference for tuning and extending the plugin
+- **[`docs/FEATURE_CAPTURE.md`](docs/FEATURE_CAPTURE.md)** — runtime feature capture workflow and JSONL schema
 
-When `MA_ENABLE_ONNX=ON` and `bass_model.onnx` loads successfully, the background inference thread runs an **additional** ONNX `Run` on each feature drain (same ~50 Hz cadence as pattern/structure inference — order of magnitude, not a hard guarantee). **CPU / latency:** expect roughly one extra small-session inference per drain versus ONNX builds without the bass head; for exact numbers, profile the plugin locally with your buffer size and DAW.
+### Extracted modules (v0.5.0 Phase 31)
 
-**Degradation:** If the bass model is missing, fails to load, or the proposal’s confidence is below `kMinGenerativeConfidence` in `AccompanimentProcessor.cpp`, the plugin falls back to **static pattern bass only** (no generative rank/select). See `docs/BASS_ONNX_IO.md` for the tensor contract.
-
-Contributor setup for the bass asset is in **[CONTRIBUTING.md](CONTRIBUTING.md)** (§ONNX Runtime).
+`AccompanimentProcessor` was thinned by extracting four deep modules into `src/analysis/`:
+- **`PlaybackGate`** — silence, phrase-breath holds, confidence gating, deferred beat snaps
+- **`StablePitchTracker`** — pitch-class stability window and semitone mapping
+- **`TempoStabiliser`** — BPM hysteresis and alias folding
+- **`PatternRules`** (in `src/inference/`) — shared rule logic between `RuleBasedInference` and `OnnxInference`
 
 ## Pattern MIDI export (offline)
 
@@ -162,7 +183,7 @@ MA_WRITE_E2E_GOLDEN=1 ./build/MetalAccompanimentIntegrationTests "[e2e][transiti
 3. Route **MIDI** from the guitar/plugin track to the drum track: use Reaper’s track routing so the drum track receives MIDI sent by the plugin (e.g. **MIDI Hardware Output** / virtual routing, or record-arm the drum track with input from the guitar track — exact clicks depend on your Reaper version).
 4. Play: the plugin outputs **channel 10** (drums) and **channel 2** (bass); point your drum instrument at the appropriate input.
 
-See `**ARCHITECTURE.md`** for threading and components. Historical Phase 1-only narrative: `**ROADMAP_PHASE_1.md**`. **Current** phased work: `**.planning/ROADMAP.md`**.
+See **[`ARCHITECTURE.md`](ARCHITECTURE.md)** for threading and components; **[`.planning/ROADMAP.md`](.planning/ROADMAP.md)** for current phased work.
 
 ```bash
 cd /Users/ng/Desktop/fuzzyband

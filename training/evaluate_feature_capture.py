@@ -11,6 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from sklearn.metrics import f1_score
+
+from build_dataset import _rule_pattern_for_state
+
 SCHEMA_VERSION = "feature_capture.v1"
 ANNOTATION_HEADER = "start_seconds,end_seconds,label_index,label_name"
 
@@ -166,7 +170,23 @@ def _empty_confusion() -> list[list[int]]:
     return [[0 for _ in range(7)] for _ in range(7)]
 
 
+def _macro_f1(pairs: list[tuple[int, int]]) -> float | None:
+    if not pairs:
+        return None
+    actuals = [actual for _, actual in pairs]
+    preds = [pred for pred, _ in pairs]
+    return float(f1_score(actuals, preds, average="macro", zero_division=0))
+
+
+def _derive_rule_pattern(row: dict[str, Any]) -> int:
+    state_float = float(row["state"])
+    return _rule_pattern_for_state(float(row["bpm"]), state_float, float(row["policy_intensity"]))
+
+
 def _accuracy(pairs: list[tuple[int, int]]) -> float | None:
+    if not pairs:
+        return None
+    return sum(1 for pred, label in pairs if pred == label) / len(pairs)
     if not pairs:
         return None
     return sum(1 for pred, label in pairs if pred == label) / len(pairs)
@@ -226,6 +246,8 @@ def evaluate(
     *,
     onnx: Path | None,
     min_onnx_accuracy: float,
+    min_onnx_macro_f1: float,
+    min_rule_onnx_agreement: float,
     top_disagreements: int,
 ) -> tuple[dict[str, Any], int]:
     _header, feature_rows = load_capture(capture)
@@ -251,7 +273,24 @@ def evaluate(
     agreement = _accuracy(rule_onnx_pairs)
 
     onnx_accuracy = _accuracy(onnx_pairs)
-    threshold_failed = onnx_accuracy is not None and onnx_accuracy < min_onnx_accuracy
+    onnx_macro_f1 = _macro_f1(onnx_pairs)
+    threshold_failed = False
+    gate_failures: list[str] = []
+    if onnx_accuracy is not None and onnx_accuracy < min_onnx_accuracy:
+        threshold_failed = True
+        gate_failures.append(
+            f"ONNX accuracy {_fmt_accuracy(onnx_accuracy)} < {min_onnx_accuracy:.3f}"
+        )
+    if onnx_macro_f1 is not None and onnx_macro_f1 < min_onnx_macro_f1:
+        threshold_failed = True
+        gate_failures.append(
+            f"ONNX macro-F1 {_fmt_accuracy(onnx_macro_f1)} < {min_onnx_macro_f1:.3f}"
+        )
+    if agreement is not None and agreement < min_rule_onnx_agreement:
+        threshold_failed = True
+        gate_failures.append(
+            f"Rule/ONNX agreement {_fmt_accuracy(agreement)} < {min_rule_onnx_agreement:.3f}"
+        )
 
     report = {
         "capture": str(capture),
@@ -261,6 +300,7 @@ def evaluate(
         "annotation_coverage": len(joined) / len(feature_rows),
         "rule_accuracy": _accuracy(rule_pairs),
         "onnx_accuracy": onnx_accuracy,
+        "onnx_macro_f1": onnx_macro_f1,
         "onnx_note": onnx_note,
         "rule_onnx_agreement": agreement,
         "rule_per_class_accuracy": _per_class_accuracy(rule_pairs),
@@ -269,9 +309,40 @@ def evaluate(
         "onnx_confusion_matrix": _confusion_matrix(onnx_pairs),
         "top_disagreements": _disagreements(joined, top_disagreements),
         "min_onnx_accuracy": min_onnx_accuracy,
+        "min_onnx_macro_f1": min_onnx_macro_f1,
+        "min_rule_onnx_agreement": min_rule_onnx_agreement,
+        "gate_failures": gate_failures,
         "threshold_failed": threshold_failed,
     }
     return report, 2 if threshold_failed else 0
+
+
+def replay_capture(
+    capture: Path,
+    *,
+    min_rule_onnx_agreement: float | None = None,
+) -> tuple[str, int]:
+    _header, feature_rows = load_capture(capture)
+    lines = ["Feature capture replay (rule re-derived vs captured ONNX)"]
+    pairs: list[tuple[int, int]] = []
+    for row in sorted(feature_rows, key=lambda r: float(r["elapsed_seconds"])):
+        rule = _derive_rule_pattern(row)
+        onnx_raw = row.get("onnx_pattern_index")
+        onnx = int(onnx_raw) if row.get("onnx_available") and onnx_raw is not None else None
+        if onnx is not None:
+            pairs.append((rule, onnx))
+        lines.append(
+            f"{float(row['elapsed_seconds']):.3f}s rule={rule} onnx={onnx if onnx is not None else 'n/a'} "
+            f"state={row['state_name']} bpm={float(row['bpm']):.1f}"
+        )
+    agreement = _accuracy(pairs)
+    lines.append(f"Replay agreement (re-derived rule vs captured ONNX): {_fmt_accuracy(agreement)}")
+    if min_rule_onnx_agreement is not None and agreement is not None and agreement < min_rule_onnx_agreement:
+        lines.append(
+            f"FAIL: agreement {_fmt_accuracy(agreement)} < {min_rule_onnx_agreement:.3f}"
+        )
+        return "\n".join(lines), 2
+    return "\n".join(lines), 0
 
 
 def _fmt_accuracy(value: float | None) -> str:
@@ -290,7 +361,22 @@ def format_report(report: dict[str, Any]) -> str:
         lines.append("ONNX unavailable")
     else:
         lines.append(f"ONNX accuracy: {_fmt_accuracy(report['onnx_accuracy'])}")
+        lines.append(f"ONNX macro-F1: {_fmt_accuracy(report.get('onnx_macro_f1'))}")
     lines.append(f"Rule/ONNX agreement: {_fmt_accuracy(report['rule_onnx_agreement'])}")
+    lines.append("")
+    lines.append("Gate status")
+    lines.append(
+        f"- ONNX accuracy gate ({report['min_onnx_accuracy']:.2f}): "
+        f"{'FAIL' if report['onnx_accuracy'] is not None and report['onnx_accuracy'] < report['min_onnx_accuracy'] else 'PASS'}"
+    )
+    lines.append(
+        f"- ONNX macro-F1 gate ({report['min_onnx_macro_f1']:.2f}): "
+        f"{'FAIL' if report.get('onnx_macro_f1') is not None and report['onnx_macro_f1'] < report['min_onnx_macro_f1'] else 'PASS'}"
+    )
+    lines.append(
+        f"- Rule/ONNX agreement gate ({report['min_rule_onnx_agreement']:.2f}): "
+        f"{'FAIL' if report['rule_onnx_agreement'] is not None and report['rule_onnx_agreement'] < report['min_rule_onnx_agreement'] else 'PASS'}"
+    )
 
     lines.append("")
     lines.append("Per-class accuracy")
@@ -325,9 +411,14 @@ def format_report(report: dict[str, Any]) -> str:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--capture", required=True, type=Path)
-    parser.add_argument("--annotations", required=True, type=Path)
+    parser.add_argument("--annotations", required=False, type=Path)
     parser.add_argument("--onnx", type=Path)
-    parser.add_argument("--min-onnx-accuracy", type=float, default=0.65)
+    parser.add_argument("--min-onnx-accuracy", type=float, default=0.65,
+                        help="Minimum ONNX accuracy (legacy; macro-F1 is preferred)")
+    parser.add_argument("--min-onnx-macro-f1", type=float, default=0.65)
+    parser.add_argument("--min-rule-onnx-agreement", type=float, default=0.80)
+    parser.add_argument("--replay", action="store_true",
+                        help="Print side-by-side rule vs ONNX replay from capture rows")
     parser.add_argument("--top-disagreements", type=int, default=20)
     parser.add_argument("--json-out", type=Path)
     return parser.parse_args(argv)
@@ -335,12 +426,32 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    if args.replay:
+        try:
+            text, exit_code = replay_capture(
+                args.capture,
+                min_rule_onnx_agreement=args.min_rule_onnx_agreement
+                if any(a.startswith("--min-rule-onnx-agreement") for a in (argv or sys.argv[1:]))
+                else None,
+            )
+        except EvaluationError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        print(text)
+        return exit_code
+
+    if args.annotations is None:
+        print("ERROR: --annotations is required unless --replay is set", file=sys.stderr)
+        return 1
+
     try:
         report, exit_code = evaluate(
             args.capture,
             args.annotations,
             onnx=args.onnx,
             min_onnx_accuracy=args.min_onnx_accuracy,
+            min_onnx_macro_f1=args.min_onnx_macro_f1,
+            min_rule_onnx_agreement=args.min_rule_onnx_agreement,
             top_disagreements=args.top_disagreements,
         )
     except EvaluationError as exc:
@@ -349,12 +460,11 @@ def main(argv: list[str] | None = None) -> int:
 
     print(format_report(report))
     if args.json_out is not None:
+        args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if report["threshold_failed"]:
-        print(
-            f"ERROR: ONNX accuracy below --min-onnx-accuracy {report['min_onnx_accuracy']:.3f}",
-            file=sys.stderr,
-        )
+        for msg in report.get("gate_failures", []):
+            print(f"ERROR: {msg}", file=sys.stderr)
     return exit_code
 
 

@@ -59,14 +59,14 @@ def _compute_proxy_row(events: list[dict], bpm_raw: float) -> np.ndarray:
     vels = [int(e.get("velocity", 0)) for e in ons]
     if not vels:
         rms = 0.0
-        cent = 0.0
+        cent = 9853.0  # Phase 36: idle noise floor (capture SILENT p50 ~9853 Hz)
         hf = 0.0
         state = 0.0
         return np.array([bpm, rms, cent, hf, state], dtype=np.float64)
 
     rms = float(np.sqrt(np.mean(np.square(np.asarray(vels, dtype=np.float64)))) / 127.0)
     notes = [int(e.get("note", 0)) for e in ons]
-    cent = 400.0 + (float(np.mean(notes)) / 127.0) * 6000.0
+    mean_note = float(np.mean(notes))
 
     high_times = sorted(float(e["time_sec"]) for e in ons if int(e.get("note", 0)) >= 42)
     if len(high_times) < 2:
@@ -81,12 +81,16 @@ def _compute_proxy_row(events: list[dict], bpm_raw: float) -> np.ndarray:
 
     if len(ons) < 3 or rms < 0.02:
         state = 0.0
+        cent = 9853.0
     elif dens >= 10.0 and hf >= 0.35:
         state = 2.0
+        cent = 8750.0 + (mean_note / 127.0) * 2450.0
     elif dens <= 2.5 and kick_hits <= 1:
         state = 3.0
+        cent = 9853.0
     else:
         state = 1.0
+        cent = 8750.0 + (mean_note / 127.0) * 2450.0
 
     return np.array([bpm, rms, cent, hf, state], dtype=np.float64)
 
@@ -94,6 +98,11 @@ def _compute_proxy_row(events: list[dict], bpm_raw: float) -> np.ndarray:
 # ─── Oracle label constants (mirrors src/inference/pattern_rules.h lines 18-19) ───
 _K_SOFT_MID_BPM  = 120.0  # mirrors kSoftMidBpmThreshold from src/inference/pattern_rules.h
 _K_SOFT_LOUD_BPM = 160.0  # mirrors kSoftLoudBpmThreshold
+_INTENSITY_VARIANTS = (0.0, 0.5, 1.0)
+
+
+def _adjusted_bpm(raw_bpm: float, policy_intensity: float) -> float:
+    return _clamp_bpm(raw_bpm + (policy_intensity - 0.5) * 40.0)
 
 
 def _rule_pattern_for_state(bpm: float, state_float: float, policy_intensity: float = 0.5) -> int:
@@ -101,14 +110,14 @@ def _rule_pattern_for_state(bpm: float, state_float: float, policy_intensity: fl
 
     Ports PatternRules::rulePatternForState from src/inference/pattern_rules.h.
 
-    D-06: policyIntensity=0.5 neutral assumption. Phase 35 will pass adjustedBpm into X[0]
-    as an explicit feature; for now the offset is absorbed here at label-generation time only.
+    D-06: policyIntensity shifts adjusted BPM via _adjusted_bpm at label time; X[0] stores
+    adjusted BPM per Phase 35 ONNX contract. Phase 36 fixed spectral-centroid proxy alignment.
 
     GMD dataset records state as 0..3 floats. state=3.0 (sparse/breakdown) is clamped to
     SOFT (state=1) per research finding: the GMD does not have a true BREAKDOWN category
     that maps to silence, so we treat sparse GMD patterns as quiet SOFT grooves.
     """
-    adj_bpm = bpm + (policy_intensity - 0.5) * 40.0
+    adj_bpm = _adjusted_bpm(bpm, policy_intensity)
     # Clamp GMD state=3.0 to SOFT (1): see comment above — GMD 4-class state has no true BREAKDOWN.
     # int(state_float) in {0,1,2} passes through; 3 maps to SOFT (1) not LOUD (2).
     raw_state = int(state_float)
@@ -126,14 +135,20 @@ def _rule_pattern_for_state(bpm: float, state_float: float, policy_intensity: fl
     return 0  # unreachable fallback
 
 
-def _oracle_label(bpm: float, state_float: float, events: list[dict]) -> int:
+def _oracle_label(
+    bpm: float,
+    state_float: float,
+    events: list[dict],
+    policy_intensity: float = 0.5,
+) -> int:
     """Return the oracle class label [0..6] for the given row.
 
     D-03: Breakdown override — non-SILENT rows with sparse notes at slow BPM get class 6.
     D-04: SILENT state guard — state=0 rows are never overridden to Breakdown.
-    D-06: neutral policyIntensity=0.5 used for label generation.
+    D-07: policy_intensity shifts threshold classes via _rule_pattern_for_state;
+    Breakdown heuristic uses raw bpm (not adjusted).
     """
-    label = _rule_pattern_for_state(bpm, state_float)
+    label = _rule_pattern_for_state(bpm, state_float, policy_intensity=policy_intensity)
     # Breakdown override guard: only applies to non-SILENT rows.
     if label != 0:
         ons = [e for e in events if e.get("type") == "note_on"]
@@ -230,14 +245,18 @@ def main() -> int:
         tmp.write_bytes(raw)
         events = _events_from_file(tmp)
         row = _compute_proxy_row(events, bpm)
-        bpm_clamped = float(row[0])
+        raw_bpm = float(row[0])
         state_float = float(row[4])
-        Y_all_list.append(_oracle_label(bpm_clamped, state_float, events))
         gid = eid.split(":", 1)[0] if ":" in eid else eid
 
-        xs.append(row)
-        groups.append(gid)
-        ids.append(eid)
+        for pi in _INTENSITY_VARIANTS:
+            variant = row.copy()
+            variant[0] = _adjusted_bpm(raw_bpm, pi)
+            y = _oracle_label(raw_bpm, state_float, events, policy_intensity=pi)
+            xs.append(variant)
+            Y_all_list.append(y)
+            groups.append(gid)
+            ids.append(eid)
 
         count += 1
         if args.max_examples is not None and count >= args.max_examples:

@@ -9,10 +9,10 @@
 namespace BinaryData
 {
     extern const char*   accompaniment_model_onnx;
-    const int            accompaniment_model_onnxSize = 14994;
+    const int            accompaniment_model_onnxSize = 14938;
 
     extern const char*   structure_model_onnx;
-    const int            structure_model_onnxSize = 33442;
+    const int            structure_model_onnxSize = 33587;
 
     extern const char*   bass_model_onnx;
     const int            bass_model_onnxSize = 7773;

@@ -11,6 +11,6 @@ int RuleBasedInference::selectPattern(const FeatureVector& f, int excludeIndex)
 {
     (void)sampleRate;
 
-    int result = std::clamp(PatternRules::rulePatternForState(f), 0, 6);
-    return PatternRules::applyExclusion(result, excludeIndex);
+    const int result = std::clamp(PatternRules::rulePatternForState(f), 0, 6);
+    return PatternRules::applyExclusion(result, excludeIndex, f.state, result);
 }

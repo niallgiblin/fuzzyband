@@ -1775,6 +1775,60 @@ src/analysis/PitchEstimator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/PitchEstimator.cpp.s
 .PHONY : src/analysis/PitchEstimator.cpp.s
 
+src/analysis/PlaybackGate.o: src/analysis/PlaybackGate.cpp.o
+.PHONY : src/analysis/PlaybackGate.o
+
+# target to build an object file
+src/analysis/PlaybackGate.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/PlaybackGate.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/PlaybackGate.cpp.o
+.PHONY : src/analysis/PlaybackGate.cpp.o
+
+src/analysis/PlaybackGate.i: src/analysis/PlaybackGate.cpp.i
+.PHONY : src/analysis/PlaybackGate.i
+
+# target to preprocess a source file
+src/analysis/PlaybackGate.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/PlaybackGate.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/PlaybackGate.cpp.i
+.PHONY : src/analysis/PlaybackGate.cpp.i
+
+src/analysis/PlaybackGate.s: src/analysis/PlaybackGate.cpp.s
+.PHONY : src/analysis/PlaybackGate.s
+
+# target to generate assembly for a file
+src/analysis/PlaybackGate.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/PlaybackGate.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/PlaybackGate.cpp.s
+.PHONY : src/analysis/PlaybackGate.cpp.s
+
+src/analysis/StablePitchTracker.o: src/analysis/StablePitchTracker.cpp.o
+.PHONY : src/analysis/StablePitchTracker.o
+
+# target to build an object file
+src/analysis/StablePitchTracker.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/StablePitchTracker.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/StablePitchTracker.cpp.o
+.PHONY : src/analysis/StablePitchTracker.cpp.o
+
+src/analysis/StablePitchTracker.i: src/analysis/StablePitchTracker.cpp.i
+.PHONY : src/analysis/StablePitchTracker.i
+
+# target to preprocess a source file
+src/analysis/StablePitchTracker.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/StablePitchTracker.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/StablePitchTracker.cpp.i
+.PHONY : src/analysis/StablePitchTracker.cpp.i
+
+src/analysis/StablePitchTracker.s: src/analysis/StablePitchTracker.cpp.s
+.PHONY : src/analysis/StablePitchTracker.s
+
+# target to generate assembly for a file
+src/analysis/StablePitchTracker.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/StablePitchTracker.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/StablePitchTracker.cpp.s
+.PHONY : src/analysis/StablePitchTracker.cpp.s
+
 src/analysis/StructureHoldSmoother.o: src/analysis/StructureHoldSmoother.cpp.o
 .PHONY : src/analysis/StructureHoldSmoother.o
 
@@ -1829,6 +1883,60 @@ src/analysis/StructureTagger.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/StructureTagger.cpp.s
 .PHONY : src/analysis/StructureTagger.cpp.s
 
+src/analysis/TempoStabiliser.o: src/analysis/TempoStabiliser.cpp.o
+.PHONY : src/analysis/TempoStabiliser.o
+
+# target to build an object file
+src/analysis/TempoStabiliser.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/TempoStabiliser.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/TempoStabiliser.cpp.o
+.PHONY : src/analysis/TempoStabiliser.cpp.o
+
+src/analysis/TempoStabiliser.i: src/analysis/TempoStabiliser.cpp.i
+.PHONY : src/analysis/TempoStabiliser.i
+
+# target to preprocess a source file
+src/analysis/TempoStabiliser.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/TempoStabiliser.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/TempoStabiliser.cpp.i
+.PHONY : src/analysis/TempoStabiliser.cpp.i
+
+src/analysis/TempoStabiliser.s: src/analysis/TempoStabiliser.cpp.s
+.PHONY : src/analysis/TempoStabiliser.s
+
+# target to generate assembly for a file
+src/analysis/TempoStabiliser.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/TempoStabiliser.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/TempoStabiliser.cpp.s
+.PHONY : src/analysis/TempoStabiliser.cpp.s
+
+src/capture/FeatureCapture.o: src/capture/FeatureCapture.cpp.o
+.PHONY : src/capture/FeatureCapture.o
+
+# target to build an object file
+src/capture/FeatureCapture.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/capture/FeatureCapture.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/capture/FeatureCapture.cpp.o
+.PHONY : src/capture/FeatureCapture.cpp.o
+
+src/capture/FeatureCapture.i: src/capture/FeatureCapture.cpp.i
+.PHONY : src/capture/FeatureCapture.i
+
+# target to preprocess a source file
+src/capture/FeatureCapture.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/capture/FeatureCapture.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/capture/FeatureCapture.cpp.i
+.PHONY : src/capture/FeatureCapture.cpp.i
+
+src/capture/FeatureCapture.s: src/capture/FeatureCapture.cpp.s
+.PHONY : src/capture/FeatureCapture.s
+
+# target to generate assembly for a file
+src/capture/FeatureCapture.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/capture/FeatureCapture.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/capture/FeatureCapture.cpp.s
+.PHONY : src/capture/FeatureCapture.cpp.s
+
 src/inference/OnnxBassInference.o: src/inference/OnnxBassInference.cpp.o
 .PHONY : src/inference/OnnxBassInference.o
 
@@ -1859,6 +1967,7 @@ src/inference/OnnxInference.o: src/inference/OnnxInference.cpp.o
 # target to build an object file
 src/inference/OnnxInference.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/inference/OnnxInference.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/inference/OnnxInference.cpp.o
 .PHONY : src/inference/OnnxInference.cpp.o
 
 src/inference/OnnxInference.i: src/inference/OnnxInference.cpp.i
@@ -1867,6 +1976,7 @@ src/inference/OnnxInference.i: src/inference/OnnxInference.cpp.i
 # target to preprocess a source file
 src/inference/OnnxInference.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/inference/OnnxInference.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/inference/OnnxInference.cpp.i
 .PHONY : src/inference/OnnxInference.cpp.i
 
 src/inference/OnnxInference.s: src/inference/OnnxInference.cpp.s
@@ -1875,6 +1985,7 @@ src/inference/OnnxInference.s: src/inference/OnnxInference.cpp.s
 # target to generate assembly for a file
 src/inference/OnnxInference.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/inference/OnnxInference.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/inference/OnnxInference.cpp.s
 .PHONY : src/inference/OnnxInference.cpp.s
 
 src/inference/OnnxStructureInference.o: src/inference/OnnxStructureInference.cpp.o
@@ -2207,6 +2318,78 @@ tests/test_energy_analyser.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_energy_analyser.cpp.s
 .PHONY : tests/test_energy_analyser.cpp.s
 
+tests/test_feature_capture.o: tests/test_feature_capture.cpp.o
+.PHONY : tests/test_feature_capture.o
+
+# target to build an object file
+tests/test_feature_capture.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_feature_capture.cpp.o
+.PHONY : tests/test_feature_capture.cpp.o
+
+tests/test_feature_capture.i: tests/test_feature_capture.cpp.i
+.PHONY : tests/test_feature_capture.i
+
+# target to preprocess a source file
+tests/test_feature_capture.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_feature_capture.cpp.i
+.PHONY : tests/test_feature_capture.cpp.i
+
+tests/test_feature_capture.s: tests/test_feature_capture.cpp.s
+.PHONY : tests/test_feature_capture.s
+
+# target to generate assembly for a file
+tests/test_feature_capture.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_feature_capture.cpp.s
+.PHONY : tests/test_feature_capture.cpp.s
+
+tests/test_onnx_inference.o: tests/test_onnx_inference.cpp.o
+.PHONY : tests/test_onnx_inference.o
+
+# target to build an object file
+tests/test_onnx_inference.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_onnx_inference.cpp.o
+.PHONY : tests/test_onnx_inference.cpp.o
+
+tests/test_onnx_inference.i: tests/test_onnx_inference.cpp.i
+.PHONY : tests/test_onnx_inference.i
+
+# target to preprocess a source file
+tests/test_onnx_inference.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_onnx_inference.cpp.i
+.PHONY : tests/test_onnx_inference.cpp.i
+
+tests/test_onnx_inference.s: tests/test_onnx_inference.cpp.s
+.PHONY : tests/test_onnx_inference.s
+
+# target to generate assembly for a file
+tests/test_onnx_inference.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_onnx_inference.cpp.s
+.PHONY : tests/test_onnx_inference.cpp.s
+
+tests/test_onnx_latency_benchmark.o: tests/test_onnx_latency_benchmark.cpp.o
+.PHONY : tests/test_onnx_latency_benchmark.o
+
+# target to build an object file
+tests/test_onnx_latency_benchmark.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_onnx_latency_benchmark.cpp.o
+.PHONY : tests/test_onnx_latency_benchmark.cpp.o
+
+tests/test_onnx_latency_benchmark.i: tests/test_onnx_latency_benchmark.cpp.i
+.PHONY : tests/test_onnx_latency_benchmark.i
+
+# target to preprocess a source file
+tests/test_onnx_latency_benchmark.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_onnx_latency_benchmark.cpp.i
+.PHONY : tests/test_onnx_latency_benchmark.cpp.i
+
+tests/test_onnx_latency_benchmark.s: tests/test_onnx_latency_benchmark.cpp.s
+.PHONY : tests/test_onnx_latency_benchmark.s
+
+# target to generate assembly for a file
+tests/test_onnx_latency_benchmark.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_onnx_latency_benchmark.cpp.s
+.PHONY : tests/test_onnx_latency_benchmark.cpp.s
+
 tests/test_onset_detector.o: tests/test_onset_detector.cpp.o
 .PHONY : tests/test_onset_detector.o
 
@@ -2303,6 +2486,30 @@ tests/test_pattern_player_generative_bass.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_pattern_player_generative_bass.cpp.s
 .PHONY : tests/test_pattern_player_generative_bass.cpp.s
 
+tests/test_pattern_rules.o: tests/test_pattern_rules.cpp.o
+.PHONY : tests/test_pattern_rules.o
+
+# target to build an object file
+tests/test_pattern_rules.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_pattern_rules.cpp.o
+.PHONY : tests/test_pattern_rules.cpp.o
+
+tests/test_pattern_rules.i: tests/test_pattern_rules.cpp.i
+.PHONY : tests/test_pattern_rules.i
+
+# target to preprocess a source file
+tests/test_pattern_rules.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_pattern_rules.cpp.i
+.PHONY : tests/test_pattern_rules.cpp.i
+
+tests/test_pattern_rules.s: tests/test_pattern_rules.cpp.s
+.PHONY : tests/test_pattern_rules.s
+
+# target to generate assembly for a file
+tests/test_pattern_rules.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_pattern_rules.cpp.s
+.PHONY : tests/test_pattern_rules.cpp.s
+
 tests/test_pitch_estimator.o: tests/test_pitch_estimator.cpp.o
 .PHONY : tests/test_pitch_estimator.o
 
@@ -2326,6 +2533,30 @@ tests/test_pitch_estimator.s: tests/test_pitch_estimator.cpp.s
 tests/test_pitch_estimator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_pitch_estimator.cpp.s
 .PHONY : tests/test_pitch_estimator.cpp.s
+
+tests/test_playback_gate.o: tests/test_playback_gate.cpp.o
+.PHONY : tests/test_playback_gate.o
+
+# target to build an object file
+tests/test_playback_gate.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_playback_gate.cpp.o
+.PHONY : tests/test_playback_gate.cpp.o
+
+tests/test_playback_gate.i: tests/test_playback_gate.cpp.i
+.PHONY : tests/test_playback_gate.i
+
+# target to preprocess a source file
+tests/test_playback_gate.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_playback_gate.cpp.i
+.PHONY : tests/test_playback_gate.cpp.i
+
+tests/test_playback_gate.s: tests/test_playback_gate.cpp.s
+.PHONY : tests/test_playback_gate.s
+
+# target to generate assembly for a file
+tests/test_playback_gate.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_playback_gate.cpp.s
+.PHONY : tests/test_playback_gate.cpp.s
 
 tests/test_processor_pipeline.o: tests/test_processor_pipeline.cpp.o
 .PHONY : tests/test_processor_pipeline.o
@@ -2374,6 +2605,30 @@ tests/test_rule_based_inference.s: tests/test_rule_based_inference.cpp.s
 tests/test_rule_based_inference.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_rule_based_inference.cpp.s
 .PHONY : tests/test_rule_based_inference.cpp.s
+
+tests/test_stable_pitch_tracker.o: tests/test_stable_pitch_tracker.cpp.o
+.PHONY : tests/test_stable_pitch_tracker.o
+
+# target to build an object file
+tests/test_stable_pitch_tracker.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_stable_pitch_tracker.cpp.o
+.PHONY : tests/test_stable_pitch_tracker.cpp.o
+
+tests/test_stable_pitch_tracker.i: tests/test_stable_pitch_tracker.cpp.i
+.PHONY : tests/test_stable_pitch_tracker.i
+
+# target to preprocess a source file
+tests/test_stable_pitch_tracker.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_stable_pitch_tracker.cpp.i
+.PHONY : tests/test_stable_pitch_tracker.cpp.i
+
+tests/test_stable_pitch_tracker.s: tests/test_stable_pitch_tracker.cpp.s
+.PHONY : tests/test_stable_pitch_tracker.s
+
+# target to generate assembly for a file
+tests/test_stable_pitch_tracker.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_stable_pitch_tracker.cpp.s
+.PHONY : tests/test_stable_pitch_tracker.cpp.s
 
 tests/test_structure_hold_smoother.o: tests/test_structure_hold_smoother.cpp.o
 .PHONY : tests/test_structure_hold_smoother.o
@@ -2518,6 +2773,30 @@ tests/test_structure_tagger_extended.s: tests/test_structure_tagger_extended.cpp
 tests/test_structure_tagger_extended.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_structure_tagger_extended.cpp.s
 .PHONY : tests/test_structure_tagger_extended.cpp.s
+
+tests/test_tempo_stabiliser.o: tests/test_tempo_stabiliser.cpp.o
+.PHONY : tests/test_tempo_stabiliser.o
+
+# target to build an object file
+tests/test_tempo_stabiliser.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_tempo_stabiliser.cpp.o
+.PHONY : tests/test_tempo_stabiliser.cpp.o
+
+tests/test_tempo_stabiliser.i: tests/test_tempo_stabiliser.cpp.i
+.PHONY : tests/test_tempo_stabiliser.i
+
+# target to preprocess a source file
+tests/test_tempo_stabiliser.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_tempo_stabiliser.cpp.i
+.PHONY : tests/test_tempo_stabiliser.cpp.i
+
+tests/test_tempo_stabiliser.s: tests/test_tempo_stabiliser.cpp.s
+.PHONY : tests/test_tempo_stabiliser.s
+
+# target to generate assembly for a file
+tests/test_tempo_stabiliser.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_tempo_stabiliser.cpp.s
+.PHONY : tests/test_tempo_stabiliser.cpp.s
 
 tools/export_patterns.o: tools/export_patterns.cpp.o
 .PHONY : tools/export_patterns.o
@@ -2713,12 +2992,24 @@ help:
 	@echo "... src/analysis/PitchEstimator.o"
 	@echo "... src/analysis/PitchEstimator.i"
 	@echo "... src/analysis/PitchEstimator.s"
+	@echo "... src/analysis/PlaybackGate.o"
+	@echo "... src/analysis/PlaybackGate.i"
+	@echo "... src/analysis/PlaybackGate.s"
+	@echo "... src/analysis/StablePitchTracker.o"
+	@echo "... src/analysis/StablePitchTracker.i"
+	@echo "... src/analysis/StablePitchTracker.s"
 	@echo "... src/analysis/StructureHoldSmoother.o"
 	@echo "... src/analysis/StructureHoldSmoother.i"
 	@echo "... src/analysis/StructureHoldSmoother.s"
 	@echo "... src/analysis/StructureTagger.o"
 	@echo "... src/analysis/StructureTagger.i"
 	@echo "... src/analysis/StructureTagger.s"
+	@echo "... src/analysis/TempoStabiliser.o"
+	@echo "... src/analysis/TempoStabiliser.i"
+	@echo "... src/analysis/TempoStabiliser.s"
+	@echo "... src/capture/FeatureCapture.o"
+	@echo "... src/capture/FeatureCapture.i"
+	@echo "... src/capture/FeatureCapture.s"
 	@echo "... src/inference/OnnxBassInference.o"
 	@echo "... src/inference/OnnxBassInference.i"
 	@echo "... src/inference/OnnxBassInference.s"
@@ -2764,6 +3055,15 @@ help:
 	@echo "... tests/test_energy_analyser.o"
 	@echo "... tests/test_energy_analyser.i"
 	@echo "... tests/test_energy_analyser.s"
+	@echo "... tests/test_feature_capture.o"
+	@echo "... tests/test_feature_capture.i"
+	@echo "... tests/test_feature_capture.s"
+	@echo "... tests/test_onnx_inference.o"
+	@echo "... tests/test_onnx_inference.i"
+	@echo "... tests/test_onnx_inference.s"
+	@echo "... tests/test_onnx_latency_benchmark.o"
+	@echo "... tests/test_onnx_latency_benchmark.i"
+	@echo "... tests/test_onnx_latency_benchmark.s"
 	@echo "... tests/test_onset_detector.o"
 	@echo "... tests/test_onset_detector.i"
 	@echo "... tests/test_onset_detector.s"
@@ -2776,15 +3076,24 @@ help:
 	@echo "... tests/test_pattern_player_generative_bass.o"
 	@echo "... tests/test_pattern_player_generative_bass.i"
 	@echo "... tests/test_pattern_player_generative_bass.s"
+	@echo "... tests/test_pattern_rules.o"
+	@echo "... tests/test_pattern_rules.i"
+	@echo "... tests/test_pattern_rules.s"
 	@echo "... tests/test_pitch_estimator.o"
 	@echo "... tests/test_pitch_estimator.i"
 	@echo "... tests/test_pitch_estimator.s"
+	@echo "... tests/test_playback_gate.o"
+	@echo "... tests/test_playback_gate.i"
+	@echo "... tests/test_playback_gate.s"
 	@echo "... tests/test_processor_pipeline.o"
 	@echo "... tests/test_processor_pipeline.i"
 	@echo "... tests/test_processor_pipeline.s"
 	@echo "... tests/test_rule_based_inference.o"
 	@echo "... tests/test_rule_based_inference.i"
 	@echo "... tests/test_rule_based_inference.s"
+	@echo "... tests/test_stable_pitch_tracker.o"
+	@echo "... tests/test_stable_pitch_tracker.i"
+	@echo "... tests/test_stable_pitch_tracker.s"
 	@echo "... tests/test_structure_hold_smoother.o"
 	@echo "... tests/test_structure_hold_smoother.i"
 	@echo "... tests/test_structure_hold_smoother.s"
@@ -2803,6 +3112,9 @@ help:
 	@echo "... tests/test_structure_tagger_extended.o"
 	@echo "... tests/test_structure_tagger_extended.i"
 	@echo "... tests/test_structure_tagger_extended.s"
+	@echo "... tests/test_tempo_stabiliser.o"
+	@echo "... tests/test_tempo_stabiliser.i"
+	@echo "... tests/test_tempo_stabiliser.s"
 	@echo "... tools/export_patterns.o"
 	@echo "... tools/export_patterns.i"
 	@echo "... tools/export_patterns.s"

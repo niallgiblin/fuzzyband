@@ -6,8 +6,9 @@
 - ✅ **v0.2.0 — Phase 2 ML + Generative** — Phases 9–16 (shipped 2026-04-17)
 - ✅ **v0.3.0 — Real ML Training Pipeline** — Phases 17–20 (shipped 2026-04-19; `EXP-02` human Reaper smoke still tracked — see `.planning/milestones/v0.3.0-REQUIREMENTS.md`)
 - ✅ **v0.4.0 — ML Playability & Simplification** — Phases 21–26 (shipped 2026-04-29)
-- 🔜 **v0.5.0 — Rhythmic Coherence** — Phases 27–31 (in progress; requirements: `.planning/REQUIREMENTS.md`)
-- 🔜 **v0.6.0 — ML Correctness & Evaluation** — Phases 32–36 (planned; requirements: TBD)
+- ⏸️ **v0.5.0 — Rhythmic Coherence** — Phases 27–28 paused (superseded by v0.6.0 ONNX priority); Phase 31 (Architecture Deepening) shipped as v0.5.0
+- ✅ **v0.6.0 — ML Correctness & Evaluation** — Phases 32–36 (shipped 2026-06-02; ONNX default enablement; archive: `.planning/milestones/v0.6.0-ROADMAP.md`)
+- 🔜 **v0.7.0 — Creative Companion** — planning (brief: `.planning/milestones/v0.7.0-CONTEXT.md`)
 
 ## Phases
 
@@ -259,9 +260,9 @@ Plans:
 | 31. Architecture Deepening | v0.5.0 | 4/4 | Complete   | 2026-05-03 |
 | 32. Training Label Correction | v0.6.0 | 3/3 | Complete   | 2026-05-12 |
 | 33. Model Quality Gates | v0.6.0 | 3/3 | Complete   | 2026-05-13 |
-| 34. Domain Gap and Feature Capture | v0.6.0 | 3/3 | Planned | 2026-05-13 |
-| 35. Inference Path Consistency | v0.6.0 | 0/0 | Not started | - |
-| 36. ONNX Evaluation and Default Readiness | v0.6.0 | 0/0 | Not started | - |
+| 34. Domain Gap and Feature Capture | v0.6.0 | 3/3 | Complete   | 2026-05-25 |
+| 35. Inference Path Consistency | v0.6.0 | 3/3 | Complete    | 2026-05-25 |
+| 36. ONNX Evaluation and Default Readiness | v0.6.0 | 4/4 | Complete | 2026-06-02 |
 
 ---
 
@@ -341,13 +342,13 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 34-01-PLAN.md — Runtime FeatureVector capture component, plugin debug toggle, JSONL schema docs (DOMAIN-01, Wave 1)
+- [x] 34-01-PLAN.md — Runtime FeatureVector capture component, plugin debug toggle, JSONL schema docs (DOMAIN-01, Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 34-02-PLAN.md — Offline capture evaluator with annotation CSV, rule/ONNX accuracy, confusion matrices, disagreement output (DOMAIN-02, Wave 2)
+- [x] 34-02-PLAN.md — Offline capture evaluator with annotation CSV, rule/ONNX accuracy, confusion matrices, disagreement output (DOMAIN-02, Wave 2)
 
 **Wave 3** *(blocked on Waves 1-2 completion)*
-- [ ] 34-03-PLAN.md — Captured-vs-proxy gap analyzer and FEATURE_PROXY.md quantitative verdicts (DOMAIN-03, Wave 3)
+- [x] 34-03-PLAN.md — Captured-vs-proxy gap analyzer and FEATURE_PROXY.md quantitative verdicts (DOMAIN-03, Wave 3)
 
 #### Phase 35: Inference Path Consistency
 **Goal**: Rule path and ONNX path use the same intensity-adjusted BPM input; exclusion modulo respects state compatibility (no accidental Breakdown on non-transition inputs); `structureBlend` semantics documented.
@@ -357,10 +358,12 @@ Plans:
   1. `OnnxInference.cpp` packs `PatternRules::adjustedBpm(f)` (not raw `f.bpm`) into tensor column 0; pattern model retrained with adjusted BPM in the proxy column; `docs/ONNX_IO.md` and `training/FEATURE_PROXY.md` updated to document column 0 is adjusted BPM
   2. D-23-04 exclusion logic walks forward modulo 7 until `isPatternCompatibleWithState` passes, rather than blind `(last+1)%7`; `test_rule_based_inference.cpp` asserts exclusion never returns an incompatible pattern for any state
   3. `structureBlend` semantics documented (inline comment or `docs/` entry): rule state is authoritative for silence detection and gate; ONNX shadow only shapes non-silent pattern decisions at `blend > 0.5`
-**Plans**: TBD (`/gsd-plan-phase 35`)
+**Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 35 to break down)
+- [x] 35-01-PLAN.md — PatternRules compatible exclusion, OnnxInference adjusted BPM X[0], Catch2 matrix tests (INFC-01 partial, INFC-02, Wave 1)
+- [x] 35-02-PLAN.md — 3× intensity dataset expansion, merge, retrain, promote accompaniment_model.onnx (INFC-01 complete, Wave 2)
+- [x] 35-03-PLAN.md — structureBlend + adjusted BPM documentation in ONNX_IO, FEATURE_PROXY, processor comment (INFC-01 docs, INFC-03, Wave 3)
 
 #### Phase 36: ONNX Evaluation and Default Readiness
 **Goal**: Repeatable ONNX latency benchmark exists and runs in CI; A/B comparison tool works on captured feature logs; `docs/ONNX_READINESS.md` documents exact flip criteria; all six readiness conditions are met or have a clear tracked path.
@@ -370,10 +373,13 @@ Plans:
   1. CTest or standalone benchmark runs 10,000 inference calls per model (all three); all complete a single call in < 5 ms on reference M-series hardware; benchmark added to CI and fails if any model exceeds the gate
   2. A/B comparison script accepts a JSONL of `FeatureVector` values and prints `RuleBasedInference` vs `OnnxInference` pattern selections side-by-side with agreement rate summary
   3. `docs/ONNX_READINESS.md` exists with the six flip criteria (pattern macro-F1 ≥ 0.65 on real-audio set, ≥ 80% rule agreement, latency < 5 ms, bass gate passing, structure normalisation baked, ONNX contract tests passing); current pass/fail status tracked per criterion; `MA_ENABLE_ONNX` default flipped to ON when all criteria pass
-**Plans**: TBD (`/gsd-plan-phase 36`)
+**Plans**: 4 plans in 4 waves
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 36 to break down)
+- [ ] 36-01-PLAN.md — Phase 35 carryover verification: clamp/Breakdown boundary tests + D-10 regression (Wave 1)
+- [ ] 36-02-PLAN.md — Spectral-centroid proxy fix, retrain/promote accompaniment_model.onnx, FEATURE_PROXY.md (Wave 2)
+- [ ] 36-03-PLAN.md — Committed readiness fixture, macro-F1/agreement gates, --replay, CI eval (ONNXEVAL-02, Wave 3)
+- [ ] 36-04-PLAN.md — ORT latency CTest, ONNX_READINESS.md, MA_ENABLE_ONNX default flip (ONNXEVAL-01/03, Wave 4)
 
 ---
 

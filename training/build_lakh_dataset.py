@@ -58,11 +58,11 @@ def _compute_proxy_row(events: list[dict], bpm_raw: float) -> np.ndarray:
     ons = [e for e in events if e.get("type") == "note_on"]
     vels = [int(e.get("velocity", 0)) for e in ons]
     if not vels:
-        return np.array([bpm, 0.0, 0.0, 0.0, 0.0], dtype=np.float64)
+        return np.array([bpm, 0.0, 9853.0, 0.0, 0.0], dtype=np.float64)
 
     rms = float(np.sqrt(np.mean(np.square(np.asarray(vels, dtype=np.float64)))) / 127.0)
     notes = [int(e.get("note", 0)) for e in ons]
-    cent = 400.0 + (float(np.mean(notes)) / 127.0) * 6000.0
+    mean_note = float(np.mean(notes))
 
     high_times = sorted(float(e["time_sec"]) for e in ons if int(e.get("note", 0)) >= 42)
     if len(high_times) < 2:
@@ -74,23 +74,30 @@ def _compute_proxy_row(events: list[dict], bpm_raw: float) -> np.ndarray:
 
     dens = len(ons) / _duration_beats(events, bpm)
 
-    # D-25-01: 3-class state — SILENT(0) / SOFT(1) / LOUD(2)
     if len(ons) < 3 or rms < 0.02:
         state = 0.0
+        cent = 9853.0
     elif dens >= 10.0 and hf >= 0.35:
         state = 2.0
+        cent = 8750.0 + (mean_note / 127.0) * 2450.0
     else:
         state = 1.0
+        cent = 8750.0 + (mean_note / 127.0) * 2450.0
 
     return np.array([bpm, rms, cent, hf, state], dtype=np.float64)
 
 
 _K_SOFT_MID_BPM  = 120.0   # mirrors kSoftMidBpmThreshold from src/inference/pattern_rules.h
 _K_SOFT_LOUD_BPM = 160.0   # mirrors kSoftLoudBpmThreshold
+_INTENSITY_VARIANTS = (0.0, 0.5, 1.0)
+
+
+def _adjusted_bpm(raw_bpm: float, policy_intensity: float) -> float:
+    return _clamp_bpm(raw_bpm + (policy_intensity - 0.5) * 40.0)
 
 
 def _rule_pattern_for_state(bpm: float, state_float: float, policy_intensity: float = 0.5) -> int:
-    adj_bpm = bpm + (policy_intensity - 0.5) * 40.0
+    adj_bpm = _adjusted_bpm(bpm, policy_intensity)
     state = min(int(state_float), 2)
     if state == 0: return 0
     elif state == 1:
@@ -102,8 +109,13 @@ def _rule_pattern_for_state(bpm: float, state_float: float, policy_intensity: fl
     return 0
 
 
-def _oracle_label(bpm: float, state_float: float, events: list[dict]) -> int:
-    label = _rule_pattern_for_state(bpm, state_float)
+def _oracle_label(
+    bpm: float,
+    state_float: float,
+    events: list[dict],
+    policy_intensity: float = 0.5,
+) -> int:
+    label = _rule_pattern_for_state(bpm, state_float, policy_intensity=policy_intensity)
     if label != 0:
         ons = [e for e in events if e.get("type") == "note_on"]
         dens = len(ons) / _duration_beats(events, bpm)
@@ -187,12 +199,16 @@ def main() -> int:
             continue
 
         row = _compute_proxy_row(events, bpm)
-        bpm_clamped = float(row[0])
+        raw_bpm = float(row[0])
         state_float = float(row[4])
-        label = _oracle_label(bpm_clamped, state_float, events)
-        xs.append(row)
-        Y_list.append(label)
-        ids.append(rel_path)
+
+        for pi in _INTENSITY_VARIANTS:
+            variant = row.copy()
+            variant[0] = _adjusted_bpm(raw_bpm, pi)
+            y = _oracle_label(raw_bpm, state_float, events, policy_intensity=pi)
+            xs.append(variant)
+            Y_list.append(y)
+            ids.append(rel_path)
 
     if not xs:
         print("error: no valid examples extracted from filtered manifest", file=sys.stderr)

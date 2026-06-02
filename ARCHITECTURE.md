@@ -1,8 +1,10 @@
-# Architecture — AI Metal Accompaniment Plugin
+# Architecture — Fuzzyband (Metal Accompaniment)
 
 > This document describes the component boundaries, threading model, and data
-> flow for the Phase 1 rule-based implementation. It is written to make the
-> Phase 2 ML swap-in as straightforward as possible.
+> flow for the current implementation. Originally written for Phase 1 rule-based;
+> updated to reflect **ONNX inference**, **feature capture**, and **extracted
+> modules** from v0.5.0 Phase 31 (PlaybackGate, StablePitchTracker, TempoStabiliser,
+> PatternRules). Current milestone: **v0.6.0 ML Correctness & Evaluation**.
 
 ---
 

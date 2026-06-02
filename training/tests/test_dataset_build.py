@@ -153,6 +153,21 @@ class TestRulePatternForState:
         bd = build_dataset_module
         assert bd._rule_pattern_for_state(100.0, 3.0) == 1
 
+    def test_rule_pattern_intensity_shifts_soft_class(self, build_dataset_module) -> None:
+        bd = build_dataset_module
+        # raw 130 + intensity 0.0 → adj 110 → SOFT class 1 (below mid threshold)
+        assert bd._rule_pattern_for_state(130.0, 1.0, policy_intensity=0.0) == 1
+
+
+# ─── _adjusted_bpm ─────────────────────────────────────────────────────────
+
+class TestAdjustedBpm:
+    def test_adjusted_bpm_intensity_offsets(self, build_dataset_module) -> None:
+        bd = build_dataset_module
+        assert bd._adjusted_bpm(140.0, 0.0) == pytest.approx(120.0)
+        assert bd._adjusted_bpm(140.0, 0.5) == pytest.approx(140.0)
+        assert bd._adjusted_bpm(140.0, 1.0) == pytest.approx(160.0)
+
 
 # ─── _oracle_label ───────────────────────────────────────────────────────────
 
@@ -183,3 +198,13 @@ class TestOracleLabel:
             {"type": "note_on", "time_sec": 4.0, "note": 36, "velocity": 64},
         ]
         assert bd._oracle_label(80.0, 0.0, events) == 0
+
+    def test_oracle_label_accepts_policy_intensity(self, build_dataset_module) -> None:
+        bd = build_dataset_module
+        # Dense SOFT row at raw 130: neutral → class 2, low intensity → class 1
+        events = [
+            {"type": "note_on", "time_sec": float(t), "note": 60, "velocity": 80}
+            for t in range(20)
+        ]
+        assert bd._oracle_label(130.0, 1.0, events, policy_intensity=0.5) == 2
+        assert bd._oracle_label(130.0, 1.0, events, policy_intensity=0.0) == 1

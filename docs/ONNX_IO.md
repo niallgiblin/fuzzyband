@@ -19,13 +19,13 @@ expects when built with `-DMA_ENABLE_ONNX=ON`. Training and export pipelines
 | Name | `X` |
 | Dtype | `float32` |
 | Shape | `[1, 7]` (row-major) |
-| Semantics | Single feature window per `selectPattern()` call |
+| Semantics | Single feature window per `selectPattern()` call; column **0** is **adjusted BPM** (see below) |
 
 ### Feature order (row `X[0]`, columns 0–6)
 
 | Index | Field | Source (`FeatureVector`) | Notes |
 |-------|-------|--------------------------|-------|
-| 0 | `bpm` | `FeatureVector::bpm` | float; clamped by `OnsetDetector` to [80, 220] |
+| 0 | `adjustedBpm` (bpm adjusted) | `PatternRules::adjustedBpm(f)` | `f.bpm + (f.policyIntensity - 0.5f) * 40.0f`; intensity **0.0** → **−20** BPM, **0.5** → **0**, **1.0** → **+20**; raw `f.bpm` clamped **[80, 220]** by `OnsetDetector` before adjustment. See `src/inference/pattern_rules.h`, `src/inference/OnnxInference.cpp` |
 | 1 | `rmsEnergy` | `FeatureVector::rmsEnergy` | float; rolling 100 ms RMS, ~[0, 1] |
 | 2 | `spectralCentroid` | `FeatureVector::spectralCentroid` | float; Hz |
 | 3 | `highFreqFlux` | `FeatureVector::highFreqFlux` | float; 2 kHz+ band flux |
@@ -37,6 +37,34 @@ expects when built with `-DMA_ENABLE_ONNX=ON`. Training and export pipelines
 
 The packing order is canonical and **must match** the C++ packing in
 `OnnxInference::selectPattern` (see `src/inference/OnnxInference.cpp`).
+
+---
+
+## structureBlend runtime policy
+
+Pattern inference receives an **effective** structural state derived from the rule-based tagger and the optional structure ONNX shadow. This is **not** part of the pattern graph input tensor; it is applied in C++ before `IInference::selectPattern()`.
+
+| Property | Value |
+|----------|-------|
+| APVTS parameter | `structureBlend` |
+| Default | `0.5` |
+| Semantics | **Threshold switch** (not continuous interpolation): `> 0.5` favors ML shadow for **non-silent** pattern decisions; `<= 0.5` uses rule state |
+| Decision site | `AccompanimentProcessor::drainFeatureQueueAndRunInference()` |
+
+**Rule silence is authoritative.** The rule tagger owns silence detection and playback gating. ONNX structure shadow **never** overrides `StructureState::SILENT` for pattern selection.
+
+When structure ONNX is loaded, effective state is chosen as follows:
+
+| Condition | Effective state |
+|-----------|-----------------|
+| No structure ONNX | `rule` |
+| `!mlValid` (invalid or stale shadow) | `rule` |
+| `rule == SILENT` | `rule` (authoritative silence gate) |
+| `mlShadow == SILENT` | `rule` |
+| `structureBlend > 0.5` and none of the above | `mlShadow.smoothedState` |
+| else | `rule` |
+
+Invalid/stale shadow or shadow SILENT while rule is non-silent → always use rule state. See `src/AccompanimentProcessor.cpp` (structureBlend block before `selectPattern`).
 
 ---
 

@@ -1,5 +1,38 @@
 # Milestones — Metal Accompaniment
 
+## v0.6.0 — ML Correctness & Evaluation (Shipped: 2026-06-02)
+
+**Phases:** 32–36 (5 phases) | **Plans:** 16 | **Requirements:** 16+ (all satisfied — see `.planning/milestones/v0.6.0-REQUIREMENTS.md`)
+
+### Summary
+
+Shipped ONNX default enablement with `MA_ENABLE_ONNX=ON`, retrained pattern model on corrected oracle labels and centroid-aligned proxy features (macro-F1 0.6391), baked-normalization structure model with dual quality gates, live-capture domain gap analysis, inference path consistency (shared adjustedBpm + compatible exclusion), CI readiness fixture, latency benchmark (all p99 < 5ms), and `ONNX_READINESS.md` with all six criteria PASS.
+
+### Key accomplishments
+
+1. **Label correction + quality gates** — Phases 32–33: rule-oracle labels replacing quantile bins; bass MSE gate + structure dual F1 gate; structure ONNX with baked normalization.
+2. **Domain gap analysis** — Phase 34: real-guitar FeatureCapture JSONL; offline evaluator; proxy distribution shift documented.
+3. **Inference path consistency** — Phase 35: shared `PatternRules::adjustedBpm`; compatibility-aware exclusion cycling; intensity-variant training.
+4. **Centroid fix + retrain** — Phase 36: proxy formula updated to match captured guitar stats; full GMD+Lakh retrain; model promoted.
+5. **Default ONNX flip** — `MA_ENABLE_ONNX` default → ON; six readiness criteria all PASS; CI fixture evaluation gate; latency benchmark p99 < 5ms.
+
+### Pre-flight
+
+- `.planning/v0.6.0-MILESTONE-AUDIT.md` — verdict: `passed` (remediated 2026-06-02)
+- Phases 33 and 36 verified on 2026-06-02 during milestone close.
+
+### Accepted flag
+
+Class 0 (SILENT) permanently excluded from training data/DATA-06 gate — MIDI corpora lack SILENT examples. Rule-based passthrough handles it at runtime. Documented in `merge_datasets.py`.
+
+---
+
+## v0.5.0 — Rhythmic Coherence (Partial — superseded)
+
+**Phases:** 27, 31 shipped; 28–30 deferred | **Status:** Phase 31 (Architecture Deepening) complete; beat-tracker and ML retrain deferred to future milestones.
+
+---
+
 ## v0.4.0 — ML Playability & Simplification (Shipped: 2026-04-29)
 
 **Phases:** 21–26 (6 phases) | **Plans:** 13 | **Requirements:** 15 (all satisfied — see `.planning/milestones/v0.4.0-REQUIREMENTS.md`)
@@ -41,22 +74,15 @@ Shipped Groove MIDI Dataset ingestion and tensor pipeline with class histogram g
 3. **Bass model** — Synthetic metal-key training, `bass_trained.onnx` (Phase 19).
 4. **Export** — Validate-then-copy installer + training README; `20-VERIFICATION.md` checklist (Phase 20).
 
-### Pre-flight
-
-- No `.planning/v0.3.0-MILESTONE-AUDIT.md` on file — optional `/gsd-audit-milestone` next time.
-- `audit-open` at close: **1** open item — EXP-02 human Reaper verification (`20-VERIFICATION.md`). Acknowledged; requirement **EXP-02** left unchecked in archived requirements until an operator completes the checklist.
-
 ### Known gaps at close
 
 - **EXP-02** (non-degenerate pattern selection in a DAW): procedure documented; human pass pending. See `STATE.md` → **Deferred Items**.
 
 ---
 
-## v0.2.0 — Phase 2 ML + Generative
+## v0.2.0 — Phase 2 ML + Generative (Shipped: 2026-04-17)
 
-**Shipped:** 2026-04-17  
-**Phases:** 9–16 (8 phases)  
-**Plans with summaries:** 18
+**Phases:** 9–16 (8 phases) | **Plans with summaries:** 18
 
 ### Summary
 
@@ -70,26 +96,11 @@ Shipped optional ONNX inference with a frozen I/O contract and CI guardrails, YI
 4. **Train → ship loop** — Pinned Python deps, stub training, dual ONNX export, contract validation script (Phase 15).
 5. **Ops** — S3 + GitHub OIDC Terraform, promote/download scripts, optional CI model fetch (Phase 16).
 
-### Stats (approximate)
-
-- **Window:** 2026-04-16 — 2026-04-17 (GSD-recorded execution)
-- **Plans:** 18 with summaries (phases 9–16)
-
-### Pre-flight note
-
-No `.planning/v0.2.0-MILESTONE-AUDIT.md` on file — optional `/gsd-audit-milestone` next time for a formal audit trail. Open-artifact audit (`audit-open`) was clear at close.
-
-### Known deferred items at close
-
-Same operational follow-ups as v0.1.0 where still pending: push legacy tag, GitHub issues checklist, optional DAW smoke. See `STATE.md` → **Deferred Items**.
-
 ---
 
-## v0.1.0 — Phase 1 rule-based MVP
+## v0.1.0 — Phase 1 rule-based MVP (Shipped: 2026-04-17)
 
-**Shipped:** 2026-04-17  
-**Phases:** 1–8 (8 development phases)  
-**Plans with summaries:** 6 (Phase 7: five plans; Phase 8: one plan)
+**Phases:** 1–8 (8 development phases) | **Plans with summaries:** 6
 
 ### Summary
 
@@ -100,18 +111,10 @@ Shipped a JUCE 8 VST3/AU plugin that listens to guitar audio and drives drum and
 1. **Scaffold & analysis** — CMake VST3/AU, CI, onset/tempo tracker with unit test, energy/structure classification with debug UI.
 2. **MIDI core** — Pattern library, offline export, `PatternPlayer` with humanisation and channel routing.
 3. **Inference boundary** — `RuleBasedInference` + background thread; `IInference` ready for Phase 2 ONNX drop-in.
-4. **Integration & stability** — Phase 7 plans: tagger tuning, BPM-adaptive durations, processor hardening, debug metrics, release/TSan/stability/CPU evidence (see `.planning/phases/07-integration-stability/`).
+4. **Integration & stability** — Phase 7 plans: tagger tuning, BPM-adaptive durations, processor hardening, debug metrics, release/TSan/stability/CPU evidence.
 5. **Documentation handoff** — Doxygen target, CONTRIBUTING, CHANGELOG tagging instructions, `docs/PHASE2_GITHUB_ISSUES.md` checklist.
 
-### Stats (approximate)
-
-- **Git range:** `0c306ca` → `HEAD` (first import through milestone close)
-- **Commits on `main`:** 21+ (milestone window)
-- **Diff (first commit..HEAD):** ~104 files, +12k LOC (per `git diff --stat`)
-
 ### Known deferred items at close
-
-Operational follow-ups (not blocking code archive):
 
 | Item | Notes |
 |------|--------|
@@ -119,8 +122,6 @@ Operational follow-ups (not blocking code archive):
 | GitHub issues | Create issues from `docs/PHASE2_GITHUB_ISSUES.md` |
 | Optional DAW smoke | Reaper session confirmation for OUT-05 if desired |
 
-See `STATE.md` → **Deferred Items** for the canonical list.
-
 ---
 
-*Milestone entry created at v0.1.0 close (`/gsd-complete-milestone`).*
+*Milestone entries created at each milestone close (`/gsd-complete-milestone`).*

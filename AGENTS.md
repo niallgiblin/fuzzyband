@@ -3,7 +3,7 @@
 
 **Metal Accompaniment**
 
-A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and outputs rhythmically appropriate drum and bass MIDI in real time. Phase 1 uses a rule-based signal analysis pipeline (onset detection, tempo tracking, energy/structure classification) with no ML. The interface is designed so Phase 2 can drop in an ONNX ML model without changing the threading model or plugin architecture.
+A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and outputs rhythmically appropriate drum and bass MIDI in real time. Ships with a rule-based signal analysis pipeline (onset detection, tempo tracking, energy/structure classification) and an ONNX ML pipeline (pattern selector, structure classifier, generative bass) behind `MA_ENABLE_ONNX`. Current milestone: **v0.6.0 ML Correctness & Evaluation** — validating ONNX path for default enablement.
 
 **Core Value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.
 
@@ -13,7 +13,7 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 - **Threading**: Audio thread must never block — lock-free queue + atomics only
 - **Stability**: 20-minute session with no crashes or xruns
 - **Accuracy**: Tempo within ±5 BPM; pattern switching within ~200ms of energy change
-- **Interface**: IInference must remain stable — Phase 2 ONNX model is a drop-in
+- **Interface**: `IInference` must remain stable — ONNX and rule-based backends are drop-in alternatives
 <!-- GSD:project-end -->
 
 <!-- GSD:stack-start source:codebase/STACK.md -->
@@ -33,7 +33,7 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 ## Frameworks
 - JUCE 8.0.10 - Audio plugin framework, MIDI handling, GUI, real-time audio processing
 - Catch2 3.5.2 - Unit test framework
-- ONNX Runtime - ML model inference library (Phase 2, not active in Phase 1)
+- ONNX Runtime - ML model inference library
 ## Key Dependencies
 - moodycamel ReaderWriterQueue - Lock-free single-producer single-consumer queue
 - `<atomic>` - Lock-free atomic types for pattern index handoff
@@ -55,7 +55,7 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 - Platform-specific compiler flags in `CMakeLists.txt` lines 178-197
 - `MA_BUILD_TESTS` (default: ON) - Build unit test executable
 - `MA_BUILD_STANDALONE` (default: ON) - Build standalone app target
-- `MA_ENABLE_ONNX` (default: OFF) - Enable ONNX Runtime integration (Phase 2)
+- `MA_ENABLE_ONNX` (default: OFF) - Enable ONNX Runtime integration
 - `ONNXRUNTIME_ROOT` - Required when `MA_ENABLE_ONNX=ON`
 - ONNX model file: `assets/accompaniment_model.onnx` (bundled via JUCE BinaryData when `MA_ENABLE_ONNX=ON`)
 ## Platform Requirements
@@ -80,7 +80,7 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 | Target | Output | Purpose |
 |---|---|---|
 | `MetalAccompaniment` | VST3/AU/Standalone plugin | Main audio plugin |
-| `MetalAccompanimentData` | Binary data archive | Bundles ONNX model (Phase 2) |
+| `MetalAccompanimentData` | Binary data archive | Bundles ONNX models |
 | `MetalAccompanimentTests` | Executable | Unit test runner (Catch2) |
 | `MetalAccompanimentExportPatterns` | Executable | Offline MIDI pattern exporter |
 ## Build Commands
@@ -147,7 +147,7 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 - Sparse use of comments in implementation; code is self-documenting
 - Parameters documented in headers: `/** Call once per block with latest analyser outputs. */` in `StructureTagger::update()`
 - Magic numbers explained when necessary: threshold values like `fluxThreshold = 0.35f` declared as member variables
-- Phase status marked: `// TODO(Phase 2): load ONNX model from BinaryData` in `OnnxInference.cpp`
+- ONNX model loading handled in `OnnxInference::tryLoadModel()`
 - JUCE project uses simple C++ documentation style
 - Method signatures are self-explanatory
 ## Function Design
@@ -181,21 +181,21 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 ## Pattern Overview
 - Single-producer single-consumer lock-free queue for feature vector handoff
 - Audio thread (real-time, hard deadline ~5ms) separate from background inference thread (~50Hz)
-- Pluggable inference interface (`IInference`) to support Phase 1 rule-based and Phase 2 ONNX implementations
+- Pluggable inference interface (`IInference`) supporting rule-based and ONNX implementations
 - No heap allocation on audio thread
 - Atomic variables for pattern index synchronization
 ## Layers
 - Purpose: Extract audio features from incoming guitar signal in real-time
 - Location: `src/analysis/`
-- Contains: `OnsetDetector`, `EnergyAnalyser`, `StructureTagger`
+- Contains: `OnsetDetector`, `EnergyAnalyser`, `StructureTagger`, `PlaybackGate`, `StablePitchTracker`, `TempoStabiliser`
 - Depends on: JUCE audio processing library, FFT primitives
 - Used by: `AccompanimentProcessor.processBlock()` on audio thread
 - Purpose: Plain data structure for passing analysis results to inference thread
 - Location: `src/analysis/FeatureVector.h`
-- Contains: BPM, RMS energy, spectral centroid, high-frequency flux, structural state
+- Contains: BPM, RMS energy, spectral centroid, high-frequency flux, structural state, pitch root/confidence, intensity, RMS delta
 - Depends on: `StructureState` enum
 - Used by: Inference layer via lock-free queue
-- Purpose: Map audio features to pattern selection (rule-based in Phase 1, ML in Phase 2)
+- Purpose: Map audio features to pattern selection (rule-based or ML)
 - Location: `src/inference/`
 - Contains: `IInference` interface, `RuleBasedInference` implementation, `OnnxInference` stub
 - Depends on: `FeatureVector`
@@ -235,7 +235,7 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 - Purpose: Decouples inference implementation from audio processing
 - Location: `src/inference/IInference.h`
 - Pattern: Virtual methods `prepare()`, `selectPattern()`, `getName()`
-- Design benefit: Phase 2 ONNX implementation can be swapped without modifying audio thread code
+- Design benefit: ONNX implementation can be swapped without modifying audio thread code
 ## Entry Points
 - Location: `src/AccompanimentProcessor.cpp` constructor
 - Triggers: DAW instantiates plugin
