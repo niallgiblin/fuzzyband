@@ -112,3 +112,57 @@ TEST_CASE("TempoStabiliser: clamped candidate stays within 80-220 range", "[temp
     const float result2 = ts.update(300.0f, false, 512, 44100.0);
     REQUIRE(result2 == 220.0f); // clamped
 }
+
+TEST_CASE("TempoStabiliser: warmStart sets stable BPM immediately", "[tempo_stabiliser]")
+{
+    TempoStabiliser ts;
+    ts.warmStart(140.0f);
+    REQUIRE(ts.getStableBpm() == 140.0f);
+}
+
+TEST_CASE("TempoStabiliser: warmStart primes EMA anchor for deadband candidates", "[tempo_stabiliser]")
+{
+    TempoStabiliser ts;
+    ts.warmStart(140.0f);
+    REQUIRE(ts.getStableBpm() == 140.0f);
+
+    // Candidate 142 is within deadband of 140: |142-140| = 2 ≤ 4
+    // EMA from warm-started 140: 140 + 0.05*(142-140) = 140.1
+    const float result = ts.update(142.0f, true, 512, 44100.0);
+    REQUIRE(result > 140.0f);
+    REQUIRE(result < 142.0f);
+    REQUIRE(ts.getStableBpm() > 140.0f);
+    REQUIRE(ts.getStableBpm() < 142.0f);
+}
+
+TEST_CASE("TempoStabiliser: warmStart with outside-deadband candidate holds then commits", "[tempo_stabiliser]")
+{
+    TempoStabiliser ts;
+    ts.warmStart(100.0f);
+    REQUIRE(ts.getStableBpm() == 100.0f);
+
+    const double sr = 44100.0;
+    const int blockSize = 512;
+    const int holdSamples = static_cast<int>(2.0 * sr);
+
+    // Candidate 160 is 60 BPM from warm-started 100 — outside deadband
+    // Should hold at 100 until hold period accumulates
+    float lastResult = 0.0f;
+    int accumulated = 0;
+
+    // Feed blocks but stop just before hold period
+    const int preHold = holdSamples - blockSize;
+    while (accumulated < preHold)
+    {
+        lastResult = ts.update(160.0f, true, blockSize, sr);
+        accumulated += blockSize;
+    }
+    REQUIRE(lastResult == 100.0f); // still holding
+
+    // One more block pushes past hold threshold — should commit to 160
+    lastResult = ts.update(160.0f, true, blockSize, sr);
+    accumulated += blockSize;
+    REQUIRE(accumulated > holdSamples);
+    REQUIRE(lastResult == 160.0f);
+    REQUIRE(ts.getStableBpm() == 160.0f);
+}

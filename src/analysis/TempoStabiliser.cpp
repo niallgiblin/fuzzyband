@@ -4,8 +4,13 @@
 
 void TempoStabiliser::reset() noexcept
 {
-    stablePlaybackBpm       = 120.0f;
-    pendingCandidateBpm     = 120.0f;
+    warmStart(120.0f);
+}
+
+void TempoStabiliser::warmStart(float bpm) noexcept
+{
+    stablePlaybackBpm       = bpm;
+    pendingCandidateBpm     = bpm;
     pendingCandidateSamples = 0;
 }
 
