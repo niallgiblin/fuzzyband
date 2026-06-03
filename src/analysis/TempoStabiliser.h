@@ -16,6 +16,11 @@ public:
     /** @brief Reset to 120 BPM. Call from prepareToPlay() and processBlockBypassed(). */
     void reset() noexcept;
 
+    /** @brief Prime the stabiliser with a saved BPM before the next update cycle.
+        Sets stable and pending BPM to the given value and resets the hold counter.
+        Call from processBlock after a silence reset to carry forward pre-silence BPM. */
+    void warmStart(float bpm) noexcept;
+
     /** @brief Update with latest BPM candidate. Returns the new stable BPM.
         @param candidateBpm  Raw BPM estimate (clamped to [80, 220] internally).
         @param playbackOpen  True when the playback gate is open.
