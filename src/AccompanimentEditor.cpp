@@ -8,10 +8,14 @@ static const char* stateName(int idx)
     {
         case StructureState::SILENT:
             return "SILENT";
+        case StructureState::AMBIENT:
+            return "AMBIENT";
         case StructureState::SOFT:
             return "SOFT";
         case StructureState::LOUD:
             return "LOUD";
+        case StructureState::BREAKDOWN:
+            return "BREAKDOWN";
     }
     return "?";
 }

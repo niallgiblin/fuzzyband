@@ -60,8 +60,8 @@ private:
     int highConfHops = 0;
     int lowConfHops = 0;
 
-    static constexpr float kMinBpm = 80.0f;
-    static constexpr float kMaxBpm = 220.0f;
+    static constexpr float kMinBpm = 40.0f;
+    static constexpr float kMaxBpm = 300.0f;
     static constexpr float kConfHigh = 0.55f;
     static constexpr float kConfLow = 0.35f;
 };

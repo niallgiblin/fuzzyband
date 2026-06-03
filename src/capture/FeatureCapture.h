@@ -26,6 +26,7 @@ struct FeatureCaptureRow
     float pitchConfidence = 0.0f;
     float policyIntensity = 0.5f;
     float rmsDelta = 0.0f;
+    float subBassRatio = 0.0f;
 
     double elapsedSeconds = 0.0;
     int rulePatternIndex = 0;

@@ -17,7 +17,7 @@ void TempoStabiliser::warmStart(float bpm) noexcept
 float TempoStabiliser::update(float candidateBpm, bool playbackOpen,
                               int numSamples, double sampleRate) noexcept
 {
-    const float candidate = juce::jlimit(80.0f, 220.0f, candidateBpm);
+    const float candidate = juce::jlimit(kMinStableBpm, kMaxStableBpm, candidateBpm);
 
     if (!playbackOpen)
     {

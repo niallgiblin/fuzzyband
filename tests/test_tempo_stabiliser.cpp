@@ -14,8 +14,8 @@ TEST_CASE("TempoStabiliser: reset returns to 120 from any state", "[tempo_stabil
     TempoStabiliser ts;
     const double sr = 44100.0;
 
-    // Drive beyond hold period to commit to 130
-    const int holdSamples = static_cast<int>(2.0 * sr);
+    // Drive beyond hold period to commit to 130 (now 6s, was 2s)
+    const int holdSamples = static_cast<int>(6.0 * sr);
     int accumulated = 0;
     while (accumulated < holdSamples + 1)
     {
@@ -31,7 +31,7 @@ TEST_CASE("TempoStabiliser: reset returns to 120 from any state", "[tempo_stabil
 TEST_CASE("TempoStabiliser: within deadband returns EMA not raw candidate", "[tempo_stabiliser]")
 {
     TempoStabiliser ts;
-    // Candidate 124 is 4.0 BPM from stable 120 — exactly at deadband boundary
+    // Candidate 124 is 4.0 BPM from stable 120 — within deadband (now 8 BPM)
     // Should return EMA: 120 + 0.05*(124-120) = 120.2
     const float result = ts.update(124.0f, true, 512, 44100.0);
     // Result should be between 120 and 124 (EMA step), not jump to 124
@@ -47,10 +47,11 @@ TEST_CASE("TempoStabiliser: outside deadband holds until 2s then commits", "[tem
     TempoStabiliser ts;
     const double sr = 44100.0;
     const int blockSize = 512;
-    const int holdSamples = static_cast<int>(2.0 * sr); // 88200 samples
+    const int holdSamples = static_cast<int>(6.0 * sr); // was 2.0, now 6.0s
 
-    // Candidate 130 is 10 BPM from stable 120 — outside deadband
-    // Should hold at 120 until hold period accumulates
+    // Candidate 130 is 10 BPM from stable 120 — outside old deadband (4) but within new (8).
+    // Now at deadband=8, 130 is outside (|130-120|=10 > 8), so it enters pending.
+    // Should hold at 120 until hold period (now 6s) accumulates
     float lastResult = 0.0f;
     int accumulated = 0;
     bool committed = false;
@@ -105,12 +106,12 @@ TEST_CASE("TempoStabiliser: clamped candidate stays within 80-220 range", "[temp
     TempoStabiliser ts;
     // Below-range candidate clamped to 80 — within deadband of 120? No, |80-120|=40 > 4
     // So goes into pending for 80
-    const float result1 = ts.update(50.0f, false, 512, 44100.0);
-    REQUIRE(result1 == 80.0f); // clamped
+    const float result1 = ts.update(30.0f, false, 512, 44100.0);
+    REQUIRE(result1 == 40.0f); // clamped
 
-    // Above-range candidate clamped to 220
-    const float result2 = ts.update(300.0f, false, 512, 44100.0);
-    REQUIRE(result2 == 220.0f); // clamped
+    // Above-range candidate clamped to 300
+    const float result2 = ts.update(350.0f, false, 512, 44100.0);
+    REQUIRE(result2 == 300.0f); // clamped
 }
 
 TEST_CASE("TempoStabiliser: warmStart sets stable BPM immediately", "[tempo_stabiliser]")
@@ -126,7 +127,7 @@ TEST_CASE("TempoStabiliser: warmStart primes EMA anchor for deadband candidates"
     ts.warmStart(140.0f);
     REQUIRE(ts.getStableBpm() == 140.0f);
 
-    // Candidate 142 is within deadband of 140: |142-140| = 2 ≤ 4
+    // Candidate 142 is within 8 BPM deadband of 140: |142-140| = 2 ≤ 8
     // EMA from warm-started 140: 140 + 0.05*(142-140) = 140.1
     const float result = ts.update(142.0f, true, 512, 44100.0);
     REQUIRE(result > 140.0f);
@@ -143,10 +144,10 @@ TEST_CASE("TempoStabiliser: warmStart with outside-deadband candidate holds then
 
     const double sr = 44100.0;
     const int blockSize = 512;
-    const int holdSamples = static_cast<int>(2.0 * sr);
+    const int holdSamples = static_cast<int>(6.0 * sr);  // was 2.0s
 
-    // Candidate 160 is 60 BPM from warm-started 100 — outside deadband
-    // Should hold at 100 until hold period accumulates
+    // Candidate 160 is 60 BPM from warm-started 100 — outside deadband (now 8)
+    // Should hold at 100 until hold period (6s) accumulates
     float lastResult = 0.0f;
     int accumulated = 0;
 

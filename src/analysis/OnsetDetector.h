@@ -13,10 +13,10 @@
 #include <vector>
 
 /**
- * @brief Detects note onsets and tracks BPM (80–220) from inter-onset intervals.
+ * @brief Detects note onsets and tracks BPM (40–300) from inter-onset intervals.
  *
  * Locks BPM once 8+ consecutive IOIs agree within ±8%; lock clears on SILENT state.
- * Onset refractory period is 80 ms to reject fuzz-guitar harmonic false-triggers.
+ * Onset refractory period is 50 ms to reject fuzz-guitar harmonic false-triggers.
  * BPM is computed via median IOI with no post-rounding.
  *
  * Intended to run from the audio processing path; methods called from @ref AccompanimentProcessor::processBlock.
@@ -97,8 +97,8 @@ private:
     int   fluxRollingIdx = 0;
     std::array<float, 43> fluxRollingBuf{};
 
-    static constexpr float kMinBpm = 80.0f;
-    static constexpr float kMaxBpm = 220.0f;
+    static constexpr float kMinBpm = 40.0f;
+    static constexpr float kMaxBpm = 300.0f;
     static constexpr float kSoftLockEmaAlpha = 0.03f;
 
     std::atomic<float> currentBpm{ 120.0f };
