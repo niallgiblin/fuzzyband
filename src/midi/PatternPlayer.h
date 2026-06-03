@@ -94,6 +94,10 @@ private:
                                  double beatEnd,
                                  int sampleOffsetBase);
 
+    void emitTransitionFill(juce::MidiBuffer& midi,
+                            int numSamples,
+                            TransitionFillKind kind) noexcept;
+
     int humanVel(int base) const;
     int humanSamples() const;
 

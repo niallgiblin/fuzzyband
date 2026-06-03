@@ -149,6 +149,7 @@ private:
     // lastBassUpdateSample: inference-thread hold guard only — not pitch stability (stays here per ARCH-02)
     int64_t lastBassUpdateSample = -1;   // -1 = never committed
     int64_t lastDrumPatternChangeSample = -1; // -1 = never committed; inference thread
+    StructureState lastCommittedStructureState = StructureState::SILENT;
 
     PlaybackGate playbackGate;
 
