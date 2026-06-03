@@ -523,9 +523,12 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         patternPlayer.armTransitionCrash();
     if (gd.resetTrackers)
     {
+        const float savedBpm = tempoStabiliser.getStableBpm();
         onsetDetector.resetTempoLock();
         beatTracker.reset();
         tempoStabiliser.reset();
+        tempoStabiliser.warmStart(savedBpm);
+        onsetDetector.setSeedBpm(savedBpm);
         resetDrumHoldRequested.store(true, std::memory_order_release);
     }
     if (gd.snapBeatNow)
