@@ -109,7 +109,8 @@ inline int diversifyPattern(int base, const FeatureVector& f, int barMod8) noexc
     // SOFT patterns [1,3]
     if (base >= 1 && base <= 3)
     {
-        if (f.rmsEnergy < 0.04f && (barMod8 % 4) < 2)
+        // Widened half-time window: 6 of 8 bars for sludge feel (MEM009)
+        if (f.rmsEnergy < 0.04f && (barMod8 % 8) < 6)
             return 7; // half-time feel
         return base;
     }
@@ -117,6 +118,9 @@ inline int diversifyPattern(int base, const FeatureVector& f, int barMod8) noexc
     // LOUD patterns [4,5]
     if (base >= 4 && base <= 5)
     {
+        // Sludge half-time: BPM < 85, bars 0-1 of each 4-bar group
+        if (f.bpm < 85.0f && (barMod8 % 4) < 2)
+            return 7; // half-time feel
         if (f.rmsEnergy < 0.06f && f.bpm < 140.0f)
             return 9; // sparse breakdown
         if (f.bpm >= 160.0f && f.spectralCentroid > 800.0f)

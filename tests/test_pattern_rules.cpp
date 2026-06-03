@@ -179,12 +179,17 @@ TEST_CASE("PatternRules::diversifyPattern SOFT high-energy stays on base", "[pat
     REQUIRE(PatternRules::diversifyPattern(3, f, 3) == 3);
 }
 
-TEST_CASE("PatternRules::diversifyPattern SOFT high bar-phase stays on base", "[pattern_rules][diversify]")
+TEST_CASE("PatternRules::diversifyPattern SOFT widened half-time window: barMod8 0-5 routes to half-time", "[pattern_rules][diversify]")
 {
-    // rms low but barMod8%4 >= 2 → no diversify
+    // MEM009: Widened from (barMod8%4 < 2) to (barMod8%8 < 6)
+    // Half-time fires on 6 of 8 bars for sludge feel
     FeatureVector f = makeFD(StructureState::SOFT, 110.0f, 0.03f, 500.0f);
-    REQUIRE(PatternRules::diversifyPattern(1, f, 2) == 1);
-    REQUIRE(PatternRules::diversifyPattern(2, f, 3) == 2);
+    // barMod8=0-5 → half-time
+    for (int bar = 0; bar <= 5; ++bar)
+        REQUIRE(PatternRules::diversifyPattern(1, f, bar) == 7);
+    // barMod8=6,7 → stays on base
+    REQUIRE(PatternRules::diversifyPattern(1, f, 6) == 1);
+    REQUIRE(PatternRules::diversifyPattern(1, f, 7) == 1);
 }
 
 TEST_CASE("PatternRules::diversifyPattern LOUD high-BPM high-centroid routes to blast", "[pattern_rules][diversify]")
@@ -209,12 +214,43 @@ TEST_CASE("PatternRules::diversifyPattern LOUD low-energy routes to sparse", "[p
     REQUIRE(PatternRules::diversifyPattern(5, f, 0) == 9);
 }
 
-TEST_CASE("PatternRules::diversifyPattern LOUD no condition matches stays on base", "[pattern_rules][diversify]")
+TEST_CASE("PatternRules::diversifyPattern LOUD sludge half-time: BPM < 85, bars 0-1", "[pattern_rules][diversify]")
 {
-    // mid-BPM, mid-energy, odd bar → no route applies
-    FeatureVector f = makeFD(StructureState::LOUD, 145.0f, 0.10f, 700.0f);
-    REQUIRE(PatternRules::diversifyPattern(4, f, 1) == 4);
-    REQUIRE(PatternRules::diversifyPattern(5, f, 1) == 5);
+    // Sludge metal at 65 BPM — half-time on bars 0-1 of each 4-bar group
+    FeatureVector f = makeFD(StructureState::LOUD, 65.0f, 0.10f, 500.0f);
+    REQUIRE(PatternRules::diversifyPattern(4, f, 0) == 7);  // bar 0 → half-time
+    REQUIRE(PatternRules::diversifyPattern(4, f, 1) == 7);  // bar 1 → half-time
+    REQUIRE(PatternRules::diversifyPattern(4, f, 4) == 7);  // bar 4 → half-time (next 4-bar group)
+    REQUIRE(PatternRules::diversifyPattern(5, f, 0) == 7);  // base 5 also gets half-time
+    // Bars 2-3 stay standard
+    REQUIRE(PatternRules::diversifyPattern(4, f, 2) == 4);
+    REQUIRE(PatternRules::diversifyPattern(4, f, 3) == 4);
+}
+
+TEST_CASE("PatternRules::diversifyPattern LOUD sludge half-time skips at BPM >= 85", "[pattern_rules][diversify]")
+{
+    // At 90 BPM (just above sludge threshold), half-time should NOT trigger
+    FeatureVector f = makeFD(StructureState::LOUD, 90.0f, 0.10f, 500.0f);
+    REQUIRE(PatternRules::diversifyPattern(4, f, 0) != 7);
+    REQUIRE(PatternRules::diversifyPattern(4, f, 1) != 7);
+}
+
+TEST_CASE("PatternRules::diversifyPattern LOUD half-time is not LOUD-compatible but routes anyway", "[pattern_rules][diversify]")
+{
+    // Pattern 7 is not LOUD-compatible per isPatternCompatibleWithState,
+    // but diversifyPattern deliberately returns it for sludge musical variety.
+    REQUIRE(PatternRules::isPatternCompatibleWithState(7, StructureState::LOUD) == false);
+    FeatureVector f = makeFD(StructureState::LOUD, 65.0f, 0.10f, 500.0f);
+    REQUIRE(PatternRules::diversifyPattern(4, f, 0) == 7);
+}
+
+TEST_CASE("PatternRules::diversifyPattern LOUD half-time checked before sparse", "[pattern_rules][diversify]")
+{
+    // BPM=70, rms=0.04, barMod8=0: half-time wins over sparse
+    FeatureVector f = makeFD(StructureState::LOUD, 70.0f, 0.04f, 500.0f);
+    REQUIRE(PatternRules::diversifyPattern(4, f, 0) == 7);  // half-time first
+    // barMod8=2: half-time skipped, sparse takes over
+    REQUIRE(PatternRules::diversifyPattern(4, f, 2) == 9);  // sparse
 }
 
 TEST_CASE("PatternRules::diversifyPattern Breakdown routes to sparse", "[pattern_rules][diversify]")

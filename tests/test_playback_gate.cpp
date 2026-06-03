@@ -52,12 +52,12 @@ TEST_CASE("PlaybackGate: phrase-breath hold keeps gate closed and does not reset
     REQUIRE_FALSE(gate.isGateOpen());
 }
 
-TEST_CASE("PlaybackGate: full reset fires after long silence (> 3s)", "[playback_gate]")
+TEST_CASE("PlaybackGate: full reset fires after long silence (> 8s)", "[playback_gate]")
 {
     PlaybackGate gate;
     const double sr = 44100.0;
-    // Feed > 3s of silence (3.5s = 154350 samples)
-    const int silentSamples = static_cast<int>(3.5 * sr);
+    // Feed > 8s of silence (9.0s = 396900 samples)
+    const int silentSamples = static_cast<int>(9.0 * sr);
     GateDecision lastGd{};
     int remaining = silentSamples;
     while (remaining > 0)
@@ -71,13 +71,12 @@ TEST_CASE("PlaybackGate: full reset fires after long silence (> 3s)", "[playback
     REQUIRE_FALSE(gate.isGateOpen());
 }
 
-TEST_CASE("PlaybackGate: 2.5s silence does NOT trigger reset (within 3s hold)", "[playback_gate]")
+TEST_CASE("PlaybackGate: 7s silence does NOT trigger reset (within 8s hold)", "[playback_gate]")
 {
-    // 2.5s is below the new 3.0s hold — should NOT trigger resetTrackers.
-    // This was previously triggering reset at the old 2.0s threshold.
+    // 7.0s is below the 8.0s hold — should NOT trigger resetTrackers.
     PlaybackGate gate;
     const double sr = 44100.0;
-    const int silentSamples = static_cast<int>(2.5 * sr);
+    const int silentSamples = static_cast<int>(7.0 * sr);
     GateDecision gd{};
     int remaining = silentSamples;
     while (remaining > 0)
@@ -124,8 +123,8 @@ TEST_CASE("PlaybackGate: armCrash fires on phrase-breath re-entry (SILENT then L
     // Phase 1: Feed some LOUD to open gate
     feedLoud(gate, sr, static_cast<int>(1.0 * sr), 0.0, true, true, 0.8f);
 
-    // Phase 2: Feed SILENT < 3s (phrase breath, inPhraseBreath=true)
-    feedSilence(gate, sr, static_cast<int>(1.0 * sr));
+    // Phase 2: Feed SILENT < 8s (phrase breath, inPhraseBreath=true)
+    feedSilence(gate, sr, static_cast<int>(4.0 * sr));
 
     // Phase 3: One LOUD block — should fire armCrash
     GateDecision gd = gate.update(StructureState::LOUD, 0.5, true, true, 0.8f, 512, sr);
