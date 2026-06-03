@@ -181,3 +181,105 @@ TEST_CASE("E2E: final silence after signal causes RMS to drop", "[e2e][transitio
 
     proc.releaseResources();
 }
+
+// S02: Structure stability through palm-muted verse → full-chord chorus transition.
+// Amplitude thresholds calibrated against EnergyAnalyser rmsEnergy (= raw_rms * 4.0, clamped [0,1]):
+//   amp 0.015 → raw_rms ≈ 0.0106 → rmsEnergy ≈ 0.0424 → below kLoudRms(0.075) → SOFT
+//   amp 0.25  → raw_rms ≈ 0.1768 → rmsEnergy ≈ 0.707  → above kLoudRms(0.075) → LOUD
+TEST_CASE("E2E: palm-muted verse to full-chord chorus — no flip-flopping", "[e2e][transitions]")
+{
+    const double sr    = 48000.0;
+    const int    block = 512;
+
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    // Phase 1: Palm-muted verse (SOFT) — 10s of amp 0.015
+    // StructureTagger: SOFT→LOUD hold = 0.2s, but rmsEnergy stays below kLoudRms → SOFT
+    {
+        const int n = static_cast<int>(10.0 * sr);
+        auto verse = sineSection(n, 1500.0, sr, 0.015f);
+        feedSection(proc, verse.data(), n, block);
+    }
+
+    // After sustained palm-muted playing, state should have settled to SOFT (index 1)
+    const int stateAfterVerse = proc.getDisplayStateIndex();
+    REQUIRE(stateAfterVerse == 1); // 1 = SOFT
+
+    // Phase 2: Full-chord chorus (LOUD) — 15s of amp 0.25
+    // Bar-quantized hold guard should transition SOFT→LOUD at a bar boundary within ≤2 bars
+    {
+        const int n = static_cast<int>(15.0 * sr);
+        auto chorus = sineSection(n, 1500.0, sr, 0.25f);
+        feedSection(proc, chorus.data(), n, block);
+    }
+
+    // After sustained full-chord playing, state should be stable at LOUD (index 2)
+    const int stateAfterChorus = proc.getDisplayStateIndex();
+    REQUIRE(stateAfterChorus == 2); // 2 = LOUD
+
+    // Phase 3: Return to palm-muted (SOFT) — 10s of amp 0.015
+    {
+        const int n = static_cast<int>(10.0 * sr);
+        auto verse2 = sineSection(n, 1500.0, sr, 0.015f);
+        feedSection(proc, verse2.data(), n, block);
+    }
+
+    // After return to palm-muted, state should settle back to SOFT
+    const int stateAfterReturn = proc.getDisplayStateIndex();
+    REQUIRE(stateAfterReturn == 1); // 1 = SOFT
+
+    proc.releaseResources();
+}
+
+// S02: Verify that rapid alternation between SOFT and LOUD input does not
+// cause flip-flopping — the bar-quantized hold guard holds for ≥2 bars.
+TEST_CASE("E2E: rapid SOFT/LOUD alternation — hold guard prevents flip-flopping", "[e2e][transitions]")
+{
+    const double sr    = 48000.0;
+    const int    block = 512;
+
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    // Establish initial LOUD state with sustained signal
+    {
+        const int n = static_cast<int>(5.0 * sr);
+        auto loud = sineSection(n, 1500.0, sr, 0.25f);
+        feedSection(proc, loud.data(), n, block);
+    }
+    const int initialState = proc.getDisplayStateIndex();
+    REQUIRE(initialState == 2); // LOUD
+
+    // Rapidly alternate SOFT/LOUD in 1-bar chunks for 8 bars (~16s at 120 BPM).
+    // The first bar of SOFT input may commit at the next bar boundary (≥2 bars
+    // since LOUD was established). After that, the hold guard blocks further
+    // changes because only 1 bar has elapsed. We count state changes to verify
+    // the hold guard limits flip-flopping to at most 1 in any 2-bar window.
+    const double bpm = 120.0;
+    const int samplesPerBar = static_cast<int>(4.0 * 60.0 / bpm * sr);
+    int stateChangeCount = 0;
+    int lastState = initialState;
+
+    for (int bar = 0; bar < 8; ++bar)
+    {
+        const float amp = (bar % 2 == 0) ? 0.25f : 0.015f; // alternate LOUD/SOFT
+        auto seg = sineSection(samplesPerBar, 1500.0, sr, amp);
+        feedSection(proc, seg.data(), samplesPerBar, block);
+        const int s = proc.getDisplayStateIndex();
+        if (s != lastState)
+        {
+            ++stateChangeCount;
+            lastState = s;
+        }
+    }
+
+    // With 8 bars of alternation, the hold guard should allow at most 2-3 state
+    // changes (not 8!). The first transition LOUD→SOFT is allowed (≥2 bars elapsed),
+    // then further changes are held. Without the hold guard, we'd see 8 changes.
+    REQUIRE(stateChangeCount < 4);
+
+    proc.releaseResources();
+}

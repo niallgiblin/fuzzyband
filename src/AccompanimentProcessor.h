@@ -152,6 +152,12 @@ private:
     int64_t lastDrumPatternChangeSample = -1; // -1 = never committed; inference thread
     StructureState lastCommittedStructureState = StructureState::SILENT;
 
+    // S02: bar-quantized structure state hold guard (inference thread)
+    StructureState pendingStructureState = StructureState::SILENT;
+    StructureState committedStructureState = StructureState::SILENT;
+    int64_t lastStructureCommitSample = -1;
+    int64_t lastCheckBarNum = -1;
+
     PlaybackGate playbackGate;
 
     float prevBlockRms = 0.0f;

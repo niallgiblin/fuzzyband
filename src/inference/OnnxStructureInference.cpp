@@ -229,7 +229,7 @@ void OnnxStructureInference::process(const FeatureVector& fv, double dtSec)
         const float pSecond = secondLargest(probs, am);
         const float margin = pMax - pSecond;
 
-        const bool gated = (pMax < 0.6f) || (margin < 0.1f);
+        const bool gated = (pMax < kSoftmaxConfidenceThreshold) || (margin < kMarginThreshold);
         if (gated)
         {
             const StructureState cur = hold.getCurrentState();
