@@ -65,6 +65,9 @@ public:
     /** @brief Queue a fixed-size drum/bass commit for the next bar boundary. Audio thread safe. */
     void queueGrooveCommit(const GrooveCommit& commit) noexcept;
 
+    /** @brief Cancel a deferred groove commit before its bar-boundary activation. Audio thread safe. */
+    void clearPendingGrooveCommit() noexcept;
+
     /** @brief Fill @p midi for this audio block using host sample position for timing. */
     void process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition);
 

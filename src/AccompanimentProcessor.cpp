@@ -207,6 +207,12 @@ void AccompanimentProcessor::releaseResources()
 
 void AccompanimentProcessor::drainFeatureQueueAndRunInference()
 {
+    if (resetDrumHoldRequested.exchange(false, std::memory_order_acq_rel))
+    {
+        lastDrumPatternChangeSample = -1;
+        lastCommittedStructureState = StructureState::SILENT;
+    }
+
     FeatureVector latest{};
     bool got = false;
 
@@ -520,7 +526,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         onsetDetector.resetTempoLock();
         beatTracker.reset();
         tempoStabiliser.reset();
-        lastDrumPatternChangeSample = -1;
+        resetDrumHoldRequested.store(true, std::memory_order_release);
     }
     if (gd.snapBeatNow)
     {
@@ -570,14 +576,29 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     while (grooveCommitQueue.try_dequeue(latestGrooveCommit))
         gotGrooveCommit = true;
 
-    const bool generativeBassActive = useGenerativeBass.load(std::memory_order_acquire);
-    if (silencePolicy)
+    int generativeMode = 0;
+    if (auto* rawBassMode = apvts.getRawParameterValue("generativeBassMode"))
+        generativeMode = static_cast<int>(std::round(rawBassMode->load()));
+
+    const bool generativeBassActive =
+        (generativeMode != 2) && useGenerativeBass.load(std::memory_order_acquire);
+    if (silencePolicy || generativeMode == 2)
+    {
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
+        patternPlayer.clearPendingGrooveCommit();
+    }
     else if (!generativeBassActive)
+    {
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
+        patternPlayer.clearPendingGrooveCommit();
+    }
 
     if (gotGrooveCommit)
+    {
+        if (silencePolicy || generativeMode == 2 || !generativeBassActive)
+            latestGrooveCommit.hasBassFrame = false;
         patternPlayer.queueGrooveCommit(latestGrooveCommit);
+    }
 
     int64_t hostPos = hostSampleTime;
     if (auto* ph = getPlayHead())
@@ -607,7 +628,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     displayBpm.store(bpmForPlayer, std::memory_order_relaxed);
     displayBeatConfidence.store(beatTracker.getConfidence(), std::memory_order_relaxed);
     displayStateIndex.store(static_cast<int>(st), std::memory_order_relaxed);
-    displayPatternIndex.store(patternIdx, std::memory_order_relaxed);
     displayRms.store(rms, std::memory_order_relaxed);
     displayCentroid.store(centroid, std::memory_order_relaxed);
     displayHfFlux.store(hfFlux, std::memory_order_relaxed);

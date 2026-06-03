@@ -310,3 +310,43 @@ TEST_CASE("PatternPlayer: RHY-SYNC-01 queueGrooveCommit activates drums and gene
     REQUIRE(sawDrum);
     REQUIRE(sawGeneratedBass);
 }
+
+TEST_CASE("PatternPlayer: clearing a pending groove commit prevents deferred generated bass activation", "[midi]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(kSampleRate, 256);
+    player.snapBpm(kBpm);
+    player.setPatternIndex(0);
+    player.setStructureSilent(false);
+    player.snapToBarStart();
+
+    juce::MidiBuffer warmup;
+    player.process(warmup, kOneBar - kOneBeat, 0);
+
+    PatternPlayer::GrooveCommit commit{};
+    commit.patternIndex = 1;
+    commit.hasBassFrame = true;
+    commit.bassPitchOffset[0] = 0.0f;
+    commit.bassVelocity[0] = 100.0f;
+    commit.bassRootMidi = 43.0f;
+    player.queueGrooveCommit(commit);
+
+    player.setGenerativeBassActive(false, 40, 1.0f);
+    player.clearPendingGrooveCommit();
+
+    juce::MidiBuffer boundary;
+    player.process(boundary, kOneBeat, kOneBar - kOneBeat);
+    player.process(boundary, kOneBar, kOneBar);
+
+    bool sawGeneratedBass = false;
+    for (const auto meta : boundary)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOn() && msg.getChannel() == kBassChannel && msg.getNoteNumber() == 43)
+            sawGeneratedBass = true;
+    }
+
+    REQUIRE_FALSE(sawGeneratedBass);
+}

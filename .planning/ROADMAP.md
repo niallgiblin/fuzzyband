@@ -162,9 +162,9 @@ Plans:
 **Dependency note:** **27** (docs) can run early. **28** (beat tracker + bass sequencer) before **29** (C++ coordination, enriched features, fills). **30** (retrain) after **29** locks feature semantics and ONNX I/O.
 
 - [x] **Phase 27: Rhythmic coherence documentation** — Pre-FX workflow, milestone-facing README updates, pointers to research
-- [ ] **Phase 28: Beat tracker & bass sequencer** — Replace tempo core; bar-aligned bass steps; tests on clean guitar / synthetic signals
-- [x] **Phase 29: Runtime coordination (C++)** — Unified bar tick; extend `FeatureVector` and handoff to inference; transition fills
-- [ ] **Phase 30: ML retrain (12 features)** — Update `docs/ONNX_IO.md`, training scripts, validators; retrain, export, promote, smoke + jam
+- [x] **Phase 28: Beat tracker & bass sequencer** — IMPLEMENTED (2/2 plans, 2026-04-29) but UAT rejected (1/4 pass). Code (BeatTracker, bass-sequencer) exists in tree. BeatTracker refocused to learn-mode + gate in v0.7.0 S01 Tempo Stability; continuous-chase path deprecated per D001 (session-first tempo).
+- [x] **Phase 29: Runtime coordination (C++)** — COMPLETE (3/3 plans, 2026-06-03). Review fixes resolved; UAT passed 8/8; security verified with 0 open threats.
+- [ ] ~~**Phase 30: ML retrain (12 features)**~~ — **SUPERSEDED** by v0.7.0. Phase 30's 12-feature ONNX retrain assumed reactive tempo/phase semantics that v0.7.0 discards (D001: session-first tempo). Retrain will happen on v0.7.0's frozen feature semantics per `.planning/milestones/v0.7.0-CONTEXT.md`.
 
 #### Phase 27: Rhythmic coherence documentation
 **Goal**: Hosts and users have a single, authoritative pre-FX placement story; research decisions are discoverable from the roadmap.
@@ -200,14 +200,10 @@ Plans:
 - [x] 29-02-PLAN.md — Shared fixed-size pending groove commit for drum pattern plus generated bass activation
 - [x] 29-03-PLAN.md — Four minimal directional transition fills through the shared commit path
 
-#### Phase 30: ML retrain (12-feature input)
-**Goal**: ONNX models and training code match the expanded feature vector; shipped artifacts pass contract validation and brief DAW smoke.
-**Depends on**: Phase 29
-**Requirements**: RHY-ML-01, RHY-ML-02
-**Success criteria** (what must be TRUE):
-  1. `docs/ONNX_IO.md`, `validate_onnx_contract.py`, and exporters reflect 12-dimensional (or documented) pattern/structure inputs as designed in research
-  2. Retrained models promoted to `assets/`; plugin build with `MA_ENABLE_ONNX=ON`; jam checklist confirms no regression vs v0.4 behavior goals
-**Plans**: TBD (`/gsd-plan-phase 30`)
+#### Phase 30: ML retrain (12-feature input) — SUPERSEDED by v0.7.0
+**Original goal**: ONNX models and training code match the expanded v0.5.0 feature vector.
+**Supersession rationale**: v0.7.0's D001 (session-first tempo) discards the reactive tempo/phase semantics that Phase 30's 12-feature tensor assumed. Retrain will execute on v0.7.0's frozen feature semantics in a future ML refresh phase. See `.planning/milestones/v0.7.0-CONTEXT.md`.
+**Plans**: None (superseded before planning)
 
 #### Phase 31: Architecture Deepening
 **Goal**: Four shallow or leaky modules extracted into deep, independently-testable units; `AccompanimentProcessor` reduced to a thin coordinator.
@@ -259,9 +255,9 @@ Plans:
 | 25. Training Data Pipeline | v0.4.0 | 3/3 | Complete | 2026-04-29 |
 | 26. Retrain + Validate | v0.4.0 | 3/3 | Complete | 2026-04-29 |
 | 27. Rhythmic coherence documentation | v0.5.0 | 2/2 | Complete | 2026-04-29 |
-| 28. Beat tracker & bass sequencer | v0.5.0 | 0/2 | Not started | - |
-| 29. Runtime coordination (C++) | v0.5.0 | 2/3 | In progress | - |
-| 30. ML retrain (12 features) | v0.5.0 | 0/0 | Not started | - |
+| 28. Beat tracker & bass sequencer | v0.5.0 | 2/2 | Code exists; UAT rejected (1/4 pass) | 2026-04-29 |
+| 29. Runtime coordination (C++) | v0.5.0 | 3/3 | Complete    | 2026-06-03 |
+| 30. ML retrain (12 features) | v0.5.0 | 0/0 | Superseded by v0.7.0 | - |
 | 31. Architecture Deepening | v0.5.0 | 4/4 | Complete   | 2026-05-03 |
 | 32. Training Label Correction | v0.6.0 | 3/3 | Complete   | 2026-05-12 |
 | 33. Model Quality Gates | v0.6.0 | 3/3 | Complete   | 2026-05-13 |

@@ -29,7 +29,7 @@ Class 0 (SILENT) permanently excluded from training data/DATA-06 gate — MIDI c
 
 ## v0.5.0 — Rhythmic Coherence (Partial — superseded)
 
-**Phases:** 27, 31 shipped; 28–30 deferred | **Status:** Phase 31 (Architecture Deepening) complete; beat-tracker and ML retrain deferred to future milestones.
+**Phases:** 27, 28, 29, 31 shipped (with caveats); 30 superseded | **Status:** Phase 31 (Architecture Deepening) complete. Phase 28 implemented but UAT-failed — folded into v0.7.0 S01 Tempo Stability (BeatTracker refocused on learn-mode/gate). Phase 29 complete with review fixes resolved, UAT passed 8/8, and security verified with 0 open threats. Phase 30 superseded by v0.7.0 feature semantics freeze.
 
 ---
 

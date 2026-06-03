@@ -94,7 +94,7 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 - **Target DAW**: Reaper primary, Ableton + Logic secondary
 - **Platform**: macOS first (Apple Silicon + Intel universal); Windows later
 - **JUCE version**: 8 (required for macOS 15+ / juceaide build; roadmap originally wrote JUCE 7 but JUCE 8 was used)
-- **Codebase state**: **v0.1.0–v0.4.0** shipped — archives under `.planning/milestones/`; **active milestone v0.5.0** on `.planning/ROADMAP.md` + `.planning/REQUIREMENTS.md`. Backlog **999.1** strategy memo: `.planning/phases/999.1-ml-phase-2-data-feasibility-research/`.
+- **Codebase state**: **v0.1.0–v0.6.0** shipped — archives under `.planning/milestones/`; **active milestone v0.7.0 (M001 Creative Companion)** on `.planning/ROADMAP.md` + `.planning/REQUIREMENTS.md`. Backlog **999.1** strategy memo: `.planning/phases/999.1-ml-phase-2-data-feasibility-research/`.
 
 ## Constraints
 
@@ -118,7 +118,7 @@ A guitarist can play into the plugin and hear a musically reactive metal drum gr
 | ML rejection vs UI pattern cycling | Keeps `IInference` as single selection authority | ✓ Good — v0.4.0 Phase 23–24 |
 
 ---
-*Last updated: 2026-06-02 — v0.6.0 milestone archived (`/gsd-complete-milestone`)*
+*Last updated: 2026-06-03 — Phase 29 closed; next action is M001 S01 Tempo Stability*
 
 ## Evolution
 
