@@ -27,6 +27,12 @@ public:
     uint64_t getLoadErrorCount() const noexcept { return loadErrorCount.load(std::memory_order_relaxed); }
     uint64_t getRunErrorCount() const noexcept { return runErrorCount.load(std::memory_order_relaxed); }
 
+    // S02: ONNX structure confidence gate thresholds.
+    // softmaxTop1 must be at least this for the top class to be considered valid.
+    static constexpr float kSoftmaxConfidenceThreshold = 0.75f;  // was 0.6
+    // margin (top1 − top2) must be at least this for the classification to be unambiguous.
+    static constexpr float kMarginThreshold = 0.20f;             // was 0.1
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;

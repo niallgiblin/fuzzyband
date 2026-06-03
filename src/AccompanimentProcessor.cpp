@@ -172,6 +172,10 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     lastBassUpdateSample = -1;
     lastDrumPatternChangeSample = -1;
     lastCommittedStructureState = StructureState::SILENT;
+    pendingStructureState = StructureState::SILENT;
+    committedStructureState = StructureState::SILENT;
+    lastStructureCommitSample = -1;
+    lastCheckBarNum = -1;
     playbackGate.reset();
     tempoStabiliser.reset();
     prevBlockRms = 0.0f;
@@ -211,6 +215,9 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
     {
         lastDrumPatternChangeSample = -1;
         lastCommittedStructureState = StructureState::SILENT;
+        pendingStructureState = StructureState::SILENT;
+        committedStructureState = StructureState::SILENT;
+        displayStateIndex.store(static_cast<int>(StructureState::SILENT), std::memory_order_relaxed);
     }
 
     FeatureVector latest{};
@@ -256,7 +263,66 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             else
                 effective = (structureBlend > 0.5f) ? m.smoothedState : rule;
         }
-        patternFeatures.state = effective;
+        // S02: Bar-quantized structure state hold guard.
+        // Defer state transitions to bar boundaries; require ≥2 bars between
+        // non-SILENT state changes to prevent flip-flopping in transition zones.
+        {
+            const double srStruct = cachedSampleRate.load(std::memory_order_acquire);
+            const float bpmStruct = latest.bpm > 0.0f ? latest.bpm : 120.0f;
+            const int64_t samplesPerBarStruct = static_cast<int64_t>(4.0 * 60.0 / static_cast<double>(bpmStruct) * srStruct);
+            const int64_t currentBarNum = (samplesPerBarStruct > 0)
+                ? (latest.sampleTimestamp / samplesPerBarStruct)
+                : 0;
+
+            // First-section bootstrap: commit immediately on first non-SILENT
+            // so the first partial bar doesn't show SILENT while playing.
+            if (lastStructureCommitSample < 0 && effective != StructureState::SILENT)
+            {
+                committedStructureState = effective;
+                pendingStructureState = effective;
+                lastStructureCommitSample = latest.sampleTimestamp;
+                lastCheckBarNum = currentBarNum;
+                lastCommittedStructureState = committedStructureState;
+                displayStateIndex.store(static_cast<int>(committedStructureState), std::memory_order_relaxed);
+            }
+
+            // Track desired state between bar boundaries
+            if (effective != committedStructureState)
+                pendingStructureState = effective;
+
+            // Commit at bar boundary when hold requirements are met
+            if (currentBarNum != lastCheckBarNum)
+            {
+                lastCheckBarNum = currentBarNum;
+
+                if (pendingStructureState != committedStructureState)
+                {
+                    bool canCommit = false;
+                    if (committedStructureState == StructureState::SILENT ||
+                        pendingStructureState == StructureState::SILENT)
+                    {
+                        canCommit = true; // Immediate entry/exit SILENT
+                    }
+                    else
+                    {
+                        const int64_t barsSinceStructChange = (lastStructureCommitSample >= 0 && samplesPerBarStruct > 0)
+                            ? (latest.sampleTimestamp - lastStructureCommitSample) / samplesPerBarStruct
+                            : static_cast<int64_t>(INT64_MAX);
+                        canCommit = (barsSinceStructChange >= 2); // ≥2 bar minimum hold
+                    }
+
+                    if (canCommit)
+                    {
+                        committedStructureState = pendingStructureState;
+                        lastStructureCommitSample = latest.sampleTimestamp;
+                        lastCommittedStructureState = committedStructureState;
+                        displayStateIndex.store(static_cast<int>(committedStructureState), std::memory_order_relaxed);
+                    }
+                }
+            }
+
+            patternFeatures.state = committedStructureState;
+        }
 
         // D-23-04/D-23-05: Rejection signal — single-shot exclusion with hold-guard bypass
         const int rejectionCount = patternRejectionCount.load(std::memory_order_acquire);
@@ -630,7 +696,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     displayBpm.store(bpmForPlayer, std::memory_order_relaxed);
     displayBeatConfidence.store(beatTracker.getConfidence(), std::memory_order_relaxed);
-    displayStateIndex.store(static_cast<int>(st), std::memory_order_relaxed);
+    // S02: displayStateIndex now managed by bar-quantized hold guard in inference loop.
     displayRms.store(rms, std::memory_order_relaxed);
     displayCentroid.store(centroid, std::memory_order_relaxed);
     displayHfFlux.store(hfFlux, std::memory_order_relaxed);
