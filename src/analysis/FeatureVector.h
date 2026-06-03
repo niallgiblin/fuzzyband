@@ -33,4 +33,7 @@ struct FeatureVector
 
     /** Signed RMS ratio vs previous block: (rms - prevRms) / max(prevRms, 1e-6). Used for energy-delta bypass. */
     float rmsDelta = 0.0f;
+
+    /** S03: Sub-bass energy ratio (30–120 Hz / total). High for palm-mute chugs, low for clean arpeggios. */
+    float subBassRatio = 0.0f;
 };

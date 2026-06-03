@@ -13,9 +13,11 @@ const char* stateName(StructureState state) noexcept
 {
     switch (state)
     {
-        case StructureState::SILENT: return "SILENT";
-        case StructureState::SOFT: return "SOFT";
-        case StructureState::LOUD: return "LOUD";
+        case StructureState::SILENT:    return "SILENT";
+        case StructureState::AMBIENT:   return "AMBIENT";
+        case StructureState::SOFT:      return "SOFT";
+        case StructureState::LOUD:      return "LOUD";
+        case StructureState::BREAKDOWN: return "BREAKDOWN";
     }
     return "UNKNOWN";
 }
@@ -240,7 +242,7 @@ void FeatureCapture::writeHeader(std::ofstream& out) const
         << "\"columns\":["
         << "\"sample_timestamp\",\"elapsed_seconds\",\"bpm\",\"rms_energy\","
         << "\"spectral_centroid\",\"high_freq_flux\",\"state\",\"state_name\","
-        << "\"pitch_root_midi\",\"pitch_confidence\",\"policy_intensity\",\"rms_delta\","
+        << "\"pitch_root_midi\",\"pitch_confidence\",\"policy_intensity\",\"rms_delta\",\"sub_bass_ratio\","
         << "\"rule_pattern_index\",\"rule_pattern_name\",\"active_pattern_index\","
         << "\"active_pattern_name\",\"onnx_pattern_index\",\"onnx_pattern_name\","
         << "\"onnx_available\",\"model_mode\"]}\n";
@@ -263,6 +265,7 @@ void FeatureCapture::writeRow(std::ofstream& out, const FeatureCaptureRow& row) 
         << "\"pitch_confidence\":" << row.pitchConfidence << ","
         << "\"policy_intensity\":" << row.policyIntensity << ","
         << "\"rms_delta\":" << row.rmsDelta << ","
+        << "\"sub_bass_ratio\":" << row.subBassRatio << ","
         << "\"rule_pattern_index\":" << row.rulePatternIndex << ","
         << "\"rule_pattern_name\":" << quoted(row.rulePatternName) << ","
         << "\"active_pattern_index\":" << row.activePatternIndex << ","

@@ -22,7 +22,7 @@ public:
     void warmStart(float bpm) noexcept;
 
     /** @brief Update with latest BPM candidate. Returns the new stable BPM.
-        @param candidateBpm  Raw BPM estimate (clamped to [80, 220] internally).
+        @param candidateBpm  Raw BPM estimate (clamped to [40, 300] internally).
         @param playbackOpen  True when the playback gate is open.
         @param numSamples    Block size in samples (for accumulating hold time).
         @param sampleRate    Current sample rate. */
@@ -33,8 +33,10 @@ public:
     float getStableBpm() const noexcept { return stablePlaybackBpm; }
 
 private:
-    static constexpr float  kTempoChangeDeadbandBpm = 4.0f;
-    static constexpr double kTempoChangeHoldSec      = 2.0;
+    static constexpr float  kMinStableBpm            = 40.0f;
+    static constexpr float  kMaxStableBpm            = 300.0f;
+    static constexpr float  kTempoChangeDeadbandBpm = 8.0f;
+    static constexpr double kTempoChangeHoldSec      = 6.0;
 
     float stablePlaybackBpm        = 120.0f;
     float pendingCandidateBpm      = 120.0f;

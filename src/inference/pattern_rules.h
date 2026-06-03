@@ -26,7 +26,7 @@ static constexpr int   kPatternCount         = 11;
 inline float adjustedBpm(const FeatureVector& f) noexcept
 {
     const float raw = f.bpm + (f.policyIntensity - 0.5f) * 40.0f;
-    return std::clamp(raw, 80.0f, 220.0f);
+    return std::clamp(raw, 40.0f, 300.0f);
 }
 
 /**
@@ -40,12 +40,16 @@ inline int rulePatternForState(const FeatureVector& f) noexcept
     {
         case StructureState::SILENT:
             return 0;
+        case StructureState::AMBIENT:
+            return 1;  // Use low-SOFT pattern for drone — sparse, half-time feel
         case StructureState::SOFT:
             if (bpmAdj < kSoftMidBpmThreshold)  return 1;
             if (bpmAdj < kSoftLoudBpmThreshold) return 2;
             return 3;
         case StructureState::LOUD:
             return bpmAdj < kSoftLoudBpmThreshold ? 4 : 5;
+        case StructureState::BREAKDOWN:
+            return 6;  // Dedicated breakdown pattern
     }
     return 0;
 }
@@ -58,9 +62,11 @@ inline bool isPatternCompatibleWithState(int patternIndex, StructureState state)
 {
     switch (state)
     {
-        case StructureState::SILENT: return patternIndex == 0;
-        case StructureState::SOFT:  return (patternIndex >= 1 && patternIndex <= 3) || patternIndex == 7;
-        case StructureState::LOUD:  return (patternIndex >= 4 && patternIndex <= 5) || (patternIndex >= 8 && patternIndex <= 10);
+        case StructureState::SILENT:    return patternIndex == 0;
+        case StructureState::AMBIENT:   return (patternIndex == 1 || patternIndex == 3 || patternIndex == 7);
+        case StructureState::SOFT:      return (patternIndex >= 1 && patternIndex <= 3) || patternIndex == 7;
+        case StructureState::LOUD:      return (patternIndex >= 4 && patternIndex <= 5) || (patternIndex >= 8 && patternIndex <= 10);
+        case StructureState::BREAKDOWN: return (patternIndex >= 4 && patternIndex <= 6) || patternIndex == 9;
     }
     return false;
 }
@@ -76,7 +82,8 @@ static constexpr float kBreakdownBpmThreshold = 110.0f;
 inline bool isOnnxPatternAcceptable(int patternIndex, const FeatureVector& f) noexcept
 {
     if (patternIndex == 6)
-        return f.state != StructureState::SILENT && f.bpm < kBreakdownBpmThreshold;
+        return (f.state == StructureState::LOUD || f.state == StructureState::BREAKDOWN)
+            && f.bpm < kBreakdownBpmThreshold;
     if (patternIndex >= 7 && patternIndex <= 10)
         return isPatternCompatibleWithState(patternIndex, f.state);
     return isPatternCompatibleWithState(patternIndex, f.state);
@@ -94,6 +101,10 @@ inline int diversifyPattern(int base, const FeatureVector& f, int barMod8) noexc
 
     // New patterns map to themselves (already diversified)
     if (base >= 7 && base <= 10) return base;
+
+    // AMBIENT patterns [1,3] — always route to half-time for drone sections
+    if (f.state == StructureState::AMBIENT)
+        return 7;  // half-time feel for drones
 
     // SOFT patterns [1,3]
     if (base >= 1 && base <= 3)

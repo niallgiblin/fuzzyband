@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.6.7)
+project(MetalAccompaniment VERSION 0.7.2)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -172,7 +172,7 @@ target_include_directories(MetalAccompaniment PRIVATE
 )
 
 if(MA_ENABLE_ONNX)
-    target_include_directories(MetalAccompaniment PRIVATE "${ONNX_INCLUDE_DIR}")
+    target_include_directories(MetalAccompaniment PRIVATE "${ONNX_INCLUDE_DIR}" "${ONNX_INCLUDE_DIR}/onnxruntime")
 endif()
 
 # ─────────────────────────────────────────────────────────────────
@@ -267,6 +267,7 @@ if(MA_BUILD_TESTS)
         tests/test_energy_analyser.cpp
         tests/test_structure_tagger_extended.cpp
         tests/test_structure_hold_smoother_complete.cpp
+        tests/test_sub_bass_energy.cpp
         tests/test_onset_detector_extended.cpp
         tests/test_bass_validator_boundaries.cpp
         tests/test_pattern_player_generative_bass.cpp
@@ -327,7 +328,7 @@ if(MA_BUILD_TESTS)
             src/inference/OnnxInference.cpp
         )
         target_compile_definitions(MetalAccompanimentTests PRIVATE MA_ENABLE_ONNX=1)
-        target_include_directories(MetalAccompanimentTests PRIVATE "${ONNX_INCLUDE_DIR}")
+        target_include_directories(MetalAccompanimentTests PRIVATE "${ONNX_INCLUDE_DIR}" "${ONNX_INCLUDE_DIR}/onnxruntime")
         target_link_libraries(MetalAccompanimentTests PRIVATE "${ONNX_LIB}")
         if(BINARY_DATA_SOURCES)
             target_link_libraries(MetalAccompanimentTests PRIVATE MetalAccompanimentData)
@@ -354,6 +355,9 @@ if(MA_BUILD_TESTS)
         tests/test_e2e_silent_section.cpp
         tests/test_e2e_bpm_tracking.cpp
         tests/test_e2e_structure_transitions.cpp
+        tests/test_e2e_groove_variety.cpp
+        tests/test_long_duration_stability.cpp
+        tests/test_performance_benchmark.cpp
     )
 
     target_include_directories(MetalAccompanimentIntegrationTests PRIVATE
@@ -427,6 +431,27 @@ if(MA_BUILD_TESTS)
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
     set_tests_properties(e2e_structure_transitions PROPERTIES LABELS "e2e")
+
+    add_test(
+        NAME e2e_groove_variety
+        COMMAND MetalAccompanimentIntegrationTests "[e2e][groove]"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(e2e_groove_variety PROPERTIES LABELS "e2e")
+
+    add_test(
+        NAME stability_long_duration
+        COMMAND MetalAccompanimentIntegrationTests "[stability][long]"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(stability_long_duration PROPERTIES LABELS "stability")
+
+    add_test(
+        NAME perf_block_processing
+        COMMAND MetalAccompanimentIntegrationTests "[perf]"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(perf_block_processing PROPERTIES LABELS "perf")
 endif()
 
 # ─────────────────────────────────────────────────────────────────

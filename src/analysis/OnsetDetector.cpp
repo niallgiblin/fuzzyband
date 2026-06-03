@@ -37,7 +37,7 @@ void OnsetDetector::prepare(double newSampleRate, int maxBlockSize)
     totalSamples = 0;
     onsetThisBlock = false;
 
-    minOnsetIntervalSamples = juce::jmax(1, static_cast<int>(0.08 * sampleRate));
+    minOnsetIntervalSamples = juce::jmax(1, static_cast<int>(0.05 * sampleRate));
     tempoLocked = false;
 
     // Precompute band-limited flux bin range: 100 Hz – 4000 Hz (skip DC)

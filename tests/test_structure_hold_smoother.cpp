@@ -12,12 +12,13 @@ TEST_CASE("StructureHoldSmoother holds SOFT before LOUD until hold elapses", "[s
     s = h.advance(StructureState::LOUD, 0.05);
     REQUIRE(s == StructureState::SOFT);
 
-    // First LOUD attempt leaves time at 0.05; need 38 more × 0.05 to reach 1.95 (< 2.0 hold) before transitioning.
-    for (int i = 0; i < 38; ++i)
+    // First LOUD attempt leaves time at 0.05; need 118 more × 0.05 to reach 5.95 (< 6.0 hold) before transitioning.
+    for (int i = 0; i < 118; ++i)
         s = h.advance(StructureState::LOUD, 0.05);
 
     REQUIRE(s == StructureState::SOFT);
 
+    // 120th call → 6.00 s → transition
     s = h.advance(StructureState::LOUD, 0.05);
     REQUIRE(s == StructureState::LOUD);
 }

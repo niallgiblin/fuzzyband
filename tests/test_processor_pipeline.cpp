@@ -257,15 +257,15 @@ TEST_CASE("Processor pipeline: pause/flush/resume cycle does not corrupt state",
 
     // BPM must be in valid range
     const float bpm = proc.getDisplayBpm();
-    REQUIRE(bpm >= 80.0f);
-    REQUIRE(bpm <= 220.0f);
+    REQUIRE(bpm >= 40.0f);
+    REQUIRE(bpm <= 300.0f);
 
     proc.releaseResources();
 }
 
 // ─── BPM display ─────────────────────────────────────────────────────────────
 
-TEST_CASE("Processor pipeline: BPM display stays in [80, 220] at all times", "[integration][pipeline]")
+TEST_CASE("Processor pipeline: BPM display stays in [40, 300] at all times", "[integration][pipeline]")
 {
     AccompanimentProcessor proc;
     proc.prepareToPlay(48000.0, 512);
@@ -279,8 +279,8 @@ TEST_CASE("Processor pipeline: BPM display stays in [80, 220] at all times", "[i
     proc.flushBackgroundInferenceForTests();
 
     const float bpm = proc.getDisplayBpm();
-    REQUIRE(bpm >= 80.0f);
-    REQUIRE(bpm <= 220.0f);
+    REQUIRE(bpm >= 40.0f);
+    REQUIRE(bpm <= 300.0f);
 
     proc.releaseResources();
 }

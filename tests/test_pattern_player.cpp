@@ -127,7 +127,7 @@ TEST_CASE("PatternPlayer timing offsets fit within the block (+/-2ms humanizatio
 
 TEST_CASE("PatternPlayer notes do not overlap at BPM extremes", "[midi]")
 {
-    for (float bpm : { 80.0f, 220.0f })
+    for (float bpm : { 40.0f, 300.0f })
     {
         MidiPatternLibrary lib;
         PatternPlayer player;

@@ -33,6 +33,8 @@ void EnergyAnalyser::prepare(double newSampleRate, int maxBlockSize)
     spectralCentroid = 0.0f;
     highFreqFlux = 0.0f;
     peakRmsEnvelope = 0.0f;
+    subBassEnergy = 0.0f;
+    subBassRatio = 0.0f;
 }
 
 void EnergyAnalyser::runSpectrum()
@@ -54,8 +56,13 @@ void EnergyAnalyser::runSpectrum()
     float sumMag = 0.0f;
     float weighted = 0.0f;
     float highFlux = 0.0f;
+    float subBassSum = 0.0f;
 
     const int minHighBin = juce::jlimit(1, numBins - 1, static_cast<int>(std::ceil(2000.0f / binHz)));
+
+    // Sub-bass range: 30–120 Hz — palm-mute chugs concentrate energy here
+    const int subBassLowBin = juce::jlimit(0, numBins - 1, static_cast<int>(std::ceil(30.0f / binHz)));
+    const int subBassHighBin = juce::jlimit(0, numBins - 1, static_cast<int>(std::floor(120.0f / binHz)));
 
     for (int i = 0; i < numBins; ++i)
     {
@@ -63,6 +70,9 @@ void EnergyAnalyser::runSpectrum()
         const float f = static_cast<float>(i) * binHz;
         sumMag += m;
         weighted += f * m;
+
+        if (i >= subBassLowBin && i <= subBassHighBin)
+            subBassSum += m;
 
         if (i >= minHighBin)
         {
@@ -73,6 +83,9 @@ void EnergyAnalyser::runSpectrum()
             prevHighMagnitudes[static_cast<size_t>(i)] = m;
         }
     }
+
+    subBassEnergy = subBassSum;
+    subBassRatio = (sumMag > kSubBassEnergyFloor) ? (subBassSum / sumMag) : 0.0f;
 
     if (sumMag > 1.0e-9f)
         spectralCentroid = weighted / sumMag;

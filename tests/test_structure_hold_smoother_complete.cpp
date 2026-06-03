@@ -2,13 +2,15 @@
 #include "analysis/StructureHoldSmoother.h"
 
 // Hold times (mirrored from StructureHoldSmoother.h constants):
-//   kHoldSilentSec = 0.0  → immediate
-//   kHoldSoftSec   = 2.0
-//   kHoldLoudSec   = 2.5
+//   kHoldSilentSec    = 0.0
+//   kHoldAmbientSec   = 6.0
+//   kHoldSoftSec      = 6.0
+//   kHoldLoudSec      = 6.0
+//   kHoldBreakdownSec = 8.0
 //
 // Step size 0.05 s per advance() call.
-// Calls to exceed 2.0 s: 40 × 0.05 = 2.00 s  (first blocked at 39, allowed at 40)
-// Calls to exceed 2.5 s: 50 × 0.05 = 2.50 s  (first blocked at 49, allowed at 50)
+// Calls to exceed 6.0 s: 120 × 0.05 = 6.00 s  (first blocked at 119, allowed at 120)
+// Calls to exceed 8.0 s: 160 × 0.05 = 8.00 s  (first blocked at 159, allowed at 160)
 
 namespace {
 
@@ -38,33 +40,57 @@ TEST_CASE("StructureHoldSmoother: SILENT to LOUD is immediate", "[structure]")
     REQUIRE(h.advance(StructureState::LOUD, 0.05) == StructureState::LOUD);
 }
 
-// ─── Transitions out of SOFT (hold = 2.0 s) ──────────────────────────────────
+TEST_CASE("StructureHoldSmoother: SILENT to BREAKDOWN is immediate", "[structure]")
+{
+    StructureHoldSmoother h;
+    h.reset();
+    REQUIRE(h.advance(StructureState::BREAKDOWN, 0.05) == StructureState::BREAKDOWN);
+}
 
-TEST_CASE("StructureHoldSmoother: SOFT to LOUD blocked until 2.0 s hold elapses", "[structure]")
+// ─── Transitions out of AMBIENT (hold = 6.0 s) ───────────────────────────────
+
+TEST_CASE("StructureHoldSmoother: AMBIENT to SOFT blocked until 6.0 s hold elapses", "[structure]")
+{
+    StructureHoldSmoother h;
+    h.reset();
+    driveToState(h, StructureState::AMBIENT);
+
+    // 119 steps × 0.05 = 5.95 s < 6.0 s → blocked
+    StructureState s = StructureState::AMBIENT;
+    for (int i = 0; i < 119; ++i)
+        s = h.advance(StructureState::SOFT, 0.05);
+    REQUIRE(s == StructureState::AMBIENT);
+
+    // Step 120 → 6.00 s elapsed → allows transition
+    s = h.advance(StructureState::SOFT, 0.05);
+    REQUIRE(s == StructureState::SOFT);
+}
+
+// ─── Transitions out of SOFT (hold = 6.0 s) ──────────────────────────────────
+
+TEST_CASE("StructureHoldSmoother: SOFT to LOUD blocked until 6.0 s hold elapses", "[structure]")
 {
     StructureHoldSmoother h;
     h.reset();
     driveToState(h, StructureState::SOFT);
 
-    // 39 steps × 0.05 = 1.95 s < 2.0 s → blocked
     StructureState s = StructureState::SOFT;
-    for (int i = 0; i < 39; ++i)
+    for (int i = 0; i < 119; ++i)
         s = h.advance(StructureState::LOUD, 0.05);
     REQUIRE(s == StructureState::SOFT);
 
-    // Step 40 → 2.00 s elapsed → allows transition
     s = h.advance(StructureState::LOUD, 0.05);
     REQUIRE(s == StructureState::LOUD);
 }
 
-TEST_CASE("StructureHoldSmoother: SOFT to SILENT blocked until 2.0 s hold elapses", "[structure]")
+TEST_CASE("StructureHoldSmoother: SOFT to SILENT blocked until 6.0 s hold elapses", "[structure]")
 {
     StructureHoldSmoother h;
     h.reset();
     driveToState(h, StructureState::SOFT);
 
     StructureState s = StructureState::SOFT;
-    for (int i = 0; i < 39; ++i)
+    for (int i = 0; i < 119; ++i)
         s = h.advance(StructureState::SILENT, 0.05);
     REQUIRE(s == StructureState::SOFT);
 
@@ -72,16 +98,16 @@ TEST_CASE("StructureHoldSmoother: SOFT to SILENT blocked until 2.0 s hold elapse
     REQUIRE(s == StructureState::SILENT);
 }
 
-// ─── Transitions out of LOUD (hold = 2.5 s) ──────────────────────────────────
+// ─── Transitions out of LOUD (hold = 6.0 s) ──────────────────────────────────
 
-TEST_CASE("StructureHoldSmoother: LOUD to SOFT blocked until 2.5 s hold elapses", "[structure]")
+TEST_CASE("StructureHoldSmoother: LOUD to SOFT blocked until 6.0 s hold elapses", "[structure]")
 {
     StructureHoldSmoother h;
     h.reset();
     driveToState(h, StructureState::LOUD);
 
     StructureState s = StructureState::LOUD;
-    for (int i = 0; i < 49; ++i)
+    for (int i = 0; i < 119; ++i)
         s = h.advance(StructureState::SOFT, 0.05);
     REQUIRE(s == StructureState::LOUD);
 
@@ -89,14 +115,14 @@ TEST_CASE("StructureHoldSmoother: LOUD to SOFT blocked until 2.5 s hold elapses"
     REQUIRE(s == StructureState::SOFT);
 }
 
-TEST_CASE("StructureHoldSmoother: LOUD to SILENT blocked until 2.5 s hold elapses", "[structure]")
+TEST_CASE("StructureHoldSmoother: LOUD to SILENT blocked until 6.0 s hold elapses", "[structure]")
 {
     StructureHoldSmoother h;
     h.reset();
     driveToState(h, StructureState::LOUD);
 
     StructureState s = StructureState::LOUD;
-    for (int i = 0; i < 49; ++i)
+    for (int i = 0; i < 119; ++i)
         s = h.advance(StructureState::SILENT, 0.05);
     REQUIRE(s == StructureState::LOUD);
 
@@ -104,21 +130,53 @@ TEST_CASE("StructureHoldSmoother: LOUD to SILENT blocked until 2.5 s hold elapse
     REQUIRE(s == StructureState::SILENT);
 }
 
+// ─── Transitions out of BREAKDOWN (hold = 8.0 s) ─────────────────────────────
+
+TEST_CASE("StructureHoldSmoother: BREAKDOWN to LOUD blocked until 8.0 s hold elapses", "[structure]")
+{
+    StructureHoldSmoother h;
+    h.reset();
+    driveToState(h, StructureState::BREAKDOWN);
+
+    // 159 steps × 0.05 = 7.95 s < 8.0 s → blocked
+    StructureState s = StructureState::BREAKDOWN;
+    for (int i = 0; i < 159; ++i)
+        s = h.advance(StructureState::LOUD, 0.05);
+    REQUIRE(s == StructureState::BREAKDOWN);
+
+    // Step 160 → 8.00 s → allows transition
+    s = h.advance(StructureState::LOUD, 0.05);
+    REQUIRE(s == StructureState::LOUD);
+}
+
+TEST_CASE("StructureHoldSmoother: BREAKDOWN to SILENT blocked until 8.0 s hold elapses", "[structure]")
+{
+    StructureHoldSmoother h;
+    h.reset();
+    driveToState(h, StructureState::BREAKDOWN);
+
+    StructureState s = StructureState::BREAKDOWN;
+    for (int i = 0; i < 159; ++i)
+        s = h.advance(StructureState::SILENT, 0.05);
+    REQUIRE(s == StructureState::BREAKDOWN);
+
+    s = h.advance(StructureState::SILENT, 0.05);
+    REQUIRE(s == StructureState::SILENT);
+}
+
 // ─── Additional SOFT to LOUD transition test ─────────────────────────────────
 
-TEST_CASE("StructureHoldSmoother: SOFT to LOUD after 2.0 s hold", "[structure]")
+TEST_CASE("StructureHoldSmoother: SOFT to LOUD after 6.0 s hold", "[structure]")
 {
     StructureHoldSmoother h;
     h.reset();
     driveToState(h, StructureState::SOFT);
 
-    // 39 steps × 0.05 = 1.95 s < 2.0 s → blocked
     StructureState s = StructureState::SOFT;
-    for (int i = 0; i < 39; ++i)
+    for (int i = 0; i < 119; ++i)
         s = h.advance(StructureState::LOUD, 0.05);
     REQUIRE(s == StructureState::SOFT);
 
-    // Step 40 → 2.00 s → allows transition to LOUD
     s = h.advance(StructureState::LOUD, 0.05);
     REQUIRE(s == StructureState::LOUD);
 }
@@ -132,7 +190,7 @@ TEST_CASE("StructureHoldSmoother: reset() restores SILENT state and clears elaps
 
     // Advance deep into SOFT hold without completing it
     driveToState(h, StructureState::SOFT);
-    for (int i = 0; i < 20; ++i)
+    for (int i = 0; i < 60; ++i)
         h.advance(StructureState::LOUD, 0.05);
     REQUIRE(h.getCurrentState() == StructureState::SOFT);
 
@@ -151,8 +209,8 @@ TEST_CASE("StructureHoldSmoother: reset() mid-LOUD allows immediate re-entry", "
     driveToState(h, StructureState::LOUD);
 
     // Partially spend LOUD hold
-    for (int i = 0; i < 25; ++i)
-        h.advance(StructureState::SOFT, 0.05);  // still blocked (1.25 s < 2.5 s)
+    for (int i = 0; i < 60; ++i)
+        h.advance(StructureState::SOFT, 0.05);  // still blocked (3.0 s < 6.0 s)
     REQUIRE(h.getCurrentState() == StructureState::LOUD);
 
     h.reset();

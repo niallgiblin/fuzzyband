@@ -1,8 +1,41 @@
 # Changelog
 
-All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.planning/STATE.md`](.planning/STATE.md), [`.planning/ROADMAP.md`](.planning/ROADMAP.md).
+All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
-## [0.5.5] — v0.6.0 ML Correctness & Evaluation (in progress)
+## [0.7.0] — Creative Companion (Playability Pivot)
+
+**Milestone M001.** ONNX-first inference that doesn't jitter: stable tempo, stable ML-driven structure detection, and musically distinct grooves — without replacing ML with manual controls.
+
+### S01: Tempo Stability
+- Soft-lock EMA (α=0.03): BPM updates via exponential moving average after tempo lock instead of hard-freeze, letting genuine tempo changes propagate over ~3–5 seconds while rejecting single-outlier IOI jitter.
+- `resetTempoLock()` no longer touches currentBpm — BPM preservation is the caller's responsibility via `setSeedBpm()`, keeping reset single-purpose (clear IOI memory only).
+- Onset history cap at 64 entries (was unbounded) preventing stale-IOI pollution.
+- Minimum onset interval clamp for valid BPM range (40–320 BPM).
+
+### S02: Structure Stability
+- StructureTagger confidence gating with hysteresis: minimum 2-second hold time per state, minimum energy threshold for verse/chorus transitions.
+- Centroid-based soft-state transitions: prevents classification flip-flop during palm-mute/full-chord boundaries.
+- SILENT state entered immediately on dropout, exited only after sustained energy above threshold.
+- Stability verified: 20-second soft → 20-second loud transitions settle within ≤2 bars.
+
+### S03: Groove Vocabulary
+- MidiPatternLibrary expanded from 7 to 11 patterns with 4 new musically distinct metal drum grooves: Half-Time (index 7, open hi-hat backbeat), Blast Beat (8, ride bell + alternating kick/snare 16ths), Sparse Breakdown (9, kick+snare only, no hats/ride), Thrash (10, double-kick 16ths with steady ride).
+- `diversifyPattern()` deterministic routing function inserted after `selectPattern()` but before the 2-bar drum hold guard: SOFT low-energy → half-time, LOUD low-energy → sparse, LOUD high-BPM → blast/thrash, using bar-phase for variety.
+- SOFT compatibility matrix expanded to include index 7 (half-time); LOUD expanded to 8–10 (blast/sparse/thrash).
+- E2E test: simulated multi-section jam produces ≥3 distinct groove names ("Verse mid", "Half-Time", "Chorus mid").
+
+### S04: Jam Verification & Polish
+- Long-duration stability test: 312 seconds continuous processing (240s music), 15 SOFT/LOUD cycles, zero crashes, all invariants held.
+- Performance benchmark: mean 0.39ms/block, P99 0.43ms/block at 256-sample buffer (~7.3% audio thread budget).
+- Full regression: 169 CTest targets including 160 unit + 4 E2E + 2 integration + 1 perf + 1 stability + 1 benchmark — 100% pass on both standard and ONNX builds.
+- `MA_ENABLE_ONNX` is default ON; ONNX path is the primary verified pipeline.
+
+### Known Limitations
+- BPM control through synthetic test signals is unreliable with the current 2048-sample FFT onset detector — test-only BPM injection API suggested for future ML integration tests.
+- ONNX model still trained on pre-expansion 7-pattern labels — diversifyPattern() bridges the gap deterministically until retrain.
+- Human UAT (5+ minute Reaper jam with clean DI guitar) is the final acceptance gate — automated verification supports but does not replace it.
+
+## [0.6.7] — v0.6.0 ML Correctness & Evaluation (completed)
 
 **Current milestone:** v0.6.0 (Phases 32–36). Plugin version 0.5.6 in `CMakeLists.txt`. `MA_ENABLE_ONNX` default is **ON**.
 

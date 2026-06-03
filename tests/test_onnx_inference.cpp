@@ -25,7 +25,8 @@ static int applyOnnxAcceptanceGate(int clampedModelOutput, const FeatureVector& 
 
 TEST_CASE("OnnxInference acceptance gate surfaces Breakdown when acceptable", "[OnnxInference][Breakdown]")
 {
-    const FeatureVector f = makeF(StructureState::SOFT, 100.0f);
+    // Breakdown (class 6) accepted in BREAKDOWN state with bpm < 110
+    const FeatureVector f = makeF(StructureState::BREAKDOWN, 100.0f);
     REQUIRE(applyOnnxAcceptanceGate(6, f) == 6);
 }
 

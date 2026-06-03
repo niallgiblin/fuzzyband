@@ -24,9 +24,12 @@ public:
     StructureState getCurrentState() const noexcept { return currentState; }
 
 private:
-    static constexpr double kHoldSilentSec = 0.0;
-    static constexpr double kHoldSoftSec   = 2.0;
-    static constexpr double kHoldLoudSec   = 2.5;
+    // Hold times mirror StructureTagger (scaled for sludge metal pacing)
+    static constexpr double kHoldSilentSec    = 0.0;
+    static constexpr double kHoldAmbientSec   = 6.0;
+    static constexpr double kHoldSoftSec      = 6.0;   // was 2.0 (×3)
+    static constexpr double kHoldLoudSec      = 6.0;   // was 2.5 (×2.4)
+    static constexpr double kHoldBreakdownSec = 8.0;
 
     double timeInStateSec = 0.0;
     StructureState currentState = StructureState::SILENT;

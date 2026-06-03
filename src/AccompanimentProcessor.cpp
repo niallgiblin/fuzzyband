@@ -17,16 +17,16 @@ namespace
 
 float foldTrackerAliasTowardOnset(float trackerBpm, float onsetBpm) noexcept
 {
-    float reconciled = juce::jlimit(80.0f, 220.0f, trackerBpm);
-    const float anchor = juce::jlimit(80.0f, 220.0f, onsetBpm);
+    float reconciled = juce::jlimit(40.0f, 300.0f, trackerBpm);
+    const float anchor = juce::jlimit(40.0f, 300.0f, onsetBpm);
 
     if (anchor <= 0.0f)
         return reconciled;
 
-    while (reconciled / anchor > 1.55f && reconciled * 0.5f >= 80.0f)
+    while (reconciled / anchor > 1.55f && reconciled * 0.5f >= 40.0f)
         reconciled *= 0.5f;
 
-    while (reconciled / anchor < 0.65f && reconciled * 2.0f <= 220.0f)
+    while (reconciled / anchor < 0.65f && reconciled * 2.0f <= 300.0f)
         reconciled *= 2.0f;
 
     return reconciled;
@@ -81,9 +81,15 @@ PatternPlayer::TransitionFillKind chooseTransitionFillKind(StructureState from,
         return PatternPlayer::TransitionFillKind::BreakdownOrImpact;
     if (from == StructureState::SILENT && to != StructureState::SILENT)
         return PatternPlayer::TransitionFillKind::Entry;
+    if (to == StructureState::BREAKDOWN)
+        return PatternPlayer::TransitionFillKind::BreakdownOrImpact;
     if (from == StructureState::SOFT && to == StructureState::LOUD)
         return PatternPlayer::TransitionFillKind::BuildUp;
+    if (from == StructureState::LOUD && to == StructureState::BREAKDOWN)
+        return PatternPlayer::TransitionFillKind::BuildUp;
     if (from == StructureState::LOUD && to == StructureState::SOFT)
+        return PatternPlayer::TransitionFillKind::Release;
+    if (from == StructureState::BREAKDOWN && to != StructureState::BREAKDOWN)
         return PatternPlayer::TransitionFillKind::Release;
     if (from == to && to != StructureState::SILENT)
         return PatternPlayer::TransitionFillKind::BreakdownOrImpact;
@@ -388,6 +394,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             row.pitchConfidence = latest.pitchConfidence;
             row.policyIntensity = latest.policyIntensity;
             row.rmsDelta = latest.rmsDelta;
+            row.subBassRatio = latest.subBassRatio;
             row.elapsedSeconds = (sr > 0.0) ? static_cast<double>(latest.sampleTimestamp) / sr : 0.0;
             row.rulePatternIndex = ruleIdx;
             row.activePatternIndex = diversifiedIdx;
@@ -437,6 +444,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
                 commit.hasBassFrame = true;
                 hasGrooveCommit = true;
                 acceptedBassFrame = true;
+                useGenerativeBass.store(true, std::memory_order_release);
                 useGen = true;
             }
             else if (p.valid && !silencePolicy)
@@ -470,7 +478,6 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             }
             if (acceptedBassFrame)
             {
-                useGenerativeBass.store(true, std::memory_order_release);
                 lastBassUpdateSample = latest.sampleTimestamp;
             }
         }
@@ -561,6 +568,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     prevBlockRms = rms;
     const float centroid = energyAnalyser.getSpectralCentroid();
     const float hfFlux = energyAnalyser.getHighFreqFlux();
+    structureTagger.setSubBassRatio(energyAnalyser.getSubBassRatio());
     const StructureState st = structureTagger.update(rms, centroid, hfFlux, numSamples, energyAnalyser.getPeakRms());
 
     pitchEstimator.process(in, numSamples);
@@ -617,6 +625,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     fv.pitchRootMidi = rawMidi;
     fv.pitchConfidence = rawConf;
     fv.rmsDelta = rmsDelta;
+    fv.subBassRatio = energyAnalyser.getSubBassRatio();
 
     if (auto* rawIntensity = apvts.getRawParameterValue("intensity"))
         fv.policyIntensity = rawIntensity->load();
@@ -655,7 +664,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     const bool generativeBassActive =
         (generativeMode != 2) && useGenerativeBass.load(std::memory_order_acquire);
-    if (silencePolicy || generativeMode == 2)
+    if (generativeMode == 2)
     {
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
         patternPlayer.clearPendingGrooveCommit();
@@ -668,7 +677,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     if (gotGrooveCommit)
     {
-        if (silencePolicy || generativeMode == 2 || !generativeBassActive)
+        // Do NOT gate on audio-thread silencePolicy — commits were produced
+        // by the inference thread from earlier non-silent blocks.
+        if (generativeMode == 2 || !generativeBassActive)
             latestGrooveCommit.hasBassFrame = false;
         patternPlayer.queueGrooveCommit(latestGrooveCommit);
     }
