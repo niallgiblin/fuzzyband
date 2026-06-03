@@ -53,7 +53,7 @@ public:
     bool isGateOpen() const noexcept { return gateOpen; }
 
 private:
-    static constexpr double kPhraseBreathHoldSec    = 2.0;
+    static constexpr double kPhraseBreathHoldSec    = 3.0;
     static constexpr float  kPlaybackConfidenceStart = 0.35f;
     static constexpr double kActiveFallbackStartSec  = 0.35;
     static constexpr double kBeatSnapTimeoutSec      = 2.0;
