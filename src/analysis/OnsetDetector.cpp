@@ -192,6 +192,14 @@ void OnsetDetector::runFftFrame()
 
                 currentBpm.store(bpm, std::memory_order_relaxed);
             }
+            else
+            {
+                // Soft-lock: slowly drift toward genuine tempo changes (EMA α=0.03).
+                const float newBpm   = medianIoiBpm();
+                const float current  = currentBpm.load(std::memory_order_relaxed);
+                const float drifted  = current + kSoftLockEmaAlpha * (newBpm - current);
+                currentBpm.store(drifted, std::memory_order_relaxed);
+            }
         }
     }
 
@@ -221,12 +229,18 @@ void OnsetDetector::process(const float* audioData, int numSamples)
 void OnsetDetector::resetTempoLock() noexcept
 {
     tempoLocked = false;
-    currentBpm.store(120.0f, std::memory_order_relaxed);
+    // BPM is preserved through reset — caller seeds it via setSeedBpm() after
+    // reading the saved value from TempoStabiliser.
     ioiRingWrite = 0;
     ioiRingCount = 0;
     for (auto& v : ioiHistory)
         v = 0.0f;
     lastOnsetSample = -1;
+}
+
+void OnsetDetector::setSeedBpm(float bpm) noexcept
+{
+    currentBpm.store(bpm, std::memory_order_relaxed);
 }
 
 void OnsetDetector::setFluxSink(void* userData, FluxSinkFn fn) noexcept

@@ -100,7 +100,7 @@ TEST_CASE("OnsetDetector: default BPM of 120 before any onsets accumulate", "[on
     REQUIRE(det.getCurrentBpm() == 120.0f);
 }
 
-TEST_CASE("OnsetDetector: resetTempoLock clears stale IOI tempo", "[onset]")
+TEST_CASE("OnsetDetector: resetTempoLock clears lock and IOI ring but preserves BPM", "[onset]")
 {
     OnsetDetector det;
     const double sr = 44100.0;
@@ -108,10 +108,12 @@ TEST_CASE("OnsetDetector: resetTempoLock clears stale IOI tempo", "[onset]")
 
     auto fastAudio = makeClickTrain(180.0, sr, 24);
     feedInChunks(det, fastAudio, 256);
-    REQUIRE(det.getCurrentBpm() > 160.0f);
+    const float bpmBefore = det.getCurrentBpm();
+    REQUIRE(bpmBefore > 160.0f);
 
     det.resetTempoLock();
-    REQUIRE(det.getCurrentBpm() == 120.0f);
+    // BPM is preserved through reset — caller seeds it via setSeedBpm()
+    REQUIRE(det.getCurrentBpm() == bpmBefore);
     REQUIRE_FALSE(det.isTempoLocked());
 }
 
@@ -138,4 +140,70 @@ TEST_CASE("OnsetDetector: BPM tracks gradual tempo increase (100 -> 140 BPM)", "
     // because the IOI ring buffer blends old and new intervals.
     REQUIRE(bpm > 110.0f);
     REQUIRE(bpm <= 220.0f);
+}
+
+// ─── Soft-lock (EMA drift) ────────────────────────────────────────────────────
+
+TEST_CASE("OnsetDetector: lock confirms at 140 BPM with stable click train", "[onset][softlock]")
+{
+    OnsetDetector det;
+    const double sr = 44100.0;
+    det.prepare(sr, 512);
+
+    // 140 BPM, 22 periods gives 22+ onsets (enough for lock — 8+ consistent IOIs)
+    auto audio = makeClickTrain(140.0, sr, 22);
+    feedInChunks(det, audio, 256);
+
+    REQUIRE(det.isTempoLocked());
+    const float bpm = det.getCurrentBpm();
+    REQUIRE(bpm >= 135.0f);
+    REQUIRE(bpm <= 145.0f);
+}
+
+TEST_CASE("OnsetDetector: soft-lock EMA drift — 140 to 150 BPM", "[onset][softlock]")
+{
+    OnsetDetector det;
+    const double sr = 44100.0;
+    det.prepare(sr, 512);
+
+    // Phase 1: Lock at ~140 BPM with 22 periods
+    auto audio140 = makeClickTrain(140.0, sr, 22);
+    feedInChunks(det, audio140, 256);
+    REQUIRE(det.isTempoLocked());
+    const float lockedBpm = det.getCurrentBpm();
+    REQUIRE(lockedBpm >= 135.0f);
+    REQUIRE(lockedBpm <= 145.0f);
+
+    // Phase 2: Continue feeding 150 BPM to exercise soft-lock drift
+    // With EMA α=0.03 and ~50 periods at 150 BPM, the BPM should drift
+    // noticeably from 140 toward 150 but not jump instantly.
+    auto audio150 = makeClickTrain(150.0, sr, 50);
+    feedInChunks(det, audio150, 256);
+
+    const float driftedBpm = det.getCurrentBpm();
+    // Drifted away from the original locked value (not frozen)
+    REQUIRE(driftedBpm > lockedBpm);
+    // Converged within ±5 of 150 (α=0.03 EMA is conservative)
+    REQUIRE(driftedBpm >= 145.0f);
+    REQUIRE(driftedBpm <= 155.0f);
+}
+
+TEST_CASE("OnsetDetector: setSeedBpm seeds BPM that survives reset", "[onset][softlock]")
+{
+    OnsetDetector det;
+    const double sr = 44100.0;
+    det.prepare(sr, 512);
+
+    // Seed with 160 BPM
+    det.setSeedBpm(160.0f);
+    REQUIRE(det.getCurrentBpm() == 160.0f);
+
+    // Feed some audio just to exercise state
+    auto audio = makeClickTrain(120.0, sr, 8);
+    feedInChunks(det, audio, 256);
+
+    // resetTempoLock() should preserve the seeded BPM
+    det.resetTempoLock();
+    REQUIRE(det.getCurrentBpm() == 160.0f);
+    REQUIRE_FALSE(det.isTempoLocked());
 }
