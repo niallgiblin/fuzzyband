@@ -126,6 +126,7 @@ private:
     std::atomic<int> latestPatternIndex{ 0 };
 
     std::atomic<bool> useGenerativeBass{ false };
+    std::atomic<bool> resetDrumHoldRequested{ false };
     moodycamel::ReaderWriterQueue<PatternPlayer::GrooveCommit> grooveCommitQueue{ 32 };
 
     std::atomic<float> displayBpm{ 120.0f };

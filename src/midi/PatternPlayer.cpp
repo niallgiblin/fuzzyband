@@ -73,6 +73,12 @@ void PatternPlayer::queueGrooveCommit(const GrooveCommit& commit) noexcept
     patternIndex.store(commit.patternIndex, std::memory_order_relaxed);
 }
 
+void PatternPlayer::clearPendingGrooveCommit() noexcept
+{
+    pendingGrooveCommitValid = false;
+    pendingGrooveCommit = GrooveCommit{};
+}
+
 void PatternPlayer::setBpm(float newBpm)
 {
     const float clamped = juce::jlimit(40.0f, 320.0f, newBpm);
