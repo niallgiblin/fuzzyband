@@ -114,6 +114,47 @@ int PatternPlayer::humanSamples() const
     return rng.nextInt(maxOff * 2 + 1) - maxOff;
 }
 
+void PatternPlayer::emitTransitionFill(juce::MidiBuffer& midi,
+                                       int numSamples,
+                                       TransitionFillKind kind) noexcept
+{
+    if (numSamples <= 0 || kind == TransitionFillKind::None)
+        return;
+
+    const auto clampOffset = [numSamples](int offset) noexcept {
+        return juce::jlimit(0, numSamples - 1, offset);
+    };
+    const auto addDrum = [&](int note, int velocity, int offset) noexcept {
+        midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel,
+                                                note,
+                                                static_cast<float>(juce::jlimit(1, 127, velocity)) / 127.0f),
+                      clampOffset(offset));
+    };
+
+    switch (kind)
+    {
+        case TransitionFillKind::None:
+            break;
+        case TransitionFillKind::Entry:
+            addDrum(49, 116, 0);
+            addDrum(36, 118, 0);
+            break;
+        case TransitionFillKind::BuildUp:
+            addDrum(38, 108, 0);
+            addDrum(45, 112, numSamples / 2);
+            break;
+        case TransitionFillKind::Release:
+            addDrum(38, 82, 0);
+            addDrum(42, 70, numSamples / 2);
+            break;
+        case TransitionFillKind::BreakdownOrImpact:
+            addDrum(36, 122, 0);
+            addDrum(49, 118, numSamples / 4);
+            addDrum(43, 112, numSamples / 2);
+            break;
+    }
+}
+
 void PatternPlayer::emitEventsForRange(juce::MidiBuffer& midi,
                                        int numSamples,
                                        double beatStart,
@@ -457,6 +498,7 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
                                            pendingGrooveCommit.bassVelocity,
                                            pendingGrooveCommit.bassRootMidi);
                 }
+                emitTransitionFill(midi, numSamples, pendingGrooveCommit.fillKind);
                 pendingGrooveCommitValid = false;
                 pendingGrooveCommit = GrooveCommit{};
             }

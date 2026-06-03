@@ -72,6 +72,23 @@ std::unique_ptr<OnnxBassInference> makeBassInference()
     return nullptr;
 }
 #endif
+
+PatternPlayer::TransitionFillKind chooseTransitionFillKind(StructureState from,
+                                                           StructureState to,
+                                                           int targetPatternIndex) noexcept
+{
+    if (targetPatternIndex == 6)
+        return PatternPlayer::TransitionFillKind::BreakdownOrImpact;
+    if (from == StructureState::SILENT && to != StructureState::SILENT)
+        return PatternPlayer::TransitionFillKind::Entry;
+    if (from == StructureState::SOFT && to == StructureState::LOUD)
+        return PatternPlayer::TransitionFillKind::BuildUp;
+    if (from == StructureState::LOUD && to == StructureState::SOFT)
+        return PatternPlayer::TransitionFillKind::Release;
+    if (from == to && to != StructureState::SILENT)
+        return PatternPlayer::TransitionFillKind::BreakdownOrImpact;
+    return PatternPlayer::TransitionFillKind::None;
+}
 } // namespace
 
 juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::createParameterLayout()
@@ -154,6 +171,7 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     stablePitchTracker.reset();
     lastBassUpdateSample = -1;
     lastDrumPatternChangeSample = -1;
+    lastCommittedStructureState = StructureState::SILENT;
     playbackGate.reset();
     tempoStabiliser.reset();
     prevBlockRms = 0.0f;
@@ -274,6 +292,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         if (drumHoldExpired || excludeParam >= 0 || transitionEvent || autoChangeReady)
         {
             commit.patternIndex = idx;
+            commit.fillKind = chooseTransitionFillKind(lastCommittedStructureState, patternFeatures.state, idx);
             hasGrooveCommit = true;
             acceptedDrumPattern = true;
         }
@@ -371,6 +390,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             {
                 latestPatternIndex.store(idx, std::memory_order_release);
                 lastDrumPatternChangeSample = latest.sampleTimestamp;
+                lastCommittedStructureState = patternFeatures.state;
             }
             if (acceptedBassFrame)
             {
