@@ -361,15 +361,19 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             : (latest.sampleTimestamp - lastDrumPatternChangeSample) / samplesPerBar;
         const bool autoChangeReady = (barsSinceChange >= 8);
 
+        const int64_t samplesPerBarDiv = static_cast<int64_t>(4.0 * 60.0 / static_cast<double>(latest.bpm) * srDrum);
+        const int barMod8 = (samplesPerBarDiv > 0) ? static_cast<int>((latest.sampleTimestamp / samplesPerBarDiv) % 8) : 0;
+        const int diversifiedIdx = PatternRules::diversifyPattern(idx, latest, barMod8);
+
         if (drumHoldExpired || excludeParam >= 0 || transitionEvent || autoChangeReady)
         {
-            commit.patternIndex = idx;
-            commit.fillKind = chooseTransitionFillKind(lastCommittedStructureState, patternFeatures.state, idx);
+            commit.patternIndex = diversifiedIdx;
+            commit.fillKind = chooseTransitionFillKind(lastCommittedStructureState, patternFeatures.state, diversifiedIdx);
             hasGrooveCommit = true;
             acceptedDrumPattern = true;
         }
         // Always update display so UI shows inference intent even during hold.
-        displayPatternIndex.store(idx, std::memory_order_relaxed);
+        displayPatternIndex.store(diversifiedIdx, std::memory_order_relaxed);
 
         if (featureCapture.isCapturing())
         {
@@ -386,12 +390,12 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             row.rmsDelta = latest.rmsDelta;
             row.elapsedSeconds = (sr > 0.0) ? static_cast<double>(latest.sampleTimestamp) / sr : 0.0;
             row.rulePatternIndex = ruleIdx;
-            row.activePatternIndex = idx;
-            row.onnxPatternIndex = onnxAvailable ? idx : -1;
+            row.activePatternIndex = diversifiedIdx;
+            row.onnxPatternIndex = onnxAvailable ? diversifiedIdx : -1;
             row.onnxAvailable = onnxAvailable;
             row.rulePatternName = patternLibrary.getPattern(ruleIdx).name;
-            row.activePatternName = patternLibrary.getPattern(idx).name;
-            row.onnxPatternName = onnxAvailable ? patternLibrary.getPattern(idx).name : std::string{};
+            row.activePatternName = patternLibrary.getPattern(diversifiedIdx).name;
+            row.onnxPatternName = onnxAvailable ? patternLibrary.getPattern(diversifiedIdx).name : std::string{};
             row.modelMode = activeInferenceName;
             featureCapture.tryPush(row);
         }
@@ -460,7 +464,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         {
             if (acceptedDrumPattern)
             {
-                latestPatternIndex.store(idx, std::memory_order_release);
+                latestPatternIndex.store(diversifiedIdx, std::memory_order_release);
                 lastDrumPatternChangeSample = latest.sampleTimestamp;
                 lastCommittedStructureState = patternFeatures.state;
             }
