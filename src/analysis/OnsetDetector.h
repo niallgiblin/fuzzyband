@@ -42,6 +42,10 @@ public:
     /** @brief True once 8+ consecutive IOIs are within ±8% of their mean. */
     bool isTempoLocked() const noexcept { return tempoLocked; }
 
+    /** @brief Seed current BPM from an external source (e.g. TempoStabiliser) so reset
+     *         does not snap to default. Audio-thread safe. */
+    void setSeedBpm(float bpm) noexcept;
+
     /** @brief Optional per-hop OSF callback (real-time safe — single indirect call).
      *         Invoked with latest flux **before** adaptive onset gating. Default: no-op. */
     using FluxSinkFn = void (*)(void* userData, float flux, int64_t audioSampleCounter);
@@ -95,6 +99,7 @@ private:
 
     static constexpr float kMinBpm = 80.0f;
     static constexpr float kMaxBpm = 220.0f;
+    static constexpr float kSoftLockEmaAlpha = 0.03f;
 
     std::atomic<float> currentBpm{ 120.0f };
 
