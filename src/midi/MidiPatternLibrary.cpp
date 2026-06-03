@@ -189,6 +189,113 @@ MidiPattern buildBreakdown()
     };
     return p;
 }
+
+MidiPattern buildHalfTime()
+{
+    MidiPattern p;
+    p.name = "Half-Time";
+    p.lengthInBars = 1.0f;
+    p.drumEvents = {
+        drum(kKick, 115, 0.0f),
+        drum(kHatClosed, 78, 0.5f),
+        drum(kSnare, 112, 1.0f),
+        drum(kHatClosed, 76, 1.5f),
+        drum(kKick, 110, 2.0f),
+        drum(kSnare, 114, 2.0f),
+        drum(kHatClosed, 76, 2.5f),
+        drum(kHatClosed, 74, 3.5f),
+    };
+    p.bassEvents = {
+        bass(kBassRoot, 95, 0.0f, 3.0f),
+    };
+    return p;
+}
+
+MidiPattern buildBlastBeat()
+{
+    MidiPattern p;
+    p.name = "Blast Beat";
+    p.lengthInBars = 1.0f;
+    p.drumEvents = {
+        drum(kKick, 125, 0.0f),
+        drum(kSnare, 122, 0.25f),
+        drum(kKick, 122, 0.5f),
+        drum(kSnare, 120, 0.75f),
+        drum(kKick, 125, 1.0f),
+        drum(kSnare, 122, 1.25f),
+        drum(kKick, 122, 1.5f),
+        drum(kSnare, 120, 1.75f),
+        drum(kKick, 125, 2.0f),
+        drum(kSnare, 122, 2.25f),
+        drum(kKick, 122, 2.5f),
+        drum(kSnare, 120, 2.75f),
+        drum(kKick, 125, 3.0f),
+        drum(kSnare, 122, 3.25f),
+        drum(kKick, 122, 3.5f),
+        drum(kSnare, 120, 3.75f),
+        drum(kRide, 90, 0.0f),
+        drum(kRide, 90, 1.0f),
+        drum(kRide, 90, 2.0f),
+        drum(kRide, 90, 3.0f),
+    };
+    p.bassEvents = {
+        bass(kBassRoot, 100, 0.0f, 0.45f),
+        bass(kBassRoot, 100, 0.5f, 0.45f),
+        bass(kBassRoot, 100, 1.0f, 0.45f),
+        bass(kBassRoot, 100, 1.5f, 0.45f),
+        bass(kBassRoot, 100, 2.0f, 0.45f),
+        bass(kBassRoot, 100, 2.5f, 0.45f),
+        bass(kBassRoot, 100, 3.0f, 0.45f),
+        bass(kBassRoot, 100, 3.5f, 0.45f),
+    };
+    return p;
+}
+
+MidiPattern buildSparseBreakdown()
+{
+    MidiPattern p;
+    p.name = "Sparse Breakdown";
+    p.lengthInBars = 2.0f;
+    p.drumEvents = {
+        drum(kKick, 115, 0.0f),
+        drum(kKick, 108, 6.0f),
+        drum(kSnare, 112, 6.0f),
+    };
+    p.bassEvents = {
+        bass(kBassRoot, 95, 0.0f, 3.5f),
+    };
+    return p;
+}
+
+MidiPattern buildThrash()
+{
+    MidiPattern p;
+    p.name = "Thrash";
+    p.lengthInBars = 1.0f;
+    p.drumEvents = {
+        drum(kKick, 122, 0.0f),
+        drum(kKick, 118, 0.25f),
+        drum(kHatClosed, 88, 0.5f),
+        drum(kSnare, 120, 1.0f),
+        drum(kHatClosed, 86, 1.5f),
+        drum(kKick, 122, 2.0f),
+        drum(kKick, 118, 2.25f),
+        drum(kHatClosed, 88, 2.5f),
+        drum(kSnare, 120, 3.0f),
+        drum(kHatClosed, 86, 3.5f),
+    };
+    p.bassEvents = {
+        bass(kBassRoot, 102, 0.0f, 0.45f),
+        bass(kBassRoot, 98, 0.5f, 0.45f),
+        bass(kBassRoot, 102, 1.0f, 0.45f),
+        bass(kBassRoot, 98, 1.5f, 0.45f),
+        bass(kBassRoot, 102, 2.0f, 0.45f),
+        bass(kBassRoot, 98, 2.5f, 0.45f),
+        bass(kBassRoot, 102, 3.0f, 0.45f),
+        bass(kBassRoot, 98, 3.5f, 0.45f),
+    };
+    return p;
+}
 } // namespace
 
 MidiPatternLibrary::MidiPatternLibrary()
@@ -200,6 +307,10 @@ MidiPatternLibrary::MidiPatternLibrary()
     patterns.push_back(buildChorusMid());
     patterns.push_back(buildChorusFast());
     patterns.push_back(buildBreakdown());
+    patterns.push_back(buildHalfTime());
+    patterns.push_back(buildBlastBeat());
+    patterns.push_back(buildSparseBreakdown());
+    patterns.push_back(buildThrash());
 }
 
 const MidiPattern& MidiPatternLibrary::getPattern(int index) const
