@@ -1,9 +1,57 @@
 #include <catch2/catch_test_macros.hpp>
 #include <map>
+#include <vector>
 #include <utility>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "midi/MidiPatternLibrary.h"
 #include "midi/PatternPlayer.h"
+
+namespace
+{
+
+bool hasDrumNoteOn(const juce::MidiBuffer& midi, int note)
+{
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOn() && msg.getChannel() == 10 && msg.getNoteNumber() == note)
+            return true;
+    }
+    return false;
+}
+
+std::vector<int> drumNoteOns(const juce::MidiBuffer& midi)
+{
+    std::vector<int> notes;
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOn() && msg.getChannel() == 10)
+            notes.push_back(msg.getNoteNumber());
+    }
+    return notes;
+}
+
+juce::MidiBuffer renderQueuedFill(PatternPlayer::TransitionFillKind kind, int patternIndex)
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.snapBpm(120.0f);
+    player.setStructureSilent(false);
+
+    PatternPlayer::GrooveCommit commit{};
+    commit.patternIndex = patternIndex;
+    commit.fillKind = kind;
+    player.queueGrooveCommit(commit);
+
+    juce::MidiBuffer midi;
+    player.process(midi, 512, 0);
+    return midi;
+}
+
+} // namespace
 
 TEST_CASE("PatternPlayer emits MIDI for non-silent pattern", "[midi]")
 {
@@ -167,4 +215,41 @@ TEST_CASE("PatternPlayer applies bass semitone offset", "[midi]")
         }
     }
     REQUIRE(sawShiftedRoot);
+}
+
+TEST_CASE("RHY-FILL-01: Entry fill emits crash and kick at a queued groove commit", "[midi]")
+{
+    const auto midi = renderQueuedFill(PatternPlayer::TransitionFillKind::Entry, 1);
+
+    REQUIRE(hasDrumNoteOn(midi, 49));
+    REQUIRE(hasDrumNoteOn(midi, 36));
+}
+
+TEST_CASE("RHY-FILL-01: BuildUp fill emits a distinct snare and tom gesture", "[midi]")
+{
+    const auto midi = renderQueuedFill(PatternPlayer::TransitionFillKind::BuildUp, 0);
+    const auto notes = drumNoteOns(midi);
+
+    REQUIRE(hasDrumNoteOn(midi, 38));
+    REQUIRE(hasDrumNoteOn(midi, 45));
+    REQUIRE(notes.size() == 2);
+}
+
+TEST_CASE("RHY-FILL-01: Release fill emits a distinct snare and closed-hat gesture", "[midi]")
+{
+    const auto midi = renderQueuedFill(PatternPlayer::TransitionFillKind::Release, 0);
+    const auto notes = drumNoteOns(midi);
+
+    REQUIRE(hasDrumNoteOn(midi, 38));
+    REQUIRE(hasDrumNoteOn(midi, 42));
+    REQUIRE(notes.size() == 2);
+}
+
+TEST_CASE("RHY-FILL-01: BreakdownOrImpact fill emits a kick crash and floor-tom gesture", "[midi]")
+{
+    const auto midi = renderQueuedFill(PatternPlayer::TransitionFillKind::BreakdownOrImpact, 6);
+
+    REQUIRE(hasDrumNoteOn(midi, 36));
+    REQUIRE(hasDrumNoteOn(midi, 49));
+    REQUIRE(hasDrumNoteOn(midi, 43));
 }
