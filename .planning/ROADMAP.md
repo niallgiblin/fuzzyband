@@ -163,7 +163,7 @@ Plans:
 
 - [x] **Phase 27: Rhythmic coherence documentation** — Pre-FX workflow, milestone-facing README updates, pointers to research
 - [ ] **Phase 28: Beat tracker & bass sequencer** — Replace tempo core; bar-aligned bass steps; tests on clean guitar / synthetic signals
-- [ ] **Phase 29: Runtime coordination (C++)** — Unified bar tick; extend `FeatureVector` and handoff to inference; transition fills
+- [x] **Phase 29: Runtime coordination (C++)** — Unified bar tick; extend `FeatureVector` and handoff to inference; transition fills
 - [ ] **Phase 30: ML retrain (12 features)** — Update `docs/ONNX_IO.md`, training scripts, validators; retrain, export, promote, smoke + jam
 
 #### Phase 27: Rhythmic coherence documentation
@@ -198,7 +198,7 @@ Plans:
 Plans:
 - [x] 29-01-PLAN.md — Rescope audit, RHY-FEAT-01 supersession, and shared commit policy documentation
 - [x] 29-02-PLAN.md — Shared fixed-size pending groove commit for drum pattern plus generated bass activation
-- [ ] 29-03-PLAN.md — Four minimal directional transition fills through the shared commit path
+- [x] 29-03-PLAN.md — Four minimal directional transition fills through the shared commit path
 
 #### Phase 30: ML retrain (12-feature input)
 **Goal**: ONNX models and training code match the expanded feature vector; shipped artifacts pass contract validation and brief DAW smoke.
