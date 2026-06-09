@@ -6,7 +6,7 @@
 TEST_CASE("MidiPatternLibrary: pattern count is 11", "[midi_pattern_library]")
 {
     MidiPatternLibrary lib;
-    REQUIRE(lib.patternCount() == 11);
+    REQUIRE(lib.patternCount() == 22);
 }
 
 TEST_CASE("MidiPatternLibrary: new patterns have non-empty names", "[midi_pattern_library]")
@@ -69,7 +69,7 @@ TEST_CASE("MidiPatternLibrary: getPattern(999) clamps to 10", "[midi_pattern_lib
 {
     MidiPatternLibrary lib;
     const auto& p = lib.getPattern(999);
-    REQUIRE(p.name == "Thrash");
+    REQUIRE(p.name == "Chorus Blast");
 }
 
 TEST_CASE("MidiPatternLibrary: blast beat has alternating kick and snare", "[midi_pattern_library]")

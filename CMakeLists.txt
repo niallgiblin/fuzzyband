@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.7.2)
+project(MetalAccompaniment VERSION 0.7.8)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -139,14 +139,13 @@ target_sources(MetalAccompaniment PRIVATE
     src/capture/FeatureCapture.cpp
 
     # Analysis
-    src/analysis/OnsetDetector.cpp
     src/analysis/BeatTracker.cpp
     src/analysis/EnergyAnalyser.cpp
     src/analysis/StructureTagger.cpp
     src/analysis/StructureHoldSmoother.cpp
+    src/analysis/StructureSequencer.cpp
     src/analysis/PitchEstimator.cpp
     src/analysis/StablePitchTracker.cpp
-    src/analysis/TempoStabiliser.cpp
     src/analysis/PlaybackGate.cpp
 
     # Inference
@@ -160,6 +159,7 @@ target_sources(MetalAccompaniment PRIVATE
     src/midi/MidiPatternLibrary.cpp
     src/midi/PatternPlayer.cpp
     src/midi/BassMidiValidator.cpp
+    src/midi/RuleBasedBass.cpp
 )
 
 # ─────────────────────────────────────────────────────────────────
@@ -254,7 +254,6 @@ if(MA_BUILD_TESTS)
     # ── Unit tests ─────────────────────────────────────────────────────────────
     add_executable(MetalAccompanimentTests
         # Existing tests
-        tests/test_onset_detector.cpp
         tests/test_structure_tagger.cpp
         tests/test_pattern_player.cpp
         tests/test_pitch_estimator.cpp
@@ -268,34 +267,32 @@ if(MA_BUILD_TESTS)
         tests/test_structure_tagger_extended.cpp
         tests/test_structure_hold_smoother_complete.cpp
         tests/test_sub_bass_energy.cpp
-        tests/test_onset_detector_extended.cpp
         tests/test_bass_validator_boundaries.cpp
         tests/test_pattern_player_generative_bass.cpp
         tests/test_beat_tracker.cpp
         tests/test_midi_pattern_library.cpp
         tests/test_pattern_rules.cpp
         tests/test_onnx_inference.cpp
-        tests/test_tempo_stabiliser.cpp
         tests/test_playback_gate.cpp
         tests/test_stable_pitch_tracker.cpp
         tests/test_feature_capture.cpp
 
         # Plugin sources compiled into the test executable
         src/capture/FeatureCapture.cpp
-        src/analysis/OnsetDetector.cpp
         src/analysis/BeatTracker.cpp
         src/analysis/EnergyAnalyser.cpp
         src/analysis/StructureTagger.cpp
         src/analysis/StructureHoldSmoother.cpp
+        src/analysis/StructureSequencer.cpp
         src/analysis/PitchEstimator.cpp
         src/analysis/StablePitchTracker.cpp
-        src/analysis/TempoStabiliser.cpp
         src/analysis/PlaybackGate.cpp
         src/inference/RuleBasedInference.cpp
         src/inference/RuleStructureInference.cpp
         src/midi/MidiPatternLibrary.cpp
         src/midi/PatternPlayer.cpp
         src/midi/BassMidiValidator.cpp
+        src/midi/RuleBasedBass.cpp
     )
 
     target_include_directories(MetalAccompanimentTests PRIVATE

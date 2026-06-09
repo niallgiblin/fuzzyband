@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "analysis/BeatTracker.h"
-#include "analysis/OnsetDetector.h"
 
 TEST_CASE("BeatTracker: impulse train settles near 120 BPM with usable confidence", "[bpm]")
 {
@@ -81,42 +80,4 @@ TEST_CASE("BeatTracker: folds near-double-time DI transients toward slower pulse
 
     REQUIRE(tracker.getBpm() >= 95.0f);
     REQUIRE(tracker.getBpm() <= 125.0f);
-}
-
-namespace
-{
-void testTrackerSink(void* user, float flux, int64_t ts) noexcept
-{
-    static_cast<BeatTracker*>(user)->pushFluxSample(flux, ts);
-}
-} // namespace
-
-TEST_CASE("OnsetDetector forwards flux sink without breaking IOI BPM", "[bpm]")
-{
-    OnsetDetector detector;
-    BeatTracker tracker;
-    const double sr = 44100.0;
-    detector.prepare(sr, 512);
-    tracker.prepare(sr, 512);
-    detector.setFluxSink(&tracker, testTrackerSink);
-
-    const float bpmTarget = 160.0f;
-    const int periodSamples = static_cast<int>(std::round(static_cast<double>(sr) * 60.0 / static_cast<double>(bpmTarget)));
-    const int chunk = 256;
-    const int totalSamples = periodSamples * 24;
-
-    for (int pos = 0; pos < totalSamples; pos += chunk)
-    {
-        std::vector<float> buf(static_cast<size_t>(chunk), 0.0f);
-        for (int i = 0; i < chunk; ++i)
-        {
-            const int g = pos + i;
-            if (g % periodSamples == 0)
-                buf[static_cast<size_t>(i)] = 1.0f;
-        }
-        detector.process(buf.data(), chunk);
-    }
-
-    REQUIRE(detector.getCurrentBpm() > 150.0f);
-    REQUIRE(detector.getCurrentBpm() < 170.0f);
 }

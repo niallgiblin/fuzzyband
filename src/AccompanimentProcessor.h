@@ -6,12 +6,11 @@
  */
 
 #include <JuceHeader.h>
-#include "analysis/OnsetDetector.h"
 #include "analysis/EnergyAnalyser.h"
 #include "analysis/StructureTagger.h"
+#include "analysis/StructureSequencer.h"
 #include "analysis/PitchEstimator.h"
 #include "analysis/BeatTracker.h"
-#include "analysis/TempoStabiliser.h"
 #include "analysis/PlaybackGate.h"
 #include "analysis/StablePitchTracker.h"
 #include "analysis/FeatureVector.h"
@@ -21,6 +20,7 @@
 #include "inference/OnnxBassInference.h"
 #include "midi/MidiPatternLibrary.h"
 #include "midi/PatternPlayer.h"
+#include "midi/RuleBasedBass.h"
 #include "readerwriterqueue.h"
 #include <array>
 #include <atomic>
@@ -69,6 +69,7 @@ public:
     juce::AudioProcessorValueTreeState& getApvts() noexcept { return apvts; }
 
     float getDisplayBpm() const noexcept { return displayBpm.load(std::memory_order_relaxed); }
+    juce::String getSectionName() const noexcept;
     int getDisplayStateIndex() const noexcept { return displayStateIndex.load(std::memory_order_relaxed); }
     int getDisplayPatternIndex() const noexcept { return displayPatternIndex.load(std::memory_order_relaxed); }
     float getDisplayRms() const noexcept { return displayRms.load(std::memory_order_relaxed); }
@@ -90,6 +91,8 @@ public:
     // Phase 23 rejection signal: written by message thread (Phase 24 button), read/decremented by inference thread.
     std::atomic<int> patternRejectionCount{ 0 };
 
+    std::atomic<bool> playActive{ false };  // Play button state — when true, sequencer runs and playback is forced
+
     /** @brief Test-only: stop the background thread from draining @a featureQueue (integration tests). */
     void pauseBackgroundInferenceForTests();
     /** @brief Test-only: run one inference drain synchronously (call while paused). */
@@ -105,12 +108,11 @@ private:
 
     juce::AudioProcessorValueTreeState apvts;
 
-    OnsetDetector onsetDetector;
     EnergyAnalyser energyAnalyser;
     StructureTagger structureTagger;
+    StructureSequencer structureSequencer;
     PitchEstimator pitchEstimator;
     BeatTracker beatTracker;
-    TempoStabiliser tempoStabiliser;
     StablePitchTracker stablePitchTracker;
     MidiPatternLibrary patternLibrary;
     PatternPlayer patternPlayer;
@@ -137,6 +139,12 @@ private:
     std::atomic<float> displayCentroid{ 0.0f };
     std::atomic<float> displayHfFlux{ 0.0f };
     std::atomic<float> displayBeatConfidence{ 0.0f };
+
+    // Section state for inference thread (written by audio thread)
+    std::atomic<int> currentSectionIndex_{ 0 };
+    std::atomic<int> currentSectionBarsElapsed_{ 0 };
+    std::atomic<int> currentSectionTotalBars_{ 8 };
+    std::atomic<int> globalBarCount_{ 0 };
 
     std::atomic<bool> inferenceRunning{ false };
     /** Starts true so inference does not run until prepareToPlay() completes. */

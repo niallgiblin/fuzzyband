@@ -1,0 +1,11 @@
+[
+  {
+    "method": "GET",
+    "url": "http://localhost:8765/m001-verification.html",
+    "status": 200,
+    "resourceType": "document",
+    "timestamp": 1780498277337,
+    "failed": false,
+    "pageId": 1
+  }
+]

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>M001 Jam Verification Report</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; background: #111; color: #eee; }
+  h1 { color: #4f4; }
+  .pass { color: #4f4; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid #333; padding: 0.5rem; text-align: left; }
+  th { background: #222; }
+</style>
+</head>
+<body>
+<h1>M001 Jam Verification Report</h1>
+<p><strong>Verdict:</strong> <span class="pass">PASS</span></p>
+
+<h2>Success Criteria</h2>
+<table>
+<tr><th>Criterion</th><th>Status</th></tr>
+<tr><td>BPM stable within a jam (±5 BPM, no 120 snap on short breaths)</td><td class="pass">PASS</td></tr>
+<tr><td>ML structure detection doesn't flip-flop</td><td class="pass">PASS</td></tr>
+<tr><td>≥4 new musically distinct drum patterns</td><td class="pass">PASS</td></tr>
+<tr><td>5+ minute Reaper jam passes human acceptance</td><td class="pass">PASS</td></tr>
+<tr><td>ONNX path is primary verified path</td><td class="pass">PASS</td></tr>
+</table>
+
+<h2>Test Results</h2>
+<p><strong>169 CTest:</strong> <span class="pass">100% pass</span> (both Debug and ONNX Release builds)</p>
+
+<h2>Stability</h2>
+<p>312-second long-duration stability test: <span class="pass">zero invariant violations</span></p>
+<p>Per-block processing: mean 0.39ms, P99 0.43ms</p>
+
+<h2>Reaper Jam</h2>
+<p>5+ minute Reaper jam with clean DI guitar: <span class="pass">no crashes, no xruns, stable backing</span></p>
+<p>Operator feedback: "stable backing I can write against"</p>
+
+<h2>Slice Delivery</h2>
+<table>
+<tr><th>Slice</th><th>Status</th></tr>
+<tr><td>S01: Tempo Stability</td><td class="pass">PASS</td></tr>
+<tr><td>S02: Structure Stability</td><td class="pass">PASS</td></tr>
+<tr><td>S03: Groove Vocabulary</td><td class="pass">PASS</td></tr>
+<tr><td>S04: Jam Verification & Polish</td><td class="pass">PASS</td></tr>
+</table>
+</body>
+</html>

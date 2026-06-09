@@ -11,13 +11,14 @@
 
 #include "analysis/FeatureVector.h"
 #include <algorithm>
+#include <cstring>
 
 namespace PatternRules
 {
 
 static constexpr float kSoftMidBpmThreshold  = 120.0f;
 static constexpr float kSoftLoudBpmThreshold = 160.0f;
-static constexpr int   kPatternCount         = 11;
+static constexpr int   kPatternCount         = 22;
 
 /**
  * @brief Apply policyIntensity offset to BPM.
@@ -64,9 +65,9 @@ inline bool isPatternCompatibleWithState(int patternIndex, StructureState state)
     {
         case StructureState::SILENT:    return patternIndex == 0;
         case StructureState::AMBIENT:   return (patternIndex == 1 || patternIndex == 3 || patternIndex == 7);
-        case StructureState::SOFT:      return (patternIndex >= 1 && patternIndex <= 3) || patternIndex == 7;
-        case StructureState::LOUD:      return (patternIndex >= 4 && patternIndex <= 5) || (patternIndex >= 8 && patternIndex <= 10);
-        case StructureState::BREAKDOWN: return (patternIndex >= 4 && patternIndex <= 6) || patternIndex == 9;
+        case StructureState::SOFT:      return (patternIndex >= 1 && patternIndex <= 3) || patternIndex == 7 || patternIndex == 20;
+        case StructureState::LOUD:      return (patternIndex >= 4 && patternIndex <= 5) || (patternIndex >= 8 && patternIndex <= 10) || patternIndex >= 13 && patternIndex <= 14;
+        case StructureState::BREAKDOWN: return (patternIndex >= 4 && patternIndex <= 6) || patternIndex == 9 || patternIndex == 15;
     }
     return false;
 }
@@ -84,7 +85,7 @@ inline bool isOnnxPatternAcceptable(int patternIndex, const FeatureVector& f) no
     if (patternIndex == 6)
         return (f.state == StructureState::LOUD || f.state == StructureState::BREAKDOWN)
             && f.bpm < kBreakdownBpmThreshold;
-    if (patternIndex >= 7 && patternIndex <= 10)
+    if (patternIndex >= 7 && patternIndex <= 21)
         return isPatternCompatibleWithState(patternIndex, f.state);
     return isPatternCompatibleWithState(patternIndex, f.state);
 }
@@ -100,7 +101,7 @@ inline int diversifyPattern(int base, const FeatureVector& f, int barMod8) noexc
     if (base == 0) return 0;
 
     // New patterns map to themselves (already diversified)
-    if (base >= 7 && base <= 10) return base;
+    if (base >= 7) return base;
 
     // AMBIENT patterns [1,3] — always route to half-time for drone sections
     if (f.state == StructureState::AMBIENT)
@@ -161,6 +162,55 @@ inline int applyExclusion(
             return candidate;
     }
     return fallbackPattern;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Section → Pattern Pool mapping (D006: structure-driven selection)
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief Pattern indices for each section type.
+ * Each pool has 2-4 patterns that rotate on bar boundaries for variety.
+ */
+struct SectionPatternPool
+{
+    int count;
+    int indices[4];
+};
+
+/**
+ * @brief Map a section name to its pattern pool.
+ * Returns pool with count=0 if section unknown (fallback to rulePatternForState).
+ */
+inline SectionPatternPool sectionPatternPool(const char* sectionName) noexcept
+{
+    using P = SectionPatternPool;
+
+    if (!sectionName) return P{ 0, {} };
+
+    if (std::strcmp(sectionName, "INTRO") == 0)
+        return P{ 2, { 11, 12 } };                // Intro Build, Intro Full
+    if (std::strcmp(sectionName, "VERSE") == 0)
+        return P{ 3, { 1, 2, 3 } };               // Verse Groove, Half-Time, Fast
+    if (std::strcmp(sectionName, "CHORUS") == 0)
+        return P{ 3, { 4, 14, 21 } };              // Chorus Mid, Open Groove, Blast
+    if (std::strcmp(sectionName, "BREAKDOWN") == 0)
+        return P{ 3, { 6, 15, 9 } };               // Breakdown, Full, Sparse
+    if (std::strcmp(sectionName, "SOLO") == 0)
+        return P{ 2, { 4, 14 } };                  // Chorus Mid, Open Groove
+    if (std::strcmp(sectionName, "OUTRO") == 0)
+        return P{ 1, { 16 } };                     // Outro Decay
+
+    return P{ 0, {} };
+}
+
+/**
+ * @brief Select a fill pattern index based on transition type.
+ */
+inline int selectFillPattern(int barsRemaining) noexcept
+{
+    if (barsRemaining <= 0) return 19;  // Big fill on last bar
+    return 17;                          // Short fill otherwise
 }
 
 } // namespace PatternRules

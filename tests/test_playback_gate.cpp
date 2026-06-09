@@ -131,22 +131,16 @@ TEST_CASE("PlaybackGate: armCrash fires on phrase-breath re-entry (SILENT then L
     REQUIRE(gd.armCrash);
 }
 
-TEST_CASE("PlaybackGate: beat-snap fires at bar boundary when pendingBeatSnap set", "[playback_gate]")
+TEST_CASE("PlaybackGate: opens immediately when isOnsetTempoLocked is true", "[playback_gate]")
 {
     PlaybackGate gate;
     const double sr = 44100.0;
 
-    // Feed LOUD with isTempoLocked=true, beatConfidence=0.6 to trigger pendingBeatSnap.
-    // Use beat phase that wraps from ~0.99 to ~0.01 on next call.
-    // First call sets pendingBeatSnap, second wraps phase → snapBeatNow=true.
-
-    // First: one block with phase 0.5 (trigger allowPlayback→pendingBeatSnap)
-    gate.update(StructureState::LOUD, 0.5, true, true, 0.8f, 512, sr);
-
-    // Now advance phase past 1.0 (wrap: phase 0.01 < prev 0.99) → snapBeatNow
-    GateDecision gd = gate.update(StructureState::LOUD, 0.01, true, true, 0.8f, 512, sr);
-    REQUIRE(gd.snapBeatNow);
+    // When tempo is manually set (isOnsetTempoLocked=true), gate opens immediately
+    // without waiting for beat boundary snap (D005/D006).
+    GateDecision gd = gate.update(StructureState::LOUD, 0.5, true, true, 0.8f, 512, sr);
     REQUIRE(gd.gateOpen);
+    REQUIRE(gd.snapBeatNow);
     REQUIRE(gate.isGateOpen());
 }
 

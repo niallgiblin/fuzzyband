@@ -2158,6 +2158,30 @@ tests/test_e2e_bpm_tracking.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentIntegrationTests.dir/build.make CMakeFiles/MetalAccompanimentIntegrationTests.dir/tests/test_e2e_bpm_tracking.cpp.s
 .PHONY : tests/test_e2e_bpm_tracking.cpp.s
 
+tests/test_e2e_groove_variety.o: tests/test_e2e_groove_variety.cpp.o
+.PHONY : tests/test_e2e_groove_variety.o
+
+# target to build an object file
+tests/test_e2e_groove_variety.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentIntegrationTests.dir/build.make CMakeFiles/MetalAccompanimentIntegrationTests.dir/tests/test_e2e_groove_variety.cpp.o
+.PHONY : tests/test_e2e_groove_variety.cpp.o
+
+tests/test_e2e_groove_variety.i: tests/test_e2e_groove_variety.cpp.i
+.PHONY : tests/test_e2e_groove_variety.i
+
+# target to preprocess a source file
+tests/test_e2e_groove_variety.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentIntegrationTests.dir/build.make CMakeFiles/MetalAccompanimentIntegrationTests.dir/tests/test_e2e_groove_variety.cpp.i
+.PHONY : tests/test_e2e_groove_variety.cpp.i
+
+tests/test_e2e_groove_variety.s: tests/test_e2e_groove_variety.cpp.s
+.PHONY : tests/test_e2e_groove_variety.s
+
+# target to generate assembly for a file
+tests/test_e2e_groove_variety.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentIntegrationTests.dir/build.make CMakeFiles/MetalAccompanimentIntegrationTests.dir/tests/test_e2e_groove_variety.cpp.s
+.PHONY : tests/test_e2e_groove_variety.cpp.s
+
 tests/test_e2e_silent_section.o: tests/test_e2e_silent_section.cpp.o
 .PHONY : tests/test_e2e_silent_section.o
 
@@ -2253,6 +2277,30 @@ tests/test_feature_capture.s: tests/test_feature_capture.cpp.s
 tests/test_feature_capture.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_feature_capture.cpp.s
 .PHONY : tests/test_feature_capture.cpp.s
+
+tests/test_long_duration_stability.o: tests/test_long_duration_stability.cpp.o
+.PHONY : tests/test_long_duration_stability.o
+
+# target to build an object file
+tests/test_long_duration_stability.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentIntegrationTests.dir/build.make CMakeFiles/MetalAccompanimentIntegrationTests.dir/tests/test_long_duration_stability.cpp.o
+.PHONY : tests/test_long_duration_stability.cpp.o
+
+tests/test_long_duration_stability.i: tests/test_long_duration_stability.cpp.i
+.PHONY : tests/test_long_duration_stability.i
+
+# target to preprocess a source file
+tests/test_long_duration_stability.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentIntegrationTests.dir/build.make CMakeFiles/MetalAccompanimentIntegrationTests.dir/tests/test_long_duration_stability.cpp.i
+.PHONY : tests/test_long_duration_stability.cpp.i
+
+tests/test_long_duration_stability.s: tests/test_long_duration_stability.cpp.s
+.PHONY : tests/test_long_duration_stability.s
+
+# target to generate assembly for a file
+tests/test_long_duration_stability.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentIntegrationTests.dir/build.make CMakeFiles/MetalAccompanimentIntegrationTests.dir/tests/test_long_duration_stability.cpp.s
+.PHONY : tests/test_long_duration_stability.cpp.s
 
 tests/test_midi_pattern_library.o: tests/test_midi_pattern_library.cpp.o
 .PHONY : tests/test_midi_pattern_library.o
@@ -2421,6 +2469,30 @@ tests/test_pattern_rules.s: tests/test_pattern_rules.cpp.s
 tests/test_pattern_rules.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_pattern_rules.cpp.s
 .PHONY : tests/test_pattern_rules.cpp.s
+
+tests/test_performance_benchmark.o: tests/test_performance_benchmark.cpp.o
+.PHONY : tests/test_performance_benchmark.o
+
+# target to build an object file
+tests/test_performance_benchmark.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentIntegrationTests.dir/build.make CMakeFiles/MetalAccompanimentIntegrationTests.dir/tests/test_performance_benchmark.cpp.o
+.PHONY : tests/test_performance_benchmark.cpp.o
+
+tests/test_performance_benchmark.i: tests/test_performance_benchmark.cpp.i
+.PHONY : tests/test_performance_benchmark.i
+
+# target to preprocess a source file
+tests/test_performance_benchmark.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentIntegrationTests.dir/build.make CMakeFiles/MetalAccompanimentIntegrationTests.dir/tests/test_performance_benchmark.cpp.i
+.PHONY : tests/test_performance_benchmark.cpp.i
+
+tests/test_performance_benchmark.s: tests/test_performance_benchmark.cpp.s
+.PHONY : tests/test_performance_benchmark.s
+
+# target to generate assembly for a file
+tests/test_performance_benchmark.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentIntegrationTests.dir/build.make CMakeFiles/MetalAccompanimentIntegrationTests.dir/tests/test_performance_benchmark.cpp.s
+.PHONY : tests/test_performance_benchmark.cpp.s
 
 tests/test_pitch_estimator.o: tests/test_pitch_estimator.cpp.o
 .PHONY : tests/test_pitch_estimator.o
@@ -2686,6 +2758,30 @@ tests/test_structure_tagger_extended.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_structure_tagger_extended.cpp.s
 .PHONY : tests/test_structure_tagger_extended.cpp.s
 
+tests/test_sub_bass_energy.o: tests/test_sub_bass_energy.cpp.o
+.PHONY : tests/test_sub_bass_energy.o
+
+# target to build an object file
+tests/test_sub_bass_energy.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_sub_bass_energy.cpp.o
+.PHONY : tests/test_sub_bass_energy.cpp.o
+
+tests/test_sub_bass_energy.i: tests/test_sub_bass_energy.cpp.i
+.PHONY : tests/test_sub_bass_energy.i
+
+# target to preprocess a source file
+tests/test_sub_bass_energy.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_sub_bass_energy.cpp.i
+.PHONY : tests/test_sub_bass_energy.cpp.i
+
+tests/test_sub_bass_energy.s: tests/test_sub_bass_energy.cpp.s
+.PHONY : tests/test_sub_bass_energy.s
+
+# target to generate assembly for a file
+tests/test_sub_bass_energy.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_sub_bass_energy.cpp.s
+.PHONY : tests/test_sub_bass_energy.cpp.s
+
 tests/test_tempo_stabiliser.o: tests/test_tempo_stabiliser.cpp.o
 .PHONY : tests/test_tempo_stabiliser.o
 
@@ -2948,6 +3044,9 @@ help:
 	@echo "... tests/test_e2e_bpm_tracking.o"
 	@echo "... tests/test_e2e_bpm_tracking.i"
 	@echo "... tests/test_e2e_bpm_tracking.s"
+	@echo "... tests/test_e2e_groove_variety.o"
+	@echo "... tests/test_e2e_groove_variety.i"
+	@echo "... tests/test_e2e_groove_variety.s"
 	@echo "... tests/test_e2e_silent_section.o"
 	@echo "... tests/test_e2e_silent_section.i"
 	@echo "... tests/test_e2e_silent_section.s"
@@ -2960,6 +3059,9 @@ help:
 	@echo "... tests/test_feature_capture.o"
 	@echo "... tests/test_feature_capture.i"
 	@echo "... tests/test_feature_capture.s"
+	@echo "... tests/test_long_duration_stability.o"
+	@echo "... tests/test_long_duration_stability.i"
+	@echo "... tests/test_long_duration_stability.s"
 	@echo "... tests/test_midi_pattern_library.o"
 	@echo "... tests/test_midi_pattern_library.i"
 	@echo "... tests/test_midi_pattern_library.s"
@@ -2981,6 +3083,9 @@ help:
 	@echo "... tests/test_pattern_rules.o"
 	@echo "... tests/test_pattern_rules.i"
 	@echo "... tests/test_pattern_rules.s"
+	@echo "... tests/test_performance_benchmark.o"
+	@echo "... tests/test_performance_benchmark.i"
+	@echo "... tests/test_performance_benchmark.s"
 	@echo "... tests/test_pitch_estimator.o"
 	@echo "... tests/test_pitch_estimator.i"
 	@echo "... tests/test_pitch_estimator.s"
@@ -3014,6 +3119,9 @@ help:
 	@echo "... tests/test_structure_tagger_extended.o"
 	@echo "... tests/test_structure_tagger_extended.i"
 	@echo "... tests/test_structure_tagger_extended.s"
+	@echo "... tests/test_sub_bass_energy.o"
+	@echo "... tests/test_sub_bass_energy.i"
+	@echo "... tests/test_sub_bass_energy.s"
 	@echo "... tests/test_tempo_stabiliser.o"
 	@echo "... tests/test_tempo_stabiliser.i"
 	@echo "... tests/test_tempo_stabiliser.s"

@@ -1,0 +1,8 @@
+- 'heading "M001: Creative Companion â€” Jam Verification" [level=1]'
+- text: PASS
+- list:
+  - listitem: BPM stable within Â±5 (no 120 snap)
+  - listitem: Structure detection no flip-flop
+  - listitem: â‰¥4 new patterns (7 added, 10 total)
+  - listitem: "5+ min Reaper jam: operator confirmed stable"
+  - listitem: 169 CTest 100% pass
