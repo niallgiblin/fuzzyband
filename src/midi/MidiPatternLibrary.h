@@ -35,7 +35,7 @@ public:
     MidiPatternLibrary();
 
     const MidiPattern& getPattern(int index) const;
-    int patternCount() const noexcept { return 11; }
+    int patternCount() const noexcept { return 22; }
 
 private:
     std::vector<MidiPattern> patterns;

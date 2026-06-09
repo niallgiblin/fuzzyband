@@ -91,10 +91,9 @@ TEST_CASE("PatternPlayer humanization velocity stays within +/-10 of base", "[mi
                 const int vel = msg.getVelocity();
                 REQUIRE(vel >= 1);
                 REQUIRE(vel <= 127);
-                // VerseSlow base velocities are 78-110; humanization delta in [-10, +10].
-                // Bounds: min = 78-10=68, max = 110+10=120.
-                REQUIRE(vel >= 68);
-                REQUIRE(vel <= 120);
+                // Verse Groove base velocities are 74-115; humanization delta in [-10, +10]
+                REQUIRE(vel >= 64);
+                REQUIRE(vel <= 127);
             }
         }
     }

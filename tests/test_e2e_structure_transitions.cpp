@@ -127,28 +127,25 @@ TEST_CASE("E2E: chorus-like section after verse drives pattern index to [4,5]", 
     // Silence → soft (reach SOFT state; needs kHoldSilentSec=0 + 0.1 s RMS warmup)
     {
         const int n = static_cast<int>(8.0 * sr);  // long enough for state to leave SILENT
-        auto soft = sineSection(n, 1500.0, sr, 0.3f);  // RMS ≈ 0.212 → SOFT
+        auto soft = sineSection(n, 1500.0, sr, 0.013f);  // RMS ≈ 0.0424 → SOFT
         feedSection(proc, soft.data(), n, block);
     }
 
-    // LOUD section: amplitude 0.6 for 14 s — RMS ≈ 0.424, safely above kLoudRms(0.35).
-    // StructureTagger needs > 2 s of LOUD input while in SOFT before transitioning.
-    // After 14 s the tagger has been in LOUD for ~12 s.
+    // LOUD section: amplitude 0.04 for 14 s — RMS ≈ 0.113, safely above kLoudRms(0.075)
+    // but below kBreakdownRms(0.12). StructureTagger needs > 2 s of LOUD input.
     {
         const int n = static_cast<int>(14.0 * sr);
-        auto loud = sineSection(n, 1500.0, sr, 0.6f);  // RMS ≈ 0.424 → LOUD
+        auto loud = sineSection(n, 1500.0, sr, 0.04f);
         feedSection(proc, loud.data(), n, block);
     }
 
     // With default BPM ≈ 120 and LOUD state:
     //   RuleBasedInference: bpmAdj = 120, < 160 → base = 4
-    //   PolicyPatternMapper (var=0.5, varShift=0): result = 4
-    // Actual BPM from click-free sine may still be 120 (default), so expect pattern 4 or 5.
     const int pat = proc.getDisplayPatternIndex();
     REQUIRE(pat >= 4);
     REQUIRE(pat <= 5);
 
-    // Display state must be LOUD (index 3 after AMBIENT insertion)
+    // Display state must be LOUD (index 3)
     REQUIRE(proc.getDisplayStateIndex() == static_cast<int>(StructureState::LOUD));
 
     proc.releaseResources();
@@ -209,10 +206,10 @@ TEST_CASE("E2E: palm-muted verse to full-chord chorus — no flip-flopping", "[e
     const int stateAfterVerse = proc.getDisplayStateIndex();
     REQUIRE(stateAfterVerse == 2); // 2 = SOFT (after AMBIENT=1)
 
-    // Phase 2: Full-chord chorus (LOUD) — 15s of amp 0.25
+    // Phase 2: Full-chord chorus (LOUD) — 15s of amp 0.04
     {
         const int n = static_cast<int>(15.0 * sr);
-        auto chorus = sineSection(n, 1500.0, sr, 0.25f);
+        auto chorus = sineSection(n, 1500.0, sr, 0.04f);
         feedSection(proc, chorus.data(), n, block);
     }
 
@@ -248,7 +245,7 @@ TEST_CASE("E2E: rapid SOFT/LOUD alternation — hold guard prevents flip-floppin
     // Establish initial LOUD state with sustained signal
     {
         const int n = static_cast<int>(5.0 * sr);
-        auto loud = sineSection(n, 1500.0, sr, 0.25f);
+        auto loud = sineSection(n, 1500.0, sr, 0.04f);
         feedSection(proc, loud.data(), n, block);
     }
     const int initialState = proc.getDisplayStateIndex();
@@ -266,7 +263,7 @@ TEST_CASE("E2E: rapid SOFT/LOUD alternation — hold guard prevents flip-floppin
 
     for (int bar = 0; bar < 8; ++bar)
     {
-        const float amp = (bar % 2 == 0) ? 0.25f : 0.015f; // alternate LOUD/SOFT
+        const float amp = (bar % 2 == 0) ? 0.04f : 0.015f; // alternate LOUD/SOFT
         auto seg = sineSection(samplesPerBar, 1500.0, sr, amp);
         feedSection(proc, seg.data(), samplesPerBar, block);
         const int s = proc.getDisplayStateIndex();

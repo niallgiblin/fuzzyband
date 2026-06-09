@@ -11,14 +11,14 @@
  *     2 s  silence gap
  *     8 s  SOFT  (amp 0.013, 1500 Hz sine)
  *     2 s  silence gap
- *     8 s  LOUD  (amp 0.25,  1500 Hz sine)
+ *     8 s  LOUD  (amp 0.04,  1500 Hz sine)  — below kBreakdownRms(0.12)
  *  )
  *   3 s    silence (cooldown)
  *
  * Invariants checked after every section:
- *   - patternIndex ∈ [0, 10]
+ *   - patternIndex ∈ [0, 10] (11-pattern library)
  *   - BPM ∈ [kMinBpm, kMaxBpm] for non-silent sections
- *   - structure state is a valid enum (0–3)
+ *   - structure state is a valid enum (0–4)
  *   - no exceptions/crashes (implicit — test survives)
  */
 
@@ -96,8 +96,8 @@ static void checkInvariants(const SectionResult& r,
         CHECK((r.bpm >= kMinBpm && r.bpm <= kMaxBpm));
     }
 
-    // Structure state must be a valid enum (0=SILENT, 1=VERSE, 2=CHORUS, 3=BREAKDOWN)
-    CHECK((r.stateIndex >= 0 && r.stateIndex <= 3));
+    // Structure state must be a valid enum (0=SILENT, 1=AMBIENT, 2=SOFT, 3=LOUD, 4=BREAKDOWN)
+    CHECK((r.stateIndex >= 0 && r.stateIndex <= 4));
 }
 
 } // namespace
@@ -118,7 +118,7 @@ TEST_CASE("Long-duration stability: 300+ seconds continuous processing", "[stabi
     float  maxBpmSeen     = 0.0f;
     int    minPatSeen     = 999;
     int    maxPatSeen     = -1;
-    int    statesSeen[4]  = {0, 0, 0, 0};   // SILENT, VERSE, CHORUS, BREAKDOWN
+    int    statesSeen[5]  = {0, 0, 0, 0, 0};   // SILENT, AMBIENT, SOFT, LOUD, BREAKDOWN
 
     auto runSilence = [&](double dur)
     {
@@ -128,7 +128,7 @@ TEST_CASE("Long-duration stability: 300+ seconds continuous processing", "[stabi
         ++totalSections;
         checkInvariants(res, totalSections, false, "SILENCE");
 
-        if (res.stateIndex >= 0 && res.stateIndex <= 3)
+        if (res.stateIndex >= 0 && res.stateIndex <= 4)
             ++statesSeen[res.stateIndex];
     };
 
@@ -151,7 +151,7 @@ TEST_CASE("Long-duration stability: 300+ seconds continuous processing", "[stabi
         }
         if (res.patternIndex < minPatSeen) minPatSeen = res.patternIndex;
         if (res.patternIndex > maxPatSeen) maxPatSeen = res.patternIndex;
-        if (res.stateIndex >= 0 && res.stateIndex <= 3)
+        if (res.stateIndex >= 0 && res.stateIndex <= 4)
             ++statesSeen[res.stateIndex];
     };
 
@@ -166,7 +166,7 @@ TEST_CASE("Long-duration stability: 300+ seconds continuous processing", "[stabi
         runSilence(2.0);
         runSection(0.013f, 8.0, "SOFT");
         runSilence(2.0);
-        runSection(0.25f,  8.0, "LOUD");
+        runSection(0.04f,  8.0, "LOUD");
 
         if ((r + 1) % 5 == 0)
             std::cerr << "[STABILITY]  round " << (r + 1) << "/" << rounds
@@ -189,9 +189,10 @@ TEST_CASE("Long-duration stability: 300+ seconds continuous processing", "[stabi
     std::cerr << "[STABILITY] BPM range: " << minBpmSeen << " – " << maxBpmSeen << std::endl;
     std::cerr << "[STABILITY] Pattern range: " << minPatSeen << " – " << maxPatSeen << std::endl;
     std::cerr << "[STABILITY] States seen: SILENT=" << statesSeen[0]
-              << " VERSE=" << statesSeen[1]
-              << " CHORUS=" << statesSeen[2]
-              << " BREAKDOWN=" << statesSeen[3]
+              << " AMBIENT=" << statesSeen[1]
+              << " SOFT=" << statesSeen[2]
+              << " LOUD=" << statesSeen[3]
+              << " BREAKDOWN=" << statesSeen[4]
               << std::endl;
 
     // ── Assertions ──────────────────────────────────────────────────────────
@@ -202,8 +203,9 @@ TEST_CASE("Long-duration stability: 300+ seconds continuous processing", "[stabi
     // Pattern index must have been in valid range throughout (already checked per-section)
     // State must have been valid throughout (already checked per-section)
 
-    // At least VERSE (state 1) must have been seen during SOFT sections
-    CHECK(statesSeen[1] > 0);   // VERSE from SOFT sections
+    // At least SOFT (state 2) should be seen during SOFT sections, and LOUD (state 3) during LOUD sections
+    CHECK(statesSeen[2] > 0);   // SOFT from SOFT sections
+    CHECK(statesSeen[3] > 0);   // LOUD from LOUD sections
 
     proc.releaseResources();
 }

@@ -73,6 +73,40 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(generativeBassLabel);
     addAndMakeVisible(generativeBassModeCombo);
 
+    bpmSliderLabel.setJustificationType(juce::Justification::centredLeft);
+    bpmSliderLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
+    bpmSliderLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
+    bpmSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    bpmSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 60, 18);
+    bpmSlider.setRange(40.0, 300.0, 1.0);
+    bpmSlider.setDoubleClickReturnValue(true, 120.0);
+    bpmSlider.setTooltip("Set playback tempo (40-300 BPM). Saves with session.");
+    addAndMakeVisible(bpmSliderLabel);
+    addAndMakeVisible(bpmSlider);
+
+    songFormLabel.setJustificationType(juce::Justification::centredLeft);
+    songFormLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
+    songFormLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
+    for (const auto& preset : StructureSequencer::getPresets())
+        songFormCombo.addItem(preset.name, songFormCombo.getNumItems() + 1);
+    songFormCombo.setTooltip("Select song structure preset. Sections advance on bar boundaries.");
+    addAndMakeVisible(songFormLabel);
+    addAndMakeVisible(songFormCombo);
+
+    sectionLabel.setJustificationType(juce::Justification::centredLeft);
+    sectionLabel.setFont(juce::FontOptions(18.0f, juce::Font::bold));
+    sectionLabel.setColour(juce::Label::textColourId, juce::Colour(0xff6a9a50));
+    addAndMakeVisible(sectionLabel);
+
+    playButton.setClickingTogglesState(true);
+    playButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff4a7a3a));
+    playButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffc8d8c0));
+    playButton.onClick = [this]
+    {
+        audioProcessorRef.playActive.store(playButton.getToggleState(), std::memory_order_release);
+    };
+    addAndMakeVisible(playButton);
+
     auto& apvts = audioProcessorRef.getApvts();
     intensityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "intensity", intensitySlider);
@@ -80,6 +114,10 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
         apvts, "structureBlend", structureBlendSlider);
     generativeBassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         apvts, "generativeBassMode", generativeBassModeCombo);
+    bpmAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "bpm", bpmSlider);
+    songFormAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        apvts, "songForm", songFormCombo);
 
     for (auto* l : { &bpmLabel, &stateLabel, &patternLabel, &rmsLabel, &centroidLabel, &hfFluxLabel })
     {
@@ -136,6 +174,8 @@ AccompanimentEditor::~AccompanimentEditor()
 
 void AccompanimentEditor::timerCallback()
 {
+    sectionLabel.setText(audioProcessorRef.getSectionName(), juce::dontSendNotification);
+    playButton.setToggleState(audioProcessorRef.playActive.load(std::memory_order_acquire), juce::dontSendNotification);
     const float bpm = audioProcessorRef.getDisplayBpm();
     bpmLabel.setText("BPM: " + juce::String(bpm, 1), juce::dontSendNotification);
     stateLabel.setText("State: " + juce::String(stateName(audioProcessorRef.getDisplayStateIndex())), juce::dontSendNotification);
@@ -181,6 +221,8 @@ void AccompanimentEditor::resized()
 {
     auto r = getLocalBounds().reduced(12);
     auto titleRow = r.removeFromTop(28);
+    playButton.setBounds(titleRow.removeFromRight(100));
+    titleRow.removeFromRight(8);
     versionLabel.setBounds(titleRow.removeFromRight(88));
     titleLabel.setBounds(titleRow);
     r.removeFromTop(8);
@@ -202,12 +244,24 @@ void AccompanimentEditor::resized()
     row = r.removeFromTop(60);
     generativeBassLabel.setBounds(row.removeFromLeft(140));
     generativeBassModeCombo.setBounds(row);
+    r.removeFromTop(8);
+
+    row = r.removeFromTop(72);
+    bpmSliderLabel.setBounds(row.removeFromLeft(140));
+    bpmSlider.setBounds(row);
+    r.removeFromTop(8);
+
+    row = r.removeFromTop(52);
+    songFormLabel.setBounds(row.removeFromLeft(140));
+    songFormCombo.setBounds(row);
 
     const int userBottom = r.getY();
     userPolicyArea = juce::Rectangle<int>(12, userTop, getWidth() - 24, juce::jmax(1, userBottom - userTop));
 
     r.removeFromTop(16);
 
+    sectionLabel.setBounds(r.removeFromTop(28));
+    r.removeFromTop(4);
     bpmLabel.setBounds(r.removeFromTop(24));
     stateLabel.setBounds(r.removeFromTop(24));
     patternLabel.setBounds(r.removeFromTop(24));

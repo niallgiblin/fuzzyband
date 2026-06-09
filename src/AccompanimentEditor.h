@@ -143,9 +143,20 @@ private:
     juce::Label generativeBassLabel{ {}, "Generative bass" };
     juce::ComboBox generativeBassModeCombo;
 
+    juce::Label bpmSliderLabel{ {}, "Tempo (BPM)" };
+    juce::Slider bpmSlider;
+
+    juce::Label songFormLabel{ {}, "Song form" };
+    juce::ComboBox songFormCombo;
+    juce::Label sectionLabel;
+
+    juce::TextButton playButton{ "▶ PLAY" };
+
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> intensityAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> structureBlendAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> generativeBassAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> songFormAttachment;
 
     juce::Rectangle<int> userPolicyArea;
 

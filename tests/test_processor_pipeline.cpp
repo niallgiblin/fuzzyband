@@ -311,7 +311,7 @@ TEST_CASE("Processor rejection changes displayPatternIndex", "[integration][pipe
 
     REQUIRE(idxAfter != idxBefore);
     REQUIRE(idxAfter >= 1);
-    REQUIRE(idxAfter <= 6);
+    REQUIRE(idxAfter <= 10);
 
     // Rejection should be consumed (single-shot)
     const int remainingRejection = proc.patternRejectionCount.load(std::memory_order_acquire);

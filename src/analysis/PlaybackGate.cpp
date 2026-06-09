@@ -67,11 +67,24 @@ GateDecision PlaybackGate::update(StructureState st,
             || (beatConfidence >= kPlaybackConfidenceStart)
             || activeFallbackReady;
 
+        // When onset tempo is manually set (D005/D006), open gate immediately — no beat snap needed.
+        if (isOnsetTempoLocked)
+        {
+            const bool wasClosed = !gateOpen && !prevGateOpen;
+            gateOpen = allowPlayback;
+            pendingBeatSnap = false;
+            if (allowPlayback && wasClosed)
+            {
+                gd.snapBeatNow = true;
+            }
+        }
         // Rising edge of allowPlayback → arm beat-snap.
-        if (allowPlayback && !prevGateOpen && !pendingBeatSnap && !gateOpen)
+        else if (allowPlayback && !prevGateOpen && !pendingBeatSnap && !gateOpen)
+        {
             pendingBeatSnap = true;
+        }
 
-        if (pendingBeatSnap)
+        if (!isOnsetTempoLocked && pendingBeatSnap)
         {
             pendingBeatSnapSamples += numSamples;
             const bool timedOut    = (pendingBeatSnapSamples > static_cast<int64_t>(kBeatSnapTimeoutSec * sampleRate));
@@ -85,7 +98,7 @@ GateDecision PlaybackGate::update(StructureState st,
                 pendingBeatSnapSamples = 0;
             }
         }
-        else
+        else if (!isOnsetTempoLocked)
         {
             gateOpen = allowPlayback;
         }

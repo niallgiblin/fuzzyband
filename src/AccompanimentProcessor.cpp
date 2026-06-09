@@ -15,29 +15,6 @@
 namespace
 {
 
-float foldTrackerAliasTowardOnset(float trackerBpm, float onsetBpm) noexcept
-{
-    float reconciled = juce::jlimit(40.0f, 300.0f, trackerBpm);
-    const float anchor = juce::jlimit(40.0f, 300.0f, onsetBpm);
-
-    if (anchor <= 0.0f)
-        return reconciled;
-
-    while (reconciled / anchor > 1.55f && reconciled * 0.5f >= 40.0f)
-        reconciled *= 0.5f;
-
-    while (reconciled / anchor < 0.65f && reconciled * 2.0f <= 300.0f)
-        reconciled *= 2.0f;
-
-    return reconciled;
-}
-
-void maBeatFluxSink(void* user, float flux, int64_t totalSamples) noexcept
-{
-    if (user != nullptr)
-        static_cast<BeatTracker*>(user)->pushFluxSample(flux, totalSamples);
-}
-
 std::unique_ptr<IInference> makeInference()
 {
 #if defined(MA_ENABLE_ONNX)
@@ -128,6 +105,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::crea
         bassModeChoices,
         0));
 
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{ "bpm", 1 },
+        "Tempo (BPM)",
+        juce::NormalisableRange<float>{ 40.0f, 300.0f, 1.0f },
+        120.0f));
+
+    juce::StringArray songFormChoices;
+    for (const auto& preset : StructureSequencer::getPresets())
+        songFormChoices.add(preset.name);
+    layout.add(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID{ "songForm", 1 },
+        "Song form",
+        songFormChoices,
+        0));
+
     return layout;
 }
 
@@ -167,8 +159,6 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
 
     const double sr = (sampleRate > 0.0) ? sampleRate : 44100.0;
     cachedSampleRate.store(sr, std::memory_order_release);
-    onsetDetector.prepare(sr, samplesPerBlock);
-    onsetDetector.setFluxSink(&beatTracker, maBeatFluxSink);
     beatTracker.prepare(sr, samplesPerBlock);
     energyAnalyser.prepare(sr, samplesPerBlock);
     structureTagger.prepare(sr);
@@ -183,7 +173,6 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     lastStructureCommitSample = -1;
     lastCheckBarNum = -1;
     playbackGate.reset();
-    tempoStabiliser.reset();
     prevBlockRms = 0.0f;
 
     patternPlayer.prepare(sr, samplesPerBlock);
@@ -371,9 +360,26 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         const int barMod8 = (samplesPerBarDiv > 0) ? static_cast<int>((latest.sampleTimestamp / samplesPerBarDiv) % 8) : 0;
         const int diversifiedIdx = PatternRules::diversifyPattern(idx, latest, barMod8);
 
+        // Section-driven pattern selection (D006): override with sequencer section pool
+        int sectionDrumIdx = diversifiedIdx;
+        const int sectionIdx = currentSectionIndex_.load(std::memory_order_acquire);
+        const int barsElapsed = currentSectionBarsElapsed_.load(std::memory_order_acquire);
+        const int totalBars = currentSectionTotalBars_.load(std::memory_order_acquire);
+        const int globalBar = globalBarCount_.load(std::memory_order_acquire);
+        const auto* sectionName = structureSequencer.getCurrentSectionName();
+        auto pool = PatternRules::sectionPatternPool(sectionName);
+        if (pool.count > 0)
+        {
+            const bool isLast = (barsElapsed == totalBars - 1);
+            if (isLast)
+                sectionDrumIdx = PatternRules::selectFillPattern(0);
+            else
+                sectionDrumIdx = pool.indices[globalBar % pool.count];
+        }
+
         if (drumHoldExpired || excludeParam >= 0 || transitionEvent || autoChangeReady)
         {
-            commit.patternIndex = diversifiedIdx;
+            commit.patternIndex = sectionDrumIdx;
             commit.fillKind = chooseTransitionFillKind(lastCommittedStructureState, patternFeatures.state, diversifiedIdx);
             hasGrooveCommit = true;
             acceptedDrumPattern = true;
@@ -519,6 +525,14 @@ void AccompanimentProcessor::resumeBackgroundInferenceForTests()
     inferencePaused.store(false, std::memory_order_release);
 }
 
+juce::String AccompanimentProcessor::getSectionName() const noexcept
+{
+    return juce::String(structureSequencer.getCurrentSectionName())
+        + " | Bar " + juce::String(structureSequencer.getBarsElapsed() + 1)
+        + "/" + juce::String(structureSequencer.getBarsInSection())
+        + " | Pat " + juce::String(getDisplayPatternIndex());
+}
+
 uint64_t AccompanimentProcessor::getOnnxErrorCount() const noexcept
 {
     uint64_t total = 0;
@@ -560,7 +574,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     float* outL = buffer.getWritePointer(0);
     float* outR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : outL;
 
-    onsetDetector.process(in, numSamples);
     energyAnalyser.process(in, numSamples);
 
     const float rms = energyAnalyser.getRmsEnergy();
@@ -578,21 +591,40 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const bool digitalSilence = (rms < 1.0e-6f);
     const bool silencePolicy = (st == StructureState::SILENT) || digitalSilence;
 
-    const bool beatTrackerLocked = beatTracker.isLocked();
-    const float onsetBpm = onsetDetector.getCurrentBpm();
-    const float tempoCandidateBpm = beatTrackerLocked
-        ? foldTrackerAliasTowardOnset(beatTracker.getBpm(), onsetBpm)
-        : onsetBpm;
     const double sr = cachedSampleRate.load(std::memory_order_relaxed);
-    const float stablePlaybackBpm = tempoStabiliser.update(tempoCandidateBpm, playbackGate.isGateOpen(),
-                                                            numSamples, sr);
-    const float bpmForPlayer = stablePlaybackBpm;
+    float bpmForPlayer = 120.0f;
+    if (auto* rawBpm = apvts.getRawParameterValue("bpm"))
+        bpmForPlayer = rawBpm->load();
+
+    // Advance song structure sequencer on bar boundaries (only when Play is active)
+    if (playActive.load(std::memory_order_acquire))
+    {
+        structureSequencer.advance(numSamples, bpmForPlayer, sr);
+        currentSectionIndex_.store(structureSequencer.getCurrentSectionIndex(), std::memory_order_release);
+        currentSectionBarsElapsed_.store(structureSequencer.getBarsElapsed(), std::memory_order_release);
+        currentSectionTotalBars_.store(structureSequencer.getBarsInSection(), std::memory_order_release);
+        globalBarCount_.store(structureSequencer.getGlobalBarCount(), std::memory_order_release);
+    }
+
+    // Check for song form change
+    {
+        static int lastSongFormIdx = -1;
+        if (auto* rawForm = apvts.getRawParameterValue("songForm"))
+        {
+            const int idx = static_cast<int>(std::round(rawForm->load()));
+            if (idx != lastSongFormIdx)
+            {
+                structureSequencer.loadPreset(idx);
+                lastSongFormIdx = idx;
+            }
+        }
+    }
 
     const GateDecision gd = playbackGate.update(
         st,
         beatTracker.getBeatPhase01(),
         beatTracker.isLocked(),
-        onsetDetector.isTempoLocked(),
+        true,  // always tempo-locked — user sets BPM manually (D005)
         beatTracker.getConfidence(),
         numSamples,
         sr);
@@ -601,12 +633,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         patternPlayer.armTransitionCrash();
     if (gd.resetTrackers)
     {
-        const float savedBpm = tempoStabiliser.getStableBpm();
-        onsetDetector.resetTempoLock();
         beatTracker.reset();
-        tempoStabiliser.reset();
-        tempoStabiliser.warmStart(savedBpm);
-        onsetDetector.setSeedBpm(savedBpm);
+        playbackGate.reset();
         resetDrumHoldRequested.store(true, std::memory_order_release);
     }
     if (gd.snapBeatNow)
@@ -645,18 +673,88 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     patternPlayer.setBpm(bpmForPlayer);
     patternPlayer.setPatternIndex(patternIdx);
 
+    const bool playOn = playActive.load(std::memory_order_acquire);
+
+    // When Play is active, always override with section-based pattern (D006)
+    int effectivePatternIdx = patternIdx;
+    if (playOn)
+    {
+        const auto* secName = structureSequencer.getCurrentSectionName();
+        auto pool = PatternRules::sectionPatternPool(secName);
+        if (pool.count > 0)
+        {
+            const int bar = structureSequencer.getGlobalBarCount();
+            const bool isLast = structureSequencer.isLastBar();
+            effectivePatternIdx = isLast
+                ? PatternRules::selectFillPattern(0)
+                : pool.indices[bar % pool.count];
+            patternPlayer.setPatternIndex(effectivePatternIdx);
+        }
+    }
+
     int previewRem = debugPreviewSamplesRemaining.load(std::memory_order_acquire);
     const bool previewAudible = previewRem > 0;
     if (previewAudible)
         debugPreviewSamplesRemaining.store(juce::jmax(0, previewRem - numSamples), std::memory_order_release);
 
-    const bool trulySilent = !gd.gateOpen;
+    const bool trulySilent = !playOn || digitalSilence;
     patternPlayer.setStructureSilent(trulySilent && !previewAudible);
+
+    // Snap to bar start when Play just toggled on (so first commit activates immediately)
+    {
+        static bool wasOff = true;
+        if (playOn && wasOff)
+        {
+            patternPlayer.snapBpm(bpmForPlayer);
+            patternPlayer.snapToBarStart();
+        }
+        wasOff = !playOn;
+    }
 
     PatternPlayer::GrooveCommit latestGrooveCommit{};
     bool gotGrooveCommit = false;
     while (grooveCommitQueue.try_dequeue(latestGrooveCommit))
         gotGrooveCommit = true;
+
+    // Direct pattern commit when Play is active (bypasses inference drain if needed)
+    if (playOn && !gotGrooveCommit)
+    {
+        latestGrooveCommit.patternIndex = effectivePatternIdx;
+        latestGrooveCommit.hasBassFrame = false;
+        gotGrooveCommit = true;
+    }
+
+    // ── Rule-based bass (D006): produce bass commit from guitar pitch ──
+    {
+        static float lastBassPitch = 40.0f;
+        if (rawConf > 0.15f && !digitalSilence)
+            lastBassPitch = rawMidi;
+
+        auto bassCommit = RuleBasedBass::generate(
+            lastBassPitch,
+            structureSequencer.getCurrentSectionName(),
+            structureSequencer.isFirstBar(),
+            bpmForPlayer);
+
+        // Merge with any existing GrooveCommit (keep drum data from inference)
+        if (gotGrooveCommit)
+        {
+            bassCommit.patternIndex = latestGrooveCommit.patternIndex;
+            bassCommit.fillKind = latestGrooveCommit.fillKind;
+        }
+        else
+        {
+            bassCommit.patternIndex = effectivePatternIdx;
+        }
+        latestGrooveCommit = bassCommit;
+        gotGrooveCommit = true;
+    }
+
+    // Force generative bass active when Play is on — bypass ONNX bass gating
+    if (playOn)
+    {
+        useGenerativeBass.store(true, std::memory_order_release);
+    }
 
     int generativeMode = 0;
     if (auto* rawBassMode = apvts.getRawParameterValue("generativeBassMode"))
@@ -673,6 +771,12 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     {
         patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
         patternPlayer.clearPendingGrooveCommit();
+    }
+    else
+    {
+        // Keep generative bass active when Play is on
+        if (playOn)
+            patternPlayer.setGenerativeBassActive(true, 40, 1.0f);
     }
 
     if (gotGrooveCommit)
@@ -761,7 +865,6 @@ void AccompanimentProcessor::processBlockBypassed(
         midi.addEvent(juce::MidiMessage::allNotesOff(ch), 0);
     patternPlayer.reset();
     beatTracker.reset();
-    tempoStabiliser.reset();
     playbackGate.reset();
 
     const int n = buffer.getNumSamples();
