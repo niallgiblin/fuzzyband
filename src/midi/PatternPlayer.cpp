@@ -23,16 +23,16 @@ void PatternPlayer::reset()
     wasSilent = false;
     bassSemitoneOffset = 0;
     generativeBassActive = false;
-    generativeBassRootMidi = 40;
+    generativeBassRootMidi = 36;  // C2 (drop C)
     generativeBassDurationBeats = 1.0f;
     genBassHasSteps = false;
     for (int i = 0; i < 16; ++i) { genBassPitchOffset[i] = 0.0f; genBassVelocity[i] = 0.0f; }
-    genBassStepRootMidi = 40.0f;
+    genBassStepRootMidi = 36.0f;  // C2 (drop C)
     genBassAbsNoteOffSample = -1;
     genStepsDeferCount = 0;
-    genBassLastMidiNote = 40;
+    genBassLastMidiNote = 36;  // C2 (drop C)
     libBassAbsNoteOffSample = -1;
-    libBassLastMidiNote = 40;
+    libBassLastMidiNote = 36;  // C2 (drop C)
     fireTransitionCrash = false;
 }
 
@@ -59,7 +59,7 @@ void PatternPlayer::setGenerativeBassSteps(const float pitchOffset[16],
         genBassPitchOffset[i] = juce::jlimit(-12.0f, 12.0f, pitchOffset[i]);
         genBassVelocity[i]   = juce::jlimit(0.0f, 127.0f, velocity[i]);
     }
-    genBassStepRootMidi = juce::jlimit(28.0f, 55.0f, rootMidi);
+    genBassStepRootMidi = juce::jlimit(24.0f, 55.0f, rootMidi);
     genBassHasSteps = true;
     generativeBassActive = true; // activate the generative path
     genBassAbsNoteOffSample = -1; // mutual exclusion with piano-roll steps defers on separate store

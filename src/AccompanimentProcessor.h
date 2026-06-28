@@ -9,20 +9,15 @@
 #include "analysis/EnergyAnalyser.h"
 #include "analysis/StructureTagger.h"
 #include "analysis/StructureSequencer.h"
-#include "analysis/PitchEstimator.h"
-#include "analysis/BeatTracker.h"
+#include "analysis/AudioRingBuffer.h"
+#include "analysis/MelSpectrogramExtractor.h"
 #include "analysis/PlaybackGate.h"
-#include "analysis/StablePitchTracker.h"
 #include "analysis/FeatureVector.h"
-#include "capture/FeatureCapture.h"
 #include "inference/IInference.h"
-#include "inference/IStructureInference.h"
-#include "inference/OnnxBassInference.h"
 #include "midi/MidiPatternLibrary.h"
 #include "midi/PatternPlayer.h"
 #include "midi/RuleBasedBass.h"
 #include "readerwriterqueue.h"
-#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -75,18 +70,12 @@ public:
     float getDisplayRms() const noexcept { return displayRms.load(std::memory_order_relaxed); }
     float getDisplayCentroid() const noexcept { return displayCentroid.load(std::memory_order_relaxed); }
     float getDisplayHfFlux() const noexcept { return displayHfFlux.load(std::memory_order_relaxed); }
-    float getDisplayBeatConfidence() const noexcept { return displayBeatConfidence.load(std::memory_order_relaxed); }
 
     void bumpDebugPattern();
 
     /** @brief Human-readable name of the active inference backend (for UI label per D-26-09). */
     const std::string& getActiveInferenceName() const noexcept { return activeInferenceName; }
     uint64_t getOnnxErrorCount() const noexcept;
-
-    void setFeatureCaptureEnabled(bool enabled);
-    bool isFeatureCaptureEnabled() const noexcept { return featureCapture.isCapturing(); }
-    std::string getFeatureCapturePath() const { return featureCapture.getCapturePath(); }
-    uint64_t getFeatureCaptureDroppedRows() const noexcept { return featureCapture.getDroppedRows(); }
 
     // Phase 23 rejection signal: written by message thread (Phase 24 button), read/decremented by inference thread.
     std::atomic<int> patternRejectionCount{ 0 };
@@ -111,16 +100,12 @@ private:
     EnergyAnalyser energyAnalyser;
     StructureTagger structureTagger;
     StructureSequencer structureSequencer;
-    PitchEstimator pitchEstimator;
-    BeatTracker beatTracker;
-    StablePitchTracker stablePitchTracker;
+    AudioRingBuffer audioRingBuffer{ 22050 };
+    MelSpectrogramExtractor melExtractor;
     MidiPatternLibrary patternLibrary;
     PatternPlayer patternPlayer;
-    FeatureCapture featureCapture;
 
     std::unique_ptr<IInference> inference;
-    std::unique_ptr<IStructureInference> structureInference;
-    std::unique_ptr<OnnxBassInference> bassInference;
 
     std::string activeInferenceName = "None";
 
@@ -134,37 +119,19 @@ private:
     std::atomic<float> displayBpm{ 120.0f };
     std::atomic<int> displayStateIndex{ 0 };
     std::atomic<int> displayPatternIndex{ 0 };
-
     std::atomic<float> displayRms{ 0.0f };
     std::atomic<float> displayCentroid{ 0.0f };
     std::atomic<float> displayHfFlux{ 0.0f };
-    std::atomic<float> displayBeatConfidence{ 0.0f };
-
-    // Section state for inference thread (written by audio thread)
-    std::atomic<int> currentSectionIndex_{ 0 };
-    std::atomic<int> currentSectionBarsElapsed_{ 0 };
-    std::atomic<int> currentSectionTotalBars_{ 8 };
-    std::atomic<int> globalBarCount_{ 0 };
 
     std::atomic<bool> inferenceRunning{ false };
-    /** Starts true so inference does not run until prepareToPlay() completes. */
-    std::atomic<bool> inferencePaused{ true };
+    std::atomic<bool> inferencePaused{ false };
     std::thread inferenceThread;
     std::mutex inferenceDrainMutex;
 
     int64_t hostSampleTime = 0;
-    int64_t lastFeatureSampleTs = -1;
 
-    // lastBassUpdateSample: inference-thread hold guard only — not pitch stability (stays here per ARCH-02)
-    int64_t lastBassUpdateSample = -1;   // -1 = never committed
-    int64_t lastDrumPatternChangeSample = -1; // -1 = never committed; inference thread
+    int64_t lastDrumPatternChangeSample = -1;
     StructureState lastCommittedStructureState = StructureState::SILENT;
-
-    // S02: bar-quantized structure state hold guard (inference thread)
-    StructureState pendingStructureState = StructureState::SILENT;
-    StructureState committedStructureState = StructureState::SILENT;
-    int64_t lastStructureCommitSample = -1;
-    int64_t lastCheckBarNum = -1;
 
     PlaybackGate playbackGate;
 

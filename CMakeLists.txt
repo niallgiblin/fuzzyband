@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.7.8)
+project(MetalAccompaniment VERSION 0.8.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -80,21 +80,19 @@ endif()
 # BinaryData — bundled assets (ONNX model, future resources)
 # ─────────────────────────────────────────────────────────────────
 
-set(BINARY_DATA_SOURCES "")
+set(BINARY_DATA_SOURCES
+    "${CMAKE_SOURCE_DIR}/assets/forest.png"
+)
 
 if(MA_ENABLE_ONNX)
     list(APPEND BINARY_DATA_SOURCES
         "${CMAKE_SOURCE_DIR}/assets/accompaniment_model.onnx"
-        "${CMAKE_SOURCE_DIR}/assets/structure_model.onnx"
-        "${CMAKE_SOURCE_DIR}/assets/bass_model.onnx"
     )
 endif()
 
-if(BINARY_DATA_SOURCES)
-    juce_add_binary_data(MetalAccompanimentData
-        SOURCES ${BINARY_DATA_SOURCES}
-    )
-endif()
+juce_add_binary_data(MetalAccompanimentData
+    SOURCES ${BINARY_DATA_SOURCES}
+)
 
 # ─────────────────────────────────────────────────────────────────
 # Plugin target
@@ -136,29 +134,22 @@ target_sources(MetalAccompaniment PRIVATE
     # Plugin entry points
     src/AccompanimentProcessor.cpp
     src/AccompanimentEditor.cpp
-    src/capture/FeatureCapture.cpp
 
     # Analysis
-    src/analysis/BeatTracker.cpp
     src/analysis/EnergyAnalyser.cpp
     src/analysis/StructureTagger.cpp
-    src/analysis/StructureHoldSmoother.cpp
     src/analysis/StructureSequencer.cpp
-    src/analysis/PitchEstimator.cpp
-    src/analysis/StablePitchTracker.cpp
+    src/analysis/AudioRingBuffer.cpp
+    src/analysis/MelSpectrogramExtractor.cpp
     src/analysis/PlaybackGate.cpp
 
     # Inference
     src/inference/RuleBasedInference.cpp
-    src/inference/OnnxInference.cpp        # stub in Phase 1
-    src/inference/RuleStructureInference.cpp
-    src/inference/OnnxStructureInference.cpp
-    src/inference/OnnxBassInference.cpp
+    src/inference/OnnxInference.cpp
 
     # MIDI
     src/midi/MidiPatternLibrary.cpp
     src/midi/PatternPlayer.cpp
-    src/midi/BassMidiValidator.cpp
     src/midi/RuleBasedBass.cpp
 )
 
@@ -253,45 +244,29 @@ endif()
 if(MA_BUILD_TESTS)
     # ── Unit tests ─────────────────────────────────────────────────────────────
     add_executable(MetalAccompanimentTests
-        # Existing tests
+        # Unit tests
         tests/test_structure_tagger.cpp
         tests/test_pattern_player.cpp
-        tests/test_pitch_estimator.cpp
         tests/test_rule_based_inference.cpp
-        tests/test_structure_hold_smoother.cpp
-        tests/test_structure_rule_agreement.cpp
-        tests/test_bass_generative.cpp
-
-        # New unit tests
         tests/test_energy_analyser.cpp
         tests/test_structure_tagger_extended.cpp
-        tests/test_structure_hold_smoother_complete.cpp
         tests/test_sub_bass_energy.cpp
-        tests/test_bass_validator_boundaries.cpp
         tests/test_pattern_player_generative_bass.cpp
-        tests/test_beat_tracker.cpp
         tests/test_midi_pattern_library.cpp
         tests/test_pattern_rules.cpp
         tests/test_onnx_inference.cpp
         tests/test_playback_gate.cpp
-        tests/test_stable_pitch_tracker.cpp
-        tests/test_feature_capture.cpp
 
         # Plugin sources compiled into the test executable
-        src/capture/FeatureCapture.cpp
-        src/analysis/BeatTracker.cpp
         src/analysis/EnergyAnalyser.cpp
         src/analysis/StructureTagger.cpp
-        src/analysis/StructureHoldSmoother.cpp
         src/analysis/StructureSequencer.cpp
-        src/analysis/PitchEstimator.cpp
-        src/analysis/StablePitchTracker.cpp
+        src/analysis/AudioRingBuffer.cpp
+        src/analysis/MelSpectrogramExtractor.cpp
         src/analysis/PlaybackGate.cpp
         src/inference/RuleBasedInference.cpp
-        src/inference/RuleStructureInference.cpp
         src/midi/MidiPatternLibrary.cpp
         src/midi/PatternPlayer.cpp
-        src/midi/BassMidiValidator.cpp
         src/midi/RuleBasedBass.cpp
     )
 
@@ -344,9 +319,7 @@ if(MA_BUILD_TESTS)
     set(MA_JUCE_MODULES_DIR "${CMAKE_BINARY_DIR}/_deps/juce-src/modules")
 
     add_executable(MetalAccompanimentIntegrationTests
-        # Existing shadow integration test
-        tests/test_structure_shadow_integration.cpp
-        # New integration test (full processor pipeline)
+        # Integration test (full processor pipeline)
         tests/test_processor_pipeline.cpp
         # E2E tests
         tests/test_e2e_silent_section.cpp
@@ -390,14 +363,6 @@ if(MA_BUILD_TESTS)
     catch_discover_tests(MetalAccompanimentTests
         PROPERTIES LABELS "unit"
     )
-
-    # Integration: existing shadow fixture
-    add_test(
-        NAME integration_structure_shadow_fixture
-        COMMAND MetalAccompanimentIntegrationTests "[structure][shadow]"
-        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-    )
-    set_tests_properties(integration_structure_shadow_fixture PROPERTIES LABELS "integration")
 
     # Integration: processor pipeline tests
     add_test(

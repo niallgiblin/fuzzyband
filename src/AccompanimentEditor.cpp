@@ -1,21 +1,15 @@
 #include "AccompanimentEditor.h"
 #include "AccompanimentProcessor.h"
 #include "analysis/StructureTagger.h"
+#include <BinaryData.h>
 
 static const char* stateName(int idx)
 {
     switch (static_cast<StructureState>(idx))
     {
-        case StructureState::SILENT:
-            return "SILENT";
-        case StructureState::AMBIENT:
-            return "AMBIENT";
-        case StructureState::SOFT:
-            return "SOFT";
-        case StructureState::LOUD:
-            return "LOUD";
-        case StructureState::BREAKDOWN:
-            return "BREAKDOWN";
+        case StructureState::SILENT: return "SILENT";
+        case StructureState::SOFT:   return "SOFT";
+        case StructureState::LOUD:   return "LOUD";
     }
     return "?";
 }
@@ -26,7 +20,10 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
 {
     setLookAndFeel(&lookAndFeel);
 
-    setSize(520, 640);
+    backgroundImage = juce::ImageCache::getFromMemory(
+        BinaryData::forest_png, BinaryData::forest_pngSize);
+
+    setSize(520, 780);
 
     titleLabel.setText("fuzzyband", juce::dontSendNotification);
     titleLabel.setJustificationType(juce::Justification::centredLeft);
@@ -47,7 +44,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     userPolicyHeading.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(userPolicyHeading);
 
-    for (auto* l : { &intensityLabel, &structureBlendLabel, &generativeBassLabel })
+    for (auto* l : { &intensityLabel })
     {
         l->setJustificationType(juce::Justification::centredLeft);
         l->setFont(juce::FontOptions(14.0f, juce::Font::bold));
@@ -59,19 +56,6 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     intensitySlider.setRange(0.0, 1.0, 0.001);
     addAndMakeVisible(intensityLabel);
     addAndMakeVisible(intensitySlider);
-
-    structureBlendSlider.setSliderStyle(juce::Slider::LinearHorizontal);
-    structureBlendSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 18);
-    structureBlendSlider.setRange(0.0, 1.0, 0.001);
-    addAndMakeVisible(structureBlendLabel);
-    addAndMakeVisible(structureBlendSlider);
-
-    generativeBassModeCombo.addItem("Auto", 1);
-    generativeBassModeCombo.addItem("On",   2);
-    generativeBassModeCombo.addItem("Off",  3);
-    generativeBassModeCombo.setTooltip("Auto: score-based. On: force when valid. Off: library bass only.");
-    addAndMakeVisible(generativeBassLabel);
-    addAndMakeVisible(generativeBassModeCombo);
 
     bpmSliderLabel.setJustificationType(juce::Justification::centredLeft);
     bpmSliderLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
@@ -110,20 +94,21 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     auto& apvts = audioProcessorRef.getApvts();
     intensityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "intensity", intensitySlider);
-    structureBlendAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        apvts, "structureBlend", structureBlendSlider);
-    generativeBassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
-        apvts, "generativeBassMode", generativeBassModeCombo);
     bpmAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "bpm", bpmSlider);
     songFormAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         apvts, "songForm", songFormCombo);
+    loopAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        apvts, "loop", loopToggle);
+
+    loopToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xff6a9a50));
+    addAndMakeVisible(loopToggle);
 
     for (auto* l : { &bpmLabel, &stateLabel, &patternLabel, &rmsLabel, &centroidLabel, &hfFluxLabel })
     {
         l->setJustificationType(juce::Justification::centredLeft);
         l->setFont(juce::FontOptions(11.0f));
-        l->setColour(juce::Label::textColourId, juce::Colour(0xff8aaa80));
+        l->setColour(juce::Label::textColourId, juce::Colour(0xffaacca0));
     }
 
     addAndMakeVisible(bpmLabel);
@@ -137,23 +122,6 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     inferenceLabel.setFont(juce::FontOptions(14.0f, juce::Font::plain));
     inferenceLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible(inferenceLabel);
-
-    debugPatternButton.onClick = [this] { audioProcessorRef.bumpDebugPattern(); };
-    addAndMakeVisible(debugPatternButton);
-
-    captureFeaturesButton.setButtonText("Capture features");
-    captureFeaturesButton.setClickingTogglesState(true);
-    captureFeaturesButton.onClick = [this]
-    {
-        audioProcessorRef.setFeatureCaptureEnabled(captureFeaturesButton.getToggleState());
-    };
-    addAndMakeVisible(captureFeaturesButton);
-
-    captureStatusLabel.setJustificationType(juce::Justification::centredLeft);
-    captureStatusLabel.setFont(juce::FontOptions(11.0f));
-    captureStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xff8aaa80));
-    captureStatusLabel.setMinimumHorizontalScale(0.75f);
-    addAndMakeVisible(captureStatusLabel);
 
     helpCaptionLabel.setText(
         "MIDI outputs on drum (ch.10) and bass (ch.2) — route this track in your DAW; full steps in README.md and CONTRIBUTING.md.",
@@ -190,30 +158,37 @@ void AccompanimentEditor::timerCallback()
     if (onnxErrors > 0 || inferenceName.containsIgnoreCase("Onnx"))
         inferenceText += " | ONNX errors: " + juce::String(static_cast<juce::int64>(onnxErrors));
     inferenceLabel.setText(inferenceText, juce::dontSendNotification);
-    captureFeaturesButton.setToggleState(audioProcessorRef.isFeatureCaptureEnabled(), juce::dontSendNotification);
-    const auto path = juce::File(audioProcessorRef.getFeatureCapturePath()).getFileName();
-    const auto fileText = path.isEmpty() ? juce::String("no file") : path;
-    captureStatusLabel.setText(
-        juce::String(audioProcessorRef.isFeatureCaptureEnabled() ? "Capture: on" : "Capture: off")
-            + " | dropped: " + juce::String(static_cast<juce::int64>(audioProcessorRef.getFeatureCaptureDroppedRows()))
-            + " | " + fileText,
-        juce::dontSendNotification);
 }
 
 void AccompanimentEditor::paint(juce::Graphics& g)
 {
-    // Background
-    g.fillAll(juce::Colour(0xff111a10));
+    const auto bounds = getLocalBounds().toFloat();
 
-    // Control panel rounded rect
-    g.setColour(juce::Colour(0xff1a2a18));
+    // ── 1. Background image, scaled to fill ──────────────────────────────────
+    if (backgroundImage.isValid())
+    {
+        g.drawImage(backgroundImage,
+                    bounds,
+                    juce::RectanglePlacement::fillDestination);
+    }
+    else
+    {
+        g.fillAll(juce::Colour(0xff111a10));
+    }
+
+    // ── 2. Dark vignette overlay — keeps text readable ────────────────────────
+    g.setColour(juce::Colour(0xbb050f04));
+    g.fillAll();
+
+    // ── 3. Control panel — semi-transparent frosted-glass panel ──────────────
+    g.setColour(juce::Colour(0xb0081208));
     g.fillRoundedRectangle(userPolicyArea.toFloat(), 6.0f);
-    g.setColour(juce::Colour(0xff2a4028));
+    g.setColour(juce::Colour(0x886a9a50));
     g.drawRoundedRectangle(userPolicyArea.toFloat().reduced(0.5f), 6.0f, 1.0f);
 
-    // Separator between controls and diagnostics
+    // ── 4. Thin separator between controls and diagnostics ────────────────────
     const int sepY = userPolicyArea.getBottom() + 10;
-    g.setColour(juce::Colour(0xff2a4028));
+    g.setColour(juce::Colour(0x556a9a50));
     g.drawLine(12.0f, (float)sepY, (float)getWidth() - 12.0f, (float)sepY, 1.0f);
 }
 
@@ -236,16 +211,6 @@ void AccompanimentEditor::resized()
     intensitySlider.setBounds(row);
     r.removeFromTop(8);
 
-    row = r.removeFromTop(52);
-    structureBlendLabel.setBounds(row.removeFromLeft(140));
-    structureBlendSlider.setBounds(row);
-    r.removeFromTop(8);
-
-    row = r.removeFromTop(60);
-    generativeBassLabel.setBounds(row.removeFromLeft(140));
-    generativeBassModeCombo.setBounds(row);
-    r.removeFromTop(8);
-
     row = r.removeFromTop(72);
     bpmSliderLabel.setBounds(row.removeFromLeft(140));
     bpmSlider.setBounds(row);
@@ -254,6 +219,10 @@ void AccompanimentEditor::resized()
     row = r.removeFromTop(52);
     songFormLabel.setBounds(row.removeFromLeft(140));
     songFormCombo.setBounds(row);
+    r.removeFromTop(8);
+
+    row = r.removeFromTop(28);
+    loopToggle.setBounds(row.removeFromLeft(140));
 
     const int userBottom = r.getY();
     userPolicyArea = juce::Rectangle<int>(12, userTop, getWidth() - 24, juce::jmax(1, userBottom - userTop));
@@ -268,11 +237,6 @@ void AccompanimentEditor::resized()
     rmsLabel.setBounds(r.removeFromTop(24));
     centroidLabel.setBounds(r.removeFromTop(24));
     hfFluxLabel.setBounds(r.removeFromTop(24));
-    r.removeFromTop(8);
-    debugPatternButton.setBounds(r.removeFromTop(32));
-    r.removeFromTop(8);
-    captureFeaturesButton.setBounds(r.removeFromTop(28));
-    captureStatusLabel.setBounds(r.removeFromTop(24));
     r.removeFromTop(8);
     inferenceLabel.setBounds(r.removeFromTop(20));
     r.removeFromTop(4);

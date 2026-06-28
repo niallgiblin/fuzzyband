@@ -87,14 +87,22 @@ public:
     /** @brief Load a preset by index. */
     void loadPreset(int presetIndex);
 
+    /** @brief Whether the form has completed (non-looping mode only). */
+    bool isComplete() const noexcept { return complete; }
+
+    /** @brief Set looping mode. When false, form plays once and stops. */
+    void setLooping(bool loop) noexcept { looping = loop; reset(); }
+
 private:
     static std::vector<SongForm> buildPresets();
 
     int currentSection = 0;
     int barsElapsed = 0;
     int globalBarCount = 0;
-    double barAccumulator = 0.0;  // fractional samples accumulated toward next bar
-    double samplesPerBar = 0.0;   // cached: (60.0 / bpm) * sampleRate * 4.0
+    double barAccumulator = 0.0;
+    double samplesPerBar = 0.0;
+    bool looping = true;
+    bool complete = false;
 
     SongForm currentForm;
     static const std::vector<SongForm> presets;
