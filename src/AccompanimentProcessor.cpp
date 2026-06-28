@@ -174,7 +174,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         const StructureState effective = latest.state;
         FeatureVector patternFeatures = latest;
 
-        // D-23-04/D-23-05: Rejection signal — single-shot exclusion with hold-guard bypass
+        // ── Mel-driven inference (v0.8.0) ───────────────────────────
         const int rejectionCount = patternRejectionCount.load(std::memory_order_acquire);
         const int currentPat = latestPatternIndex.load(std::memory_order_acquire);
         int excludeParam = -1;
@@ -184,7 +184,34 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             excludeParam = currentPat;
         }
 
-        const int idx = inference->selectPattern(patternFeatures, excludeParam);
+        int idx = 0;
+        bool usedMelPath = false;
+        {
+            MelWindow latestMel{};
+            bool gotMel = false;
+            while (true)
+            {
+                MelWindow tmp{};
+                if (!melQueue.try_dequeue(tmp)) break;
+                latestMel = tmp;
+                gotMel = true;
+            }
+
+            if (gotMel)
+            {
+                if (auto* groove = dynamic_cast<MetalGrooveInference*>(inference.get()))
+                {
+                    idx = groove->selectPatternFromMel(latestMel.data.data(), excludeParam);
+                    usedMelPath = true;
+                }
+            }
+        }
+
+        if (!usedMelPath)
+        {
+            // Fallback: scalar-feature inference or rule-based
+            idx = inference->selectPattern(patternFeatures, excludeParam);
+        }
         PatternPlayer::GrooveCommit commit{};
         commit.patternIndex = currentPat;
         bool hasGrooveCommit = false;
@@ -312,6 +339,20 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // ── 1. Energy analysis ──────────────────────────────────────────────────
     energyAnalyser.process(in, numSamples);
     audioRingBuffer.write(in, numSamples);
+
+    // ── 1b. Mel spectrogram extraction (when window ready) ─────────────────
+    if (audioRingBuffer.isWindowReady())
+    {
+        if (melScratch.size() < 22050)
+            melScratch.resize(22050);
+
+        if (audioRingBuffer.readWindow(melScratch.data()) > 0)
+        {
+            MelWindow mw{};
+            if (melExtractor.process(melScratch.data(), mw.data.data()))
+                melQueue.try_enqueue(mw);
+        }
+    }
 
     const float rms = energyAnalyser.getRmsEnergy();
     const float rmsDelta = (rms - prevBlockRms) / std::max(prevBlockRms, 1.0e-6f);
