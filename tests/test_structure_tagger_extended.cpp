@@ -4,33 +4,23 @@
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 //
 // Feature values that drive each StructureState:
+//   SILENT: rms < kSilentRms(0.012)                      → rms = 0.005
+//   SOFT:   rms >= 0.012 and rms < kLoudRms(0.075)       → rms = 0.040
+//   LOUD:   rms >= 0.075                                 → rms = 0.090
 //
-//   SILENT:    rms < kSilentRms(0.012)                          → rms = 0.005
-//   AMBIENT:   rms >= 0.012 and rms < kAmbientCeil(0.025)       → rms = 0.018
-//   SOFT:      rms >= 0.025 and rms < kLoudRms(0.075)           → rms = 0.040
-//   LOUD:      rms >= 0.075 and rms < kBreakdownRms(0.12)       → rms = 0.090
-//   BREAKDOWN: rms >= 0.12                                      → rms = 0.150
-//
-// Centroid is ignored for state classification (pure RMS model).
-//
-// Timing at 44100 Hz, 512-sample blocks:
+// Timings at 44100 Hz, 512-sample blocks:
 //   blockSec = 512 / 44100 ≈ 0.011610 s
-//   SILENT exit = immediate
-//   SOFT→LOUD hold = 1.6s  → ≥ 138 blocks
-//   SOFT→SILENT hold = 6.0s  → ≥ 517 blocks
-//   LOUD→SOFT hold = 6.0s   → ≥ 517 blocks
-//   LOUD→SILENT hold = 8.0s → ≥ 689 blocks
-//   AMBIENT→SILENT hold = 8.0s → ≥ 689 blocks
-//   BREAKDOWN→LOUD hold = 8.0s → ≥ 689 blocks
-//   LOUD→BREAKDOWN hold = 0.4s → ≥ 35 blocks
+//   SILENT exit = immediate (kHoldSilentSec = 0.0)
+//   SOFT→LOUD hold = 0.4s  → ≥ 35 blocks
+//   SOFT→SILENT hold = 2.0s → ≥ 173 blocks
+//   LOUD→SOFT hold = 2.0s   → ≥ 173 blocks
+//   LOUD→SILENT hold = 3.0s → ≥ 259 blocks
 
 namespace {
 constexpr double kSr      = 44100.0;
 constexpr int    kBlock   = 512;
-constexpr float  kRmsAmbient = 0.018f;  // between kSilentRms(0.012) and kAmbientCeil(0.025)
-constexpr float  kRmsSoft    = 0.040f;  // between kAmbientCeil(0.025) and kLoudRms(0.075)
-constexpr float  kRmsLoud    = 0.090f;  // between kLoudRms(0.075) and kBreakdownRms(0.12)
-constexpr float  kRmsBreakdown = 0.150f; // ≥ kBreakdownRms(0.12)
+constexpr float  kRmsSoft    = 0.040f;
+constexpr float  kRmsLoud    = 0.090f;
 constexpr float  kRmsSilent  = 0.005f;
 } // namespace
 
@@ -41,7 +31,6 @@ TEST_CASE("StructureTagger: SILENT to SOFT is immediate (kHoldSilentSec == 0)", 
     StructureTagger t;
     t.prepare(kSr);
 
-    // One block with SOFT-like features — no hold required from SILENT
     const StructureState s = t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::SOFT);
 }
@@ -63,9 +52,9 @@ TEST_CASE("StructureTagger: SOFT to LOUD is blocked before hold, then permitted"
     t.prepare(kSr);
     t.update(kRmsSoft, 0.0f, 0.0f, kBlock);  // enter SOFT (immediate)
 
-    // 137 LOUD blocks ≈ 1.590 s < 1.6 s → must stay in SOFT
+    // 34 LOUD blocks ≈ 0.395 s < 0.4 s → must stay in SOFT
     StructureState s = StructureState::SOFT;
-    for (int i = 0; i < 137; ++i)
+    for (int i = 0; i < 34; ++i)
         s = t.update(kRmsLoud, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::SOFT);
 
@@ -80,7 +69,7 @@ TEST_CASE("StructureTagger: SOFT to SILENT is blocked during short DI phrase gap
     t.prepare(kSr);
     t.update(kRmsSoft, 0.0f, 0.0f, kBlock);  // enter SOFT
 
-    // 50 silent blocks ≈ 0.58 s < 6.0 s → must stay in SOFT
+    // 50 silent blocks ≈ 0.58 s < 2.0 s → must stay in SOFT
     StructureState s = StructureState::SOFT;
     for (int i = 0; i < 50; ++i)
         s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
@@ -89,47 +78,47 @@ TEST_CASE("StructureTagger: SOFT to SILENT is blocked during short DI phrase gap
 
 // ─── LOUD exits ──────────────────────────────────────────────────────────────
 
-TEST_CASE("StructureTagger: LOUD to SOFT after 6.0 s hold", "[structure]")
+TEST_CASE("StructureTagger: LOUD to SOFT after 2.0 s hold", "[structure]")
 {
     StructureTagger t;
     t.prepare(kSr);
 
     // Reach LOUD with minimal accumulated LOUD time.
     t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
-    for (int i = 0; i < 138; ++i)
+    for (int i = 0; i < 35; ++i)
         t.update(kRmsLoud, 0.0f, 0.0f, kBlock);
     REQUIRE(t.getCurrentState() == StructureState::LOUD);
 
-    // Feed SOFT while in LOUD — 6.0 s hold required
-    // 516 SOFT blocks ≈ 5.991 s < 6.0 s → still LOUD
+    // Feed SOFT while in LOUD — 2.0 s hold required
+    // 172 SOFT blocks ≈ 1.997 s < 2.0 s → still LOUD
     StructureState s = StructureState::LOUD;
-    for (int i = 0; i < 516; ++i)
+    for (int i = 0; i < 172; ++i)
         s = t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::LOUD);
 
-    // One more block → total ≈ 517 * 0.01161 = 6.002 s > 6.0 s → SOFT
+    // One more block → total ≈ 173 * 0.01161 = 2.009 s > 2.0 s → SOFT
     s = t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::SOFT);
 }
 
-TEST_CASE("StructureTagger: LOUD to SILENT after 8.0 s hold", "[structure]")
+TEST_CASE("StructureTagger: LOUD to SILENT after 3.0 s hold", "[structure]")
 {
     StructureTagger t;
     t.prepare(kSr);
 
     // Reach LOUD: SILENT→SOFT (1 block) then enough LOUD blocks to exceed the SOFT→LOUD hold
     t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
-    for (int i = 0; i < 138; ++i)
+    for (int i = 0; i < 35; ++i)
         t.update(kRmsLoud, 0.0f, 0.0f, kBlock);
     REQUIRE(t.getCurrentState() == StructureState::LOUD);
 
-    // 689 silent blocks ≈ 7.988 s < 8.00 s → still LOUD
+    // 258 silent blocks ≈ 2.996 s < 3.0 s → still LOUD
     StructureState s = StructureState::LOUD;
-    for (int i = 0; i < 689; ++i)
+    for (int i = 0; i < 258; ++i)
         s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::LOUD);
 
-    // 690th block → cumulative ≈ 8.012 s → SILENT
+    // 259th block → cumulative ≈ 3.008 s → SILENT
     s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::SILENT);
 }
@@ -142,171 +131,91 @@ TEST_CASE("StructureTagger: clean DI loud strum reaches LOUD quickly", "[structu
     t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
 
     StructureState s = StructureState::SOFT;
-    for (int i = 0; i < 138; ++i)
+    for (int i = 0; i < 35; ++i)
         s = t.update(kRmsLoud, 0.0f, 0.0f, kBlock, 0.12f);
 
     REQUIRE(s == StructureState::LOUD);
 }
 
-// ─── 5-state transition tests (S02) ───────────────────────────────────────────
+// ─── 3-state transition tests ───────────────────────────────────────────────
 
-TEST_CASE("StructureTagger: SILENT to AMBIENT is immediate (kHoldSilentSec == 0)", "[structure]")
+TEST_CASE("StructureTagger: Full 3-state ramp SILENT→SOFT→LOUD", "[structure]")
 {
     StructureTagger t;
     t.prepare(kSr);
 
-    const StructureState s = t.update(kRmsAmbient, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::AMBIENT);
-}
-
-TEST_CASE("StructureTagger: AMBIENT to SILENT is held for 8.0s", "[structure]")
-{
-    StructureTagger t;
-    t.prepare(kSr);
-    t.update(kRmsAmbient, 0.0f, 0.0f, kBlock);  // enter AMBIENT (immediate)
-
-    // 689 silent blocks ≈ 7.998 s < 8.0 s → still AMBIENT
-    StructureState s = StructureState::AMBIENT;
-    for (int i = 0; i < 689; ++i)
-        s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::AMBIENT);
-
-    // 690th block → cumulative ≈ 8.012 s → SILENT
-    s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::SILENT);
-}
-
-TEST_CASE("StructureTagger: AMBIENT to SOFT is held for 6.0s", "[structure]")
-{
-    StructureTagger t;
-    t.prepare(kSr);
-    t.update(kRmsAmbient, 0.0f, 0.0f, kBlock);  // enter AMBIENT
-
-    // 516 SOFT blocks ≈ 5.991 s < 6.0 s → still AMBIENT
-    StructureState s = StructureState::AMBIENT;
-    for (int i = 0; i < 516; ++i)
-        s = t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::AMBIENT);
-
-    // 517th block → cumulative ≈ 6.002 s → SOFT
-    s = t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::SOFT);
-}
-
-TEST_CASE("StructureTagger: SOFT to AMBIENT is held for 6.0s", "[structure]")
-{
-    StructureTagger t;
-    t.prepare(kSr);
-    t.update(kRmsSoft, 0.0f, 0.0f, kBlock);  // enter SOFT (immediate from SILENT)
-
-    StructureState s = StructureState::SOFT;
-    for (int i = 0; i < 516; ++i)
-        s = t.update(kRmsAmbient, 0.0f, 0.0f, kBlock);
+    // SILENT → SOFT (immediate)
+    StructureState s = t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::SOFT);
 
-    s = t.update(kRmsAmbient, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::AMBIENT);
+    // SOFT → LOUD (after 0.4s hold): 35 blocks
+    for (int i = 0; i < 35; ++i)
+        s = t.update(kRmsLoud, 0.0f, 0.0f, kBlock);
+    REQUIRE(s == StructureState::LOUD);
 }
 
-TEST_CASE("StructureTagger: BREAKDOWN entry from LOUD after 0.4s", "[structure]")
+TEST_CASE("StructureTagger: LOUD→SOFT→SILENT ramp down", "[structure]")
 {
     StructureTagger t;
     t.prepare(kSr);
 
-    // Enter LOUD first: SILENT→SOFT (immediate), then enough LOUD blocks
+    // Enter LOUD
     t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
-    for (int i = 0; i < 138; ++i)
+    for (int i = 0; i < 35; ++i)
         t.update(kRmsLoud, 0.0f, 0.0f, kBlock);
     REQUIRE(t.getCurrentState() == StructureState::LOUD);
 
-    // 34 BREAKDOWN blocks ≈ 0.395 s < 0.4 s → still LOUD
+    // LOUD → SOFT after 2.0s: 173 blocks
     StructureState s = StructureState::LOUD;
-    for (int i = 0; i < 34; ++i)
-        s = t.update(kRmsBreakdown, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::LOUD);
+    for (int i = 0; i < 173; ++i)
+        s = t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
+    REQUIRE(s == StructureState::SOFT);
 
-    // 35th block → cumulative ≈ 0.406 s → BREAKDOWN
-    s = t.update(kRmsBreakdown, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::BREAKDOWN);
+    // SOFT → SILENT after 2.0s: 173 blocks
+    for (int i = 0; i < 173; ++i)
+        s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
+    REQUIRE(s == StructureState::SILENT);
 }
 
-TEST_CASE("StructureTagger: BREAKDOWN to LOUD after 8.0s", "[structure]")
+TEST_CASE("StructureTagger: revert on desired change mid-hold", "[structure]")
 {
     StructureTagger t;
     t.prepare(kSr);
 
-    // Enter BREAKDOWN via LOUD
+    // Enter SOFT
     t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
-    for (int i = 0; i < 138; ++i)
+
+    // Start transitioning to LOUD
+    for (int i = 0; i < 20; ++i)  // 20 * 0.01161 ≈ 0.232 s < 0.4 s
         t.update(kRmsLoud, 0.0f, 0.0f, kBlock);
-    for (int i = 0; i < 35; ++i)
-        t.update(kRmsBreakdown, 0.0f, 0.0f, kBlock);
-    REQUIRE(t.getCurrentState() == StructureState::BREAKDOWN);
+    REQUIRE(t.getCurrentState() == StructureState::SOFT);
 
-    // 689 LOUD blocks ≈ 7.999 s < 8.0 s → still BREAKDOWN
-    StructureState s = StructureState::BREAKDOWN;
-    for (int i = 0; i < 689; ++i)
+    // Before hold completes, revert to SOFT — timer resets
+    StructureState s = t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
+    REQUIRE(s == StructureState::SOFT);
+
+    // Now try LOUD again — full hold required
+    for (int i = 0; i < 34; ++i)
         s = t.update(kRmsLoud, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::BREAKDOWN);
+    REQUIRE(s == StructureState::SOFT);
 
-    // 690th block → LOUD
     s = t.update(kRmsLoud, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::LOUD);
 }
 
-TEST_CASE("StructureTagger: BREAKDOWN to SILENT after 8.0s", "[structure]")
+TEST_CASE("StructureTagger: sub-bass ratio discriminates SOFT/LOUD", "[structure]")
 {
     StructureTagger t;
     t.prepare(kSr);
 
-    // Enter BREAKDOWN
-    t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
-    for (int i = 0; i < 138; ++i)
-        t.update(kRmsLoud, 0.0f, 0.0f, kBlock);
-    for (int i = 0; i < 35; ++i)
-        t.update(kRmsBreakdown, 0.0f, 0.0f, kBlock);
-    REQUIRE(t.getCurrentState() == StructureState::BREAKDOWN);
-
-    StructureState s = StructureState::BREAKDOWN;
-    for (int i = 0; i < 689; ++i)
-        s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::BREAKDOWN);
-
-    s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::SILENT);
-}
-
-TEST_CASE("StructureTagger: Full 5-state ramp SILENT→AMBIENT→SOFT→LOUD→BREAKDOWN", "[structure]")
-{
-    StructureTagger t;
-    t.prepare(kSr);
-
-    // SILENT → AMBIENT (immediate)
-    StructureState s = t.update(kRmsAmbient, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::AMBIENT);
-
-    // AMBIENT → SOFT (after 6.0s hold): 517 blocks
-    for (int i = 0; i < 517; ++i)
-        s = t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::SOFT);
-
-    // SOFT → LOUD (after 1.6s hold): 138 blocks
-    for (int i = 0; i < 138; ++i)
-        s = t.update(kRmsLoud, 0.0f, 0.0f, kBlock);
+    // RMS in the overlap zone (0.055) but high sub-bass → should bias LOUD
+    t.setSubBassRatio(0.40f);  // > kSubBassLoudFloor (0.35)
+    StructureState s = t.update(0.055f, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::LOUD);
 
-    // LOUD → BREAKDOWN (after 0.4s hold): 35 blocks
-    for (int i = 0; i < 35; ++i)
-        s = t.update(kRmsBreakdown, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::BREAKDOWN);
-}
-
-TEST_CASE("StructureTagger: SILENT to BREAKDOWN direct is immediate", "[structure]")
-{
-    // Since SILENT hold is 0.0s, direct jump to BREAKDOWN is allowed
-    StructureTagger t;
+    // Reset and try with low sub-bass → should bias SOFT
     t.prepare(kSr);
-
-    const StructureState s = t.update(kRmsBreakdown, 0.0f, 0.0f, kBlock);
-    REQUIRE(s == StructureState::BREAKDOWN);
+    t.setSubBassRatio(0.15f);  // < kSubBassSoftCeil (0.20)
+    s = t.update(0.055f, 0.0f, 0.0f, kBlock);
+    REQUIRE(s == StructureState::SOFT);
 }

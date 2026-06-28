@@ -160,7 +160,7 @@ int OnnxInference::selectPattern(const FeatureVector& f, int excludeIndex)
 
         const int64_t* out = outputs[0].GetTensorData<int64_t>();
         const int64_t raw = out[0];
-        const int clamped = static_cast<int>(std::clamp(raw, static_cast<int64_t>(0), static_cast<int64_t>(6)));
+        const int clamped = static_cast<int>(std::clamp(raw, static_cast<int64_t>(0), static_cast<int64_t>(21)));
         const int result = PatternRules::isOnnxPatternAcceptable(clamped, f)
             ? clamped
             : PatternRules::rulePatternForState(f);

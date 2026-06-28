@@ -1,10 +1,8 @@
 /**
- * E2E: Feed a synthesised 120 BPM click track through AccompanimentProcessor and
- * assert that getDisplayBpm() converges to 120 ± 5 BPM after a warmup period.
+ * E2E: Verify that BPM stays stable (from knob/DAW transport) through audio processing.
  *
- * Audio source: synthesised in memory (no external WAV file required).
- *
- * Convergence criteria from PROJECT.md: "Tempo within ±5 BPM".
+ * BPM now comes from manual BPM knob or DAW transport, not auto-detection.
+ * Test that displayBpm reflects the APVTS parameter and stays stable.
  */
 
 #include <catch2/catch_test_macros.hpp>
@@ -15,12 +13,9 @@
 
 namespace {
 
-/** @brief Process @a numSamples of audio through @a proc in 512-sample blocks.
- *  @param buf  Mono buffer (length ≥ @a numSamples); copied to both channels per block.
- */
 void feedAudio(AccompanimentProcessor& proc,
                const std::vector<float>& buf, int numSamples,
-               double sr, int block)
+               double /*sr*/, int block)
 {
     for (int start = 0; start + block <= numSamples; start += block)
     {
@@ -34,7 +29,6 @@ void feedAudio(AccompanimentProcessor& proc,
         proc.flushBackgroundInferenceForTests();
     }
 
-    // Partial tail block
     const int rem = numSamples % block;
     if (rem > 0)
     {
@@ -50,86 +44,65 @@ void feedAudio(AccompanimentProcessor& proc,
     }
 }
 
-/** @brief Generate a mono click train at @a bpm for @a durationSeconds.
- *  Returns (signal, period in samples).
- */
-std::pair<std::vector<float>, int>
-synthClickTrain(float bpm, double durationSeconds, double sr)
+std::vector<float> makeSine(int total, double freq, double sr, float amp)
 {
-    const int period = static_cast<int>(std::round(sr * 60.0 / static_cast<double>(bpm)));
-    const int total  = static_cast<int>(sr * durationSeconds);
-    std::vector<float> click(static_cast<size_t>(total), 0.0f);
-    for (int i = 0; i < total; i += period)
-        click[static_cast<size_t>(i)] = 1.0f;
-    return {click, period};
+    std::vector<float> sig(static_cast<size_t>(total));
+    for (int i = 0; i < total; ++i)
+        sig[static_cast<size_t>(i)] = amp * std::sin(2.0 * M_PI * freq * static_cast<double>(i) / sr);
+    return sig;
 }
 
 }  // namespace
 
-TEST_CASE("E2E: 120 BPM click train converges BPM estimate to within ±5 BPM", "[e2e][bpm]")
+TEST_CASE("E2E: BPM stays stable at default 120 through processing", "[e2e][bpm]")
 {
     const double sr    = 48000.0;
     const int    block = 512;
     const float  target = 120.0f;
 
-    const auto [click, period] = synthClickTrain(target, 12.0, sr);
-    (void)period;
+    auto sig = makeSine(static_cast<int>(sr * 8.0), 440.0, sr, 0.02f);
 
     AccompanimentProcessor proc;
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
 
-    feedAudio(proc, click, static_cast<int>(click.size()), sr, block);
+    feedAudio(proc, sig, static_cast<int>(sig.size()), sr, block);
 
     const float bpm = proc.getDisplayBpm();
-
-    // PROJECT.md accuracy requirement: tempo within ±5 BPM
-    REQUIRE(bpm >= target - 5.0f);
-    REQUIRE(bpm <= target + 5.0f);
+    REQUIRE(bpm == target);
 
     proc.releaseResources();
 }
 
-TEST_CASE("E2E: BPM survives silence-induced tracker reset (save/restore)", "[e2e][bpm][reset]")
+TEST_CASE("E2E: BPM survives silence — uses knob value", "[e2e][bpm][reset]")
 {
     const double sr    = 48000.0;
     const int    block = 512;
     const float  target = 120.0f;
 
-    // Establish tempo: 4 s of 120 BPM click → lock + stable BPM
-    const auto [click, period] = synthClickTrain(target, 4.0, sr);
-    (void)period;
+    auto sig = makeSine(static_cast<int>(sr * 4.0), 440.0, sr, 0.02f);
 
-    // Silence: 2.5 s (exceeds PlaybackGate phrase-breath hold of 2.0 s)
     const int silenceSamples = static_cast<int>(sr * 2.5);
     std::vector<float> silence(static_cast<size_t>(silenceSamples), 0.0f);
-
-    // Resume click: 4 s
-    const auto [click2, period2] = synthClickTrain(target, 4.0, sr);
-    (void)period2;
 
     AccompanimentProcessor proc;
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
 
-    // Phase 1 — warmup
-    feedAudio(proc, click, static_cast<int>(click.size()), sr, block);
+    // Phase 1 — playing
+    feedAudio(proc, sig, static_cast<int>(sig.size()), sr, block);
     const float bpmAfterWarmup = proc.getDisplayBpm();
-    CHECK(bpmAfterWarmup >= target - 5.0f);
-    CHECK(bpmAfterWarmup <= target + 5.0f);
+    CHECK(bpmAfterWarmup == target);
 
-    // Phase 2 — silence (triggers PlaybackGate.resetTrackers)
+    // Phase 2 — silence
     feedAudio(proc, silence, silenceSamples, sr, block);
     const float bpmAfterSilence = proc.getDisplayBpm();
-    CHECK(bpmAfterSilence >= target - 5.0f);
-    CHECK(bpmAfterSilence <= target + 5.0f);
-    INFO("bpmAfterSilence = " << bpmAfterSilence);
+    CHECK(bpmAfterSilence == target);
 
-    // Phase 3 — resume click
-    feedAudio(proc, click2, static_cast<int>(click2.size()), sr, block);
+    // Phase 3 — resume
+    feedAudio(proc, sig, static_cast<int>(sig.size()), sr, block);
     const float bpmAfterResume = proc.getDisplayBpm();
-    CHECK(bpmAfterResume >= target - 5.0f);
-    CHECK(bpmAfterResume <= target + 5.0f);
+    CHECK(bpmAfterResume == target);
 
     proc.releaseResources();
 }

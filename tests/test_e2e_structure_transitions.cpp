@@ -13,13 +13,13 @@
  *   - After sustained loud section, pattern index is consistent with LOUD.
  *   - After the final silence, display RMS drops back below the silent threshold.
  *
- * Classification uses pure RMS: below kSilentRms(0.012) → SILENT,
- * above kBreakdownRms(0.12) → BREAKDOWN, kLoudRms(0.075) → LOUD,
- * in between → AMBIENT or SOFT.
+ * Classification uses pure RMS with sub-bass discrimination:
+ * below kSilentRms(0.012) → SILENT, above kLoudRms(0.075) → LOUD,
+ * in between → SOFT.
  *
- * Note: state transitions are delayed by the scaled hold times in StructureTagger.
+ * Note: state transitions are delayed by the hold times in StructureTagger.
  * Tests sample state at the end of each section, not at the exact transition point.
- * State indices: SILENT=0, AMBIENT=1, SOFT=2, LOUD=3, BREAKDOWN=4.
+ * State indices: SILENT=0, SOFT=1, LOUD=2.
  */
 
 #include <catch2/catch_test_macros.hpp>
@@ -182,9 +182,9 @@ TEST_CASE("E2E: final silence after signal causes RMS to drop", "[e2e][transitio
 }
 
 // Amplitude thresholds calibrated against EnergyAnalyser rmsEnergy (= raw_rms * 4.0, clamped [0,1]):
-//   amp 0.010 → raw_rms ≈ 0.0071 → rmsEnergy ≈ 0.0283 → AMBIENT (between kSilentRms and kAmbientCeil)
-//   amp 0.015 → raw_rms ≈ 0.0106 → rmsEnergy ≈ 0.0424 → SOFT (between kAmbientCeil and kLoudRms)
-//   amp 0.25  → raw_rms ≈ 0.1768 → rmsEnergy ≈ 0.707  → LOUD/BREAKDOWN
+//   amp 0.010 → raw_rms ≈ 0.0071 → rmsEnergy ≈ 0.0283 → SOFT (between kSilentRms and kLoudRms)
+//   amp 0.015 → raw_rms ≈ 0.0106 → rmsEnergy ≈ 0.0424 → SOFT (between kSilentRms and kLoudRms)
+//   amp 0.25  → raw_rms ≈ 0.1768 → rmsEnergy ≈ 0.707  → LOUD
 TEST_CASE("E2E: palm-muted verse to full-chord chorus — no flip-flopping", "[e2e][transitions]")
 {
     const double sr    = 48000.0;
@@ -202,9 +202,9 @@ TEST_CASE("E2E: palm-muted verse to full-chord chorus — no flip-flopping", "[e
         feedSection(proc, verse.data(), n, block);
     }
 
-    // After sustained palm-muted playing, state should have settled to SOFT (index 2)
+    // After sustained palm-muted playing, state should have settled to SOFT (index 1)
     const int stateAfterVerse = proc.getDisplayStateIndex();
-    REQUIRE(stateAfterVerse == 2); // 2 = SOFT (after AMBIENT=1)
+    REQUIRE(stateAfterVerse == 1); // 1 = SOFT
 
     // Phase 2: Full-chord chorus (LOUD) — 15s of amp 0.04
     {
@@ -213,9 +213,9 @@ TEST_CASE("E2E: palm-muted verse to full-chord chorus — no flip-flopping", "[e
         feedSection(proc, chorus.data(), n, block);
     }
 
-    // After sustained full-chord playing, state should be stable at LOUD (index 3)
+    // After sustained full-chord playing, state should be stable at LOUD (index 2)
     const int stateAfterChorus = proc.getDisplayStateIndex();
-    REQUIRE(stateAfterChorus == 3); // 3 = LOUD
+    REQUIRE(stateAfterChorus == 2); // 2 = LOUD
 
     // Phase 3: Return to palm-muted (SOFT) — 10s of amp 0.015
     {
@@ -226,7 +226,7 @@ TEST_CASE("E2E: palm-muted verse to full-chord chorus — no flip-flopping", "[e
 
     // After return to palm-muted, state should settle back to SOFT
     const int stateAfterReturn = proc.getDisplayStateIndex();
-    REQUIRE(stateAfterReturn == 2); // 2 = SOFT
+    REQUIRE(stateAfterReturn == 1); // 1 = SOFT
 
     proc.releaseResources();
 }
@@ -249,7 +249,7 @@ TEST_CASE("E2E: rapid SOFT/LOUD alternation — hold guard prevents flip-floppin
         feedSection(proc, loud.data(), n, block);
     }
     const int initialState = proc.getDisplayStateIndex();
-    REQUIRE(initialState == 3); // LOUD
+    REQUIRE(initialState == 2); // LOUD
 
     // Rapidly alternate SOFT/LOUD in 1-bar chunks for 8 bars (~16s at 120 BPM).
     // The first bar of SOFT input may commit at the next bar boundary (≥2 bars

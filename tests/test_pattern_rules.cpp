@@ -58,25 +58,16 @@ TEST_CASE("PatternRules::adjustedBpm clamps at intensity extremes", "[pattern_ru
     REQUIRE(PatternRules::adjustedBpm(makeF(StructureState::SOFT, 140.0f, 0.5f)) == 140.0f);
 }
 
-TEST_CASE("PatternRules::isOnnxPatternAcceptable Breakdown matrix", "[pattern_rules][Breakdown]")
+TEST_CASE("PatternRules::isOnnxPatternAcceptable state compat", "[pattern_rules]")
 {
-    // BREAKDOWN, bpm=100 → Breakdown acceptable
-    REQUIRE(PatternRules::isOnnxPatternAcceptable(6, makeF(StructureState::BREAKDOWN, 100.0f)) == true);
-
-    // LOUD, bpm=100 → Breakdown acceptable
+    // LOUD → pattern 6 acceptable (now LOUD-compatible)
     REQUIRE(PatternRules::isOnnxPatternAcceptable(6, makeF(StructureState::LOUD, 100.0f)) == true);
 
-    // SOFT → Breakdown rejected (not in LOUD or BREAKDOWN)
+    // SOFT → pattern 6 rejected (not SOFT-compatible)
     REQUIRE(PatternRules::isOnnxPatternAcceptable(6, makeF(StructureState::SOFT, 100.0f)) == false);
 
-    // SILENT → Breakdown rejected
+    // SILENT → pattern 6 rejected
     REQUIRE(PatternRules::isOnnxPatternAcceptable(6, makeF(StructureState::SILENT, 100.0f)) == false);
-
-    // AMBIENT → Breakdown rejected
-    REQUIRE(PatternRules::isOnnxPatternAcceptable(6, makeF(StructureState::AMBIENT, 100.0f)) == false);
-
-    // SOFT, bpm=120 → raw bpm >= 110 threshold
-    REQUIRE(PatternRules::isOnnxPatternAcceptable(6, makeF(StructureState::SOFT, 120.0f)) == false);
 
     // Normal compat path: SOFT, pattern 2
     REQUIRE(PatternRules::isOnnxPatternAcceptable(2, makeF(StructureState::SOFT, 140.0f)) == true);
@@ -86,9 +77,6 @@ TEST_CASE("PatternRules::rulePatternForState maps states to indices", "[pattern_
 {
     // SILENT → 0
     REQUIRE(PatternRules::rulePatternForState(makeF(StructureState::SILENT, 120.0f)) == 0);
-
-    // AMBIENT → 1 (drone gets low-SOFT pattern)
-    REQUIRE(PatternRules::rulePatternForState(makeF(StructureState::AMBIENT, 80.0f)) == 1);
 
     // SOFT: bpm < 120 → 1
     REQUIRE(PatternRules::rulePatternForState(makeF(StructureState::SOFT, 100.0f)) == 1);
@@ -101,37 +89,27 @@ TEST_CASE("PatternRules::rulePatternForState maps states to indices", "[pattern_
     REQUIRE(PatternRules::rulePatternForState(makeF(StructureState::LOUD, 150.0f)) == 4);
     // LOUD: bpm >= 160 → 5
     REQUIRE(PatternRules::rulePatternForState(makeF(StructureState::LOUD, 170.0f)) == 5);
-
-    // BREAKDOWN → 6
-    REQUIRE(PatternRules::rulePatternForState(makeF(StructureState::BREAKDOWN, 60.0f)) == 6);
 }
 
 TEST_CASE("PatternRules::isPatternCompatibleWithState expanded for new indices", "[pattern_rules]")
 {
-    // AMBIENT: patterns 1, 3, 7
-    REQUIRE(PatternRules::isPatternCompatibleWithState(1, StructureState::AMBIENT) == true);
-    REQUIRE(PatternRules::isPatternCompatibleWithState(3, StructureState::AMBIENT) == true);
-    REQUIRE(PatternRules::isPatternCompatibleWithState(7, StructureState::AMBIENT) == true);
-    REQUIRE(PatternRules::isPatternCompatibleWithState(2, StructureState::AMBIENT) == false);
-    REQUIRE(PatternRules::isPatternCompatibleWithState(4, StructureState::AMBIENT) == false);
-
-    // SOFT: indices 1-3 and 7
+    // SOFT: indices 1-3, 7, 20
     REQUIRE(PatternRules::isPatternCompatibleWithState(7, StructureState::SOFT) == true);
+    REQUIRE(PatternRules::isPatternCompatibleWithState(20, StructureState::SOFT) == true);
     REQUIRE(PatternRules::isPatternCompatibleWithState(8, StructureState::SOFT) == false);
     REQUIRE(PatternRules::isPatternCompatibleWithState(9, StructureState::SOFT) == false);
     REQUIRE(PatternRules::isPatternCompatibleWithState(10, StructureState::SOFT) == false);
 
-    // BREAKDOWN: patterns 4-6, 9
-    REQUIRE(PatternRules::isPatternCompatibleWithState(4, StructureState::BREAKDOWN) == true);
-    REQUIRE(PatternRules::isPatternCompatibleWithState(5, StructureState::BREAKDOWN) == true);
-    REQUIRE(PatternRules::isPatternCompatibleWithState(6, StructureState::BREAKDOWN) == true);
-    REQUIRE(PatternRules::isPatternCompatibleWithState(9, StructureState::BREAKDOWN) == true);
-    REQUIRE(PatternRules::isPatternCompatibleWithState(7, StructureState::BREAKDOWN) == false);
-    REQUIRE(PatternRules::isPatternCompatibleWithState(8, StructureState::BREAKDOWN) == false);
-    REQUIRE(PatternRules::isPatternCompatibleWithState(10, StructureState::BREAKDOWN) == false);
+    // LOUD: patterns 4-6, 8-10, 13-15
+    REQUIRE(PatternRules::isPatternCompatibleWithState(4, StructureState::LOUD) == true);
+    REQUIRE(PatternRules::isPatternCompatibleWithState(5, StructureState::LOUD) == true);
+    REQUIRE(PatternRules::isPatternCompatibleWithState(6, StructureState::LOUD) == true);
     REQUIRE(PatternRules::isPatternCompatibleWithState(8, StructureState::LOUD) == true);
     REQUIRE(PatternRules::isPatternCompatibleWithState(9, StructureState::LOUD) == true);
     REQUIRE(PatternRules::isPatternCompatibleWithState(10, StructureState::LOUD) == true);
+    REQUIRE(PatternRules::isPatternCompatibleWithState(13, StructureState::LOUD) == true);
+    REQUIRE(PatternRules::isPatternCompatibleWithState(14, StructureState::LOUD) == true);
+    REQUIRE(PatternRules::isPatternCompatibleWithState(15, StructureState::LOUD) == true);
     REQUIRE(PatternRules::isPatternCompatibleWithState(7, StructureState::LOUD) == false);
     REQUIRE(PatternRules::isPatternCompatibleWithState(3, StructureState::LOUD) == false);
 
@@ -144,9 +122,8 @@ TEST_CASE("PatternRules::isPatternCompatibleWithState expanded for new indices",
 
 TEST_CASE("PatternRules::isOnnxPatternAcceptable expanded for indices 7-10", "[pattern_rules]")
 {
-    // Index 7 (half-time) accepted for SOFT and AMBIENT, rejected for LOUD and SILENT
+    // Index 7 (half-time) accepted for SOFT, rejected for LOUD and SILENT
     REQUIRE(PatternRules::isOnnxPatternAcceptable(7, makeF(StructureState::SOFT, 100.0f)) == true);
-    REQUIRE(PatternRules::isOnnxPatternAcceptable(7, makeF(StructureState::AMBIENT, 80.0f)) == true);
     REQUIRE(PatternRules::isOnnxPatternAcceptable(7, makeF(StructureState::LOUD, 100.0f)) == false);
     REQUIRE(PatternRules::isOnnxPatternAcceptable(7, makeF(StructureState::SILENT, 100.0f)) == false);
 
@@ -253,21 +230,24 @@ TEST_CASE("PatternRules::diversifyPattern LOUD half-time checked before sparse",
     REQUIRE(PatternRules::diversifyPattern(4, f, 2) == 9);  // sparse
 }
 
-TEST_CASE("PatternRules::diversifyPattern Breakdown routes to sparse", "[pattern_rules][diversify]")
+TEST_CASE("PatternRules::diversifyPattern pattern 6 routes to sparse", "[pattern_rules][diversify]")
 {
     FeatureVector f = makeFD(StructureState::LOUD, 100.0f, 0.02f, 400.0f);
     REQUIRE(PatternRules::diversifyPattern(6, f, 0) == 9);
     REQUIRE(PatternRules::diversifyPattern(6, f, 4) == 9);
 }
 
-TEST_CASE("PatternRules::diversifyPattern Breakdown stays on base when not sparse", "[pattern_rules][diversify]")
+TEST_CASE("PatternRules::diversifyPattern pattern 6 stays on base when not sparse", "[pattern_rules][diversify]")
 {
-    // energy not low enough or wrong bar phase
-    FeatureVector f = makeFD(StructureState::LOUD, 100.0f, 0.05f, 400.0f);
+    // energy not low enough
+    FeatureVector f = makeFD(StructureState::LOUD, 100.0f, 0.10f, 400.0f);
     REQUIRE(PatternRules::diversifyPattern(6, f, 0) == 6);
 
-    // low energy but barMod8%4 != 0
-    FeatureVector f2 = makeFD(StructureState::LOUD, 100.0f, 0.02f, 400.0f);
+    // low energy but BPM >= 140 counteracts sparse routing
+    FeatureVector f2 = makeFD(StructureState::LOUD, 145.0f, 0.02f, 400.0f);
+    // bpm >= 140 and (barMod8 % 2) == 0 → thrash on even bars
+    REQUIRE(PatternRules::diversifyPattern(6, f2, 0) == 10);
+    // bpm >= 140 and (barMod8 % 2) != 0 → stay on base on odd bars
     REQUIRE(PatternRules::diversifyPattern(6, f2, 1) == 6);
 }
 
@@ -305,15 +285,15 @@ TEST_CASE("PatternRules::diversifyPattern is deterministic", "[pattern_rules][di
         REQUIRE(PatternRules::diversifyPattern(1, f2, 1) == 7);
 }
 
-TEST_CASE("PatternRules exclusion wraps correctly with kPatternCount=11", "[pattern_rules]")
+TEST_CASE("PatternRules exclusion wraps correctly with kPatternCount=22", "[pattern_rules]")
 {
-    // When LOUD base=5, exclude=5 → scan finds 8 (blast, next LOUD-compatible at index 8)
+    // When LOUD base=5, exclude=5 → scan finds 6 (next LOUD-compatible)
     FeatureVector f = makeF(StructureState::LOUD, 170.0f);
     const int out = PatternRules::applyExclusion(5, 5, StructureState::LOUD, 5);
-    REQUIRE(out == 8);
+    REQUIRE(out == 6);
     REQUIRE(PatternRules::isPatternCompatibleWithState(out, StructureState::LOUD));
 
-    // SOFT base=3, exclude=3 → should wrap to 1 (or 7 if that's next in scan)
+    // SOFT base=3, exclude=3 → should wrap to 7 (next SOFT-compatible)
     // Scan: 4→not SOFT, 5→not SOFT, 6→not SOFT, 7→SOFT! So first hit is 7.
     const int outSoft = PatternRules::applyExclusion(3, 3, StructureState::SOFT, 3);
     REQUIRE(outSoft == 7);
@@ -342,7 +322,7 @@ TEST_CASE("PatternRules::isPatternCompatibleWithState checks boundaries", "[patt
 
 TEST_CASE("PatternRules exclusion matrix: compatible and not excluded", "[pattern_rules]")
 {
-    const StructureState states[] = { StructureState::SILENT, StructureState::AMBIENT, StructureState::SOFT, StructureState::LOUD, StructureState::BREAKDOWN };
+    const StructureState states[] = { StructureState::SILENT, StructureState::SOFT, StructureState::LOUD };
     for (auto state : states)
     {
         for (int exclude = 0; exclude <= 6; ++exclude)
@@ -357,13 +337,12 @@ TEST_CASE("PatternRules exclusion matrix: compatible and not excluded", "[patter
     }
 }
 
-TEST_CASE("PatternRules exclusion skips incompatible Breakdown on LOUD", "[pattern_rules]")
+TEST_CASE("PatternRules exclusion finds next LOUD-compatible after 5", "[pattern_rules]")
 {
     FeatureVector f = makeF(StructureState::LOUD, 170.0f);
     const int out = PatternRules::applyExclusion(5, 5, StructureState::LOUD, 5);
-    REQUIRE(out != 6);
+    REQUIRE(out == 6);  // pattern 6 is now LOUD-compatible
     REQUIRE(PatternRules::isPatternCompatibleWithState(out, StructureState::LOUD));
-    REQUIRE(out == 8);
 }
 
 TEST_CASE("PatternRules intensity shifts SOFT class at threshold", "[pattern_rules]")
