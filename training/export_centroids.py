@@ -116,8 +116,8 @@ def export_cpp_header(centroids: np.ndarray, class_map: dict, output_path: Path)
     for i in range(n_patterns):
         name = idx_to_name.get(i, f"pattern_{i}")
         vals = ", ".join(f"{v:.6f}f" for v in centroids[i])
-        lines.append(f"        // {i}: {name}")
-        lines.append(f"        {{{{{vals}}}}}},")
+        inner = f"{{{vals}}}"
+        lines.append("        {" + inner + "},")
 
     lines.extend([
         "    }};",
@@ -139,7 +139,8 @@ def export_onnx(
     """Export GrooveModelForExport to ONNX.
 
     Input:  mel [1, 1, 64, 32]
-    Output: groove_embedding [1, embedding_dim], style_logits [1, n_styles]
+    Output: groove_embedding [1, embedding_dim], style_logits [1, n_styles],
+            bottleneck [1, 128]
     """
     model.eval()
     dummy_input = torch.randn(1, 1, 64, 32, device=device)
@@ -150,13 +151,14 @@ def export_onnx(
         dummy_input,
         str(output_path),
         input_names=["mel"],
-        output_names=["groove_embedding", "style_logits"],
+        output_names=["groove_embedding", "style_logits", "bottleneck"],
         dynamic_axes={
             "mel": {0: "batch"},
             "groove_embedding": {0: "batch"},
             "style_logits": {0: "batch"},
+            "bottleneck": {0: "batch"},
         },
-        opset_version=14,
+        opset_version=18,
     )
     print(f"ONNX model exported: {output_path}")
 

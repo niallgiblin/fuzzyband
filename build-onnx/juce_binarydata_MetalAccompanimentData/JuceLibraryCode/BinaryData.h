@@ -14,17 +14,11 @@ namespace BinaryData
     extern const char*   accompaniment_model_onnx;
     const int            accompaniment_model_onnxSize = 14938;
 
-    extern const char*   structure_model_onnx;
-    const int            structure_model_onnxSize = 33587;
-
-    extern const char*   bass_model_onnx;
-    const int            bass_model_onnxSize = 7773;
-
-    extern const char*   classifier_onnx;
-    const int            classifier_onnxSize = 623211;
+    extern const char*   metal_groove_onnx;
+    const int            metal_groove_onnxSize = 32294;
 
     // Number of elements in the namedResourceList and originalFileNames arrays.
-    const int namedResourceListSize = 5;
+    const int namedResourceListSize = 3;
 
     // Points to the start of a list of resource names.
     extern const char* namedResourceList[];

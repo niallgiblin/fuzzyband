@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.8.0)
+project(MetalAccompaniment VERSION 0.8.1)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -87,6 +87,7 @@ set(BINARY_DATA_SOURCES
 if(MA_ENABLE_ONNX)
     list(APPEND BINARY_DATA_SOURCES
         "${CMAKE_SOURCE_DIR}/assets/accompaniment_model.onnx"
+        "${CMAKE_SOURCE_DIR}/assets/metal_groove.onnx"
     )
 endif()
 
@@ -146,6 +147,7 @@ target_sources(MetalAccompaniment PRIVATE
     # Inference
     src/inference/RuleBasedInference.cpp
     src/inference/OnnxInference.cpp
+    src/inference/MetalGrooveInference.cpp
 
     # MIDI
     src/midi/MidiPatternLibrary.cpp
@@ -298,6 +300,7 @@ if(MA_BUILD_TESTS)
         target_sources(MetalAccompanimentTests PRIVATE
             tests/test_onnx_latency_benchmark.cpp
             src/inference/OnnxInference.cpp
+            src/inference/MetalGrooveInference.cpp
         )
         target_compile_definitions(MetalAccompanimentTests PRIVATE MA_ENABLE_ONNX=1)
         target_include_directories(MetalAccompanimentTests PRIVATE "${ONNX_INCLUDE_DIR}" "${ONNX_INCLUDE_DIR}/onnxruntime")
