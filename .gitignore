@@ -1,5 +1,8 @@
 # Build
 build/
+build-onnx/
+build-tsan/
+build-phase10/
 cmake-build-*/
 out/
 compile_commands.json
@@ -82,6 +85,15 @@ coverage/
 .cache/
 tmp/
 training/data/lakh/
+
+# Processed ML datasets (regenerate locally; X.npy exceeds GitHub 100MB limit)
+data/processed/*.npy
+
+# DAW peak files + duplicate root-level sample wavs (canonical copies live under data/raw/)
+peaks/
+*.reapeaks
+/*.wav
+/forest.png
 
 # ── GSD baseline (auto-generated) ──
 nul

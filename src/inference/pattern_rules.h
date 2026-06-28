@@ -41,16 +41,12 @@ inline int rulePatternForState(const FeatureVector& f) noexcept
     {
         case StructureState::SILENT:
             return 0;
-        case StructureState::AMBIENT:
-            return 1;  // Use low-SOFT pattern for drone — sparse, half-time feel
         case StructureState::SOFT:
             if (bpmAdj < kSoftMidBpmThreshold)  return 1;
             if (bpmAdj < kSoftLoudBpmThreshold) return 2;
             return 3;
         case StructureState::LOUD:
             return bpmAdj < kSoftLoudBpmThreshold ? 4 : 5;
-        case StructureState::BREAKDOWN:
-            return 6;  // Dedicated breakdown pattern
     }
     return 0;
 }
@@ -63,30 +59,19 @@ inline bool isPatternCompatibleWithState(int patternIndex, StructureState state)
 {
     switch (state)
     {
-        case StructureState::SILENT:    return patternIndex == 0;
-        case StructureState::AMBIENT:   return (patternIndex == 1 || patternIndex == 3 || patternIndex == 7);
-        case StructureState::SOFT:      return (patternIndex >= 1 && patternIndex <= 3) || patternIndex == 7 || patternIndex == 20;
-        case StructureState::LOUD:      return (patternIndex >= 4 && patternIndex <= 5) || (patternIndex >= 8 && patternIndex <= 10) || patternIndex >= 13 && patternIndex <= 14;
-        case StructureState::BREAKDOWN: return (patternIndex >= 4 && patternIndex <= 6) || patternIndex == 9 || patternIndex == 15;
+        case StructureState::SILENT: return patternIndex == 0;
+        case StructureState::SOFT:   return (patternIndex >= 1 && patternIndex <= 3) || patternIndex == 7 || patternIndex == 20;
+        case StructureState::LOUD:   return (patternIndex >= 4 && patternIndex <= 5) || (patternIndex >= 8 && patternIndex <= 10) || (patternIndex >= 13 && patternIndex <= 14) || patternIndex == 6 || patternIndex == 9 || patternIndex == 15;
     }
     return false;
 }
 
-static constexpr float kBreakdownBpmThreshold = 110.0f;
-
 /**
  * @brief Whether an ONNX class prediction may be used at runtime.
- * Class 6 (Breakdown) is allowed for non-SILENT rows with raw BPM below the training oracle threshold.
- * Expansion indices 7-10 are always acceptable when state-compatible.
- * Exclusion cycling still uses isPatternCompatibleWithState (Breakdown never selected via wrap).
+ * Expansion indices 7+ are always acceptable when state-compatible.
  */
 inline bool isOnnxPatternAcceptable(int patternIndex, const FeatureVector& f) noexcept
 {
-    if (patternIndex == 6)
-        return (f.state == StructureState::LOUD || f.state == StructureState::BREAKDOWN)
-            && f.bpm < kBreakdownBpmThreshold;
-    if (patternIndex >= 7 && patternIndex <= 21)
-        return isPatternCompatibleWithState(patternIndex, f.state);
     return isPatternCompatibleWithState(patternIndex, f.state);
 }
 
@@ -103,40 +88,28 @@ inline int diversifyPattern(int base, const FeatureVector& f, int barMod8) noexc
     // New patterns map to themselves (already diversified)
     if (base >= 7) return base;
 
-    // AMBIENT patterns [1,3] — always route to half-time for drone sections
-    if (f.state == StructureState::AMBIENT)
-        return 7;  // half-time feel for drones
-
     // SOFT patterns [1,3]
     if (base >= 1 && base <= 3)
     {
-        // Widened half-time window: 6 of 8 bars for sludge feel (MEM009)
+        // Half-time window: 6 of 8 bars for sludge feel
         if (f.rmsEnergy < 0.04f && (barMod8 % 8) < 6)
             return 7; // half-time feel
         return base;
     }
 
-    // LOUD patterns [4,5]
-    if (base >= 4 && base <= 5)
+    // LOUD patterns [4,6]
+    if (base >= 4 && base <= 6)
     {
         // Sludge half-time: BPM < 85, bars 0-1 of each 4-bar group
         if (f.bpm < 85.0f && (barMod8 % 4) < 2)
             return 7; // half-time feel
         if (f.rmsEnergy < 0.06f && f.bpm < 140.0f)
-            return 9; // sparse breakdown
+            return 9; // sparse
         if (f.bpm >= 160.0f && f.spectralCentroid > 800.0f)
             return 8; // blast beat
         if (f.bpm >= 140.0f && (barMod8 % 2) == 0)
             return 10; // thrash
         return base;
-    }
-
-    // Breakdown (6)
-    if (base == 6)
-    {
-        if (f.rmsEnergy < 0.03f && (barMod8 % 4) == 0)
-            return 9; // sparse breakdown
-        return 6;
     }
 
     return base;
@@ -195,13 +168,30 @@ inline SectionPatternPool sectionPatternPool(const char* sectionName) noexcept
     if (std::strcmp(sectionName, "CHORUS") == 0)
         return P{ 3, { 4, 14, 21 } };              // Chorus Mid, Open Groove, Blast
     if (std::strcmp(sectionName, "BREAKDOWN") == 0)
-        return P{ 3, { 6, 15, 9 } };               // Breakdown, Full, Sparse
+        return P{ 3, { 6, 15, 9 } };               // Heavy, Full, Sparse
     if (std::strcmp(sectionName, "SOLO") == 0)
         return P{ 2, { 4, 14 } };                  // Chorus Mid, Open Groove
     if (std::strcmp(sectionName, "OUTRO") == 0)
         return P{ 1, { 16 } };                     // Outro Decay
 
     return P{ 0, {} };
+}
+
+/**
+ * @brief M009: Map playing style classifier output (0-4) to pattern indices.
+ */
+inline SectionPatternPool stylePatternPool(int styleIndex) noexcept
+{
+    using P = SectionPatternPool;
+    switch (styleIndex)
+    {
+        case 0: return P{ 3, { 7, 1, 9 } };   // Palm mute chugs: half-time, verse groove, sparse breakdown
+        case 1: return P{ 3, { 4, 6, 14 } };  // Open chord: heavy chorus, breakdown, open groove
+        case 2: return P{ 3, { 3, 10, 2 } };  // Single note runs: verse fast, thrash, half-time
+        case 3: return P{ 3, { 6, 9, 7 } };   // Sustain/drone: breakdown, sparse, ambient half-time
+        case 4: return P{ 1, { 0 } };          // Silence → Silent
+        default: return P{ 0, {} };
+    }
 }
 
 /**

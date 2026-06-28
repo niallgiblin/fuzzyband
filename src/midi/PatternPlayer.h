@@ -32,7 +32,7 @@ public:
         bool hasBassFrame = false;
         float bassPitchOffset[16] = {};
         float bassVelocity[16] = {};
-        float bassRootMidi = 40.0f;
+        float bassRootMidi = 36.0f;  // C2 (drop C)
         TransitionFillKind fillKind = TransitionFillKind::None;
     };
 
@@ -125,18 +125,18 @@ private:
     int bassSemitoneOffset = 0;
 
     bool generativeBassActive = false;
-    int generativeBassRootMidi = 40;
+    int generativeBassRootMidi = 36;  // C2 (drop C tuning)
     float generativeBassDurationBeats = 1.0f;
 
     /** Piano-roll bass state (Phase 23). */
     bool genBassHasSteps = false;
     float genBassPitchOffset[16] = {};
     float genBassVelocity[16] = {};
-    float genBassStepRootMidi = 40.0f;
+    float genBassStepRootMidi = 36.0f;  // C2 (drop C)
 
     /** Absolute sample index (exclusive) for single-note generative bass note-off (non–piano-roll path). */
     int64_t genBassAbsNoteOffSample = -1;
-    int genBassLastMidiNote = 40;
+    int genBassLastMidiNote = 36;  // C2 (drop C)
 
     /** Deferred note-offs from @ref emitGenerativeBassSteps (sorted by time); real-time safe fixed cap. */
     static constexpr int kMaxGenStepsDeferredOffs = 16;
@@ -152,7 +152,7 @@ private:
 
     /** Absolute sample index for library-pattern bass note-off; -1 = no held note. */
     int64_t libBassAbsNoteOffSample = -1;
-    int libBassLastMidiNote = 40;
+    int libBassLastMidiNote = 36;  // C2 (drop C)
 
     bool fireTransitionCrash = false;
 

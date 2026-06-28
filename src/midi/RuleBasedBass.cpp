@@ -9,7 +9,7 @@
 
 float RuleBasedBass::mapToBassRange(float guitarMidi) noexcept
 {
-    // Map guitar MIDI (typically 40-67, E2-G4) down one octave to bass range
+    // Map guitar MIDI down one octave to bass range (drop C: C2-G4 → C1-G3)
     float bass = guitarMidi - 12.0f;
     return std::clamp(bass, kBassMinMidi, kBassMaxMidi);
 }

@@ -5,11 +5,11 @@
 
 void StablePitchTracker::reset() noexcept
 {
-    heldPitchRootMidi         = 40.0f;
+    heldPitchRootMidi         = 36.0f;  // C2 (drop C)
     heldPitchConfidence       = 0.0f;
     pitchHoldValid            = false;
     pitchStableCounterSamples = 0;
-    lastStablePitchMidi       = 40.0f;
+    lastStablePitchMidi       = 36.0f;  // C2 (drop C)
 }
 
 int StablePitchTracker::update(float rawMidi, float rawConf, float bpm,
@@ -19,7 +19,7 @@ int StablePitchTracker::update(float rawMidi, float rawConf, float bpm,
     // ── 1. Silence branch ────────────────────────────────────────────────────
     if (isSilent)
     {
-        heldPitchRootMidi         = 40.0f;
+        heldPitchRootMidi         = 36.0f;  // C2 (drop C)
         heldPitchConfidence       = 0.0f;
         pitchHoldValid            = false;
         pitchStableCounterSamples = 0;

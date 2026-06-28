@@ -16,7 +16,7 @@ constexpr uint8_t kSplash    = 55;
 constexpr uint8_t kTomHi     = 48;
 constexpr uint8_t kTomMid    = 45;
 constexpr uint8_t kTomLo     = 41;
-constexpr uint8_t kBassRoot  = 40; // E2 placeholder
+constexpr uint8_t kBassRoot  = 36; // C2 (drop C tuning)
 
 // ── Event helpers ────────────────────────────────────────────────────────────
 

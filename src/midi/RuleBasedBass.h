@@ -23,8 +23,8 @@ public:
     /** Velocity multiplier to make bass audible (ONNX produces ~0.2-0.5 of 127). */
     static constexpr float kVelocityMultiplier = 2.5f;
 
-    /** Bass note range: E1 (28) to E3 (52). */
-    static constexpr float kBassMinMidi = 28.0f;
+    /** Bass note range: C1 (24) to E3 (52) — accommodates drop C tuning lowest root. */
+    static constexpr float kBassMinMidi = 24.0f;
     static constexpr float kBassMaxMidi = 52.0f;
 
     /**

@@ -19,7 +19,7 @@
 class StablePitchTracker
 {
 public:
-    /** @brief Reset to default (E2 = MIDI 40). Call from prepareToPlay(). */
+    /** @brief Reset to default (C2 = MIDI 36, drop C tuning). Call from prepareToPlay(). */
     void reset() noexcept;
 
     /** @brief Advance tracker state for this block.
@@ -36,11 +36,11 @@ public:
 
 private:
     static constexpr float kMinPitchConfidence = 0.35f;
-    static constexpr int   kBassRootPc         = 4;  // E = MIDI 40 % 12
+    static constexpr int   kBassRootPc         = 0;  // C = MIDI 36 % 12 (drop C)
 
-    float heldPitchRootMidi         = 40.0f;
+    float heldPitchRootMidi         = 36.0f;  // C2 (drop C)
     float heldPitchConfidence       = 0.0f;
     bool  pitchHoldValid            = false;
     int   pitchStableCounterSamples = 0;
-    float lastStablePitchMidi       = 40.0f;
+    float lastStablePitchMidi       = 36.0f;  // C2 — matches kBassRootPc=0
 };

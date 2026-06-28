@@ -1,15 +1,11 @@
 #include "AccompanimentProcessor.h"
 #include "AccompanimentEditor.h"
-#include "inference/IStructureInference.h"
 #include "inference/RuleBasedInference.h"
-#include "inference/RuleStructureInference.h"
 #include "inference/pattern_rules.h"
 #if defined(MA_ENABLE_ONNX)
 #include "inference/OnnxInference.h"
-#include "inference/OnnxStructureInference.h"
 #endif
 #include <chrono>
-#include <climits>
 #include <cmath>
 
 namespace
@@ -25,31 +21,6 @@ std::unique_ptr<IInference> makeInference()
     return std::make_unique<RuleBasedInference>();
 }
 
-std::unique_ptr<IStructureInference> makeStructureInference()
-{
-#if defined(MA_ENABLE_ONNX)
-    auto onnx = std::make_unique<OnnxStructureInference>();
-    if (onnx->tryLoadModel())
-        return onnx;
-#endif
-    return std::make_unique<RuleStructureInference>();
-}
-
-#if defined(MA_ENABLE_ONNX)
-std::unique_ptr<OnnxBassInference> makeBassInference()
-{
-    auto onnx = std::make_unique<OnnxBassInference>();
-    if (onnx->tryLoadModel())
-        return onnx;
-    return nullptr;
-}
-#else
-std::unique_ptr<OnnxBassInference> makeBassInference()
-{
-    return nullptr;
-}
-#endif
-
 PatternPlayer::TransitionFillKind chooseTransitionFillKind(StructureState from,
                                                            StructureState to,
                                                            int targetPatternIndex) noexcept
@@ -58,15 +29,9 @@ PatternPlayer::TransitionFillKind chooseTransitionFillKind(StructureState from,
         return PatternPlayer::TransitionFillKind::BreakdownOrImpact;
     if (from == StructureState::SILENT && to != StructureState::SILENT)
         return PatternPlayer::TransitionFillKind::Entry;
-    if (to == StructureState::BREAKDOWN)
-        return PatternPlayer::TransitionFillKind::BreakdownOrImpact;
     if (from == StructureState::SOFT && to == StructureState::LOUD)
         return PatternPlayer::TransitionFillKind::BuildUp;
-    if (from == StructureState::LOUD && to == StructureState::BREAKDOWN)
-        return PatternPlayer::TransitionFillKind::BuildUp;
     if (from == StructureState::LOUD && to == StructureState::SOFT)
-        return PatternPlayer::TransitionFillKind::Release;
-    if (from == StructureState::BREAKDOWN && to != StructureState::BREAKDOWN)
         return PatternPlayer::TransitionFillKind::Release;
     if (from == to && to != StructureState::SILENT)
         return PatternPlayer::TransitionFillKind::BreakdownOrImpact;
@@ -90,22 +55,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::crea
         0.5f));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{ "structureBlend", 1 },
-        "Structure: blend ML vs rules",
-        juce::NormalisableRange<float>{ 0.0f, 1.0f, 0.001f },
-        0.5f));
-
-    juce::StringArray bassModeChoices;
-    bassModeChoices.add("Auto");
-    bassModeChoices.add("On");
-    bassModeChoices.add("Off");
-    layout.add(std::make_unique<juce::AudioParameterChoice>(
-        juce::ParameterID{ "generativeBassMode", 1 },
-        "Generative bass",
-        bassModeChoices,
-        0));
-
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{ "bpm", 1 },
         "Tempo (BPM)",
         juce::NormalisableRange<float>{ 40.0f, 300.0f, 1.0f },
@@ -120,6 +69,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::crea
         songFormChoices,
         0));
 
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ "loop", 1 },
+        "Loop song form",
+        true));
+
     return layout;
 }
 
@@ -129,8 +83,6 @@ AccompanimentProcessor::AccompanimentProcessor()
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true))
     , apvts(*this, nullptr, "PARAMETERS", createParameterLayout())
     , inference(makeInference())
-    , structureInference(makeStructureInference())
-    , bassInference(makeBassInference())
 {
     activeInferenceName = inference ? inference->getName() : "None";
     patternPlayer.setPatternLibrary(&patternLibrary);
@@ -154,24 +106,14 @@ bool AccompanimentProcessor::isBusesLayoutSupported(const BusesLayout& layouts) 
 
 void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    // D-03: Pause inference so it doesn't read components mid-reprepare.
     inferencePaused.store(true, std::memory_order_release);
 
     const double sr = (sampleRate > 0.0) ? sampleRate : 44100.0;
     cachedSampleRate.store(sr, std::memory_order_release);
-    beatTracker.prepare(sr, samplesPerBlock);
     energyAnalyser.prepare(sr, samplesPerBlock);
     structureTagger.prepare(sr);
-    pitchEstimator.prepare(sr, samplesPerBlock);
-    pitchEstimator.reset();
-    stablePitchTracker.reset();
-    lastBassUpdateSample = -1;
     lastDrumPatternChangeSample = -1;
     lastCommittedStructureState = StructureState::SILENT;
-    pendingStructureState = StructureState::SILENT;
-    committedStructureState = StructureState::SILENT;
-    lastStructureCommitSample = -1;
-    lastCheckBarNum = -1;
     playbackGate.reset();
     prevBlockRms = 0.0f;
 
@@ -180,14 +122,7 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
 
     if (inference)
         inference->prepare(sr);
-    featureCapture.prepare(sr, samplesPerBlock, activeInferenceName);
 
-    lastFeatureSampleTs = -1;
-    if (structureInference)
-        structureInference->prepare(sr);
-
-    if (bassInference)
-        bassInference->prepare(sr);
     useGenerativeBass.store(false, std::memory_order_release);
     PatternPlayer::GrooveCommit staleCommit{};
     while (grooveCommitQueue.try_dequeue(staleCommit)) {}
@@ -195,7 +130,6 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     hostSampleTime = 0;
     latestPatternIndex.store(0, std::memory_order_relaxed);
 
-    // D-03: Resume — the inference thread was started in the constructor and is still running.
     inferencePaused.store(false, std::memory_order_release);
 }
 
@@ -210,8 +144,6 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
     {
         lastDrumPatternChangeSample = -1;
         lastCommittedStructureState = StructureState::SILENT;
-        pendingStructureState = StructureState::SILENT;
-        committedStructureState = StructureState::SILENT;
         displayStateIndex.store(static_cast<int>(StructureState::SILENT), std::memory_order_relaxed);
     }
 
@@ -229,95 +161,11 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
 
     if (got && inference && debugPreviewSamplesRemaining.load(std::memory_order_acquire) <= 0)
     {
-        double dtSec = 0.02;
         const double sr = cachedSampleRate.load(std::memory_order_acquire);
-        if (lastFeatureSampleTs >= 0 && latest.sampleTimestamp >= lastFeatureSampleTs && sr > 0.0)
-            dtSec = static_cast<double>(latest.sampleTimestamp - lastFeatureSampleTs) / sr;
 
-        if (structureInference)
-        {
-            structureInference->process(latest, dtSec);
-            lastFeatureSampleTs = latest.sampleTimestamp;
-        }
-
+        // Use rule-based state directly — no shadow structure blending
+        const StructureState effective = latest.state;
         FeatureVector patternFeatures = latest;
-        float structureBlend = 0.5f;
-        if (auto* rawBlend = apvts.getRawParameterValue("structureBlend"))
-            structureBlend = rawBlend->load();
-
-        const StructureState rule = latest.state;
-        StructureState effective = rule;
-        if (structureInference)
-        {
-            const auto& m = structureInference->getLastShadowMetrics();
-            // structureBlend threshold policy: > 0.5f → ML shadow for non-silent sections only;
-            // rule silence owns the playback gate (ONNX never overrides SILENT).
-            // See docs/ONNX_IO.md § structureBlend runtime policy
-            if (!m.mlValid || rule == StructureState::SILENT || m.smoothedState == StructureState::SILENT)
-                effective = rule;
-            else
-                effective = (structureBlend > 0.5f) ? m.smoothedState : rule;
-        }
-        // S02: Bar-quantized structure state hold guard.
-        // Defer state transitions to bar boundaries; require ≥2 bars between
-        // non-SILENT state changes to prevent flip-flopping in transition zones.
-        {
-            const double srStruct = cachedSampleRate.load(std::memory_order_acquire);
-            const float bpmStruct = latest.bpm > 0.0f ? latest.bpm : 120.0f;
-            const int64_t samplesPerBarStruct = static_cast<int64_t>(4.0 * 60.0 / static_cast<double>(bpmStruct) * srStruct);
-            const int64_t currentBarNum = (samplesPerBarStruct > 0)
-                ? (latest.sampleTimestamp / samplesPerBarStruct)
-                : 0;
-
-            // First-section bootstrap: commit immediately on first non-SILENT
-            // so the first partial bar doesn't show SILENT while playing.
-            if (lastStructureCommitSample < 0 && effective != StructureState::SILENT)
-            {
-                committedStructureState = effective;
-                pendingStructureState = effective;
-                lastStructureCommitSample = latest.sampleTimestamp;
-                lastCheckBarNum = currentBarNum;
-                lastCommittedStructureState = committedStructureState;
-                displayStateIndex.store(static_cast<int>(committedStructureState), std::memory_order_relaxed);
-            }
-
-            // Track desired state between bar boundaries
-            if (effective != committedStructureState)
-                pendingStructureState = effective;
-
-            // Commit at bar boundary when hold requirements are met
-            if (currentBarNum != lastCheckBarNum)
-            {
-                lastCheckBarNum = currentBarNum;
-
-                if (pendingStructureState != committedStructureState)
-                {
-                    bool canCommit = false;
-                    if (committedStructureState == StructureState::SILENT ||
-                        pendingStructureState == StructureState::SILENT)
-                    {
-                        canCommit = true; // Immediate entry/exit SILENT
-                    }
-                    else
-                    {
-                        const int64_t barsSinceStructChange = (lastStructureCommitSample >= 0 && samplesPerBarStruct > 0)
-                            ? (latest.sampleTimestamp - lastStructureCommitSample) / samplesPerBarStruct
-                            : static_cast<int64_t>(INT64_MAX);
-                        canCommit = (barsSinceStructChange >= 2); // ≥2 bar minimum hold
-                    }
-
-                    if (canCommit)
-                    {
-                        committedStructureState = pendingStructureState;
-                        lastStructureCommitSample = latest.sampleTimestamp;
-                        lastCommittedStructureState = committedStructureState;
-                        displayStateIndex.store(static_cast<int>(committedStructureState), std::memory_order_relaxed);
-                    }
-                }
-            }
-
-            patternFeatures.state = committedStructureState;
-        }
 
         // D-23-04/D-23-05: Rejection signal — single-shot exclusion with hold-guard bypass
         const int rejectionCount = patternRejectionCount.load(std::memory_order_acquire);
@@ -330,19 +178,15 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         }
 
         const int idx = inference->selectPattern(patternFeatures, excludeParam);
-        const int ruleIdx = PatternRules::rulePatternForState(patternFeatures);
-        const bool onnxAvailable = (activeInferenceName.find("ONNX") != std::string::npos);
         PatternPlayer::GrooveCommit commit{};
         commit.patternIndex = currentPat;
         bool hasGrooveCommit = false;
         bool acceptedDrumPattern = false;
-        bool acceptedBassFrame = false;
 
-        // 2-bar hold guard for drum pattern index: 8 beats * 60/bpm * sampleRate samples.
-        const double srDrum = cachedSampleRate.load(std::memory_order_acquire);
+        // 2-bar hold guard for drum pattern index
         const float bpmNowDrum = latest.bpm > 0.0f ? latest.bpm : 120.0f;
         const int64_t twoBarsInSamplesDrum =
-            static_cast<int64_t>(8.0 * 60.0 / static_cast<double>(bpmNowDrum) * srDrum);
+            static_cast<int64_t>(8.0 * 60.0 / static_cast<double>(bpmNowDrum) * sr);
         const bool drumHoldExpired =
             (lastDrumPatternChangeSample < 0) ||
             (latest.sampleTimestamp - lastDrumPatternChangeSample >= twoBarsInSamplesDrum);
@@ -350,129 +194,25 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         const bool transitionEvent = std::abs(latest.rmsDelta) > 0.6f;
 
         const int64_t samplesPerBar =
-            static_cast<int64_t>(4.0 * 60.0 / static_cast<double>(bpmNowDrum) * srDrum);
+            static_cast<int64_t>(4.0 * 60.0 / static_cast<double>(bpmNowDrum) * sr);
         const int64_t barsSinceChange =
             (lastDrumPatternChangeSample < 0 || samplesPerBar <= 0) ? 0
             : (latest.sampleTimestamp - lastDrumPatternChangeSample) / samplesPerBar;
-        const bool autoChangeReady = (barsSinceChange >= 8);
+        const bool autoChangeReady = (barsSinceChange >= 4);
 
-        const int64_t samplesPerBarDiv = static_cast<int64_t>(4.0 * 60.0 / static_cast<double>(latest.bpm) * srDrum);
+        const int64_t samplesPerBarDiv = static_cast<int64_t>(4.0 * 60.0 / static_cast<double>(latest.bpm) * sr);
         const int barMod8 = (samplesPerBarDiv > 0) ? static_cast<int>((latest.sampleTimestamp / samplesPerBarDiv) % 8) : 0;
         const int diversifiedIdx = PatternRules::diversifyPattern(idx, latest, barMod8);
 
-        // Section-driven pattern selection (D006): override with sequencer section pool
-        int sectionDrumIdx = diversifiedIdx;
-        const int sectionIdx = currentSectionIndex_.load(std::memory_order_acquire);
-        const int barsElapsed = currentSectionBarsElapsed_.load(std::memory_order_acquire);
-        const int totalBars = currentSectionTotalBars_.load(std::memory_order_acquire);
-        const int globalBar = globalBarCount_.load(std::memory_order_acquire);
-        const auto* sectionName = structureSequencer.getCurrentSectionName();
-        auto pool = PatternRules::sectionPatternPool(sectionName);
-        if (pool.count > 0)
-        {
-            const bool isLast = (barsElapsed == totalBars - 1);
-            if (isLast)
-                sectionDrumIdx = PatternRules::selectFillPattern(0);
-            else
-                sectionDrumIdx = pool.indices[globalBar % pool.count];
-        }
-
         if (drumHoldExpired || excludeParam >= 0 || transitionEvent || autoChangeReady)
         {
-            commit.patternIndex = sectionDrumIdx;
+            commit.patternIndex = diversifiedIdx;
             commit.fillKind = chooseTransitionFillKind(lastCommittedStructureState, patternFeatures.state, diversifiedIdx);
+            commit.hasBassFrame = false;  // bass handled by audio thread
             hasGrooveCommit = true;
             acceptedDrumPattern = true;
         }
-        // Always update display so UI shows inference intent even during hold.
         displayPatternIndex.store(diversifiedIdx, std::memory_order_relaxed);
-
-        if (featureCapture.isCapturing())
-        {
-            FeatureCaptureRow row{};
-            row.bpm = latest.bpm;
-            row.rmsEnergy = latest.rmsEnergy;
-            row.spectralCentroid = latest.spectralCentroid;
-            row.highFreqFlux = latest.highFreqFlux;
-            row.state = patternFeatures.state;
-            row.sampleTimestamp = latest.sampleTimestamp;
-            row.pitchRootMidi = latest.pitchRootMidi;
-            row.pitchConfidence = latest.pitchConfidence;
-            row.policyIntensity = latest.policyIntensity;
-            row.rmsDelta = latest.rmsDelta;
-            row.subBassRatio = latest.subBassRatio;
-            row.elapsedSeconds = (sr > 0.0) ? static_cast<double>(latest.sampleTimestamp) / sr : 0.0;
-            row.rulePatternIndex = ruleIdx;
-            row.activePatternIndex = diversifiedIdx;
-            row.onnxPatternIndex = onnxAvailable ? diversifiedIdx : -1;
-            row.onnxAvailable = onnxAvailable;
-            row.rulePatternName = patternLibrary.getPattern(ruleIdx).name;
-            row.activePatternName = patternLibrary.getPattern(diversifiedIdx).name;
-            row.onnxPatternName = onnxAvailable ? patternLibrary.getPattern(diversifiedIdx).name : std::string{};
-            row.modelMode = activeInferenceName;
-            featureCapture.tryPush(row);
-        }
-
-        int generativeMode = 0;
-        if (auto* modeParam = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("generativeBassMode")))
-            generativeMode = modeParam->getIndex();
-
-        if (bassInference)
-        {
-            bassInference->propose(latest);
-            const auto& p = bassInference->getLastProposal();
-
-            const bool silencePolicy =
-                (latest.state == StructureState::SILENT) || (latest.rmsEnergy < 1.0e-6f);
-
-            // 2-bar hold guard for bass: 8 beats * 60/bpm * sampleRate samples.
-            const double sr2 = cachedSampleRate.load(std::memory_order_acquire);
-            const float bpmNow2 = latest.bpm > 0.0f ? latest.bpm : 120.0f;
-            const int64_t twoBarsInSamples =
-                static_cast<int64_t>(8.0 * 60.0 / static_cast<double>(bpmNow2) * sr2);
-            const bool bassHoldExpired =
-                (lastBassUpdateSample < 0) ||
-                (latest.sampleTimestamp - lastBassUpdateSample >= twoBarsInSamples);
-
-            bool useGen = false;
-            if (generativeMode == 2) // Off
-            {
-                useGenerativeBass.store(false, std::memory_order_release);
-            }
-            else if (p.valid && !silencePolicy && bassHoldExpired)
-            {
-                for (int i = 0; i < 16; ++i)
-                {
-                    commit.bassPitchOffset[i] = p.pitchOffset[i];
-                    commit.bassVelocity[i] = p.velocity[i];
-                }
-                commit.bassRootMidi = latest.pitchRootMidi;
-                commit.hasBassFrame = true;
-                hasGrooveCommit = true;
-                acceptedBassFrame = true;
-                useGenerativeBass.store(true, std::memory_order_release);
-                useGen = true;
-            }
-            else if (p.valid && !silencePolicy)
-            {
-                // Hold period not expired — keep existing steps active
-                useGenerativeBass.store(true, std::memory_order_release);
-                useGen = true;
-            }
-            else
-            {
-                useGenerativeBass.store(false, std::memory_order_release);
-            }
-
-            if (generativeMode == 1) // On — force on regardless of validity
-            {
-                useGenerativeBass.store(useGen, std::memory_order_release);
-            }
-        }
-        else
-        {
-            useGenerativeBass.store(false, std::memory_order_release);
-        }
 
         if (hasGrooveCommit && grooveCommitQueue.try_enqueue(commit))
         {
@@ -481,10 +221,6 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
                 latestPatternIndex.store(diversifiedIdx, std::memory_order_release);
                 lastDrumPatternChangeSample = latest.sampleTimestamp;
                 lastCommittedStructureState = patternFeatures.state;
-            }
-            if (acceptedBassFrame)
-            {
-                lastBassUpdateSample = latest.sampleTimestamp;
             }
         }
     }
@@ -527,6 +263,8 @@ void AccompanimentProcessor::resumeBackgroundInferenceForTests()
 
 juce::String AccompanimentProcessor::getSectionName() const noexcept
 {
+    if (structureSequencer.isComplete())
+        return "Complete";
     return juce::String(structureSequencer.getCurrentSectionName())
         + " | Bar " + juce::String(structureSequencer.getBarsElapsed() + 1)
         + "/" + juce::String(structureSequencer.getBarsInSection())
@@ -539,42 +277,34 @@ uint64_t AccompanimentProcessor::getOnnxErrorCount() const noexcept
 #if defined(MA_ENABLE_ONNX)
     if (auto* onnx = dynamic_cast<OnnxInference*>(inference.get()))
         total += onnx->getLoadErrorCount() + onnx->getRunErrorCount();
-    if (auto* onnxStructure = dynamic_cast<OnnxStructureInference*>(structureInference.get()))
-        total += onnxStructure->getLoadErrorCount() + onnxStructure->getRunErrorCount();
 #endif
-    if (bassInference)
-        total += bassInference->getLoadErrorCount() + bassInference->getRunErrorCount();
     return total;
 }
 
 void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
-
     midi.clear();
 
     const int numSamples = buffer.getNumSamples();
-    if (numSamples <= 0)
-        return;
-
+    if (numSamples <= 0) return;
     float* in = buffer.getWritePointer(0);
-    if (in == nullptr)
-        return;
+    if (in == nullptr) return;
 
-    // Scrub non-finite samples first; SIMD clip() alone does not reliably remove NaN.
+    // Scrub non-finite samples
     for (int i = 0; i < numSamples; ++i)
     {
         const float s = in[i];
-        if (!std::isfinite(s))
-            in[i] = 0.0f;
+        if (!std::isfinite(s)) in[i] = 0.0f;
     }
     juce::FloatVectorOperations::clip(in, in, -2.0f, 2.0f, numSamples);
 
-    // in and outL alias channel 0; gain pass-through reads/writes the same buffer.
     float* outL = buffer.getWritePointer(0);
     float* outR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : outL;
 
+    // ── 1. Energy analysis ──────────────────────────────────────────────────
     energyAnalyser.process(in, numSamples);
+    audioRingBuffer.write(in, numSamples);
 
     const float rms = energyAnalyser.getRmsEnergy();
     const float rmsDelta = (rms - prevBlockRms) / std::max(prevBlockRms, 1.0e-6f);
@@ -584,29 +314,23 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     structureTagger.setSubBassRatio(energyAnalyser.getSubBassRatio());
     const StructureState st = structureTagger.update(rms, centroid, hfFlux, numSamples, energyAnalyser.getPeakRms());
 
-    pitchEstimator.process(in, numSamples);
-    const float rawMidi = pitchEstimator.getMidiNote();
-    const float rawConf = pitchEstimator.getConfidence();
-
     const bool digitalSilence = (rms < 1.0e-6f);
-    const bool silencePolicy = (st == StructureState::SILENT) || digitalSilence;
-
     const double sr = cachedSampleRate.load(std::memory_order_relaxed);
+
+    // ── 2. BPM (knob or DAW transport) ──────────────────────────────────────
     float bpmForPlayer = 120.0f;
     if (auto* rawBpm = apvts.getRawParameterValue("bpm"))
         bpmForPlayer = rawBpm->load();
-
-    // Advance song structure sequencer on bar boundaries (only when Play is active)
-    if (playActive.load(std::memory_order_acquire))
+    if (auto* ph = getPlayHead())
     {
-        structureSequencer.advance(numSamples, bpmForPlayer, sr);
-        currentSectionIndex_.store(structureSequencer.getCurrentSectionIndex(), std::memory_order_release);
-        currentSectionBarsElapsed_.store(structureSequencer.getBarsElapsed(), std::memory_order_release);
-        currentSectionTotalBars_.store(structureSequencer.getBarsInSection(), std::memory_order_release);
-        globalBarCount_.store(structureSequencer.getGlobalBarCount(), std::memory_order_release);
+        if (auto pos = ph->getPosition())
+        {
+            if (auto t = pos->getBpm())
+                bpmForPlayer = static_cast<float>(*t);
+        }
     }
 
-    // Check for song form change
+    // ── 3. Song form / loop change detection ────────────────────────────────
     {
         static int lastSongFormIdx = -1;
         if (auto* rawForm = apvts.getRawParameterValue("songForm"))
@@ -619,21 +343,23 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             }
         }
     }
+    {
+        static bool lastLoopValue = true;
+        if (auto* rawLoop = apvts.getRawParameterValue("loop"))
+        {
+            const bool newLoop = rawLoop->load() > 0.5f;
+            if (newLoop != lastLoopValue)
+            {
+                structureSequencer.setLooping(newLoop);
+                lastLoopValue = newLoop;
+            }
+        }
+    }
 
-    const GateDecision gd = playbackGate.update(
-        st,
-        beatTracker.getBeatPhase01(),
-        beatTracker.isLocked(),
-        true,  // always tempo-locked — user sets BPM manually (D005)
-        beatTracker.getConfidence(),
-        numSamples,
-        sr);
-
-    if (gd.armCrash)
-        patternPlayer.armTransitionCrash();
+    // ── 4. Playback gate ────────────────────────────────────────────────────
+    const GateDecision gd = playbackGate.update(st, 0.0f, false, false, 0.0f, numSamples, sr);
     if (gd.resetTrackers)
     {
-        beatTracker.reset();
         playbackGate.reset();
         resetDrumHoldRequested.store(true, std::memory_order_release);
     }
@@ -643,6 +369,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         patternPlayer.snapToBarStart();
     }
 
+    // ── 5. Enqueue FeatureVector ────────────────────────────────────────────
     FeatureVector fv;
     fv.bpm = bpmForPlayer;
     fv.rmsEnergy = rms;
@@ -650,57 +377,52 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     fv.highFreqFlux = hfFlux;
     fv.state = st;
     fv.sampleTimestamp = hostSampleTime;
-    fv.pitchRootMidi = rawMidi;
-    fv.pitchConfidence = rawConf;
+    fv.pitchRootMidi = 40.0f;   // fixed E2
+    fv.pitchConfidence = 0.0f;
     fv.rmsDelta = rmsDelta;
     fv.subBassRatio = energyAnalyser.getSubBassRatio();
-
     if (auto* rawIntensity = apvts.getRawParameterValue("intensity"))
         fv.policyIntensity = rawIntensity->load();
-
-    {
-        const int semitoneOffset = stablePitchTracker.update(
-            rawMidi, rawConf, bpmForPlayer, numSamples, sr, silencePolicy);
-        if (semitoneOffset != INT_MIN)
-            patternPlayer.setBassSemitoneOffset(semitoneOffset);
-        else if (silencePolicy)
-            patternPlayer.setBassSemitoneOffset(0);
-    }
-
     (void)featureQueue.try_enqueue(fv);
 
+    // ── 6. Pattern playback ─────────────────────────────────────────────────
     const int patternIdx = latestPatternIndex.load(std::memory_order_acquire);
     patternPlayer.setBpm(bpmForPlayer);
-    patternPlayer.setPatternIndex(patternIdx);
 
     const bool playOn = playActive.load(std::memory_order_acquire);
+    if (playOn && structureSequencer.isComplete())
+        playActive.store(false, std::memory_order_release);
 
-    // When Play is active, always override with section-based pattern (D006)
     int effectivePatternIdx = patternIdx;
     if (playOn)
     {
-        const auto* secName = structureSequencer.getCurrentSectionName();
-        auto pool = PatternRules::sectionPatternPool(secName);
-        if (pool.count > 0)
+        structureSequencer.advance(numSamples, bpmForPlayer, sr);
+        if (!structureSequencer.isComplete())
         {
-            const int bar = structureSequencer.getGlobalBarCount();
-            const bool isLast = structureSequencer.isLastBar();
-            effectivePatternIdx = isLast
-                ? PatternRules::selectFillPattern(0)
-                : pool.indices[bar % pool.count];
-            patternPlayer.setPatternIndex(effectivePatternIdx);
+            const auto* secName = structureSequencer.getCurrentSectionName();
+            auto pool = PatternRules::sectionPatternPool(secName);
+            if (pool.count > 0)
+            {
+                const int bar = structureSequencer.getGlobalBarCount();
+                const bool isLast = structureSequencer.isLastBar();
+                effectivePatternIdx = isLast
+                    ? PatternRules::selectFillPattern(0)
+                    : pool.indices[bar % pool.count];
+            }
         }
     }
+    patternPlayer.setPatternIndex(effectivePatternIdx);
+
+    // ── 7. Silence gating ───────────────────────────────────────────────────
+    const bool audioActive = (rms > 0.001f);
+    const bool trulySilent = (!playOn && !audioActive) || digitalSilence;
 
     int previewRem = debugPreviewSamplesRemaining.load(std::memory_order_acquire);
-    const bool previewAudible = previewRem > 0;
-    if (previewAudible)
+    if (previewRem > 0)
         debugPreviewSamplesRemaining.store(juce::jmax(0, previewRem - numSamples), std::memory_order_release);
+    patternPlayer.setStructureSilent(trulySilent && previewRem <= 0);
 
-    const bool trulySilent = !playOn || digitalSilence;
-    patternPlayer.setStructureSilent(trulySilent && !previewAudible);
-
-    // Snap to bar start when Play just toggled on (so first commit activates immediately)
+    // Snap to bar start when Play just toggled on
     {
         static bool wasOff = true;
         if (playOn && wasOff)
@@ -711,83 +433,43 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         wasOff = !playOn;
     }
 
-    PatternPlayer::GrooveCommit latestGrooveCommit{};
-    bool gotGrooveCommit = false;
-    while (grooveCommitQueue.try_dequeue(latestGrooveCommit))
-        gotGrooveCommit = true;
+    // ── 8. Dequeue groove commit + bass ─────────────────────────────────────
+    PatternPlayer::GrooveCommit commit{};
+    bool gotCommit = false;
+    while (grooveCommitQueue.try_dequeue(commit)) gotCommit = true;
 
-    // Direct pattern commit when Play is active (bypasses inference drain if needed)
-    if (playOn && !gotGrooveCommit)
+    if (playOn && !gotCommit)
     {
-        latestGrooveCommit.patternIndex = effectivePatternIdx;
-        latestGrooveCommit.hasBassFrame = false;
-        gotGrooveCommit = true;
+        commit.patternIndex = effectivePatternIdx;
+        gotCommit = true;
     }
 
-    // ── Rule-based bass (D006): produce bass commit from guitar pitch ──
+    // ── 9. Bass generation (fixed root C2, section-aware) ───────────────────
+    const float bassRoot = 36.0f;  // C2
+    const char* bassSection = playOn ? structureSequencer.getCurrentSectionName() : "VERSE";
+    PatternPlayer::GrooveCommit bassCommit = RuleBasedBass::generate(
+        bassRoot, bassSection, playOn && structureSequencer.isFirstBar(), bpmForPlayer);
+
+    if (gotCommit)
     {
-        static float lastBassPitch = 40.0f;
-        if (rawConf > 0.15f && !digitalSilence)
-            lastBassPitch = rawMidi;
-
-        auto bassCommit = RuleBasedBass::generate(
-            lastBassPitch,
-            structureSequencer.getCurrentSectionName(),
-            structureSequencer.isFirstBar(),
-            bpmForPlayer);
-
-        // Merge with any existing GrooveCommit (keep drum data from inference)
-        if (gotGrooveCommit)
-        {
-            bassCommit.patternIndex = latestGrooveCommit.patternIndex;
-            bassCommit.fillKind = latestGrooveCommit.fillKind;
-        }
-        else
-        {
-            bassCommit.patternIndex = effectivePatternIdx;
-        }
-        latestGrooveCommit = bassCommit;
-        gotGrooveCommit = true;
-    }
-
-    // Force generative bass active when Play is on — bypass ONNX bass gating
-    if (playOn)
-    {
-        useGenerativeBass.store(true, std::memory_order_release);
-    }
-
-    int generativeMode = 0;
-    if (auto* rawBassMode = apvts.getRawParameterValue("generativeBassMode"))
-        generativeMode = static_cast<int>(std::round(rawBassMode->load()));
-
-    const bool generativeBassActive =
-        (generativeMode != 2) && useGenerativeBass.load(std::memory_order_acquire);
-    if (generativeMode == 2)
-    {
-        patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
-        patternPlayer.clearPendingGrooveCommit();
-    }
-    else if (!generativeBassActive)
-    {
-        patternPlayer.setGenerativeBassActive(false, 40, 1.0f);
-        patternPlayer.clearPendingGrooveCommit();
+        bassCommit.patternIndex = commit.patternIndex;
+        bassCommit.fillKind = commit.fillKind;
     }
     else
     {
-        // Keep generative bass active when Play is on
-        if (playOn)
-            patternPlayer.setGenerativeBassActive(true, 40, 1.0f);
+        bassCommit.patternIndex = effectivePatternIdx;
     }
+    commit = bassCommit;
+    gotCommit = true;
 
-    if (gotGrooveCommit)
+    useGenerativeBass.store(true, std::memory_order_release);
+    if (gotCommit)
     {
-        // Do NOT gate on audio-thread silencePolicy — commits were produced
-        // by the inference thread from earlier non-silent blocks.
-        if (generativeMode == 2 || !generativeBassActive)
-            latestGrooveCommit.hasBassFrame = false;
-        patternPlayer.queueGrooveCommit(latestGrooveCommit);
+        patternPlayer.setGenerativeBassActive(true, static_cast<int>(bassRoot), 1.0f);
+        patternPlayer.queueGrooveCommit(commit);
     }
 
+    // ── 10. Process MIDI ────────────────────────────────────────────────────
     int64_t hostPos = hostSampleTime;
     if (auto* ph = getPlayHead())
     {
@@ -797,9 +479,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 hostPos = *t;
         }
     }
-
     patternPlayer.process(midi, numSamples, hostPos);
 
+    // ── 11. Gain passthrough ────────────────────────────────────────────────
     float gain = 1.0f;
     if (auto* raw = apvts.getRawParameterValue("outputGain"))
         gain = raw->load();
@@ -807,18 +489,18 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     {
         const float s = in[i] * gain;
         outL[i] = s;
-        if (outR != outL)
-            outR[i] = s;
+        if (outR != outL) outR[i] = s;
     }
 
-    hostSampleTime += static_cast<int64_t>(numSamples);
+    hostSampleTime += numSamples;
 
+    // Display updates
     displayBpm.store(bpmForPlayer, std::memory_order_relaxed);
-    displayBeatConfidence.store(beatTracker.getConfidence(), std::memory_order_relaxed);
-    // S02: displayStateIndex now managed by bar-quantized hold guard in inference loop.
     displayRms.store(rms, std::memory_order_relaxed);
     displayCentroid.store(centroid, std::memory_order_relaxed);
     displayHfFlux.store(hfFlux, std::memory_order_relaxed);
+    displayStateIndex.store(static_cast<int>(st), std::memory_order_relaxed);
+    displayPatternIndex.store(effectivePatternIdx, std::memory_order_relaxed);
 }
 
 void AccompanimentProcessor::bumpDebugPattern()
@@ -827,14 +509,6 @@ void AccompanimentProcessor::bumpDebugPattern()
     debugPreviewSamplesRemaining.store(dur, std::memory_order_release);
     // D-23-04: drive rejection signal instead of directly cycling index
     patternRejectionCount.fetch_add(1, std::memory_order_release);
-}
-
-void AccompanimentProcessor::setFeatureCaptureEnabled(bool enabled)
-{
-    if (enabled)
-        (void)featureCapture.start();
-    else
-        featureCapture.stop();
 }
 
 void AccompanimentProcessor::getStateInformation(juce::MemoryBlock& destData)
@@ -859,12 +533,10 @@ void AccompanimentProcessor::setStateInformation(const void* data, int sizeInByt
 void AccompanimentProcessor::processBlockBypassed(
     juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
-    // D-04: Flush MIDI on soft bypass; pass dry guitar through like processBlock.
     midi.clear();
     for (int ch = 1; ch <= 16; ++ch)
         midi.addEvent(juce::MidiMessage::allNotesOff(ch), 0);
     patternPlayer.reset();
-    beatTracker.reset();
     playbackGate.reset();
 
     const int n = buffer.getNumSamples();

@@ -93,6 +93,7 @@ void StructureSequencer::reset()
     globalBarCount = 0;
     barAccumulator = 0.0;
     samplesPerBar = 0.0;
+    complete = false;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -101,7 +102,7 @@ void StructureSequencer::reset()
 
 void StructureSequencer::advance(int numSamples, float bpm, double sampleRate)
 {
-    if (currentForm.sections.empty()) return;
+    if (currentForm.sections.empty() || complete) return;
 
     // Recompute samplesPerBar when BPM or sampleRate changes (cheap check)
     const double newSamplesPerBar = (60.0 / static_cast<double>(bpm)) * sampleRate * 4.0;
@@ -126,9 +127,17 @@ void StructureSequencer::advance(int numSamples, float bpm, double sampleRate)
             barsElapsed = 0;
             ++currentSection;
 
-            // Loop back to beginning when form ends
+            // Loop back or stop
             if (currentSection >= static_cast<int>(currentForm.sections.size()))
-                currentSection = 0;
+            {
+                if (looping)
+                    currentSection = 0;
+                else
+                {
+                    complete = true;
+                    return;
+                }
+            }
         }
     }
 }
