@@ -112,52 +112,29 @@ TEST_CASE("ONNX pattern model latency p99 under 5ms", "[onnx][latency][benchmark
     REQUIRE(stats.p99Ms < 5.0);
 }
 
-TEST_CASE("ONNX structure model latency p99 under 5ms", "[onnx][latency][benchmark]")
+TEST_CASE("ONNX metal_groove model latency p99 under 5ms", "[onnx][latency][benchmark]")
 {
-    auto session = loadSession(BinaryData::structure_model_onnx, BinaryData::structure_model_onnxSize);
-    std::array<float, 1 * 12 * 7> inputData{};
+    auto session = loadSession(BinaryData::metal_groove_onnx, BinaryData::metal_groove_onnxSize);
+    // Input: mel spectrogram [1, 1, 64, 32] = 2048 floats
+    std::array<float, 2048> inputData{};
     for (size_t i = 0; i < inputData.size(); ++i)
-        inputData[i] = 0.2f;
-    inputData[0] = 120.f;
-    std::array<int64_t, 3> shape{ 1, 12, 7 };
+        inputData[i] = -40.0f;  // mid-range mel-dB value
+    std::array<int64_t, 4> shape{ 1, 1, 64, 32 };
 
     const auto stats = measureRunLatencyMs(
         [&]() {
             auto mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
             Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
                 mem, inputData.data(), inputData.size(), shape.data(), shape.size());
-            const char* inputNames[] = { "X_struct" };
-            const char* outputNames[] = { "Y_struct" };
-            auto outputs = session->Run(Ort::RunOptions{ nullptr }, inputNames, &inputTensor, 1, outputNames, 1);
-            REQUIRE_FALSE(outputs.empty());
+            const char* inputNames[] = { "mel" };
+            const char* outputNames[] = { "bottleneck", "style_logits" };
+            auto outputs = session->Run(Ort::RunOptions{ nullptr }, inputNames, &inputTensor, 1, outputNames, 2);
+            REQUIRE(outputs.size() >= 2);
         },
         100,
         10000);
 
-    logStats("structure", stats);
-    REQUIRE(stats.p99Ms < 5.0);
-}
-
-TEST_CASE("ONNX bass model latency p99 under 5ms", "[onnx][latency][benchmark]")
-{
-    auto session = loadSession(BinaryData::bass_model_onnx, BinaryData::bass_model_onnxSize);
-    std::array<float, 7> inputData{ 120.f, 0.2f, 9000.f, 0.2f, 1.f, 40.f, 0.8f };
-    std::array<int64_t, 2> shape{ 1, 7 };
-
-    const auto stats = measureRunLatencyMs(
-        [&]() {
-            auto mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-            Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
-                mem, inputData.data(), inputData.size(), shape.data(), shape.size());
-            const char* inputNames[] = { "X_bass" };
-            const char* outputNames[] = { "Y_bass" };
-            auto outputs = session->Run(Ort::RunOptions{ nullptr }, inputNames, &inputTensor, 1, outputNames, 1);
-            REQUIRE_FALSE(outputs.empty());
-        },
-        100,
-        10000);
-
-    logStats("bass", stats);
+    logStats("metal_groove", stats);
     REQUIRE(stats.p99Ms < 5.0);
 }
 

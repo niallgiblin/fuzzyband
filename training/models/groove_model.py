@@ -83,7 +83,7 @@ class GrooveModelForExport(nn.Module):
 
     This is what gets exported to ONNX as metal_groove.onnx.
     Input:  mel [1, 1, 64, 32]
-    Output: groove_embedding [1, 64], style_logits [1, 5]
+    Output: groove_embedding [1, 64], style_logits [1, 5], bottleneck [1, 128]
     """
 
     def __init__(self, n_classes: int = 22, embedding_dim: int = 64, n_styles: int = 5):
@@ -93,8 +93,8 @@ class GrooveModelForExport(nn.Module):
         self.style_head = nn.Linear(128, n_styles)
 
     def forward(self, x: torch.Tensor):
-        """x: (B, 1, 64, 32) → (groove_embedding, style_logits)"""
+        """x: (B, 1, 64, 32) → (groove_embedding, style_logits, bottleneck)"""
         bottleneck = self.backbone(x)
         groove_emb = self.embedding(bottleneck)
         style_logits = self.style_head(bottleneck)
-        return groove_emb, style_logits
+        return groove_emb, style_logits, bottleneck
