@@ -1,164 +1,160 @@
-# ONNX I/O Contract — Metal Accompaniment
+# ONNX I/O Contract — Metal Accompaniment (v0.8.x)
 
-> **Status:** Frozen for milestone **v0.4.0** (Phase 22).
-> **Scope:** Plugin-side tensor contract consumed by `src/inference/OnnxInference.cpp`.
-> Requirement refs: **ONNX-04** (structure contract), **PYTR-03** (Phase 15 export must target this graph).
+> **Status:** Updated for **v0.8.0** unified Mel-CNN pipeline.
+> **Scope:** Plugin-side tensor contracts consumed by `src/inference/OnnxInference.cpp` (legacy) and `src/inference/MetalGrooveInference.cpp` (current).
+> Requirement refs: SIMPLIFY.md §2.1–2.2.
 
 This document defines the **exact** ONNX graph inputs and outputs that the plugin
-expects when built with `-DMA_ENABLE_ONNX=ON`. Training and export pipelines
-**must** produce a model that matches this contract byte-for-byte.
-
-**See also:** Phase 13 generative bass uses a separate graph and tensor names **`X_bass` / `Y_bass`** — [`docs/BASS_ONNX_IO.md`](BASS_ONNX_IO.md). The **`X` / `Y` pattern-selector tables below are frozen** and are not modified for bass.
+expects when built with `-DMA_ENABLE_ONNX=ON`.
 
 ---
 
-## Input tensor
+## Current model: `metal_groove.onnx` (v0.8.x, Mel-CNN pipeline)
+
+### Overview
+
+A single ONNX model with a shared MelCNN backbone (3 conv blocks → 128-dim bottleneck) and three output heads. Replaces the previous three separate models (pattern, structure, bass).
+
+### Input tensor
+
+| Property | Value |
+|----------|-------|
+| Name | `mel` |
+| Dtype | `float32` |
+| Shape | `[batch, 1, 64, 32]` |
+| Semantics | 64 mel bands × 32 time frames (~370ms context), mel-dB values in [-80, 0]. C++-aligned via `MelSpectrogramExtractor`. |
+
+### Output tensors
+
+| Name | Dtype | Shape | Semantics |
+|------|-------|-------|-----------|
+| `bottleneck` | `float32` | `[batch, 128]` | 128-dim CNN bottleneck — used with precomputed centroids for cosine-similarity nearest-neighbor pattern lookup |
+| `style_logits` | `float32` | `[batch, 5]` | Playing-style logits (palm_mute, open_chord, single_note, sustain, silence) — free with groove inference |
+| `groove_embedding` | `float32` | `[batch, 64]` | 64-dim L2-normalized embedding (reserved for future triplet-loss refinement; not used in current nearest-neighbor path) |
+
+### Runtime inference flow
+
+1. Audio thread accumulates 22,050 samples in `AudioRingBuffer` (~512ms @ 44.1kHz)
+2. `MelSpectrogramExtractor::process()` produces 2048 mel-dB floats
+3. Mel data enqueued to `melQueue` (lock-free SPSC)
+4. Background thread drains `melQueue`, calls `MetalGrooveInference::selectPatternFromMel()`
+5. ONNX session runs, returns `bottleneck` [1, 128]
+6. Cosine similarity computed against 22 precomputed centroids (`pattern_embeddings.h`)
+7. Best-match pattern index [0–21] stored in `latestPatternIndex` atomic
+8. `PatternPlayer` emits MIDI on next bar boundary
+
+### Pattern embeddings (centroids)
+
+| Property | Value |
+|----------|-------|
+| File | `src/inference/pattern_embeddings.h` (auto-generated) |
+| Format | `std::array<std::array<float, 128>, 22>` — 22 patterns × 128-dim |
+| Generation | `training/export_centroids.py` — runs training data through trained backbone, computes per-class mean bottleneck |
+| Lookup | Cosine similarity nearest-neighbor (argmax dot product / norms) |
+
+### Bundled model asset
+
+| Property | Value |
+|----------|-------|
+| Asset path | `assets/metal_groove.onnx` |
+| Size | ~685 KB (internal data, no external weights) |
+| Delivery | JUCE `BinaryData` symbol `BinaryData::metal_groove_onnx` |
+| Regeneration | `training/train_groove_model.py` → `training/export_centroids.py` |
+| Opset | 18 |
+
+### Inference latency
+
+| Metric | Value |
+|--------|-------|
+| p99 latency | <1ms per ONNX `Run()` call |
+| Thread | Background inference thread (~50Hz drain) |
+| Fallback | `OnnxInference` (legacy scalar-feature) → `RuleBasedInference` |
+
+---
+
+## Legacy model: `accompaniment_model.onnx` (v0.6.x, scalar-feature)
+
+> **Still bundled as fallback.** If `metal_groove.onnx` fails to load, the factory falls back to this model via `OnnxInference`.
+
+### Input tensor
 
 | Property | Value |
 |----------|-------|
 | Name | `X` |
 | Dtype | `float32` |
-| Shape | `[1, 7]` (row-major) |
-| Semantics | Single feature window per `selectPattern()` call; column **0** is **adjusted BPM** (see below) |
+| Shape | `[1, 7]` |
+| Semantics | Single feature window per `selectPattern()` call; column 0 is **adjusted BPM** |
 
 ### Feature order (row `X[0]`, columns 0–6)
 
-| Index | Field | Source (`FeatureVector`) | Notes |
-|-------|-------|--------------------------|-------|
-| 0 | `adjustedBpm` (bpm adjusted) | `PatternRules::adjustedBpm(f)` | `f.bpm + (f.policyIntensity - 0.5f) * 40.0f`; intensity **0.0** → **−20** BPM, **0.5** → **0**, **1.0** → **+20**; raw `f.bpm` clamped **[80, 220]** by `OnsetDetector` before adjustment. See `src/inference/pattern_rules.h`, `src/inference/OnnxInference.cpp` |
-| 1 | `rmsEnergy` | `FeatureVector::rmsEnergy` | float; rolling 100 ms RMS, ~[0, 1] |
-| 2 | `spectralCentroid` | `FeatureVector::spectralCentroid` | float; Hz |
-| 3 | `highFreqFlux` | `FeatureVector::highFreqFlux` | float; 2 kHz+ band flux |
-| 4 | `stateSILENT` | One-hot: `1.0` when `FeatureVector::state == SILENT`, else `0.0` | Three-class one-hot encoding |
-| 5 | `stateSOFT` | One-hot: `1.0` when `FeatureVector::state == SOFT`, else `0.0` | See class order below |
-| 6 | `stateLOUD` | One-hot: `1.0` when `FeatureVector::state == LOUD`, else `0.0` | Mutually exclusive (exactly one is 1.0) |
+| Index | Field | Source |
+|-------|-------|--------|
+| 0 | `adjustedBpm` | `PatternRules::adjustedBpm(f)` |
+| 1 | `rmsEnergy` | `FeatureVector::rmsEnergy` |
+| 2 | `spectralCentroid` | `FeatureVector::spectralCentroid` |
+| 3 | `highFreqFlux` | `FeatureVector::highFreqFlux` |
+| 4 | `stateSILENT` | One-hot: `1.0` when SILENT |
+| 5 | `stateSOFT` | One-hot: `1.0` when SOFT |
+| 6 | `stateLOUD` | One-hot: `1.0` when LOUD |
 
-**Class order:** `SILENT`, `SOFT`, `LOUD` — matches `enum class StructureState` in `src/analysis/StructureTagger.h`.
-
-The packing order is canonical and **must match** the C++ packing in
-`OnnxInference::selectPattern` (see `src/inference/OnnxInference.cpp`).
-
----
-
-## structureBlend runtime policy
-
-Pattern inference receives an **effective** structural state derived from the rule-based tagger and the optional structure ONNX shadow. This is **not** part of the pattern graph input tensor; it is applied in C++ before `IInference::selectPattern()`.
-
-| Property | Value |
-|----------|-------|
-| APVTS parameter | `structureBlend` |
-| Default | `0.5` |
-| Semantics | **Threshold switch** (not continuous interpolation): `> 0.5` favors ML shadow for **non-silent** pattern decisions; `<= 0.5` uses rule state |
-| Decision site | `AccompanimentProcessor::drainFeatureQueueAndRunInference()` |
-
-**Rule silence is authoritative.** The rule tagger owns silence detection and playback gating. ONNX structure shadow **never** overrides `StructureState::SILENT` for pattern selection.
-
-When structure ONNX is loaded, effective state is chosen as follows:
-
-| Condition | Effective state |
-|-----------|-----------------|
-| No structure ONNX | `rule` |
-| `!mlValid` (invalid or stale shadow) | `rule` |
-| `rule == SILENT` | `rule` (authoritative silence gate) |
-| `mlShadow == SILENT` | `rule` |
-| `structureBlend > 0.5` and none of the above | `mlShadow.smoothedState` |
-| else | `rule` |
-
-Invalid/stale shadow or shadow SILENT while rule is non-silent → always use rule state. See `src/AccompanimentProcessor.cpp` (structureBlend block before `selectPattern`).
-
----
-
-## Output tensor
+### Output tensor
 
 | Property | Value |
 |----------|-------|
 | Name | `Y` |
 | Dtype | `int64` |
-| Shape | `[1]` (scalar-like) |
-| Semantics | Pattern index into `MidiPatternLibrary` |
-
-### Runtime clamp
-
-The plugin reads `Y[0]` as `int64_t` and clamps to **[0, 6]** (`std::clamp`)
-before handing the value to `PatternPlayer` via the atomic pattern index.
-Values outside `[0, 6]` are not an error — they are silently clamped. Exporters
-should still target `[0, 6]` because any broader output range is equivalent to
-the saturated endpoints.
+| Shape | `[1]` |
+| Clamp | `[0, 21]` (was `[0, 6]` before pattern library expansion) |
 
 ---
 
-## Bundled model asset
+## Removed models (v0.8.0)
 
-| Property | Value |
-|----------|-------|
-| Asset path | `assets/accompaniment_model.onnx` |
-| Delivery | JUCE `BinaryData` symbol `BinaryData::accompaniment_model_onnx` (built in via CMake when `MA_ENABLE_ONNX=ON`) |
-| Regeneration | `training/.venv/bin/python scripts/build_minimal_pattern_onnx.py` (see `CONTRIBUTING.md` §ONNX Runtime) |
+These models are **no longer bundled** and their source files are removed from the build:
 
-Phase 10 ships a **minimal pattern stub** that satisfies the contract so
-`tryLoadModel()` succeeds on ONNX-enabled builds without waiting for Phase 15.
-If load fails or `Run()` throws, the processor falls back to
-`RuleBasedInference` — see `src/AccompanimentProcessor.cpp` `makeInference()`.
+| Model | File | Why |
+|-------|------|-----|
+| Structure classifier | `assets/structure_model.onnx` | Replaced by style head on shared CNN backbone |
+| Generative bass | `assets/bass_model.onnx` | Bass stays rule-based (fixed root, section-aware) |
+| Playing-style classifier | `assets/classifier.onnx` | Replaced by style head on shared CNN backbone |
 
----
-
-## Structure model (Phase 12)
-
-> **Independent graph:** This head is **not** the pattern selector above. Tensor names **`X` / `Y`** and their tables remain frozen (**D-10-06**). Structure classification uses **`X_struct` / `Y_struct`** only.
-
-| Property | Value |
-|----------|-------|
-| Name | `X_struct` |
-| Dtype | `float32` |
-| Shape | `[1, 12, 7]` (batch **N**=12 snapshots, **K**=7 features per snapshot) |
-
-**Layout:** Row-major with dimension order `[batch][snapshot_index][feature]`. **`snapshot_index` 0 is the oldest** sample in the 12-frame window; index **11** is the **newest** (most recent `FeatureVector` pushed before the run).
-
-### Feature order per snapshot (K = 7)
-
-| Index | Field | Source (`FeatureVector`) |
-|-------|-------|--------------------------|
-| 0 | `bpm` | `FeatureVector::bpm` |
-| 1 | `rmsEnergy` | `FeatureVector::rmsEnergy` |
-| 2 | `spectralCentroid` | `FeatureVector::spectralCentroid` |
-| 3 | `highFreqFlux` | `FeatureVector::highFreqFlux` |
-| 4 | `float(static_cast<int>(state))` | Numeric cast of `StructureState` (`SILENT=0`, `SOFT=1`, `LOUD=2`) |
-| 5 | `pitchRootMidi` | `FeatureVector::pitchRootMidi` |
-| 6 | `pitchConfidence` | `FeatureVector::pitchConfidence` |
-
-### Output tensor (structure head)
-
-| Property | Value |
-|----------|-------|
-| Name | `Y_struct` |
-| Dtype | `float32` |
-| Shape | `[1, 3]` **logits** (pre-softmax) |
-
-**Class order (logits index → label):** `SILENT`, `SOFT`, `LOUD` — same order as `enum class StructureState` in `src/analysis/StructureTagger.h`.
-
-The plugin applies **softmax** in C++ and applies confidence / margin gates before hold smoothing. Phase 15 training export **must** emit logits consistent with this head (not probabilities).
-
-| Property | Value |
-|----------|-------|
-| Asset path | `assets/structure_model.onnx` |
-| Delivery | JUCE `BinaryData` symbol `BinaryData::structure_model_onnx` (and `structure_model_onnxSize`) when `MA_ENABLE_ONNX=ON` |
-| Regeneration | `training/.venv/bin/python scripts/build_minimal_structure_onnx.py` (see `CONTRIBUTING.md` §ONNX Runtime) |
+Source files removed from build (kept on disk):
+- `src/inference/OnnxStructureInference.*`
+- `src/inference/OnnxBassInference.*`
+- `src/inference/IStructureInference.h`
+- `src/inference/RuleStructureInference.*`
+- `src/inference/PlayingStyleClassifier.*`
+- `src/analysis/BeatTracker.*`
+- `src/analysis/StructureHoldSmoother.*`
+- `src/analysis/PitchEstimator.*`
+- `src/analysis/StablePitchTracker.*`
+- `src/capture/FeatureCapture.*`
+- `src/midi/BassMidiValidator.*`
 
 ---
 
-## Handoff to Phase 15 (PYTR-03)
+## Training pipeline
 
-Any training or export pipeline landing in Phase 15 **must** emit a graph whose
-input `X` / output `Y` names, shapes, dtypes, and value ranges match the table
-above. Changing this contract requires a breaking-phase update to
-`.planning/REQUIREMENTS.md` (ONNX-04).
+| Step | Script | Output |
+|------|--------|--------|
+| 1. Record guitar | (human) | `data/raw/pattern_XX_name/*.wav` |
+| 2. Extract mels | `training/scripts/build_mel_groove_dataset.py` | `data/processed/X_groove.npy`, `y_groove.npy` |
+| 3. Train classifier | `training/train_groove_model.py` | `training/models/best_groove_model.pt` |
+| 4. Export centroids + ONNX | `training/export_centroids.py` | `src/inference/pattern_embeddings.h`, `assets/metal_groove.onnx` |
+
+Quality gates (train_groove_model.py):
+- Test accuracy ≥ 60%
+- Top-3 accuracy ≥ 80%
+- Per-class recall ≥ 0.30
 
 ---
 
 ## References
 
-- Code: `src/inference/OnnxInference.cpp` (input packing, `Run()` call, clamp)
-- Feature struct: `src/analysis/FeatureVector.h`
-- Structure enum: `src/analysis/StructureTagger.h` (`enum class StructureState`)
-- Build flags: `CMakeLists.txt` (`MA_ENABLE_ONNX`, `ONNXRUNTIME_ROOT`)
-- Contributor setup: `CONTRIBUTING.md` §ONNX Runtime (optional — Phase 10)
+- Code: `src/inference/MetalGrooveInference.cpp` (mel input, cosine similarity, fallback)
+- Code: `src/inference/OnnxInference.cpp` (legacy scalar-feature path)
+- Code: `src/AccompanimentProcessor.cpp` (factory, mel queue, drain loop)
+- Centroid header: `src/inference/pattern_embeddings.h`
+- Mel extractor: `src/analysis/MelSpectrogramExtractor.h`
+- Architecture: `SIMPLIFY.md` §0 (full data-flow diagram)
+- Training: `training/train_groove_model.py`, `training/export_centroids.py`

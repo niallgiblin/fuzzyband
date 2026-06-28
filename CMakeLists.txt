@@ -257,6 +257,7 @@ if(MA_BUILD_TESTS)
         tests/test_midi_pattern_library.cpp
         tests/test_pattern_rules.cpp
         tests/test_onnx_inference.cpp
+        tests/test_metal_groove_inference.cpp
         tests/test_playback_gate.cpp
 
         # Plugin sources compiled into the test executable
