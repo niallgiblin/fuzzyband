@@ -2138,6 +2138,30 @@ tests/test_long_duration_stability.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentIntegrationTests.dir/build.make CMakeFiles/MetalAccompanimentIntegrationTests.dir/tests/test_long_duration_stability.cpp.s
 .PHONY : tests/test_long_duration_stability.cpp.s
 
+tests/test_metal_groove_inference.o: tests/test_metal_groove_inference.cpp.o
+.PHONY : tests/test_metal_groove_inference.o
+
+# target to build an object file
+tests/test_metal_groove_inference.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_metal_groove_inference.cpp.o
+.PHONY : tests/test_metal_groove_inference.cpp.o
+
+tests/test_metal_groove_inference.i: tests/test_metal_groove_inference.cpp.i
+.PHONY : tests/test_metal_groove_inference.i
+
+# target to preprocess a source file
+tests/test_metal_groove_inference.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_metal_groove_inference.cpp.i
+.PHONY : tests/test_metal_groove_inference.cpp.i
+
+tests/test_metal_groove_inference.s: tests/test_metal_groove_inference.cpp.s
+.PHONY : tests/test_metal_groove_inference.s
+
+# target to generate assembly for a file
+tests/test_metal_groove_inference.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/tests/test_metal_groove_inference.cpp.s
+.PHONY : tests/test_metal_groove_inference.cpp.s
+
 tests/test_midi_pattern_library.o: tests/test_midi_pattern_library.cpp.o
 .PHONY : tests/test_midi_pattern_library.o
 
@@ -2686,6 +2710,9 @@ help:
 	@echo "... tests/test_long_duration_stability.o"
 	@echo "... tests/test_long_duration_stability.i"
 	@echo "... tests/test_long_duration_stability.s"
+	@echo "... tests/test_metal_groove_inference.o"
+	@echo "... tests/test_metal_groove_inference.i"
+	@echo "... tests/test_metal_groove_inference.s"
 	@echo "... tests/test_midi_pattern_library.o"
 	@echo "... tests/test_midi_pattern_library.i"
 	@echo "... tests/test_midi_pattern_library.s"
