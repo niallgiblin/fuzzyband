@@ -4,6 +4,7 @@
 #include "inference/pattern_rules.h"
 #if defined(MA_ENABLE_ONNX)
 #include "inference/OnnxInference.h"
+#include "inference/MetalGrooveInference.h"
 #endif
 #include <chrono>
 #include <cmath>
@@ -14,6 +15,12 @@ namespace
 std::unique_ptr<IInference> makeInference()
 {
 #if defined(MA_ENABLE_ONNX)
+    // Try new Mel-CNN model first (v0.8.0 unified pipeline)
+    auto groove = std::make_unique<MetalGrooveInference>();
+    if (groove->tryLoadModel())
+        return groove;
+
+    // Fall back to old scalar-feature ONNX model
     auto onnx = std::make_unique<OnnxInference>();
     if (onnx->tryLoadModel())
         return onnx;
