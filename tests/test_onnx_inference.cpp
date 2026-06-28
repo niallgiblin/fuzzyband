@@ -23,16 +23,17 @@ static int applyOnnxAcceptanceGate(int clampedModelOutput, const FeatureVector& 
         : PatternRules::rulePatternForState(f);
 }
 
-TEST_CASE("OnnxInference acceptance gate surfaces Breakdown when acceptable", "[OnnxInference][Breakdown]")
+TEST_CASE("OnnxInference acceptance gate surfaces pattern 6 when LOUD-compatible", "[OnnxInference]")
 {
-    // Breakdown (class 6) accepted in BREAKDOWN state with bpm < 110
-    const FeatureVector f = makeF(StructureState::BREAKDOWN, 100.0f);
+    // Pattern 6 accepted in LOUD state (now LOUD-compatible)
+    const FeatureVector f = makeF(StructureState::LOUD, 100.0f);
     REQUIRE(applyOnnxAcceptanceGate(6, f) == 6);
 }
 
-TEST_CASE("OnnxInference acceptance gate rejects Breakdown at high BPM", "[OnnxInference][Breakdown]")
+TEST_CASE("OnnxInference acceptance gate rejects pattern 6 in SOFT state", "[OnnxInference]")
 {
-    const FeatureVector f = makeF(StructureState::LOUD, 170.0f);
+    // Pattern 6 not SOFT-compatible — should fallback to rule
+    const FeatureVector f = makeF(StructureState::SOFT, 170.0f);
     const int result = applyOnnxAcceptanceGate(6, f);
     REQUIRE(result != 6);
     REQUIRE(result == PatternRules::rulePatternForState(f));

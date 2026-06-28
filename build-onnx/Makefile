@@ -1619,6 +1619,54 @@ juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData3.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentData.dir/build.make CMakeFiles/MetalAccompanimentData.dir/juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData3.cpp.s
 .PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData3.cpp.s
 
+juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.o: juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.cpp.o
+.PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.o
+
+# target to build an object file
+juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentData.dir/build.make CMakeFiles/MetalAccompanimentData.dir/juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.cpp.o
+.PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.cpp.o
+
+juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.i: juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.cpp.i
+.PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.i
+
+# target to preprocess a source file
+juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentData.dir/build.make CMakeFiles/MetalAccompanimentData.dir/juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.cpp.i
+.PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.cpp.i
+
+juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.s: juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.cpp.s
+.PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.s
+
+# target to generate assembly for a file
+juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentData.dir/build.make CMakeFiles/MetalAccompanimentData.dir/juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.cpp.s
+.PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.cpp.s
+
+juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.o: juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.cpp.o
+.PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.o
+
+# target to build an object file
+juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentData.dir/build.make CMakeFiles/MetalAccompanimentData.dir/juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.cpp.o
+.PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.cpp.o
+
+juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.i: juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.cpp.i
+.PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.i
+
+# target to preprocess a source file
+juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentData.dir/build.make CMakeFiles/MetalAccompanimentData.dir/juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.cpp.i
+.PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.cpp.i
+
+juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.s: juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.cpp.s
+.PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.s
+
+# target to generate assembly for a file
+juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentData.dir/build.make CMakeFiles/MetalAccompanimentData.dir/juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.cpp.s
+.PHONY : juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.cpp.s
+
 src/AccompanimentEditor.o: src/AccompanimentEditor.cpp.o
 .PHONY : src/AccompanimentEditor.o
 
@@ -1666,6 +1714,33 @@ src/AccompanimentProcessor.s: src/AccompanimentProcessor.cpp.s
 src/AccompanimentProcessor.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/AccompanimentProcessor.cpp.s
 .PHONY : src/AccompanimentProcessor.cpp.s
+
+src/analysis/AudioRingBuffer.o: src/analysis/AudioRingBuffer.cpp.o
+.PHONY : src/analysis/AudioRingBuffer.o
+
+# target to build an object file
+src/analysis/AudioRingBuffer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/AudioRingBuffer.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/AudioRingBuffer.cpp.o
+.PHONY : src/analysis/AudioRingBuffer.cpp.o
+
+src/analysis/AudioRingBuffer.i: src/analysis/AudioRingBuffer.cpp.i
+.PHONY : src/analysis/AudioRingBuffer.i
+
+# target to preprocess a source file
+src/analysis/AudioRingBuffer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/AudioRingBuffer.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/AudioRingBuffer.cpp.i
+.PHONY : src/analysis/AudioRingBuffer.cpp.i
+
+src/analysis/AudioRingBuffer.s: src/analysis/AudioRingBuffer.cpp.s
+.PHONY : src/analysis/AudioRingBuffer.s
+
+# target to generate assembly for a file
+src/analysis/AudioRingBuffer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/AudioRingBuffer.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/AudioRingBuffer.cpp.s
+.PHONY : src/analysis/AudioRingBuffer.cpp.s
 
 src/analysis/BeatTracker.o: src/analysis/BeatTracker.cpp.o
 .PHONY : src/analysis/BeatTracker.o
@@ -1720,6 +1795,33 @@ src/analysis/EnergyAnalyser.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/EnergyAnalyser.cpp.s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/EnergyAnalyser.cpp.s
 .PHONY : src/analysis/EnergyAnalyser.cpp.s
+
+src/analysis/MelSpectrogramExtractor.o: src/analysis/MelSpectrogramExtractor.cpp.o
+.PHONY : src/analysis/MelSpectrogramExtractor.o
+
+# target to build an object file
+src/analysis/MelSpectrogramExtractor.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/MelSpectrogramExtractor.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/MelSpectrogramExtractor.cpp.o
+.PHONY : src/analysis/MelSpectrogramExtractor.cpp.o
+
+src/analysis/MelSpectrogramExtractor.i: src/analysis/MelSpectrogramExtractor.cpp.i
+.PHONY : src/analysis/MelSpectrogramExtractor.i
+
+# target to preprocess a source file
+src/analysis/MelSpectrogramExtractor.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/MelSpectrogramExtractor.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/MelSpectrogramExtractor.cpp.i
+.PHONY : src/analysis/MelSpectrogramExtractor.cpp.i
+
+src/analysis/MelSpectrogramExtractor.s: src/analysis/MelSpectrogramExtractor.cpp.s
+.PHONY : src/analysis/MelSpectrogramExtractor.s
+
+# target to generate assembly for a file
+src/analysis/MelSpectrogramExtractor.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/MelSpectrogramExtractor.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/MelSpectrogramExtractor.cpp.s
+.PHONY : src/analysis/MelSpectrogramExtractor.cpp.s
 
 src/analysis/PitchEstimator.o: src/analysis/PitchEstimator.cpp.o
 .PHONY : src/analysis/PitchEstimator.o
@@ -1984,6 +2086,30 @@ src/inference/OnnxStructureInference.s: src/inference/OnnxStructureInference.cpp
 src/inference/OnnxStructureInference.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/inference/OnnxStructureInference.cpp.s
 .PHONY : src/inference/OnnxStructureInference.cpp.s
+
+src/inference/PlayingStyleClassifier.o: src/inference/PlayingStyleClassifier.cpp.o
+.PHONY : src/inference/PlayingStyleClassifier.o
+
+# target to build an object file
+src/inference/PlayingStyleClassifier.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/inference/PlayingStyleClassifier.cpp.o
+.PHONY : src/inference/PlayingStyleClassifier.cpp.o
+
+src/inference/PlayingStyleClassifier.i: src/inference/PlayingStyleClassifier.cpp.i
+.PHONY : src/inference/PlayingStyleClassifier.i
+
+# target to preprocess a source file
+src/inference/PlayingStyleClassifier.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/inference/PlayingStyleClassifier.cpp.i
+.PHONY : src/inference/PlayingStyleClassifier.cpp.i
+
+src/inference/PlayingStyleClassifier.s: src/inference/PlayingStyleClassifier.cpp.s
+.PHONY : src/inference/PlayingStyleClassifier.s
+
+# target to generate assembly for a file
+src/inference/PlayingStyleClassifier.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/inference/PlayingStyleClassifier.cpp.s
+.PHONY : src/inference/PlayingStyleClassifier.cpp.s
 
 src/inference/RuleBasedInference.o: src/inference/RuleBasedInference.cpp.o
 .PHONY : src/inference/RuleBasedInference.o
@@ -3022,18 +3148,30 @@ help:
 	@echo "... juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData3.o"
 	@echo "... juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData3.i"
 	@echo "... juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData3.s"
+	@echo "... juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.o"
+	@echo "... juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.i"
+	@echo "... juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData4.s"
+	@echo "... juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.o"
+	@echo "... juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.i"
+	@echo "... juce_binarydata_MetalAccompanimentData/JuceLibraryCode/BinaryData5.s"
 	@echo "... src/AccompanimentEditor.o"
 	@echo "... src/AccompanimentEditor.i"
 	@echo "... src/AccompanimentEditor.s"
 	@echo "... src/AccompanimentProcessor.o"
 	@echo "... src/AccompanimentProcessor.i"
 	@echo "... src/AccompanimentProcessor.s"
+	@echo "... src/analysis/AudioRingBuffer.o"
+	@echo "... src/analysis/AudioRingBuffer.i"
+	@echo "... src/analysis/AudioRingBuffer.s"
 	@echo "... src/analysis/BeatTracker.o"
 	@echo "... src/analysis/BeatTracker.i"
 	@echo "... src/analysis/BeatTracker.s"
 	@echo "... src/analysis/EnergyAnalyser.o"
 	@echo "... src/analysis/EnergyAnalyser.i"
 	@echo "... src/analysis/EnergyAnalyser.s"
+	@echo "... src/analysis/MelSpectrogramExtractor.o"
+	@echo "... src/analysis/MelSpectrogramExtractor.i"
+	@echo "... src/analysis/MelSpectrogramExtractor.s"
 	@echo "... src/analysis/PitchEstimator.o"
 	@echo "... src/analysis/PitchEstimator.i"
 	@echo "... src/analysis/PitchEstimator.s"
@@ -3064,6 +3202,9 @@ help:
 	@echo "... src/inference/OnnxStructureInference.o"
 	@echo "... src/inference/OnnxStructureInference.i"
 	@echo "... src/inference/OnnxStructureInference.s"
+	@echo "... src/inference/PlayingStyleClassifier.o"
+	@echo "... src/inference/PlayingStyleClassifier.i"
+	@echo "... src/inference/PlayingStyleClassifier.s"
 	@echo "... src/inference/RuleBasedInference.o"
 	@echo "... src/inference/RuleBasedInference.i"
 	@echo "... src/inference/RuleBasedInference.s"

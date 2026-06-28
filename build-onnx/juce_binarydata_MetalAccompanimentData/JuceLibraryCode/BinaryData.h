@@ -8,6 +8,9 @@
 
 namespace BinaryData
 {
+    extern const char*   forest_png;
+    const int            forest_pngSize = 1177848;
+
     extern const char*   accompaniment_model_onnx;
     const int            accompaniment_model_onnxSize = 14938;
 
@@ -17,8 +20,11 @@ namespace BinaryData
     extern const char*   bass_model_onnx;
     const int            bass_model_onnxSize = 7773;
 
+    extern const char*   classifier_onnx;
+    const int            classifier_onnxSize = 623211;
+
     // Number of elements in the namedResourceList and originalFileNames arrays.
-    const int namedResourceListSize = 3;
+    const int namedResourceListSize = 5;
 
     // Points to the start of a list of resource names.
     extern const char* namedResourceList[];

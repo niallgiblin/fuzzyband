@@ -329,11 +329,13 @@ TEST_CASE("Session XML round-trip: pre-v0.4.0 genre attribute ignored", "[integr
     procSrc.prepareToPlay(48000.0, 512);
     if (auto* p = procSrc.getApvts().getParameter("intensity"))
         p->setValue(0.6f);
-    if (auto* p = procSrc.getApvts().getParameter("structureBlend"))
-        p->setValue(0.3f);
+    if (auto* bpmFloat = dynamic_cast<juce::AudioParameterFloat*>(
+            procSrc.getApvts().getParameter("bpm")))
+        *bpmFloat = 140.0f;
 
     // Force APVTS state tree to reflect setValue before serialising
     procSrc.getApvts().state.sendPropertyChangeMessage("intensity");
+    procSrc.getApvts().state.sendPropertyChangeMessage("bpm");
 
     juce::MemoryBlock baseData;
     procSrc.getStateInformation(baseData);
@@ -348,6 +350,8 @@ TEST_CASE("Session XML round-trip: pre-v0.4.0 genre attribute ignored", "[integr
     // JUCE silently ignores unknown ValueTree properties on deserialization.
     tree.setProperty("genre", "0.75", nullptr);
     tree.setProperty("variation", "0.2", nullptr);
+    tree.setProperty("structureBlend", "0.5", nullptr);
+    tree.setProperty("generativeBassMode", "0", nullptr);
 
     // Step 2: Serialise the tampered ValueTree back to a MemoryBlock.
     juce::MemoryBlock tamperedData;
@@ -364,9 +368,9 @@ TEST_CASE("Session XML round-trip: pre-v0.4.0 genre attribute ignored", "[integr
             procDst.getApvts().getParameter("intensity")))
         REQUIRE(std::abs(inten->get() - 0.6f) < 0.01f);
 
-    if (auto* blend = dynamic_cast<juce::AudioParameterFloat*>(
-            procDst.getApvts().getParameter("structureBlend")))
-        REQUIRE(std::abs(blend->get() - 0.3f) < 0.01f);
+    if (auto* bpmParam = dynamic_cast<juce::AudioParameterFloat*>(
+            procDst.getApvts().getParameter("bpm")))
+        REQUIRE(std::abs(bpmParam->get() - 140.0f) < 1.0f);
 
     // Step 5: Plugin must be in a consistent state (pattern index in valid range).
     REQUIRE(procDst.getDisplayPatternIndex() >= 0);

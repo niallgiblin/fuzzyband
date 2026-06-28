@@ -96,8 +96,8 @@ static void checkInvariants(const SectionResult& r,
         CHECK((r.bpm >= kMinBpm && r.bpm <= kMaxBpm));
     }
 
-    // Structure state must be a valid enum (0=SILENT, 1=AMBIENT, 2=SOFT, 3=LOUD, 4=BREAKDOWN)
-    CHECK((r.stateIndex >= 0 && r.stateIndex <= 4));
+    // Structure state must be a valid enum (0=SILENT, 1=SOFT, 2=LOUD)
+    CHECK((r.stateIndex >= 0 && r.stateIndex <= 2));
 }
 
 } // namespace
@@ -118,7 +118,7 @@ TEST_CASE("Long-duration stability: 300+ seconds continuous processing", "[stabi
     float  maxBpmSeen     = 0.0f;
     int    minPatSeen     = 999;
     int    maxPatSeen     = -1;
-    int    statesSeen[5]  = {0, 0, 0, 0, 0};   // SILENT, AMBIENT, SOFT, LOUD, BREAKDOWN
+    int    statesSeen[3]  = {0, 0, 0};   // SILENT, SOFT, LOUD
 
     auto runSilence = [&](double dur)
     {
@@ -128,7 +128,7 @@ TEST_CASE("Long-duration stability: 300+ seconds continuous processing", "[stabi
         ++totalSections;
         checkInvariants(res, totalSections, false, "SILENCE");
 
-        if (res.stateIndex >= 0 && res.stateIndex <= 4)
+        if (res.stateIndex >= 0 && res.stateIndex <= 2)
             ++statesSeen[res.stateIndex];
     };
 
@@ -151,7 +151,7 @@ TEST_CASE("Long-duration stability: 300+ seconds continuous processing", "[stabi
         }
         if (res.patternIndex < minPatSeen) minPatSeen = res.patternIndex;
         if (res.patternIndex > maxPatSeen) maxPatSeen = res.patternIndex;
-        if (res.stateIndex >= 0 && res.stateIndex <= 4)
+        if (res.stateIndex >= 0 && res.stateIndex <= 2)
             ++statesSeen[res.stateIndex];
     };
 
@@ -189,10 +189,8 @@ TEST_CASE("Long-duration stability: 300+ seconds continuous processing", "[stabi
     std::cerr << "[STABILITY] BPM range: " << minBpmSeen << " – " << maxBpmSeen << std::endl;
     std::cerr << "[STABILITY] Pattern range: " << minPatSeen << " – " << maxPatSeen << std::endl;
     std::cerr << "[STABILITY] States seen: SILENT=" << statesSeen[0]
-              << " AMBIENT=" << statesSeen[1]
-              << " SOFT=" << statesSeen[2]
-              << " LOUD=" << statesSeen[3]
-              << " BREAKDOWN=" << statesSeen[4]
+              << " SOFT=" << statesSeen[1]
+              << " LOUD=" << statesSeen[2]
               << std::endl;
 
     // ── Assertions ──────────────────────────────────────────────────────────
