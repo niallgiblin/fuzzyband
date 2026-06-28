@@ -6,6 +6,7 @@
  */
 
 #include <JuceHeader.h>
+#include <array>
 #include "analysis/EnergyAnalyser.h"
 #include "analysis/StructureTagger.h"
 #include "analysis/StructureSequencer.h"
@@ -110,11 +111,20 @@ private:
     std::string activeInferenceName = "None";
 
     moodycamel::ReaderWriterQueue<FeatureVector> featureQueue{ 4096 };
+    moodycamel::ReaderWriterQueue<PatternPlayer::GrooveCommit> grooveCommitQueue{ 32 };
+
+    // Mel spectrogram queue: audio thread → inference thread (v0.8.0)
+    static constexpr int kMelQueueCapacity = 32;
+    struct MelWindow { std::array<float, MelSpectrogramExtractor::kOutputSize> data; };
+    moodycamel::ReaderWriterQueue<MelWindow> melQueue{ kMelQueueCapacity };
+    std::vector<float> melScratch;  // preallocated: 22050 samples for window read
+
     std::atomic<int> latestPatternIndex{ 0 };
 
     std::atomic<bool> useGenerativeBass{ false };
     std::atomic<bool> resetDrumHoldRequested{ false };
-    moodycamel::ReaderWriterQueue<PatternPlayer::GrooveCommit> grooveCommitQueue{ 32 };
+
+    // Mel spectrogram queue: audio thread → inference thread (v0.8.0)
 
     std::atomic<float> displayBpm{ 120.0f };
     std::atomic<int> displayStateIndex{ 0 };
