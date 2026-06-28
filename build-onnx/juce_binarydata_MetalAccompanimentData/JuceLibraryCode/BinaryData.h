@@ -15,7 +15,7 @@ namespace BinaryData
     const int            accompaniment_model_onnxSize = 14938;
 
     extern const char*   metal_groove_onnx;
-    const int            metal_groove_onnxSize = 32294;
+    const int            metal_groove_onnxSize = 684715;
 
     // Number of elements in the namedResourceList and originalFileNames arrays.
     const int namedResourceListSize = 3;

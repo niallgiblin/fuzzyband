@@ -145,7 +145,7 @@ def export_onnx(
     model.eval()
     dummy_input = torch.randn(1, 1, 64, 32, device=device)
 
-    # Trace with torch.onnx
+    # Trace with torch.onnx — save all data internally for BinaryData bundling
     torch.onnx.export(
         model,
         dummy_input,
@@ -159,6 +159,7 @@ def export_onnx(
             "bottleneck": {0: "batch"},
         },
         opset_version=18,
+        dynamo=False,
     )
     print(f"ONNX model exported: {output_path}")
 
