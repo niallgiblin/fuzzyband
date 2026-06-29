@@ -509,11 +509,14 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         {
             patternPlayer.setGenerativeBassActive(true, static_cast<int>(bassNote), 0.25f);
         }
+        else if (rms > 0.002f)
+        {
+            // Keep bass active so held notes sustain through quiet passages,
+            // but don't change the note duration
+        }
         else
         {
-            // Keep active to sustain, but don't trigger new notes
-            patternPlayer.setGenerativeBassActive(rms > 0.002f,
-                static_cast<int>(bassNote), 0.5f);
+            patternPlayer.setGenerativeBassActive(false, static_cast<int>(bassNote), 0.25f);
         }
 
         useGenerativeBass.store(true, std::memory_order_release);

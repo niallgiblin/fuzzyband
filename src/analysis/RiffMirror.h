@@ -13,6 +13,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <limits>
 
 /**
  * @brief Tracks guitar attack timing, detects repeating riff patterns,
@@ -85,6 +86,6 @@ private:
     // Silence detection
     int silenceCount = 0;
 
-    // Fallback bar trigger
-    int64_t lastBarSample = 0;
+    // Fallback bar trigger — start negative so first bar triggers immediately
+    int64_t lastBarSample = std::numeric_limits<int64_t>::min();
 };
