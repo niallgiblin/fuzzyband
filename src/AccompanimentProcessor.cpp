@@ -8,6 +8,7 @@
 #endif
 #include <chrono>
 #include <cmath>
+#include <cstring>
 
 namespace
 {
@@ -486,39 +487,33 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         gotCommit = true;
     }
 
-    // ── 9. Reactive bass (RMS-attack-driven, section-aware root) ────────
+    // ── 9. Riff-mirroring bass (learns pattern, then mirrors) ───────────
     {
-        // Section-aware bass root: VERSE=C2, CHORUS=G2 (fifth), BRIDGE=F2, else C2
+        // Section-aware bass root
         float sectionRoot = 48.0f;  // C3 → maps to C2
         const char* bassSection = playOn ? structureSequencer.getCurrentSectionName() : "VERSE";
         if (std::strcmp(bassSection, "CHORUS") == 0)
             sectionRoot = 55.0f;  // G3 → maps to G2
         else if (std::strcmp(bassSection, "BRIDGE") == 0)
             sectionRoot = 53.0f;  // F3 → maps to F2
-        else if (std::strcmp(bassSection, "BREAKDOWN") == 0)
-            sectionRoot = 48.0f;  // C3 → maps to C2 (stay low)
 
         const float bassNote = RuleBasedBass::mapToBassRange(sectionRoot);
 
-        // Detect RMS attacks: trigger note on sharp energy rise
-        static float bassRmsSmooth = 0.0f;
-        bassRmsSmooth = 0.9f * bassRmsSmooth + 0.1f * rms;
-        const float attackThreshold = 1.8f;
-        const bool isAttack = (rms > 0.005f) && (rms > bassRmsSmooth * attackThreshold)
-                              && (rmsDelta > 0.3f);
+        // Smooth RMS for attack detection
+        static float rmsSmooth = 0.0f;
+        rmsSmooth = 0.9f * rmsSmooth + 0.1f * rms;
 
-        if (isAttack)
+        riffMirror.process(hostSampleTime, rms, rmsSmooth, bpmForPlayer, sr, numSamples);
+
+        if (riffMirror.shouldTriggerBass())
         {
             patternPlayer.setGenerativeBassActive(true, static_cast<int>(bassNote), 0.25f);
         }
-        else if (rms < 0.003f)
-        {
-            patternPlayer.setGenerativeBassActive(false, static_cast<int>(bassNote), 0.25f);
-        }
         else
         {
-            // Keep bass active so held notes sustain through quieter passages
-            patternPlayer.setGenerativeBassActive(true, static_cast<int>(bassNote), 0.5f);
+            // Keep active to sustain, but don't trigger new notes
+            patternPlayer.setGenerativeBassActive(rms > 0.002f,
+                static_cast<int>(bassNote), 0.5f);
         }
 
         useGenerativeBass.store(true, std::memory_order_release);

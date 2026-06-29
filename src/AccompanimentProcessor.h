@@ -13,6 +13,7 @@
 #include "analysis/AudioRingBuffer.h"
 #include "analysis/MelSpectrogramExtractor.h"
 #include "analysis/PlaybackGate.h"
+#include "analysis/RiffMirror.h"
 #include "analysis/FeatureVector.h"
 #include "inference/IInference.h"
 #include "midi/MidiPatternLibrary.h"
@@ -104,6 +105,7 @@ private:
     StructureSequencer structureSequencer;
     AudioRingBuffer audioRingBuffer{ 22050 };
     MelSpectrogramExtractor melExtractor;
+    RiffMirror riffMirror;
     MidiPatternLibrary patternLibrary;
     PatternPlayer patternPlayer;
 

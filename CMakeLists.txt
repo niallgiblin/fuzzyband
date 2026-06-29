@@ -143,6 +143,7 @@ target_sources(MetalAccompaniment PRIVATE
     src/analysis/AudioRingBuffer.cpp
     src/analysis/MelSpectrogramExtractor.cpp
     src/analysis/PlaybackGate.cpp
+    src/analysis/RiffMirror.cpp
 
     # Inference
     src/inference/RuleBasedInference.cpp
@@ -271,6 +272,7 @@ if(MA_BUILD_TESTS)
         src/analysis/AudioRingBuffer.cpp
         src/analysis/MelSpectrogramExtractor.cpp
         src/analysis/PlaybackGate.cpp
+        src/analysis/RiffMirror.cpp
         src/inference/RuleBasedInference.cpp
         src/midi/MidiPatternLibrary.cpp
         src/midi/PatternPlayer.cpp
