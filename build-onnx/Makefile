@@ -1775,6 +1775,33 @@ src/analysis/PlaybackGate.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/PlaybackGate.cpp.s
 .PHONY : src/analysis/PlaybackGate.cpp.s
 
+src/analysis/RiffMirror.o: src/analysis/RiffMirror.cpp.o
+.PHONY : src/analysis/RiffMirror.o
+
+# target to build an object file
+src/analysis/RiffMirror.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/RiffMirror.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/RiffMirror.cpp.o
+.PHONY : src/analysis/RiffMirror.cpp.o
+
+src/analysis/RiffMirror.i: src/analysis/RiffMirror.cpp.i
+.PHONY : src/analysis/RiffMirror.i
+
+# target to preprocess a source file
+src/analysis/RiffMirror.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/RiffMirror.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/RiffMirror.cpp.i
+.PHONY : src/analysis/RiffMirror.cpp.i
+
+src/analysis/RiffMirror.s: src/analysis/RiffMirror.cpp.s
+.PHONY : src/analysis/RiffMirror.s
+
+# target to generate assembly for a file
+src/analysis/RiffMirror.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompaniment.dir/build.make CMakeFiles/MetalAccompaniment.dir/src/analysis/RiffMirror.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/MetalAccompanimentTests.dir/build.make CMakeFiles/MetalAccompanimentTests.dir/src/analysis/RiffMirror.cpp.s
+.PHONY : src/analysis/RiffMirror.cpp.s
+
 src/analysis/StructureSequencer.o: src/analysis/StructureSequencer.cpp.o
 .PHONY : src/analysis/StructureSequencer.o
 
@@ -2668,6 +2695,9 @@ help:
 	@echo "... src/analysis/PlaybackGate.o"
 	@echo "... src/analysis/PlaybackGate.i"
 	@echo "... src/analysis/PlaybackGate.s"
+	@echo "... src/analysis/RiffMirror.o"
+	@echo "... src/analysis/RiffMirror.i"
+	@echo "... src/analysis/RiffMirror.s"
 	@echo "... src/analysis/StructureSequencer.o"
 	@echo "... src/analysis/StructureSequencer.i"
 	@echo "... src/analysis/StructureSequencer.s"

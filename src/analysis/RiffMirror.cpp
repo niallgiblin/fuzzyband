@@ -25,7 +25,7 @@ void RiffMirror::reset() noexcept
     lastAttackSample = 0;
     lastRms = 0.0f;
     silenceCount = 0;
-    lastBarSample = 0;
+    lastBarSample = std::numeric_limits<int64_t>::min();
 }
 
 bool RiffMirror::detectAttack(float rms, float rmsSmooth) const noexcept
@@ -220,11 +220,11 @@ void RiffMirror::process(int64_t sampleTime, float rms, float rmsSmooth,
         }
     }
 
-    // Fallback: if not locked, trigger bass on beat 1 of each bar
+    // Fallback: if not locked, trigger bass on quarter notes (every beat)
     if (!locked)
     {
-        const int64_t samplesPerBar = static_cast<int64_t>(4.0 * (60.0 * sampleRate / static_cast<double>(bpm)));
-        if (sampleTime - lastBarSample >= samplesPerBar)
+        const int64_t samplesPerBeat = static_cast<int64_t>(60.0 * sampleRate / static_cast<double>(bpm));
+        if (samplesPerBeat > 0 && (sampleTime - lastBarSample >= samplesPerBeat))
         {
             bassTriggerNow = true;
             lastBarSample = sampleTime;
