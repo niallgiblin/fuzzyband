@@ -44,19 +44,6 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     userPolicyHeading.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(userPolicyHeading);
 
-    for (auto* l : { &intensityLabel })
-    {
-        l->setJustificationType(juce::Justification::centredLeft);
-        l->setFont(juce::FontOptions(14.0f, juce::Font::bold));
-        l->setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
-    }
-
-    intensitySlider.setSliderStyle(juce::Slider::LinearHorizontal);
-    intensitySlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 18);
-    intensitySlider.setRange(0.0, 1.0, 0.001);
-    addAndMakeVisible(intensityLabel);
-    addAndMakeVisible(intensitySlider);
-
     bpmSliderLabel.setJustificationType(juce::Justification::centredLeft);
     bpmSliderLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
     bpmSliderLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
@@ -92,8 +79,6 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(playButton);
 
     auto& apvts = audioProcessorRef.getApvts();
-    intensityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        apvts, "intensity", intensitySlider);
     bpmAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "bpm", bpmSlider);
     songFormAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
@@ -207,10 +192,6 @@ void AccompanimentEditor::resized()
     r.removeFromTop(8);
 
     auto row = r.removeFromTop(52);
-    intensityLabel.setBounds(row.removeFromLeft(140));
-    intensitySlider.setBounds(row);
-    r.removeFromTop(8);
-
     row = r.removeFromTop(72);
     bpmSliderLabel.setBounds(row.removeFromLeft(140));
     bpmSlider.setBounds(row);

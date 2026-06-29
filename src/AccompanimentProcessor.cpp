@@ -56,12 +56,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::crea
         1.0f));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{ "intensity", 1 },
-        "Intensity",
-        juce::NormalisableRange<float>{ 0.0f, 1.0f, 0.001f },
-        0.5f));
-
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{ "bpm", 1 },
         "Tempo (BPM)",
         juce::NormalisableRange<float>{ 40.0f, 300.0f, 1.0f },
@@ -428,9 +422,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     fv.pitchRootMidi = 40.0f;   // fixed E2
     fv.pitchConfidence = 0.0f;
     fv.rmsDelta = rmsDelta;
-    fv.subBassRatio = energyAnalyser.getSubBassRatio();
-    if (auto* rawIntensity = apvts.getRawParameterValue("intensity"))
-        fv.policyIntensity = rawIntensity->load();
+    fv.policyIntensity = 0.5f;
     (void)featureQueue.try_enqueue(fv);
 
     // ── 6. Pattern playback ─────────────────────────────────────────────────
@@ -492,8 +484,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         gotCommit = true;
     }
 
-    // ── 9. Bass generation (fixed root C2, section-aware) ───────────────────
-    const float bassRoot = 36.0f;  // C2
+    // ── 9. Bass generation (fixed root C2=36, section-aware) ────────────────
+    const float bassRoot = 48.0f;  // C3 → maps to C2 (36) after -12 octave shift
     const char* bassSection = playOn ? structureSequencer.getCurrentSectionName() : "VERSE";
     PatternPlayer::GrooveCommit bassCommit = RuleBasedBass::generate(
         bassRoot, bassSection, playOn && structureSequencer.isFirstBar(), bpmForPlayer);
