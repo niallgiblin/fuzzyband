@@ -136,9 +136,6 @@ private:
     juce::Label versionLabel;
     juce::Label userPolicyHeading;
 
-    juce::Label intensityLabel{ {}, "Intensity" };
-    juce::Slider intensitySlider;
-
     juce::Label bpmSliderLabel{ {}, "Tempo (BPM)" };
     juce::Slider bpmSlider;
 
@@ -149,7 +146,6 @@ private:
 
     juce::TextButton playButton{ "▶ PLAY" };
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> intensityAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> songFormAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopAttachment;
