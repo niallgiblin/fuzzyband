@@ -233,6 +233,10 @@ target_link_libraries(MetalAccompaniment PRIVATE
 
 if(MA_ENABLE_ONNX)
     target_link_libraries(MetalAccompaniment PRIVATE "${ONNX_LIB}")
+    # Ensure the ONNX Runtime dylib is findable at runtime
+    set_target_properties(MetalAccompaniment PROPERTIES
+        BUILD_RPATH "${ONNXRUNTIME_ROOT}/lib"
+    )
 endif()
 
 if(BINARY_DATA_SOURCES)
