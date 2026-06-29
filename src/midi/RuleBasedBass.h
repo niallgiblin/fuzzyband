@@ -27,6 +27,9 @@ public:
     static constexpr float kBassMinMidi = 24.0f;
     static constexpr float kBassMaxMidi = 52.0f;
 
+    /** Map guitar MIDI down one octave to bass range. */
+    static float mapToBassRange(float guitarMidi) noexcept;
+
     /**
      * @brief Generate a GrooveCommit with bass data for one bar.
      *
@@ -43,9 +46,6 @@ public:
         float bpm) noexcept;
 
 private:
-    /** Map guitar MIDI (typically E2-G4, 40-67) down one octave to bass range. */
-    static float mapToBassRange(float guitarMidi) noexcept;
-
     /** Determine how many bass notes to play based on section. */
     static int notesPerBar(const char* sectionName) noexcept;
 

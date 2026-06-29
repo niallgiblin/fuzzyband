@@ -68,6 +68,7 @@ public:
     juce::String getSectionName() const noexcept;
     int getDisplayStateIndex() const noexcept { return displayStateIndex.load(std::memory_order_relaxed); }
     int getDisplayPatternIndex() const noexcept { return displayPatternIndex.load(std::memory_order_relaxed); }
+    int getDisplayStyle() const noexcept { return displayStyle.load(std::memory_order_relaxed); }
     float getDisplayRms() const noexcept { return displayRms.load(std::memory_order_relaxed); }
     float getDisplayCentroid() const noexcept { return displayCentroid.load(std::memory_order_relaxed); }
     float getDisplayHfFlux() const noexcept { return displayHfFlux.load(std::memory_order_relaxed); }
@@ -129,6 +130,7 @@ private:
     std::atomic<float> displayBpm{ 120.0f };
     std::atomic<int> displayStateIndex{ 0 };
     std::atomic<int> displayPatternIndex{ 0 };
+    std::atomic<int> displayStyle{ 4 };  // 0=palm_mute,1=open_chord,2=single_note,3=sustain,4=silence
     std::atomic<float> displayRms{ 0.0f };
     std::atomic<float> displayCentroid{ 0.0f };
     std::atomic<float> displayHfFlux{ 0.0f };

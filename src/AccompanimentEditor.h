@@ -155,6 +155,7 @@ private:
     juce::Label bpmLabel;
     juce::Label stateLabel;
     juce::Label patternLabel;
+    juce::Label styleLabel;
     juce::Label rmsLabel;
     juce::Label centroidLabel;
     juce::Label hfFluxLabel;
