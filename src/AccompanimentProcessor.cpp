@@ -507,17 +507,13 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
         if (riffMirror.shouldTriggerBass())
         {
-            patternPlayer.setGenerativeBassActive(true, static_cast<int>(bassNote), 0.25f);
+            patternPlayer.setGenerativeBassActive(true, static_cast<int>(bassNote), 0.9f);
         }
-        else if (rms > 0.002f)
+        else if (rms < 0.002f)
         {
-            // Keep bass active so held notes sustain through quiet passages,
-            // but don't change the note duration
+            patternPlayer.setGenerativeBassActive(false, static_cast<int>(bassNote), 0.9f);
         }
-        else
-        {
-            patternPlayer.setGenerativeBassActive(false, static_cast<int>(bassNote), 0.25f);
-        }
+        // else: keep active with existing duration — note sustains naturally
 
         useGenerativeBass.store(true, std::memory_order_release);
     }
