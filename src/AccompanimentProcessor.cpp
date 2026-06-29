@@ -196,6 +196,8 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
                 if (auto* groove = dynamic_cast<MetalGrooveInference*>(inference.get()))
                 {
                     idx = groove->selectPatternFromMel(latestMel.data.data(), excludeParam);
+                    displayStyle.store(groove->classifyStyle(latestMel.data.data()),
+                                       std::memory_order_relaxed);
                     usedMelPath = true;
                 }
             }
@@ -484,29 +486,42 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         gotCommit = true;
     }
 
-    // ── 9. Bass generation (fixed root C2=36, section-aware) ────────────────
-    const float bassRoot = 48.0f;  // C3 → maps to C2 (36) after -12 octave shift
-    const char* bassSection = playOn ? structureSequencer.getCurrentSectionName() : "VERSE";
-    PatternPlayer::GrooveCommit bassCommit = RuleBasedBass::generate(
-        bassRoot, bassSection, playOn && structureSequencer.isFirstBar(), bpmForPlayer);
+    // ── 9. Reactive bass (RMS-attack-driven, section-aware root) ────────
+    {
+        // Section-aware bass root: VERSE=C2, CHORUS=G2 (fifth), BRIDGE=F2, else C2
+        float sectionRoot = 48.0f;  // C3 → maps to C2
+        const char* bassSection = playOn ? structureSequencer.getCurrentSectionName() : "VERSE";
+        if (std::strcmp(bassSection, "CHORUS") == 0)
+            sectionRoot = 55.0f;  // G3 → maps to G2
+        else if (std::strcmp(bassSection, "BRIDGE") == 0)
+            sectionRoot = 53.0f;  // F3 → maps to F2
+        else if (std::strcmp(bassSection, "BREAKDOWN") == 0)
+            sectionRoot = 48.0f;  // C3 → maps to C2 (stay low)
 
-    if (gotCommit)
-    {
-        bassCommit.patternIndex = commit.patternIndex;
-        bassCommit.fillKind = commit.fillKind;
-    }
-    else
-    {
-        bassCommit.patternIndex = effectivePatternIdx;
-    }
-    commit = bassCommit;
-    gotCommit = true;
+        const float bassNote = RuleBasedBass::mapToBassRange(sectionRoot);
 
-    useGenerativeBass.store(true, std::memory_order_release);
-    if (gotCommit)
-    {
-        patternPlayer.setGenerativeBassActive(true, static_cast<int>(bassRoot), 1.0f);
-        patternPlayer.queueGrooveCommit(commit);
+        // Detect RMS attacks: trigger note on sharp energy rise
+        static float bassRmsSmooth = 0.0f;
+        bassRmsSmooth = 0.9f * bassRmsSmooth + 0.1f * rms;
+        const float attackThreshold = 1.8f;
+        const bool isAttack = (rms > 0.005f) && (rms > bassRmsSmooth * attackThreshold)
+                              && (rmsDelta > 0.3f);
+
+        if (isAttack)
+        {
+            patternPlayer.setGenerativeBassActive(true, static_cast<int>(bassNote), 0.25f);
+        }
+        else if (rms < 0.003f)
+        {
+            patternPlayer.setGenerativeBassActive(false, static_cast<int>(bassNote), 0.25f);
+        }
+        else
+        {
+            // Keep bass active so held notes sustain through quieter passages
+            patternPlayer.setGenerativeBassActive(true, static_cast<int>(bassNote), 0.5f);
+        }
+
+        useGenerativeBass.store(true, std::memory_order_release);
     }
 
     // ── 10. Process MIDI ────────────────────────────────────────────────────

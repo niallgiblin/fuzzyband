@@ -89,7 +89,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     loopToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xff6a9a50));
     addAndMakeVisible(loopToggle);
 
-    for (auto* l : { &bpmLabel, &stateLabel, &patternLabel, &rmsLabel, &centroidLabel, &hfFluxLabel })
+    for (auto* l : { &bpmLabel, &stateLabel, &patternLabel, &styleLabel, &rmsLabel, &centroidLabel, &hfFluxLabel })
     {
         l->setJustificationType(juce::Justification::centredLeft);
         l->setFont(juce::FontOptions(11.0f));
@@ -99,6 +99,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(bpmLabel);
     addAndMakeVisible(stateLabel);
     addAndMakeVisible(patternLabel);
+    addAndMakeVisible(styleLabel);
     addAndMakeVisible(rmsLabel);
     addAndMakeVisible(centroidLabel);
     addAndMakeVisible(hfFluxLabel);
@@ -133,6 +134,11 @@ void AccompanimentEditor::timerCallback()
     bpmLabel.setText("BPM: " + juce::String(bpm, 1), juce::dontSendNotification);
     stateLabel.setText("State: " + juce::String(stateName(audioProcessorRef.getDisplayStateIndex())), juce::dontSendNotification);
     patternLabel.setText("Pattern: " + juce::String(audioProcessorRef.getDisplayPatternIndex()), juce::dontSendNotification);
+
+    static const char* kStyleNames[] = {"Palm Mute", "Open Chord", "Single Note", "Sustain", "Silence"};
+    const int si = juce::jlimit(0, 4, audioProcessorRef.getDisplayStyle());
+    styleLabel.setText("Style: " + juce::String(kStyleNames[si]), juce::dontSendNotification);
+
     rmsLabel.setText("RMS: " + juce::String(audioProcessorRef.getDisplayRms(), 4), juce::dontSendNotification);
     centroidLabel.setText("Centroid: " + juce::String(audioProcessorRef.getDisplayCentroid(), 0) + " Hz", juce::dontSendNotification);
     hfFluxLabel.setText("HF Flux: " + juce::String(audioProcessorRef.getDisplayHfFlux(), 4), juce::dontSendNotification);
@@ -215,6 +221,7 @@ void AccompanimentEditor::resized()
     bpmLabel.setBounds(r.removeFromTop(24));
     stateLabel.setBounds(r.removeFromTop(24));
     patternLabel.setBounds(r.removeFromTop(24));
+    styleLabel.setBounds(r.removeFromTop(24));
     rmsLabel.setBounds(r.removeFromTop(24));
     centroidLabel.setBounds(r.removeFromTop(24));
     hfFluxLabel.setBounds(r.removeFromTop(24));
