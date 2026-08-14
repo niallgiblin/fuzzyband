@@ -71,4 +71,7 @@ private:
 
     // Scratch for FFT
     std::vector<float> fftScratch;
+
+    // Reused magnitude-spectrum buffer (avoids per-hop heap allocation on audio thread).
+    std::vector<float> frameMagnitudes;
 };

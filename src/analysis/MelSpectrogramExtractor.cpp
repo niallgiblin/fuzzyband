@@ -34,6 +34,7 @@ MelSpectrogramExtractor::MelSpectrogramExtractor()
     spectraBuffer.resize(static_cast<size_t>(kTimeFrames * numBins), 0.0f);
 
     fftScratch.resize(kFftSize * 2); // interleaved real/imag for JUCE FFT
+    frameMagnitudes.resize(kFftSize / 2 + 1);
 
     buildMelFilterbank();
 }
@@ -132,16 +133,16 @@ bool MelSpectrogramExtractor::process(const float* audio, float* melOut) noexcep
 
         fft->performRealOnlyForwardTransform(fftScratch.data(), true);
 
-        // Compute magnitude spectrum (only positive frequencies)
-        std::vector<float> mags(static_cast<size_t>(numBins));
+        // Compute magnitude spectrum (only positive frequencies), reusing the
+        // pre-allocated frameMagnitudes buffer (no heap allocation on audio thread).
         for (int b = 0; b < numBins; ++b)
         {
             const float re = fftScratch[static_cast<size_t>(b * 2)];
             const float im = fftScratch[static_cast<size_t>(b * 2 + 1)];
-            mags[static_cast<size_t>(b)] = std::sqrt(re * re + im * im);
+            frameMagnitudes[static_cast<size_t>(b)] = std::sqrt(re * re + im * im);
         }
 
-        processFrame(mags.data());
+        processFrame(frameMagnitudes.data());
     }
 
     // ── Apply mel filterbank to the full rolling buffer ───────────────────

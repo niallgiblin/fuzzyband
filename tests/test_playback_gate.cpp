@@ -2,168 +2,93 @@
 
 #include "analysis/PlaybackGate.h"
 
-// Helper: call update() repeatedly with SILENT state for totalSamples worth of blocks.
-static void feedSilence(PlaybackGate& gate, double sr, int totalSamples, int blockSize = 512)
+namespace
 {
-    int remaining = totalSamples;
-    while (remaining > 0)
-    {
-        const int n = std::min(remaining, blockSize);
-        gate.update(StructureState::SILENT, 0.0, false, false, 0.0f, n, sr);
-        remaining -= n;
-    }
-}
-
-// Helper: call update() repeatedly with LOUD state for totalSamples worth of blocks.
-static GateDecision feedLoud(PlaybackGate& gate, double sr, int totalSamples,
-                              double beatPhase, bool isLocked, bool isOnsetLocked,
-                              float conf, int blockSize = 512)
+// Feed `totalSamples` worth of a single structure state in `blockSize` chunks.
+GateDecision feed(PlaybackGate& gate, StructureState st, double sr,
+                  int totalSamples, int blockSize = 512)
 {
     GateDecision last{};
     int remaining = totalSamples;
     while (remaining > 0)
     {
         const int n = std::min(remaining, blockSize);
-        last = gate.update(StructureState::LOUD, beatPhase, isLocked, isOnsetLocked, conf, n, sr);
+        last = gate.update(st, n, sr);
         remaining -= n;
     }
     return last;
 }
+} // namespace
 
-TEST_CASE("PlaybackGate: phrase-breath hold keeps gate closed and does not reset trackers", "[playback_gate]")
+TEST_CASE("PlaybackGate: short silence is a phrase breath, not a reset", "[playback_gate]")
 {
-    // Feed SILENT for < 2 seconds of samples — should not trigger resetTrackers.
     PlaybackGate gate;
     const double sr = 44100.0;
-    // 1.5 seconds — below kPhraseBreathHoldSec (2.0s)
-    const int silentSamples = static_cast<int>(1.5 * sr);
-    GateDecision gd{};
-    int remaining = silentSamples;
-    while (remaining > 0)
-    {
-        const int n = std::min(remaining, 512);
-        gd = gate.update(StructureState::SILENT, 0.0, false, false, 0.0f, n, sr);
-        remaining -= n;
-    }
+
+    // Establish a non-silent previous state.
+    feed(gate, StructureState::LOUD, sr, static_cast<int>(1.0 * sr));
+
+    // 4s of silence is below the 8s hold — a phrase breath.
+    const GateDecision silentGd = feed(gate, StructureState::SILENT, sr, static_cast<int>(4.0 * sr));
+    REQUIRE_FALSE(silentGd.resetTrackers);
+    REQUIRE_FALSE(silentGd.armCrash);
+}
+
+TEST_CASE("PlaybackGate: phrase-breath re-entry arms a crash cymbal", "[playback_gate]")
+{
+    PlaybackGate gate;
+    const double sr = 44100.0;
+
+    feed(gate, StructureState::LOUD, sr, static_cast<int>(1.0 * sr));
+    feed(gate, StructureState::SILENT, sr, static_cast<int>(4.0 * sr));
+
+    // First loud block after a phrase breath → arm crash.
+    const GateDecision gd = gate.update(StructureState::LOUD, 512, sr);
+    REQUIRE(gd.armCrash);
     REQUIRE_FALSE(gd.resetTrackers);
-    REQUIRE_FALSE(gd.gateOpen);
-    REQUIRE_FALSE(gd.armCrash);
-    REQUIRE_FALSE(gd.snapBeatNow);
-    REQUIRE_FALSE(gate.isGateOpen());
 }
 
 TEST_CASE("PlaybackGate: full reset fires after long silence (> 8s)", "[playback_gate]")
 {
     PlaybackGate gate;
     const double sr = 44100.0;
-    // Feed > 8s of silence (9.0s = 396900 samples)
-    const int silentSamples = static_cast<int>(9.0 * sr);
-    GateDecision lastGd{};
-    int remaining = silentSamples;
-    while (remaining > 0)
-    {
-        const int n = std::min(remaining, 512);
-        lastGd = gate.update(StructureState::SILENT, 0.0, false, false, 0.0f, n, sr);
-        remaining -= n;
-    }
+
+    feed(gate, StructureState::LOUD, sr, static_cast<int>(1.0 * sr));
+
+    const GateDecision lastGd = feed(gate, StructureState::SILENT, sr, static_cast<int>(9.0 * sr));
     REQUIRE(lastGd.resetTrackers);
-    REQUIRE_FALSE(lastGd.gateOpen);
-    REQUIRE_FALSE(gate.isGateOpen());
+    REQUIRE_FALSE(lastGd.armCrash);
 }
 
 TEST_CASE("PlaybackGate: 7s silence does NOT trigger reset (within 8s hold)", "[playback_gate]")
 {
-    // 7.0s is below the 8.0s hold — should NOT trigger resetTrackers.
     PlaybackGate gate;
     const double sr = 44100.0;
-    const int silentSamples = static_cast<int>(7.0 * sr);
-    GateDecision gd{};
-    int remaining = silentSamples;
-    while (remaining > 0)
-    {
-        const int n = std::min(remaining, 512);
-        gd = gate.update(StructureState::SILENT, 0.0, false, false, 0.0f, n, sr);
-        remaining -= n;
-    }
+
+    feed(gate, StructureState::LOUD, sr, static_cast<int>(1.0 * sr));
+
+    const GateDecision gd = feed(gate, StructureState::SILENT, sr, static_cast<int>(7.0 * sr));
     REQUIRE_FALSE(gd.resetTrackers);
-    REQUIRE_FALSE(gd.gateOpen);
-    REQUIRE_FALSE(gate.isGateOpen());
 }
 
-TEST_CASE("PlaybackGate: active fallback opens gate after kActiveFallbackStartSec when not locked", "[playback_gate]")
+TEST_CASE("PlaybackGate: reset() clears state", "[playback_gate]")
 {
-    // Gate was closed, feed LOUD with no tempo lock and low confidence for > 0.35s
     PlaybackGate gate;
     const double sr = 44100.0;
-    // Feed slightly more than kActiveFallbackStartSec (0.35s) = ~15435 samples
-    // Use enough to cross beat phase wrap for snap. Since fallbackSnap fires, snapBeatNow=true.
-    // Feed a total of 1.0s with monotonically increasing beatPhase to ensure wrap fires.
-    const int totalSamples = static_cast<int>(1.0 * sr);
-    GateDecision gd{};
-    int remaining = totalSamples;
-    double phase = 0.0;
-    const double phaseStep = (512.0 / sr) * (120.0 / 60.0); // 120 BPM advance per block
-    while (remaining > 0)
-    {
-        const int n = std::min(remaining, 512);
-        phase = std::fmod(phase + phaseStep, 1.0);
-        gd = gate.update(StructureState::LOUD, phase, false, false, 0.2f, n, sr);
-        remaining -= n;
-    }
-    // After > kActiveFallbackStartSec with no lock, gate should open
-    REQUIRE(gate.isGateOpen());
+
+    feed(gate, StructureState::LOUD, sr, static_cast<int>(1.0 * sr));
+    feed(gate, StructureState::SILENT, sr, static_cast<int>(4.0 * sr));
+    gate.reset();
+
+    // After reset, a single SILENT block must not request a reset.
+    const GateDecision gd = gate.update(StructureState::SILENT, 512, sr);
+    REQUIRE_FALSE(gd.resetTrackers);
     REQUIRE_FALSE(gd.armCrash);
 }
 
-TEST_CASE("PlaybackGate: armCrash fires on phrase-breath re-entry (SILENT then LOUD)", "[playback_gate]")
-{
-    PlaybackGate gate;
-    const double sr = 44100.0;
-
-    // Phase 1: Feed some LOUD to open gate
-    feedLoud(gate, sr, static_cast<int>(1.0 * sr), 0.0, true, true, 0.8f);
-
-    // Phase 2: Feed SILENT < 8s (phrase breath, inPhraseBreath=true)
-    feedSilence(gate, sr, static_cast<int>(4.0 * sr));
-
-    // Phase 3: One LOUD block — should fire armCrash
-    GateDecision gd = gate.update(StructureState::LOUD, 0.5, true, true, 0.8f, 512, sr);
-    REQUIRE(gd.armCrash);
-}
-
-TEST_CASE("PlaybackGate: opens immediately when isOnsetTempoLocked is true", "[playback_gate]")
-{
-    PlaybackGate gate;
-    const double sr = 44100.0;
-
-    // When tempo is manually set (isOnsetTempoLocked=true), gate opens immediately
-    // without waiting for beat boundary snap (D005/D006).
-    GateDecision gd = gate.update(StructureState::LOUD, 0.5, true, true, 0.8f, 512, sr);
-    REQUIRE(gd.gateOpen);
-    REQUIRE(gd.snapBeatNow);
-    REQUIRE(gate.isGateOpen());
-}
-
-TEST_CASE("PlaybackGate: reset() clears all state", "[playback_gate]")
-{
-    PlaybackGate gate;
-    const double sr = 44100.0;
-    // Open the gate first
-    feedLoud(gate, sr, static_cast<int>(2.0 * sr), 0.0, true, true, 0.9f);
-    // Gate may be open now; reset should clear everything
-    gate.reset();
-    REQUIRE_FALSE(gate.isGateOpen());
-    // After reset, a single SILENT block should not produce resetTrackers
-    GateDecision gd = gate.update(StructureState::SILENT, 0.0, false, false, 0.0f, 512, sr);
-    REQUIRE_FALSE(gd.resetTrackers);
-}
-
-TEST_CASE("PlaybackGate: GateDecision has all four boolean fields", "[playback_gate]")
+TEST_CASE("PlaybackGate: GateDecision defaults", "[playback_gate]")
 {
     GateDecision gd;
-    // Verify default values
-    REQUIRE_FALSE(gd.gateOpen);
-    REQUIRE_FALSE(gd.snapBeatNow);
     REQUIRE_FALSE(gd.armCrash);
     REQUIRE_FALSE(gd.resetTrackers);
 }

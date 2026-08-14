@@ -3,6 +3,11 @@
 /**
  * @file
  * @brief Beat-synchronised MIDI drum/bass rendering from @ref MidiPatternLibrary data.
+ *
+ * The drum/bass clock is anchored to the DAW transport. process() receives the
+ * host sample position (getTimeInSamples()) and derives the beat grid from it,
+ * so patterns stay locked to the host timeline across seeks, loops and transport
+ * start/stop. Tempo is host-authoritative (set via setBpm()/snapBpm()).
  */
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -32,7 +37,7 @@ public:
         bool hasBassFrame = false;
         float bassPitchOffset[16] = {};
         float bassVelocity[16] = {};
-        float bassRootMidi = 36.0f;  // C2 (drop C)
+        float bassRootMidi = 40.0f;  // E2
         TransitionFillKind fillKind = TransitionFillKind::None;
     };
 
@@ -46,21 +51,26 @@ public:
     void setBpm(float bpm);
     void setPatternIndex(int index);
     void setStructureSilent(bool silent);
-    /** @brief Resets beat clock to bar 1; call when count-in gate completes. Audio thread safe (no heap). */
+
+    /** @brief Drops deferred pattern changes; the host grid is authoritative, so no beat reset occurs. */
     void snapToBarStart();
-    /** @brief Set BPM directly with no EMA smoothing. Use only at gate-open. Audio thread safe. */
+
+    /** @brief Set BPM directly with no smoothing (host-authoritative). */
     void snapBpm(float newBpm);
+
     /** @brief Semitone transpose for bass (ch @c kBassChannel) only; clamped [-24,24]. Audio thread. */
     void setBassSemitoneOffset(int semitones);
 
-    /** @brief Generative bass (Phase 13): when active, library bass events are not emitted. Audio thread.
-        @p rootMidi is absolute (matches ONNX `Y_bass`); not summed with @ref setBassSemitoneOffset. */
-    void setGenerativeBassActive(bool active, int rootMidi, float durationBeats);
+    /** @brief Set bass parameters for simple beat-aligned playback.
+        @p rootMidi is the bass root note (e.g., 40 = E2)
+        @p notesPerBar controls density: 1=whole, 2=half, 4=quarter notes */
+    void setBassParams(int rootMidi, int notesPerBar) noexcept;
 
-    /** @brief Piano-roll generative bass (Phase 23): deliver 16-step decoded ONNX output. Audio thread.
-        @p pitchOffset[16] are relative semitone offsets; @p velocity[16] are 0=rest.
-        @p rootMidi is the conditioned absolute root from X_bass. */
-    void setGenerativeBassSteps(const float pitchOffset[16], const float velocity[16], float rootMidi);
+    /** @brief Enable/disable phrase-learned bass mode. When enabled, beat-aligned bass is suppressed. */
+    void setPhraseLearnerActive(bool active) noexcept { phraseLearnerActive_ = active; }
+
+    /** @brief Trigger a single bass note from PhraseLearner. Call from audio thread. */
+    void triggerLearnedBassNote(int midiNote, float velocity, int sampleOffset, int durationSamples) noexcept;
 
     /** @brief Queue a fixed-size drum/bass commit for the next bar boundary. Audio thread safe. */
     void queueGrooveCommit(const GrooveCommit& commit) noexcept;
@@ -68,38 +78,40 @@ public:
     /** @brief Cancel a deferred groove commit before its bar-boundary activation. Audio thread safe. */
     void clearPendingGrooveCommit() noexcept;
 
-    /** @brief Fill @p midi for this audio block using host sample position for timing. */
+    /** @brief Fill @p midi for this audio block, anchoring the beat grid to @p hostSamplePosition. */
     void process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition);
 
-    /** @brief Arm a crash cymbal (MIDI 49) for the next active block. Audio thread safe. */
-    void armTransitionCrash() noexcept { fireTransitionCrash = true; }
+    /** @brief Arm a crash cymbal (MIDI 49) hit at the next block start. Audio thread safe. */
+    void armTransitionCrash() noexcept { armCrashPending = true; }
 
     static constexpr int kBassChannel = 2;
 
 private:
-    void emitEventsForRange(juce::MidiBuffer& midi,
-                            int numSamples,
-                            double beatStart,
-                            double beatEnd,
-                            const MidiPattern& pattern,
-                            int sampleOffsetBase);
+    /** Emit drum events from a pattern for an absolute beat range. */
+    void emitDrumEventsForRange(juce::MidiBuffer& midi,
+                                int numSamples,
+                                double beatStart,
+                                double beatEnd,
+                                const MidiPattern& pattern,
+                                int sampleOffsetBase);
 
-    void emitGenerativeBassForWindow(juce::MidiBuffer& midi,
-                                     int numSamples,
-                                     double beatStart,
-                                     double beatEnd,
-                                     int sampleOffsetBase);
-
-    /** Phase 23: piano-roll generative bass emission. */
-    void emitGenerativeBassSteps(juce::MidiBuffer& midi,
-                                 int numSamples,
-                                 double beatStart,
-                                 double beatEnd,
-                                 int sampleOffsetBase);
+    /** Simple beat-aligned bass: emits root notes on beats based on bassNotesPerBar. */
+    void emitBeatAlignedBass(juce::MidiBuffer& midi,
+                             int numSamples,
+                             double beatStart,
+                             double beatEnd,
+                             int sampleOffsetBase);
 
     void emitTransitionFill(juce::MidiBuffer& midi,
                             int numSamples,
-                            TransitionFillKind kind) noexcept;
+                            TransitionFillKind kind,
+                            int sampleOffsetBase) noexcept;
+
+    /** Emit a crash cymbal hit with a scheduled note-off (no hanging cymbal). */
+    void emitCrashHit(juce::MidiBuffer& midi,
+                      int numSamples,
+                      int64_t hostSamplePosition,
+                      int sampleOffset) noexcept;
 
     int humanVel(int base) const;
     int humanSamples() const;
@@ -116,45 +128,33 @@ private:
     bool pendingGrooveCommitValid = false;
     GrooveCommit pendingGrooveCommit{};
 
-    double beatPosition = 0.0;
-    int64_t sampleCounter = 0;
+    int64_t sampleCounter = 0;       // last host sample position
+    int64_t expectedHostSample = 0;  // next expected host position (jump detection)
 
     bool structureSilent = false;
     bool wasSilent = false;
 
     int bassSemitoneOffset = 0;
 
-    bool generativeBassActive = false;
-    int generativeBassRootMidi = 36;  // C2 (drop C tuning)
-    float generativeBassDurationBeats = 1.0f;
+    // Simple beat-aligned bass
+    int bassRootMidi = 40;      // E2 (drop-C metal root)
+    int bassNotesPerBar = 2;    // default: half notes (beats 1 and 3)
+    int bassLastMidiNote = 40;
+    int64_t bassNoteOffSample = -1;  // scheduled note-off sample position
 
-    /** Piano-roll bass state (Phase 23). */
-    bool genBassHasSteps = false;
-    float genBassPitchOffset[16] = {};
-    float genBassVelocity[16] = {};
-    float genBassStepRootMidi = 36.0f;  // C2 (drop C)
+    bool phraseLearnerActive_ = false;  // When true, beat-aligned bass is suppressed
 
-    /** Absolute sample index (exclusive) for single-note generative bass note-off (non–piano-roll path). */
-    int64_t genBassAbsNoteOffSample = -1;
-    int genBassLastMidiNote = 36;  // C2 (drop C)
+    // Pending note from PhraseLearner (set by triggerLearnedBassNote, consumed in process)
+    bool pendingLearnedNote_ = false;
+    int pendingLearnedMidi_ = 40;
+    float pendingLearnedVel_ = 0.9f;
+    int pendingLearnedOffset_ = 0;
+    int pendingLearnedDuration_ = 10000;
 
-    /** Deferred note-offs from @ref emitGenerativeBassSteps (sorted by time); real-time safe fixed cap. */
-    static constexpr int kMaxGenStepsDeferredOffs = 16;
-    int genStepsDeferCount = 0;
-    int64_t genStepsDeferAbsSample[kMaxGenStepsDeferredOffs] = {};
-    int genStepsDeferMidiNote[kMaxGenStepsDeferredOffs] = {};
-
-    void insertGenStepsDefer(juce::MidiBuffer& midi,
-                             int numSamples,
-                             int sampleOffsetBase,
-                             int64_t absOff,
-                             int midiNote) noexcept;
-
-    /** Absolute sample index for library-pattern bass note-off; -1 = no held note. */
-    int64_t libBassAbsNoteOffSample = -1;
-    int libBassLastMidiNote = 36;  // C2 (drop C)
-
-    bool fireTransitionCrash = false;
+    // Transition crash state — note-off is deferred so the cymbal decays cleanly.
+    bool armCrashPending = false;
+    int64_t crashNoteOffSample = -1;
 
     static constexpr int kDrumChannel = 10;
+    static constexpr int kCrashNote = 49;
 };

@@ -1,4 +1,4 @@
-# Metal Accompaniment — v0.8.2
+# Metal Accompaniment — v0.8.12
 
 JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + bass MIDI** in real time. Ships with a **Mel-CNN ONNX pipeline** (mel spectrogram → pattern selection via cosine similarity) and a **rule-based fallback** (energy/structure/tempo). Version **0.8.2** — **Unified Mel-CNN Pipeline**.
 
@@ -67,10 +67,14 @@ python training/export_centroids.py
 | Parameter | Description |
 |-----------|-------------|
 | `outputGain` | Guitar pass-through level (does not scale MIDI) |
-| `intensity` | Shifts effective BPM tier (±20 BPM range) |
-| `bpm` | Manual BPM (or sync from DAW transport) |
+| `bpm` | Fallback tempo only — used when no DAW transport BPM is available (standalone) |
 | `songForm` | Section preset (VERSE/CHORUS/BRIDGE/etc.) |
 | `loop` | Loop song form |
+
+**Tempo is DAW-transport-authoritative.** The drum/bass clock is anchored to the host
+sample position (`getTimeInSamples()`), so patterns stay locked to the project grid across
+seeks, loops, and transport start/stop. The `bpm` knob is only a fallback for hosts with
+no transport (e.g. the standalone build); audio-derived tempo tracking is not used.
 
 ### On-screen diagnostics
 
@@ -123,6 +127,7 @@ Search "Metal" or "Niall" in the FX browser. Plugin appears under **Tools** cate
 
 | Version | Milestone |
 |---------|-----------|
+| **v0.8.12** | Transport-anchored drum clock; DAW-transport-only tempo; dead-path cleanups |
 | **v0.8.2** | Mel queue integration — MetalGrooveInference wired end-to-end |
 | **v0.8.1** | Training pipeline + MetalGrooveInference ONNX integration |
 | **v0.8.0** | Unified Mel-CNN Pipeline (22-pattern classifier) |

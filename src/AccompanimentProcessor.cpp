@@ -7,6 +7,7 @@
 #include "inference/MetalGrooveInference.h"
 #endif
 #include <chrono>
+#include <climits>
 #include <cmath>
 #include <cstring>
 
@@ -114,6 +115,9 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     cachedSampleRate.store(sr, std::memory_order_release);
     energyAnalyser.prepare(sr, samplesPerBlock);
     structureTagger.prepare(sr);
+    pitchEstimator.prepare(sr, samplesPerBlock);
+    stablePitchTracker.reset();
+    phraseLearner.prepare(sr);
     lastDrumPatternChangeSample = -1;
     lastCommittedStructureState = StructureState::SILENT;
     playbackGate.reset();
@@ -125,7 +129,6 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     if (inference)
         inference->prepare(sr);
 
-    useGenerativeBass.store(false, std::memory_order_release);
     PatternPlayer::GrooveCommit staleCommit{};
     while (grooveCommitQueue.try_dequeue(staleCommit)) {}
 
@@ -181,6 +184,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
 
         int idx = 0;
         bool usedMelPath = false;
+#if defined(MA_ENABLE_ONNX)
         {
             MelWindow latestMel{};
             bool gotMel = false;
@@ -202,6 +206,17 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
                     usedMelPath = true;
                 }
             }
+        }
+#endif
+
+        if (usedMelPath && !PatternRules::isPatternCompatibleWithState(idx, latest.state))
+        {
+            // The Mel-CNN maps arbitrary audio (including silence and unseen
+            // timbres) to the nearest centroid, which can be structurally wrong
+            // (e.g. "Chorus Blast" while SILENT). Only honor the mel result when
+            // it is compatible with the current structure state; otherwise fall
+            // back to the rule-based selection.
+            usedMelPath = false;
         }
 
         if (!usedMelPath)
@@ -335,6 +350,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     // ── 1. Energy analysis ──────────────────────────────────────────────────
     energyAnalyser.process(in, numSamples);
+    pitchEstimator.process(in, numSamples);
     audioRingBuffer.write(in, numSamples);
 
     // ── 1b. Mel spectrogram extraction (when window ready) ─────────────────
@@ -352,7 +368,12 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     }
 
     const float rms = energyAnalyser.getRmsEnergy();
-    const float rmsDelta = (rms - prevBlockRms) / std::max(prevBlockRms, 1.0e-6f);
+    // Normalised RMS delta with a floor guard: prevents the ratio exploding when
+    // emerging from silence (prevBlockRms ≈ 0). Silence→sound transitions are
+    // handled by drum-hold expiry + SILENT→non-SILENT fill selection, not rmsDelta.
+    const float rmsDelta = (prevBlockRms > 1.0e-3f)
+        ? (rms - prevBlockRms) / prevBlockRms
+        : 0.0f;
     prevBlockRms = rms;
     const float centroid = energyAnalyser.getSpectralCentroid();
     const float hfFlux = energyAnalyser.getHighFreqFlux();
@@ -362,10 +383,11 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const bool digitalSilence = (rms < 1.0e-6f);
     const double sr = cachedSampleRate.load(std::memory_order_relaxed);
 
-    // ── 2. BPM (knob or DAW transport) ──────────────────────────────────────
+    // ── 2. BPM (DAW transport only) ─────────────────────────────────────────
+    // The DAW transport is the single source of tempo. The manual knob is used
+    // only as a fallback when the host provides no transport BPM (e.g. the
+    // standalone build, which has no playhead). Audio-derived tempo is not used.
     float bpmForPlayer = 120.0f;
-    if (auto* rawBpm = apvts.getRawParameterValue("bpm"))
-        bpmForPlayer = rawBpm->load();
     if (auto* ph = getPlayHead())
     {
         if (auto pos = ph->getPosition())
@@ -374,6 +396,13 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 bpmForPlayer = static_cast<float>(*t);
         }
     }
+    if (!(bpmForPlayer > 0.0f) || bpmForPlayer > 1000.0f)
+    {
+        if (auto* rawBpm = apvts.getRawParameterValue("bpm"))
+            bpmForPlayer = rawBpm->load();
+    }
+    if (!(bpmForPlayer > 0.0f) || bpmForPlayer > 1000.0f)
+        bpmForPlayer = 120.0f;
 
     // ── 3. Song form / loop change detection ────────────────────────────────
     {
@@ -402,17 +431,14 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     }
 
     // ── 4. Playback gate ────────────────────────────────────────────────────
-    const GateDecision gd = playbackGate.update(st, 0.0f, false, false, 0.0f, numSamples, sr);
+    const GateDecision gd = playbackGate.update(st, numSamples, sr);
     if (gd.resetTrackers)
     {
         playbackGate.reset();
         resetDrumHoldRequested.store(true, std::memory_order_release);
     }
-    if (gd.snapBeatNow)
-    {
-        patternPlayer.snapBpm(bpmForPlayer);
-        patternPlayer.snapToBarStart();
-    }
+    if (gd.armCrash)
+        patternPlayer.armTransitionCrash();
 
     // ── 5. Enqueue FeatureVector ────────────────────────────────────────────
     FeatureVector fv;
@@ -422,8 +448,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     fv.highFreqFlux = hfFlux;
     fv.state = st;
     fv.sampleTimestamp = hostSampleTime;
-    fv.pitchRootMidi = 40.0f;   // fixed E2
-    fv.pitchConfidence = 0.0f;
+    fv.pitchRootMidi = pitchEstimator.getMidiNote();
+    fv.pitchConfidence = pitchEstimator.getConfidence();
     fv.rmsDelta = rmsDelta;
     fv.policyIntensity = 0.5f;
     (void)featureQueue.try_enqueue(fv);
@@ -465,57 +491,67 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         debugPreviewSamplesRemaining.store(juce::jmax(0, previewRem - numSamples), std::memory_order_release);
     patternPlayer.setStructureSilent(trulySilent && previewRem <= 0);
 
-    // Snap to bar start when Play just toggled on
-    {
-        static bool wasOff = true;
-        if (playOn && wasOff)
-        {
-            patternPlayer.snapBpm(bpmForPlayer);
-            patternPlayer.snapToBarStart();
-        }
-        wasOff = !playOn;
-    }
-
-    // ── 8. Dequeue groove commit + bass ─────────────────────────────────────
+    // ── 8. Dequeue groove commit ───────────────────────────────────────────
+    // Inference → audio thread handoff for bar-quantized pattern changes with
+    // transition fills. Honored only when the sequencer is not overriding
+    // pattern selection (i.e. when the Play button is off).
     PatternPlayer::GrooveCommit commit{};
     bool gotCommit = false;
     while (grooveCommitQueue.try_dequeue(commit)) gotCommit = true;
 
-    if (playOn && !gotCommit)
+    if (gotCommit && !playOn)
+        patternPlayer.queueGrooveCommit(commit);
+
+    // ── 9. Phrase-learning bass ─────────────────────────────────────────────
+    // Bass learns guitarist's riff pattern (rhythm + melody), then mirrors it
     {
-        commit.patternIndex = effectivePatternIdx;
-        gotCommit = true;
-    }
+        // Run phrase learner - it tracks attacks and pitches, detects riff repetition
+        const auto bassNote = phraseLearner.process(
+            hostSampleTime,
+            rms,
+            pitchEstimator.getMidiNote(),
+            pitchEstimator.getConfidence(),
+            bpmForPlayer,
+            numSamples
+        );
 
-    // ── 9. Riff-mirroring bass (learns pattern, then mirrors) ───────────
-    {
-        // Section-aware bass root
-        float sectionRoot = 48.0f;  // C3 → maps to C2
-        const char* bassSection = playOn ? structureSequencer.getCurrentSectionName() : "VERSE";
-        if (std::strcmp(bassSection, "CHORUS") == 0)
-            sectionRoot = 55.0f;  // G3 → maps to G2
-        else if (std::strcmp(bassSection, "BRIDGE") == 0)
-            sectionRoot = 53.0f;  // F3 → maps to F2
+        const bool phraseLocked = phraseLearner.isLocked();
+        patternPlayer.setPhraseLearnerActive(phraseLocked);
 
-        const float bassNote = RuleBasedBass::mapToBassRange(sectionRoot);
-
-        // Smooth RMS for attack detection
-        static float rmsSmooth = 0.0f;
-        rmsSmooth = 0.9f * rmsSmooth + 0.1f * rms;
-
-        riffMirror.process(hostSampleTime, rms, rmsSmooth, bpmForPlayer, sr, numSamples);
-
-        if (riffMirror.shouldTriggerBass())
+        if (phraseLocked && bassNote.trigger)
         {
-            patternPlayer.setGenerativeBassActive(true, static_cast<int>(bassNote), 0.9f);
+            // PhraseLearner triggered a note - emit it
+            const int durationSamples = static_cast<int>((60.0 / bpmForPlayer) * 0.4 * sr);  // ~40% of beat
+            patternPlayer.triggerLearnedBassNote(bassNote.midiNote, bassNote.velocity, 0, durationSamples);
         }
-        else if (rms < 0.002f)
-        {
-            patternPlayer.setGenerativeBassActive(false, static_cast<int>(bassNote), 0.9f);
-        }
-        // else: keep active with existing duration — note sustains naturally
 
-        useGenerativeBass.store(true, std::memory_order_release);
+        // Fallback: when not locked, use simple pitch-following bass
+        if (!phraseLocked)
+        {
+            const char* section = playOn ? structureSequencer.getCurrentSectionName() : "VERSE";
+            
+            const bool isSilent = (st == StructureState::SILENT) || digitalSilence;
+            const int semitoneOffset = stablePitchTracker.update(
+                pitchEstimator.getMidiNote(),
+                pitchEstimator.getConfidence(),
+                bpmForPlayer, numSamples, sr, isSilent);
+            
+            int bassRoot = 40;  // E2 fallback
+            if (semitoneOffset != INT_MIN)
+            {
+                bassRoot = 40 + semitoneOffset;
+                while (bassRoot < 28) bassRoot += 12;
+                while (bassRoot > 52) bassRoot -= 12;
+            }
+            
+            int notesPerBar = 2;
+            if (std::strcmp(section, "CHORUS") == 0 || std::strcmp(section, "SOLO") == 0)
+                notesPerBar = 4;
+            else if (std::strcmp(section, "INTRO") == 0 || std::strcmp(section, "OUTRO") == 0 || std::strcmp(section, "BREAKDOWN") == 0)
+                notesPerBar = 1;
+            
+            patternPlayer.setBassParams(bassRoot, notesPerBar);
+        }
     }
 
     // ── 10. Process MIDI ────────────────────────────────────────────────────

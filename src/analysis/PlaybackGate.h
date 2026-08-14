@@ -2,7 +2,12 @@
 
 /**
  * @file
- * @brief Playback gate: controls when drum/bass MIDI fires after silence/transitions.
+ * @brief Playback gate: emits reset / crash-arm signals around silence and phrase breaths.
+ *
+ * With a transport-anchored drum clock, the gate no longer decides when playback
+ * starts or snaps beats — the host grid is authoritative. Its remaining job is to
+ * detect long silences (request a full reset) and phrase-breath re-entries (arm a
+ * transition crash cymbal).
  */
 
 #include "analysis/StructureTagger.h"
@@ -16,14 +21,12 @@
  */
 struct GateDecision
 {
-    bool gateOpen      = false; ///< Whether playback is allowed this block.
-    bool snapBeatNow   = false; ///< Caller: patternPlayer.snapBpm() + snapToBarStart()
     bool armCrash      = false; ///< Caller: patternPlayer.armTransitionCrash()
-    bool resetTrackers = false; ///< Caller: onsetDetector.resetTempoLock() + beatTracker.reset() + tempoStabiliser.reset()
+    bool resetTrackers = false; ///< Caller: full reset of playback/analysis state
 };
 
 /**
- * @brief Encapsulates phrase-breath / beat-snap / active-fallback gate logic.
+ * @brief Encapsulates phrase-breath / long-silence gate logic.
  *
  * Value member of AccompanimentProcessor. All methods are noexcept; no heap allocation.
  */
@@ -34,37 +37,15 @@ public:
     void reset() noexcept;
 
     /** @brief Advance gate state for this block.
-        @param st                 Current StructureState from StructureTagger.
-        @param beatPhase          beatTracker.getBeatPhase01().
-        @param isTempoLocked      beatTracker.isLocked().
-        @param isOnsetTempoLocked onsetDetector.isTempoLocked().
-        @param beatConfidence     beatTracker.getConfidence().
-        @param numSamples         Block size in samples.
-        @param sampleRate         Current sample rate. */
-    GateDecision update(StructureState st,
-                        double beatPhase,
-                        bool isTempoLocked,
-                        bool isOnsetTempoLocked,
-                        float beatConfidence,
-                        int numSamples,
-                        double sampleRate) noexcept;
-
-    /** @brief True when playback is gated open. */
-    bool isGateOpen() const noexcept { return gateOpen; }
+        @param st          Current StructureState from StructureTagger.
+        @param numSamples  Block size in samples.
+        @param sampleRate  Current sample rate. */
+    GateDecision update(StructureState st, int numSamples, double sampleRate) noexcept;
 
 private:
-    static constexpr double kPhraseBreathHoldSec    = 8.0;
-    static constexpr float  kPlaybackConfidenceStart = 0.35f;
-    static constexpr double kActiveFallbackStartSec  = 0.35;
-    static constexpr double kBeatSnapTimeoutSec      = 2.0;
+    static constexpr double kPhraseBreathHoldSec = 8.0;
 
-    bool     gateOpen               = false;
-    bool     prevGateOpen           = false;
-    bool     inPhraseBreath         = false;
-    bool     pendingBeatSnap        = false;
-    double   prevBeatPhase01        = 0.0;
-    int64_t  pendingBeatSnapSamples = 0;
-    int      silenceSamples         = 0;
-    int      activeNonSilentSamples = 0;
+    bool inPhraseBreath = false;
+    int  silenceSamples = 0;
     StructureState prevStructureState = StructureState::SILENT; ///< Internal prev-state tracking
 };

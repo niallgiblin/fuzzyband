@@ -13,12 +13,13 @@
 #include "analysis/AudioRingBuffer.h"
 #include "analysis/MelSpectrogramExtractor.h"
 #include "analysis/PlaybackGate.h"
-#include "analysis/RiffMirror.h"
+#include "analysis/PitchEstimator.h"
+#include "analysis/StablePitchTracker.h"
+#include "analysis/PhraseLearner.h"
 #include "analysis/FeatureVector.h"
 #include "inference/IInference.h"
 #include "midi/MidiPatternLibrary.h"
 #include "midi/PatternPlayer.h"
-#include "midi/RuleBasedBass.h"
 #include "readerwriterqueue.h"
 #include <atomic>
 #include <cstdint>
@@ -102,10 +103,12 @@ private:
 
     EnergyAnalyser energyAnalyser;
     StructureTagger structureTagger;
+    PitchEstimator pitchEstimator;
+    StablePitchTracker stablePitchTracker;
+    PhraseLearner phraseLearner;
     StructureSequencer structureSequencer;
     AudioRingBuffer audioRingBuffer{ 22050 };
     MelSpectrogramExtractor melExtractor;
-    RiffMirror riffMirror;
     MidiPatternLibrary patternLibrary;
     PatternPlayer patternPlayer;
 
@@ -123,8 +126,6 @@ private:
     std::vector<float> melScratch;  // preallocated: 22050 samples for window read
 
     std::atomic<int> latestPatternIndex{ 0 };
-
-    std::atomic<bool> useGenerativeBass{ false };
     std::atomic<bool> resetDrumHoldRequested{ false };
 
     // Mel spectrogram queue: audio thread → inference thread (v0.8.0)

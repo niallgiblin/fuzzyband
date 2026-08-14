@@ -27,7 +27,10 @@ int StablePitchTracker::update(float rawMidi, float rawConf, float bpm,
     }
 
     // ── 2. Low-confidence branch ─────────────────────────────────────────────
-    if (rawConf < kMinPitchConfidence)
+    // Lower threshold (0.20) for faster response - we'd rather play a slightly
+    // wrong note in time than the right note late
+    constexpr float kFastConfThreshold = 0.20f;
+    if (rawConf < kFastConfThreshold)
     {
         if (!pitchHoldValid)
         {
@@ -56,11 +59,14 @@ int StablePitchTracker::update(float rawMidi, float rawConf, float bpm,
         lastStablePitchMidi       = heldPitchRootMidi;
     }
 
-    const int oneBeatSamples = (bpm > 0.0f)
-        ? static_cast<int>((60.0f / bpm) * static_cast<float>(sampleRate))
-        : static_cast<int>(sampleRate / 2);
+    // Use 1/8th beat (~60ms at 120bpm) for faster response
+    // Pitch detection is decoupled from timing - we just need enough stability
+    // to avoid spurious pitch jumps, not to gate when notes play
+    const int stabilityWindowSamples = (bpm > 0.0f)
+        ? static_cast<int>((60.0f / bpm / 8.0f) * static_cast<float>(sampleRate))
+        : static_cast<int>(sampleRate / 16);
 
-    if (pitchStableCounterSamples < oneBeatSamples)
+    if (pitchStableCounterSamples < stabilityWindowSamples)
         return INT_MIN;
 
     // ── 5. Map to semitone offset ±6 from bass root E (pc=4) ─────────────────
