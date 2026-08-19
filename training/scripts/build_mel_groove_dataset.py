@@ -19,6 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
+from dataset_split import assign_grouped_split, summarize_split
+
 # ─── Constants (MUST match src/analysis/MelSpectrogramExtractor.h) ───────────
 
 SR = 44100
@@ -162,8 +164,13 @@ def discover_classes(raw_dir: Path) -> dict[str, int]:
     return {d.name: i for i, d in enumerate(dirs)}
 
 
-def build_dataset(raw_dir: Path, processed_dir: Path) -> tuple[np.ndarray, np.ndarray, list[dict], dict[str, int]]:
-    """Walk raw_dir, extract mel windows, return X, y, meta_rows, class_map."""
+def build_dataset(raw_dir: Path, processed_dir: Path, *, seed: int = 42) -> tuple[np.ndarray, np.ndarray, list[dict], dict[str, int]]:
+    """Walk raw_dir, extract mel windows, return X, y, meta_rows, class_map.
+
+    Each window records the **source recording** (the WAV stem it came from);
+    augmented variants inherit their parent WAV's source so the grouped split
+    (§5.1) keeps every variant of a take on the same side of the train/val line.
+    """
     class_map = discover_classes(raw_dir)
     print(f"Discovered {len(class_map)} classes:")
     for name, idx in class_map.items():
@@ -171,7 +178,8 @@ def build_dataset(raw_dir: Path, processed_dir: Path) -> tuple[np.ndarray, np.nd
 
     X_list: list[np.ndarray] = []
     y_list: list[int] = []
-    meta_rows: list[dict] = []
+    source_list: list[str] = []
+    class_name_list: list[str] = []
 
     for class_name, class_idx in sorted(class_map.items(), key=lambda x: x[1]):
         class_dir = raw_dir / class_name
@@ -181,43 +189,61 @@ def build_dataset(raw_dir: Path, processed_dir: Path) -> tuple[np.ndarray, np.nd
             print(f"WARNING: no .wav files in {class_dir} — skipping", file=sys.stderr)
             continue
 
-        class_windows: list[np.ndarray] = []
+        # (window, source) pairs so augmented copies stay tied to their take.
+        class_windows: list[tuple[np.ndarray, str]] = []
 
         for wav_path in wav_files:
             print(f"  {class_name}: {wav_path.name} ... ", end="", flush=True)
             y = load_audio(wav_path)
             windows = extract_mel_windows(y)
-            class_windows.extend(windows)
+            source = f"{class_name}/{wav_path.stem}"
+            class_windows.extend((w, source) for w in windows)
             print(f"{len(windows)} windows")
 
         # Augment small classes with time-stretch variants
         if len(class_windows) < 30:
             needed = 30 - len(class_windows)
             print(f"  {class_name}: only {len(class_windows)} windows, augmenting with {needed} time-stretch variants")
-            rng = np.random.RandomState(42)
+            rng = np.random.RandomState(seed)
             for wav_path in wav_files:
                 if len(class_windows) >= 30:
                     break
                 y = load_audio(wav_path)
+                source = f"{class_name}/{wav_path.stem}"
                 for _ in range(min(5, needed)):
                     rate = rng.uniform(0.85, 1.15)
                     n_out = int(len(y) / rate)
                     indices = np.linspace(0, len(y) - 1, n_out)
                     y_aug = np.interp(indices, np.arange(len(y)), y).astype(np.float32)
                     aug_windows = extract_mel_windows(y_aug)
-                    class_windows.extend(aug_windows[:needed - len(class_windows) + len(aug_windows)])
+                    take = aug_windows[:needed - len(class_windows) + len(aug_windows)]
+                    class_windows.extend((w, source) for w in take)
 
-        for win in class_windows:
+        for win, source in class_windows:
             X_list.append(win[np.newaxis, :, :])
             y_list.append(class_idx)
-            meta_rows.append({
-                "class_name": class_name,
-                "class_idx": class_idx,
-                "split": "train",
-            })
+            source_list.append(source)
+            class_name_list.append(class_name)
 
     X = np.stack(X_list, axis=0).astype(np.float32)
     y_arr = np.array(y_list, dtype=np.int64)
+
+    # ── Grouped split by source recording (§5.1) ─────────────────────────────
+    splits = assign_grouped_split(source_list, y_list, seed=seed, val_frac=0.2)
+
+    meta_rows = [
+        {
+            "class_name": cn,
+            "class_idx": int(ci),
+            "source": src,
+            "split": sp,
+        }
+        for cn, ci, src, sp in zip(class_name_list, y_list, source_list, splits)
+    ]
+
+    print("\nGrouped split by source recording (§5.1):")
+    print(summarize_split(source_list, y_list, splits))
+
     return X, y_arr, meta_rows, class_map
 
 
@@ -264,7 +290,7 @@ def main() -> int:
 
     meta_path = out_dir / "meta_groove.csv"
     with meta_path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["class_name", "class_idx", "split"])
+        writer = csv.DictWriter(f, fieldnames=["class_name", "class_idx", "source", "split"])
         writer.writeheader()
         writer.writerows(meta_rows)
 
@@ -282,6 +308,20 @@ def main() -> int:
         print(f"\nWARNING: class(es) below {MIN_WINDOWS_PER_CLASS} minimum windows.")
         print("Training may still work with augmentation, but results may be poor.")
         # Don't fail — we'll let training quality gates decide
+
+    # Classes absent from val cannot be honestly validated (§5.1). This happens
+    # when a class has only one source recording — flag it loudly so it is fixed
+    # by recording another take, not by faking a held-out split.
+    val_classes = {r["class_idx"] for r in meta_rows if r["split"] == "val"}
+    missing_val = [
+        next((k for k, v in class_map.items() if v == r["class_idx"]), str(r["class_idx"]))
+        for r in {r["class_idx"]: r for r in meta_rows}.values()
+        if r["class_idx"] not in val_classes
+    ]
+    if missing_val:
+        print(f"\nWARNING: {len(missing_val)} class(es) absent from val (single source recording):")
+        for name in sorted(set(missing_val)):
+            print(f"  - {name}  → record a second take to enable held-out validation")
 
     print("\n✓ Groove dataset ready for training.")
     return 0

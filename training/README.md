@@ -161,6 +161,56 @@ The script always runs `scripts/validate_onnx_contract.py --pattern … --bass �
 
 **Ops / cloud paths (not required for milestone close):** `scripts/promote-model.sh` uploads versioned artifacts and `current.json`; `scripts/download-model.sh` fetches into `assets/` when `MODEL_BUCKET` is set; see `infra/README.md` for bucket and OIDC wiring.
 
+## Data Improvement Phase 3 — honest data foundation
+
+Implements `docs/DATA_STRATEGY.md` §5. See `docs/LABEL_TAXONOMY.md` and
+`data/MANIFEST.md` for the taxonomy and provenance.
+
+### Perception taxonomy (single source of truth)
+
+`training/perception_taxonomy.py` defines the self-labeled style classes
+(`palm_mute, open_chord, single_note, sustain, silence`) and intensity
+(`soft, loud`). Every tool imports it — never re-declare the list.
+
+### Turn a labeled take into training data (the bridge)
+
+Annotate the spans you can honestly label, then slice into per-class clips:
+
+```bash
+source .venv/bin/activate
+# labels.csv:  start_seconds,end_seconds,label   (perception labels only)
+python3 slice_annotations.py \
+  --audio /path/to/take.wav \
+  --annotations /path/to/labels.csv \
+  --out-dir ../data/raw            # writes data/raw/<label>/<stem>__NN_<label>.wav
+```
+
+Use `--offset-seconds` if the annotation clock differs from the WAV start, and
+`--dry-run` to validate without writing.
+
+### Build datasets (grouped, honest split)
+
+```bash
+python3 scripts/build_mel_dataset.py         # perception (5-class) → X.npy / meta.csv
+python3 scripts/build_mel_groove_dataset.py  # groove (22-class)   → X_groove.npy / meta_groove.csv
+```
+
+Both assign a **grouped train/val/test split by source recording** (§5.1):
+augmented variants of a take never straddle train/val. The split is written to the
+`split` column of the meta CSV and reused by the trainers. A class with only one
+source recording is flagged (it cannot be held out without leakage) — record
+another take.
+
+### Train (reads the frozen split, honest gates)
+
+```bash
+python3 scripts/train_classifier.py          # perception
+python3 train_groove_model.py                # groove
+```
+
+Both print an honest confusion matrix + macro-F1 and **fail (exit 1) on any dead
+(zero-recall) class** on the held-out set.
+
 ## References
 
 - `docs/TOKENIZATION.md` — field names and event types

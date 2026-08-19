@@ -2,6 +2,42 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## Data Improvement P3 — honest data foundation (training only, no plugin build)
+
+Implements `docs/DATA_STRATEGY.md` Phase 3 (§5). Training/tooling only — no C++
+or plugin binary changes, so no version bump.
+
+- **§5.1 Honest validation.** New `training/scripts/dataset_split.py` assigns a
+  **grouped train/val/test split by source recording** — augmented variants of a
+  take can no longer straddle train/val (the leak that inflated the ~0.96 F1).
+  Both mel builders (`build_mel_groove_dataset.py`, `build_mel_dataset.py`) now
+  record each window's `source` and write the frozen `split` into meta CSV; every
+  class with ≥2 source recordings is guaranteed a val example. Both trainers
+  (`train_groove_model.py`, `train_classifier.py`) read the frozen split, print an
+  honest confusion matrix + macro-F1, and **fail the quality gate on any dead
+  (zero-recall) class** on the held-out set.
+- **§5.2 Two-layer taxonomy.** `training/perception_taxonomy.py` is the single
+  source of truth for the self-labeled perception classes (palm_mute / open_chord
+  / single_note / sustain / silence + soft/loud). `docs/LABEL_TAXONOMY.md`
+  documents perception-vs-arrangement and the `style + intensity + section →
+  pattern-pool` composition (via `src/inference/pattern_rules.h`).
+- **§5.3 Capture→training bridge.** Removed the retired-legacy `build_dataset`
+  import from `evaluate_feature_capture.py` (it had been un-runnable since P1);
+  the rule derivation is inlined. This unbreaks the capture-eval test module.
+- **§5.4 Annotation + slicing.** New `training/slice_annotations.py` slices a
+  labeled take (`start_seconds,end_seconds,label` CSV) into per-class clips under
+  `data/raw/<label>/`, ready for the mel builder.
+- **§5.5 Provenance.** New `data/MANIFEST.md` documents every dataset artifact,
+  its source/license, and the exact regenerate command; codifies the
+  raw-committed / tensors-gitignored / fixtures-committed convention.
+- **§5.6 Phase 4 interfaces.** Documented the existing plug points
+  (`GrooveTemplate.h` for C1, `pattern_rules.h` pools for C2, perception taxonomy
+  for C3) in `docs/LABEL_TAXONOMY.md`.
+- **Tests.** Added `test_dataset_split.py`, `test_perception_taxonomy.py`,
+  `test_slice_annotations.py`; full training suite: 52 passed, 40 skipped
+  (legacy/ONNX-gated), 0 failures. Smoke-tested the whole pipeline end-to-end on
+  the existing ~60 WAVs (grouped split verified leak-free; dead-class gate fires).
+
 ## [0.9.17] — Make the custom song-form editor visible and labelled
 
 - **Fix (user session): the modular section-list editor was there but its combo

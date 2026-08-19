@@ -19,6 +19,12 @@ from pathlib import Path
 
 import numpy as np
 
+# Make training/ (parent of scripts/) importable for the shared taxonomy SSOT.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from dataset_split import assign_grouped_split, summarize_split
+from perception_taxonomy import STYLE_LABELS, STYLE_TO_IDX
+
 # ─── Constants (MUST match src/analysis/MelSpectrogramExtractor.h) ───────────
 
 SR = 44100
@@ -30,8 +36,9 @@ FRAMES_PER_WINDOW = 32  # matches C++ kTimeFrames
 NUM_BINS = N_FFT // 2 + 1  # 1025
 STRIDE_FRAMES = 2
 
-CLASSES = ["palm_mute", "open_chord", "single_note", "sustain", "silence"]
-CLASS_TO_IDX = {name: i for i, name in enumerate(CLASSES)}
+# Perception label set is the single source of truth in perception_taxonomy.py.
+CLASSES = list(STYLE_LABELS)
+CLASS_TO_IDX = dict(STYLE_TO_IDX)
 
 SUSTAIN_AUG_FACTOR = 0
 SUSTAIN_TIME_STRETCH = (0.9, 1.1)
@@ -230,11 +237,17 @@ def generate_synthetic_silence(n_windows: int, noise_floor_db: float = -93.7) ->
     return synthetic
 
 
-def build_dataset(raw_dir: Path, processed_dir: Path) -> tuple[np.ndarray, np.ndarray, list[dict]]:
-    """Walk raw_dir, extract mel windows, return X, y, meta rows."""
+def build_dataset(raw_dir: Path, processed_dir: Path, *, seed: int = 42) -> tuple[np.ndarray, np.ndarray, list[dict]]:
+    """Walk raw_dir, extract mel windows, return X, y, meta rows.
+
+    Every window carries its **source recording** (the WAV stem, or a synthetic
+    bucket for generated silence). Augmented copies inherit their parent's source
+    so the grouped split (§5.1) never leaks a take across train/val.
+    """
     X_list: list[np.ndarray] = []
     y_list: list[int] = []
-    meta_rows: list[dict] = []
+    source_list: list[str] = []
+    class_name_list: list[str] = []
 
     for class_name in CLASSES:
         class_dir = raw_dir / class_name
@@ -249,20 +262,22 @@ def build_dataset(raw_dir: Path, processed_dir: Path) -> tuple[np.ndarray, np.nd
             print(f"WARNING: no .wav files in {class_dir} — skipping", file=sys.stderr)
             continue
 
-        class_windows: list[np.ndarray] = []
+        # (window, source) pairs so augmented copies stay tied to their take.
+        class_windows: list[tuple[np.ndarray, str]] = []
 
         for wav_path in wav_files:
             print(f"  Loading {wav_path} ...")
             y = load_audio(wav_path)
+            source = f"{class_name}/{wav_path.stem}"
 
             windows = extract_mel_windows(y)
-            class_windows.extend(windows)
+            class_windows.extend((w, source) for w in windows)
 
             if class_name == "sustain":
                 aug_signals = augment_sustain(y)
                 for aug_y in aug_signals:
                     aug_windows = extract_mel_windows(aug_y)
-                    class_windows.extend(aug_windows)
+                    class_windows.extend((w, source) for w in aug_windows)
 
             print(f"    → {len(windows)} windows (aug total: {len(class_windows)} for class)")
 
@@ -270,19 +285,30 @@ def build_dataset(raw_dir: Path, processed_dir: Path) -> tuple[np.ndarray, np.nd
             needed = TARGET_SILENCE_WINDOWS - len(class_windows)
             print(f"  Generating {needed} synthetic silence windows ...")
             synth = generate_synthetic_silence(needed)
-            class_windows.extend(synth)
+            # Spread synthetic silence across a few pseudo-sources so the grouped
+            # split can hold some out for validation.
+            for i, win in enumerate(synth):
+                class_windows.append((win, f"silence/synthetic_{i % 5}"))
 
-        for win in class_windows:
+        for win, source in class_windows:
             X_list.append(win[np.newaxis, :, :])
             y_list.append(class_idx)
-            meta_rows.append({
-                "class_name": class_name,
-                "class_idx": class_idx,
-                "split": "train",
-            })
+            source_list.append(source)
+            class_name_list.append(class_name)
 
     X = np.stack(X_list, axis=0).astype(np.float32)
     y_arr = np.array(y_list, dtype=np.int64)
+
+    # ── Grouped split by source recording (§5.1) ─────────────────────────────
+    splits = assign_grouped_split(source_list, y_list, seed=seed, val_frac=0.2)
+    meta_rows = [
+        {"class_name": cn, "class_idx": int(ci), "source": src, "split": sp}
+        for cn, ci, src, sp in zip(class_name_list, y_list, source_list, splits)
+    ]
+
+    print("\nGrouped split by source recording (§5.1):")
+    print(summarize_split(source_list, y_list, splits))
+
     return X, y_arr, meta_rows
 
 
@@ -327,7 +353,7 @@ def main() -> int:
 
     meta_path = out_dir / "meta.csv"
     with meta_path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["class_name", "class_idx", "split"])
+        writer = csv.DictWriter(f, fieldnames=["class_name", "class_idx", "source", "split"])
         writer.writeheader()
         writer.writerows(meta_rows)
 

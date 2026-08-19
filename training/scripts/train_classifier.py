@@ -30,6 +30,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DATA_DIR = _REPO_ROOT / "data" / "processed"
 _MODEL_DIR = Path(__file__).resolve().parents[1] / "models"
 
+# training/ (parent of scripts/) for the shared taxonomy SSOT.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from dataset_split import load_split_indices  # noqa: E402  (same scripts/ dir)
+from perception_taxonomy import STYLE_LABELS  # noqa: E402
+
 
 # ─── Dataset ─────────────────────────────────────────────────────────────────
 
@@ -87,7 +93,7 @@ def _import_model():
 
 # ─── Training ────────────────────────────────────────────────────────────────
 
-CLASS_NAMES = ["palm_mute", "open_chord", "single_note", "sustain", "silence"]
+CLASS_NAMES = list(STYLE_LABELS)
 
 
 def train_epoch(
@@ -187,16 +193,28 @@ def main() -> int:
     y = np.load(args.data_dir / "y.npy")
     print(f"Loaded {X.shape[0]} samples, X shape: {X.shape}, y shape: {y.shape}")
 
-    # ── Stratified split: 70/15/15 ───────────────────────────────────────
-    # First split: 70 train, 30 temp
-    sss1 = StratifiedShuffleSplit(n_splits=1, test_size=0.30, random_state=args.seed)
-    train_idx, temp_idx = next(sss1.split(X, y))
+    # ── Grouped split by source recording (§5.1) ─────────────────────────────
+    # Prefer the frozen, source-grouped split from build_mel_dataset.py so
+    # augmented variants never leak across train/val. Fall back to stratified.
+    meta_path = args.data_dir / "meta.csv"
+    frozen = load_split_indices(meta_path, len(X))
+    if frozen is not None and len(frozen[1]) > 0:
+        train_idx, val_idx, test_idx = frozen
+        if len(test_idx) == 0:
+            test_idx = val_idx
+        print(f"Using grouped split from {meta_path.name} (no source leakage across train/val).")
+    else:
+        print("WARNING: no usable grouped split in meta — falling back to stratified split "
+              "(augmented variants may leak across train/val).", file=sys.stderr)
+        # First split: 70 train, 30 temp
+        sss1 = StratifiedShuffleSplit(n_splits=1, test_size=0.30, random_state=args.seed)
+        train_idx, temp_idx = next(sss1.split(X, y))
 
-    # Second split: temp → 15 val, 15 test (50/50 of temp)
-    sss2 = StratifiedShuffleSplit(n_splits=1, test_size=0.50, random_state=args.seed)
-    val_idx, test_idx = next(sss2.split(X[temp_idx], y[temp_idx]))
-    val_idx = temp_idx[val_idx]
-    test_idx = temp_idx[test_idx]
+        # Second split: temp → 15 val, 15 test (50/50 of temp)
+        sss2 = StratifiedShuffleSplit(n_splits=1, test_size=0.50, random_state=args.seed)
+        val_idx, test_idx = next(sss2.split(X[temp_idx], y[temp_idx]))
+        val_idx = temp_idx[val_idx]
+        test_idx = temp_idx[test_idx]
 
     dataset = MelDataset(X, y)
     train_loader = DataLoader(
@@ -306,25 +324,46 @@ def main() -> int:
     history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
     print(f"\nHistory saved to {history_path}")
 
-    # ── Gate check ───────────────────────────────────────────────────────
+    # ── Gate check (§5.1: fail on any dead class) ────────────────────────
+    row_totals = cm.sum(axis=1)
+    per_class_recall = np.divide(
+        cm.diagonal(), row_totals,
+        out=np.zeros(len(CLASS_NAMES), dtype=float), where=row_totals > 0,
+    )
+    dead_classes = [
+        CLASS_NAMES[i] for i in range(len(CLASS_NAMES))
+        if row_totals[i] > 0 and per_class_recall[i] == 0.0
+    ]
+    absent_classes = [
+        CLASS_NAMES[i] for i in range(len(CLASS_NAMES)) if row_totals[i] == 0
+    ]
     per_class_f1 = f1_score(test_labels, test_preds, average=None, zero_division=0)
     low_f1_classes = [
-        CLASS_NAMES[i] for i, f in enumerate(per_class_f1) if f < 0.60
+        CLASS_NAMES[i] for i, f in enumerate(per_class_f1)
+        if row_totals[i] > 0 and f < 0.60
     ]
-    gate_ok = test_acc >= 0.80 and len(low_f1_classes) == 0
 
+    if absent_classes:
+        print(f"\nNOTE: class(es) absent from held-out set (record another take): "
+              f"{', '.join(absent_classes)}")
     if test_acc < 0.80:
         print(f"\n⚠  Test accuracy {test_acc:.3f} < 0.80 target", file=sys.stderr)
     if low_f1_classes:
         print(f"\n⚠  Low F1 classes: {', '.join(low_f1_classes)}", file=sys.stderr)
 
-    if gate_ok:
-        print("\n✓ All gates passed: acc ≥ 0.80, all per-class F1 ≥ 0.60")
-    else:
-        print("\n✗ Gate check failed — see warnings above", file=sys.stderr)
+    if dead_classes:
+        print(f"\n✗ Dead (zero-recall) class(es) on held-out set: {', '.join(dead_classes)}",
+              file=sys.stderr)
+        print("✗ Gate check FAILED — a perception class is never predicted correctly.",
+              file=sys.stderr)
         return 1
 
-    return 0
+    if test_acc >= 0.80 and not low_f1_classes:
+        print("\n✓ All gates passed: acc ≥ 0.80, no dead classes, all per-class F1 ≥ 0.60")
+        return 0
+
+    print("\n✗ Gate check failed — see warnings above", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":

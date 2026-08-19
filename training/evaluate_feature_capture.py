@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Evaluate Phase 34 feature_capture.v1 JSONL files against human annotations."""
+"""Evaluate feature_capture.v1 JSONL files against human annotations.
+
+Scope (DATA_STRATEGY.md §5.3): this evaluates the **arrangement layer** — the
+rule/ONNX *pattern selection* captured live by the plugin — against human
+pattern-labels over time ranges. It no longer imports the retired legacy
+`build_dataset` module; the small rule-derivation helper is inlined below,
+mirroring `src/inference/pattern_rules.h`.
+
+The **perception layer** (palm_mute / open_chord / …) is not scored here — its
+training data comes from `slice_annotations.py`, which slices a labeled take into
+per-class clips for `scripts/build_mel_dataset.py`.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +24,36 @@ from typing import Any
 
 from sklearn.metrics import f1_score
 
-from build_dataset import _rule_pattern_for_state
+# ── Rule derivation (ports PatternRules::rulePatternForState) ─────────────────
+_K_SOFT_MID_BPM = 120.0   # mirrors kSoftMidBpmThreshold (src/inference/pattern_rules.h)
+_K_SOFT_LOUD_BPM = 160.0  # mirrors kSoftLoudBpmThreshold
+
+
+def _adjusted_bpm(raw_bpm: float, policy_intensity: float) -> float:
+    raw = raw_bpm + (policy_intensity - 0.5) * 40.0
+    return min(300.0, max(40.0, raw))
+
+
+def _rule_pattern_for_state(bpm: float, state_float: float, policy_intensity: float = 0.5) -> int:
+    """Return the rule-based pattern index [0..5] for BPM + structural state.
+
+    Ports ``PatternRules::rulePatternForState``. State 3 (sparse/breakdown, from
+    4-class GMD-style captures) is clamped to SOFT (1).
+    """
+    adj_bpm = _adjusted_bpm(bpm, policy_intensity)
+    raw_state = int(state_float)
+    state = raw_state if raw_state <= 2 else 1
+    if state == 0:
+        return 0
+    if state == 1:
+        if adj_bpm < _K_SOFT_MID_BPM:
+            return 1
+        if adj_bpm < _K_SOFT_LOUD_BPM:
+            return 2
+        return 3
+    if state == 2:
+        return 4 if adj_bpm < _K_SOFT_LOUD_BPM else 5
+    return 0
 
 SCHEMA_VERSION = "feature_capture.v1"
 ANNOTATION_HEADER = "start_seconds,end_seconds,label_index,label_name"

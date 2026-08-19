@@ -33,6 +33,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DATA_DIR = _REPO_ROOT / "data" / "processed"
 _MODEL_DIR = Path(__file__).resolve().parent / "models"
 
+# Shared grouped-split helpers live in training/scripts/.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
+from dataset_split import load_split_indices  # noqa: E402
+
 
 # ─── Dataset ─────────────────────────────────────────────────────────────────
 
@@ -219,34 +223,50 @@ def main() -> int:
     else:
         class_names = [f"class_{i}" for i in range(n_classes)]
 
-    # ── Stratified split: 70/15/15 ───────────────────────────────────────
-    try:
-        sss1 = StratifiedShuffleSplit(n_splits=1, test_size=0.30, random_state=args.seed)
-        train_idx, temp_idx = next(sss1.split(X, y))
-    except ValueError:
-        # Some classes may have only 1 sample — fall back to random split
-        print("WARNING: StratifiedShuffleSplit failed (likely singleton classes). Using random split.")
-        rng_np = np.random.RandomState(args.seed)
-        indices = rng_np.permutation(len(X))
-        n_train = int(len(X) * 0.70)
-        n_val = int(len(X) * 0.15)
-        train_idx = indices[:n_train]
-        temp_idx = indices[n_train:]
-        val_idx = temp_idx[:n_val]
-        test_idx = temp_idx[n_val:]
+    # ── Grouped split by source recording (§5.1) ─────────────────────────────
+    # Prefer the frozen split written by build_mel_groove_dataset.py: it groups by
+    # source recording so augmented variants never straddle train/val (no leakage,
+    # honest macro-F1). Fall back to a stratified split only when the meta CSV is
+    # missing or stale (legacy datasets).
+    meta_path = args.data_dir / "meta_groove.csv"
+    frozen = load_split_indices(meta_path, len(X))
+    if frozen is not None and len(frozen[1]) > 0:
+        train_idx, val_idx, test_idx = frozen
+        # If the builder produced no held-out test rows, borrow val for test
+        # reporting so the final metrics are still on non-train data.
+        if len(test_idx) == 0:
+            test_idx = val_idx
+        print(f"Using grouped split from {meta_path.name} (no source leakage across train/val).")
     else:
+        print("WARNING: no usable grouped split in meta — falling back to stratified split "
+              "(augmented variants may leak across train/val).", file=sys.stderr)
         try:
-            sss2 = StratifiedShuffleSplit(n_splits=1, test_size=0.50, random_state=args.seed)
-            val_idx, test_idx = next(sss2.split(X[temp_idx], y[temp_idx]))
-            val_idx = temp_idx[val_idx]
-            test_idx = temp_idx[test_idx]
+            sss1 = StratifiedShuffleSplit(n_splits=1, test_size=0.30, random_state=args.seed)
+            train_idx, temp_idx = next(sss1.split(X, y))
         except ValueError:
-            # Fallback random split for temp
-            rng_np = np.random.RandomState(args.seed + 1)
-            indices = rng_np.permutation(len(temp_idx))
-            mid = len(temp_idx) // 2
-            val_idx = temp_idx[indices[:mid]]
-            test_idx = temp_idx[indices[mid:]]
+            # Some classes may have only 1 sample — fall back to random split
+            print("WARNING: StratifiedShuffleSplit failed (likely singleton classes). Using random split.")
+            rng_np = np.random.RandomState(args.seed)
+            indices = rng_np.permutation(len(X))
+            n_train = int(len(X) * 0.70)
+            n_val = int(len(X) * 0.15)
+            train_idx = indices[:n_train]
+            temp_idx = indices[n_train:]
+            val_idx = temp_idx[:n_val]
+            test_idx = temp_idx[n_val:]
+        else:
+            try:
+                sss2 = StratifiedShuffleSplit(n_splits=1, test_size=0.50, random_state=args.seed)
+                val_idx, test_idx = next(sss2.split(X[temp_idx], y[temp_idx]))
+                val_idx = temp_idx[val_idx]
+                test_idx = temp_idx[test_idx]
+            except ValueError:
+                # Fallback random split for temp
+                rng_np = np.random.RandomState(args.seed + 1)
+                indices = rng_np.permutation(len(temp_idx))
+                mid = len(temp_idx) // 2
+                val_idx = temp_idx[indices[:mid]]
+                test_idx = temp_idx[indices[mid:]]
 
     dataset = MelDataset(X, y)
     train_loader = DataLoader(
@@ -352,18 +372,41 @@ def main() -> int:
     )
     print(report)
 
+    # Honest confusion matrix (§5.1): rows = true class, cols = predicted.
+    cm = confusion_matrix(test_labels, test_preds, labels=list(range(n_classes)))
+    print("Confusion matrix (rows=true, cols=predicted):")
+    for i, name in enumerate(class_names):
+        row = " ".join(f"{v:>4d}" for v in cm[i])
+        print(f"  {name:>28s} [{i:>2d}] {row}")
+
+    # Classes with no test examples cannot be validated — report explicitly.
+    tested_classes = set(int(v) for v in np.unique(test_labels))
+    absent = [class_names[i] for i in range(n_classes) if i not in tested_classes]
+    if absent:
+        print(f"\nNOTE: {len(absent)} class(es) absent from the held-out set "
+              f"(single source recording — record another take): {', '.join(absent)}")
+
     # ── Save history ─────────────────────────────────────────────────────
     history_path = args.model_dir / "groove_training_history.json"
     history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
     print(f"History saved to {history_path}")
 
-    # ── Gate check ───────────────────────────────────────────────────────
-    per_class_recall = f1_score(test_labels, test_preds, average=None, zero_division=0)
-    low_recall_classes = [
-        class_names[i] for i, r in enumerate(per_class_recall) if r < 0.30
+    # ── Gate check (§5.1: fail on any dead class) ────────────────────────
+    # Per-class recall from the confusion matrix diagonal, over classes that are
+    # actually present in the held-out set.
+    row_totals = cm.sum(axis=1)
+    per_class_recall = np.divide(
+        cm.diagonal(), row_totals,
+        out=np.zeros(n_classes, dtype=float), where=row_totals > 0,
+    )
+    dead_classes = [
+        class_names[i] for i in range(n_classes)
+        if row_totals[i] > 0 and per_class_recall[i] == 0.0
     ]
-
-    gate_ok = test_acc >= 0.60 and test_top3 >= 0.80 and len(low_recall_classes) == 0
+    low_recall_classes = [
+        class_names[i] for i in range(n_classes)
+        if row_totals[i] > 0 and 0.0 < per_class_recall[i] < 0.30
+    ]
 
     if test_acc < 0.60:
         print(f"\n⚠  Test accuracy {test_acc:.3f} < 0.60 target", file=sys.stderr)
@@ -372,11 +415,22 @@ def main() -> int:
     if low_recall_classes:
         print(f"\n⚠  Low recall classes: {', '.join(low_recall_classes)}", file=sys.stderr)
 
-    if gate_ok:
-        print("\n✓ All gates passed: acc ≥ 0.60, top-3 ≥ 0.80, all per-class recall ≥ 0.30")
+    # A dead (zero-recall) class is a hard failure: the model never once predicts
+    # it correctly on held-out data, so the pipeline must not report success.
+    if dead_classes:
+        print(f"\n✗ Dead (zero-recall) class(es) on held-out set: {', '.join(dead_classes)}",
+              file=sys.stderr)
+        print("✗ Quality gate FAILED — fix data/model before shipping this checkpoint.",
+              file=sys.stderr)
+        print("\n✓ Groove model training complete. Run export_centroids.py next.")
+        return 1
+
+    if test_acc >= 0.60 and test_top3 >= 0.80 and not low_recall_classes:
+        print("\n✓ All gates passed: acc ≥ 0.60, top-3 ≥ 0.80, no dead classes, "
+              "all per-class recall ≥ 0.30")
     else:
-        print("\n⚠ Some gates not met — nearest-neighbor embedding may compensate.", file=sys.stderr)
-        # Don't fail; centroid-based lookup may still work
+        print("\n⚠ Soft gates not fully met (no dead classes) — nearest-neighbor "
+              "embedding may compensate.", file=sys.stderr)
 
     print("\n✓ Groove model training complete. Run export_centroids.py next.")
     return 0
