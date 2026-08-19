@@ -164,6 +164,12 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     patternPlayer.prepare(sr, samplesPerBlock);
     patternPlayer.reset();
 
+    // Pre-size the mel-window scratch buffer here (off the audio thread) so the
+    // first ready window in processBlock() can never trigger a heap allocation on
+    // the real-time path.
+    audioRingBuffer.reset();
+    melScratch.assign(static_cast<size_t>(audioRingBuffer.getWindowSize()), 0.0f);
+
     if (inference)
         inference->prepare(sr);
 
@@ -404,9 +410,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // ── 1b. Mel spectrogram extraction (when window ready) ─────────────────
     if (audioRingBuffer.isWindowReady())
     {
-        if (melScratch.size() < 22050)
-            melScratch.resize(22050);
-
+        // melScratch is pre-sized in prepareToPlay(); no allocation on the audio thread.
         if (audioRingBuffer.readWindow(melScratch.data()) > 0)
         {
             MelWindow mw{};

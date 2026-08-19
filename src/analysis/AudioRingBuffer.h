@@ -37,6 +37,9 @@ public:
     /** @brief Reset all state. */
     void reset() noexcept;
 
+    /** @brief Samples per window. Use to pre-size read buffers off the audio thread. */
+    int getWindowSize() const noexcept { return windowSize; }
+
 private:
     const int windowSize;
     std::vector<float> buffer;

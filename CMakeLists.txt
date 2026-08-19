@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.9.17)
+project(MetalAccompaniment VERSION 0.9.18)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -267,8 +267,10 @@ if(MA_BUILD_TESTS)
         tests/test_phrase_learner.cpp
         tests/test_golden_signal.cpp
         tests/test_structure_sequencer.cpp
+        tests/test_feature_capture.cpp
 
         # Plugin sources compiled into the test executable
+        src/capture/FeatureCapture.cpp
         src/analysis/EnergyAnalyser.cpp
         src/analysis/StructureTagger.cpp
         src/analysis/StructureSequencer.cpp
@@ -333,6 +335,8 @@ if(MA_BUILD_TESTS)
     set(MA_JUCE_MODULES_DIR "${CMAKE_BINARY_DIR}/_deps/juce-src/modules")
 
     add_executable(MetalAccompanimentIntegrationTests
+        # Structure shadow fixture replay (golden regression guard)
+        tests/test_structure_shadow_integration.cpp
         # Integration test (full processor pipeline)
         tests/test_processor_pipeline.cpp
         # E2E tests
@@ -369,6 +373,48 @@ if(MA_BUILD_TESTS)
         target_link_libraries(MetalAccompanimentIntegrationTests PRIVATE MetalAccompanimentData)
     endif()
 
+    # ── Orphan-test guard ──────────────────────────────────────────────────────
+    # Fail configuration if any tests/*.cpp is not compiled into a test target.
+    # This closes the recurring "all-green-but-broken" trap where a test file
+    # silently stops being built (see docs/DATA_STRATEGY.md Phase 2). Tests that
+    # are only built under a feature flag (e.g. ONNX-gated) are exempted below.
+    set(MA_CONDITIONAL_TEST_FILES
+        test_onnx_latency_benchmark.cpp   # only linked when MA_ENABLE_ONNX=ON
+    )
+
+    file(GLOB MA_ALL_TEST_FILES CONFIGURE_DEPENDS
+        RELATIVE "${CMAKE_SOURCE_DIR}/tests" "${CMAKE_SOURCE_DIR}/tests/*.cpp")
+
+    get_target_property(MA_UNIT_TEST_SOURCES  MetalAccompanimentTests            SOURCES)
+    get_target_property(MA_INTEG_TEST_SOURCES MetalAccompanimentIntegrationTests SOURCES)
+
+    set(MA_REFERENCED_TEST_NAMES "")
+    foreach(_src IN LISTS MA_UNIT_TEST_SOURCES MA_INTEG_TEST_SOURCES)
+        get_filename_component(_name "${_src}" NAME)
+        list(APPEND MA_REFERENCED_TEST_NAMES "${_name}")
+    endforeach()
+
+    set(MA_ORPHAN_TESTS "")
+    foreach(_test IN LISTS MA_ALL_TEST_FILES)
+        if(_test IN_LIST MA_REFERENCED_TEST_NAMES)
+            continue()
+        endif()
+        if(_test IN_LIST MA_CONDITIONAL_TEST_FILES)
+            continue()
+        endif()
+        list(APPEND MA_ORPHAN_TESTS "${_test}")
+    endforeach()
+
+    if(MA_ORPHAN_TESTS)
+        string(REPLACE ";" "\n  - " MA_ORPHAN_PRETTY "${MA_ORPHAN_TESTS}")
+        message(FATAL_ERROR
+            "Orphan test file(s) found in tests/ that no target compiles:\n"
+            "  - ${MA_ORPHAN_PRETTY}\n"
+            "Add each to MetalAccompanimentTests or MetalAccompanimentIntegrationTests "
+            "in CMakeLists.txt (or delete the file). If a test is intentionally built "
+            "only under a feature flag, add it to MA_CONDITIONAL_TEST_FILES.")
+    endif()
+
     # ── CTest registration ─────────────────────────────────────────────────────
     include(CTest)
     include(Catch)
@@ -377,6 +423,14 @@ if(MA_BUILD_TESTS)
     catch_discover_tests(MetalAccompanimentTests
         PROPERTIES LABELS "unit"
     )
+
+    # Integration: structure shadow fixture replay
+    add_test(
+        NAME integration_structure_shadow_fixture
+        COMMAND MetalAccompanimentIntegrationTests "[structure][shadow]"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(integration_structure_shadow_fixture PROPERTIES LABELS "integration")
 
     # Integration: processor pipeline tests
     add_test(

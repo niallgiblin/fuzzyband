@@ -1,8 +1,10 @@
 /**
- * STRUC-03: Replay test/fixtures/structure_shadow.wav and compare pattern-index transitions
- * to tests/expected_structure_shadow_pattern_transitions.txt (MA_ENABLE_ONNX=OFF path).
+ * STRUC-03: Replay tests/fixtures/structure_shadow.wav and compare pattern-index
+ * transitions to tests/expected_structure_shadow_pattern_transitions.txt. This is a
+ * characterization/regression guard over the full processor's production inference
+ * path (whatever backend makeInference() selects for the build).
  *
- * Regenerate golden (from repo root):
+ * Regenerate golden (from repo root, using the build dir you run against):
  *   MA_WRITE_STRUCTURE_GOLDEN=1 ./build/MetalAccompanimentIntegrationTests "Structure shadow fixture"
  */
 
@@ -25,7 +27,7 @@ static juce::File goldenFile()
 
 TEST_CASE("Structure shadow fixture replay matches golden pattern transitions", "[structure][shadow]")
 {
-    const juce::File wavFile = juce::File(MA_REPO_ROOT).getChildFile("test/fixtures/structure_shadow.wav");
+    const juce::File wavFile = juce::File(MA_REPO_ROOT).getChildFile("tests/fixtures/structure_shadow.wav");
     REQUIRE(wavFile.existsAsFile());
 
     juce::WavAudioFormat wav;
