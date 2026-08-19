@@ -1,0 +1,174 @@
+{
+  "source": "Lakh MIDI lmd_matched + tagtraum CD2 MSD genre tags",
+  "generator": "training/build_lakh_priors.py",
+  "note": "Aggregate selection priors only; tag file not redistributed. Tempo is content-derived (drum-onset pulse), not header BPM.",
+  "max_files_per_genre": 400,
+  "bucket_to_patterns": {
+    "sparse": [
+      9,
+      6,
+      0
+    ],
+    "half_time": [
+      7,
+      2,
+      23
+    ],
+    "backbeat": [
+      1,
+      22,
+      4,
+      14
+    ],
+    "busy": [
+      3,
+      10,
+      5
+    ],
+    "blast": [
+      8,
+      21
+    ]
+  },
+  "genres": {
+    "Rock": {
+      "preset_id": 0,
+      "files": 400,
+      "tempo_bpm": {
+        "median": 145.9,
+        "mean": 152.1,
+        "p10": 116.4,
+        "p90": 200.0
+      },
+      "groove_buckets": {
+        "backbeat": 0.55,
+        "busy": 0.1925,
+        "half_time": 0.21,
+        "sparse": 0.0475
+      },
+      "pattern_weights": {
+        "0": 0.1152,
+        "1": 1.0,
+        "2": 0.5091,
+        "3": 0.4667,
+        "4": 1.0,
+        "5": 0.4667,
+        "6": 0.1152,
+        "7": 0.5091,
+        "9": 0.1152,
+        "10": 0.4667,
+        "14": 1.0,
+        "22": 1.0,
+        "23": 0.5091
+      }
+    },
+    "Punk": {
+      "preset_id": 2,
+      "files": 29,
+      "tempo_bpm": {
+        "median": 150.0,
+        "mean": 149.9,
+        "p10": 111.0,
+        "p90": 194.0
+      },
+      "groove_buckets": {
+        "backbeat": 0.3793,
+        "blast": 0.0345,
+        "busy": 0.3448,
+        "half_time": 0.2069,
+        "sparse": 0.0345
+      },
+      "pattern_weights": {
+        "0": 0.1,
+        "1": 0.825,
+        "2": 0.6,
+        "3": 1.0,
+        "4": 0.825,
+        "5": 1.0,
+        "6": 0.1,
+        "7": 0.6,
+        "8": 0.15,
+        "9": 0.1,
+        "10": 1.0,
+        "14": 0.825,
+        "21": 0.15,
+        "22": 0.825,
+        "23": 0.6
+      }
+    },
+    "Metal": {
+      "preset_id": 3,
+      "files": 184,
+      "tempo_bpm": {
+        "median": 145.0,
+        "mean": 151.9,
+        "p10": 120.0,
+        "p90": 200.0
+      },
+      "groove_buckets": {
+        "backbeat": 0.538,
+        "blast": 0.0163,
+        "busy": 0.1793,
+        "half_time": 0.2283,
+        "sparse": 0.038
+      },
+      "pattern_weights": {
+        "0": 0.0943,
+        "1": 1.0,
+        "2": 0.5657,
+        "3": 0.4444,
+        "4": 1.0,
+        "5": 0.4444,
+        "6": 0.0943,
+        "7": 0.5657,
+        "8": 0.0606,
+        "9": 0.0943,
+        "10": 0.4444,
+        "14": 1.0,
+        "21": 0.0606,
+        "22": 1.0,
+        "23": 0.5657
+      }
+    },
+    "Hard Rock": {
+      "preset_id": 1,
+      "inherits_from": "Rock",
+      "pattern_weights": {
+        "0": 0.1152,
+        "1": 1.0,
+        "2": 0.5091,
+        "3": 0.4667,
+        "4": 1.0,
+        "5": 0.4667,
+        "6": 0.1152,
+        "7": 0.5091,
+        "9": 0.1152,
+        "10": 0.4667,
+        "14": 1.0,
+        "22": 1.0,
+        "23": 0.5091
+      }
+    },
+    "Sludge": {
+      "preset_id": 4,
+      "inherits_from": "Metal",
+      "pattern_weights": {
+        "0": 0.0943,
+        "1": 1.0,
+        "2": 0.5657,
+        "3": 0.4444,
+        "4": 1.0,
+        "5": 0.4444,
+        "6": 0.0943,
+        "7": 0.5657,
+        "8": 0.0606,
+        "9": 0.0943,
+        "10": 0.4444,
+        "14": 1.0,
+        "21": 0.0606,
+        "22": 1.0,
+        "23": 0.5657
+      }
+    }
+  }
+}

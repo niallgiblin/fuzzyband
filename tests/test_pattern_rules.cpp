@@ -427,3 +427,56 @@ TEST_CASE("PatternRules::sectionPatternPoolForGenre rock pools prefer rock patte
     const auto metalVerse = PatternRules::sectionPatternPoolForGenre("VERSE", 3);
     REQUIRE(metalVerse.indices[0] == 1);
 }
+
+// ── C2 (DATA_STRATEGY.md §6.2): Lakh selection priors → pool ordering ─────────
+
+TEST_CASE("PatternRules::priorWeight is bounded and clamps out-of-range", "[pattern_rules][C2]")
+{
+    for (int g = 0; g < PatternPriors::kNumGenres; ++g)
+        for (int p = 0; p < PatternPriors::kPatternCount; ++p)
+        {
+            const float w = PatternRules::priorWeight(p, g);
+            REQUIRE(w >= 0.0f);
+            REQUIRE(w <= 1.0f);
+        }
+    REQUIRE(PatternRules::priorWeight(0, -1) == 0.0f);
+    REQUIRE(PatternRules::priorWeight(0, PatternPriors::kNumGenres) == 0.0f);
+    REQUIRE(PatternRules::priorWeight(-1, 0) == 0.0f);
+    REQUIRE(PatternRules::priorWeight(PatternPriors::kPatternCount, 0) == 0.0f);
+}
+
+TEST_CASE("PatternRules::orderPoolByPriors preserves membership, sorts by weight", "[pattern_rules][C2]")
+{
+    // Same set, reordered most-popular-first for the genre.
+    const auto base = PatternRules::sectionPatternPoolForGenre("VERSE", 0);
+    const auto ordered = PatternRules::orderPoolByPriors(base, 0);
+    REQUIRE(ordered.count == base.count);
+
+    // Membership is unchanged (multiset equality over a tiny pool).
+    for (int i = 0; i < base.count; ++i)
+    {
+        bool found = false;
+        for (int j = 0; j < ordered.count; ++j)
+            if (ordered.indices[j] == base.indices[i]) found = true;
+        REQUIRE(found);
+    }
+    // Weights are non-increasing along the ordered pool.
+    for (int i = 1; i < ordered.count; ++i)
+        REQUIRE(PatternRules::priorWeight(ordered.indices[i - 1], 0)
+                >= PatternRules::priorWeight(ordered.indices[i], 0));
+
+    // Out-of-range genre leaves the pool untouched.
+    const auto passthrough = PatternRules::orderPoolByPriors(base, 999);
+    for (int i = 0; i < base.count; ++i)
+        REQUIRE(passthrough.indices[i] == base.indices[i]);
+}
+
+TEST_CASE("PatternRules::orderedSectionPatternPoolForGenre matches ordered membership", "[pattern_rules][C2]")
+{
+    const auto raw = PatternRules::sectionPatternPoolForGenre("CHORUS", 0);
+    const auto ord = PatternRules::orderedSectionPatternPoolForGenre("CHORUS", 0);
+    REQUIRE(ord.count == raw.count);
+    for (int i = 1; i < ord.count; ++i)
+        REQUIRE(PatternRules::priorWeight(ord.indices[i - 1], 0)
+                >= PatternRules::priorWeight(ord.indices[i], 0));
+}

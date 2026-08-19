@@ -180,7 +180,21 @@ below. Phase 3 only needs to define the interfaces they plug into (the `GrooveTe
 struct for C1, the pattern-pool/selection tables for C2, the perception taxonomy for C3,
 and the multitrack supervision format for C4).
 
-## 6. Phase 4 — Robust dataset integration (arrangement layer) *(C1–C3 committed; C4 gated)*
+## 6. Phase 4 — Robust dataset integration (arrangement layer) *(C1–C3 DONE; C4 gated)*
+
+**Status (Phase 4 complete for C1–C3):** implemented against the cached datasets.
+- **C1 ✅** `training/build_groove_template.py` → `data/groove_templates.json` +
+  generated `src/midi/GrooveTemplateData.h`, baked into `Groove::rock/metal/punk`
+  (204 GMD rock takes, 115k hits; metal/punk are documented tightening transforms).
+- **C2 ✅** `training/download_msd_genre.py` + `training/build_lakh_priors.py` →
+  `data/lakh_priors.json` + generated `src/inference/PatternPriors.h`, wired into
+  `pattern_rules.h` via `orderPoolByPriors` / `orderedSectionPatternPoolForGenre`
+  (additive, build-time; RT selection path unchanged). Content-derived tempo.
+- **C3 ✅ (tooling)** `training/build_dadagp_articulation.py` maps DadaGP articulation
+  tokens onto the perception taxonomy → `data/dadagp_articulation.json`. DadaGP is
+  access-gated, so the extractor ships with a synthetic-fixture test; run it against
+  a local token set (`--tokens-dir`) to produce the corroborating prior.
+- **C4 ⏸ gated** — untouched (§6.4).
 
 These datasets supply what you *cannot* honestly self-label: how patterns are *played*
 (groove feel), which patterns/sections co-occur (selection priors), and riff/articulation

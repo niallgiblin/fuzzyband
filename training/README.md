@@ -211,6 +211,50 @@ python3 train_groove_model.py                # groove
 Both print an honest confusion matrix + macro-F1 and **fail (exit 1) on any dead
 (zero-recall) class** on the held-out set.
 
+## Data Improvement Phase 4 — robust dataset integration (arrangement layer)
+
+Implements `docs/DATA_STRATEGY.md` §6 (C1–C3). These build the *arrangement* layer
+from external datasets; no user input required. Outputs are small derived artifacts
+(committed); the source corpora + genre tags stay gitignored under `training/data/`.
+
+### C1 — GMD → groove templates
+
+```bash
+python3 training/download_gmd.py          # once (TFDS cache)
+python3 training/build_groove_template.py # → data/groove_templates.json + src/midi/GrooveTemplateData.h
+```
+
+Reads the extracted GMD MIDI + `info.csv` directly (no TensorFlow needed), computes
+a per-16th velocity hierarchy + microtiming per genre, and bakes them into
+`Groove::Template`. Rock is data-derived; metal/punk are documented tightening
+transforms (GMD has no metal genre; its punk is almost all fills).
+
+### C2 — Lakh + MSD genre tags → selection priors
+
+```bash
+python3 training/download_lakh.py         # ~1.3 GB, once
+python3 training/download_msd_genre.py    # tagtraum CD2 genre tags (gitignored)
+python3 training/build_lakh_priors.py     # → data/lakh_priors.json + src/inference/PatternPriors.h
+```
+
+Keeps only the rock-family genres (Rock/Metal/Punk via MSD track ids), estimates
+**content-derived tempo** (drum-onset pulse, not header BPM), and emits per-genre
+pattern popularity weights. Wired into `pattern_rules.h` additively via
+`orderPoolByPriors` / `orderedSectionPatternPoolForGenre` (build-time pool ordering;
+the RT selection path is unchanged). Use `--max-files-per-genre 0` for the full scan.
+
+### C3 — DadaGP → articulation grammar (access-gated)
+
+```bash
+python3 training/build_dadagp_articulation.py --tokens-dir /path/to/dadagp/tokens
+#   → data/dadagp_articulation.json
+```
+
+Maps DadaGP guitar articulation tokens (palm-mute / chord / single-note / sustain)
+onto `perception_taxonomy.py`, producing a symbolic prior that augments/validates
+the perception classifier. Human self-labels stay authoritative for real audio.
+DadaGP is not bundled (accept its terms / request access first).
+
 ## References
 
 - `docs/TOKENIZATION.md` — field names and event types

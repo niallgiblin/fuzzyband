@@ -11,6 +11,7 @@
 
 #include "analysis/FeatureVector.h"
 #include "midi/MidiPatternLibrary.h"
+#include "inference/PatternPriors.h"
 #include <algorithm>
 #include <cstring>
 
@@ -253,6 +254,57 @@ inline SectionPatternPool sectionPatternPoolForGenre(const char* sectionName, in
 
     return P{ 0, {} };
 }
+// ══════════════════════════════════════════════════════════════════════════
+// C2 (DATA_STRATEGY.md §6.2): data-derived Lakh selection priors → pool ordering
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * @brief Data-derived popularity weight for (patternIndex, genreId) in [0,1].
+ * Baked at build time in PatternPriors.h from rock-weighted Lakh subsets with
+ * content-derived tempo. Returns 0 for out-of-range inputs.
+ */
+inline float priorWeight(int patternIndex, int genreId) noexcept
+{
+    if (genreId < 0 || genreId >= PatternPriors::kNumGenres) return 0.0f;
+    if (patternIndex < 0 || patternIndex >= PatternPriors::kPatternCount) return 0.0f;
+    return PatternPriors::kWeight[genreId][patternIndex];
+}
+
+/**
+ * @brief Reorder a pool's indices by descending selection prior (most common
+ * groove for the genre first), stable on ties. Pure reordering of <=4 ints — no
+ * RT allocation, no change to which patterns are in the pool. This is the
+ * build-time "pool weighting" hook: consumers may prefer this ordering to bias
+ * selection toward in-distribution grooves. Out-of-range genre leaves the pool
+ * unchanged.
+ */
+inline SectionPatternPool orderPoolByPriors(SectionPatternPool pool, int genreId) noexcept
+{
+    if (genreId < 0 || genreId >= PatternPriors::kNumGenres) return pool;
+    for (int i = 1; i < pool.count; ++i)
+    {
+        const int cur = pool.indices[i];
+        const float cw = priorWeight(cur, genreId);
+        int j = i - 1;
+        while (j >= 0 && priorWeight(pool.indices[j], genreId) < cw)
+        {
+            pool.indices[j + 1] = pool.indices[j];
+            --j;
+        }
+        pool.indices[j + 1] = cur;
+    }
+    return pool;
+}
+
+/**
+ * @brief Genre-aware section pool ordered by data-derived Lakh priors.
+ * Same membership as sectionPatternPoolForGenre, ordered most-popular-first.
+ */
+inline SectionPatternPool orderedSectionPatternPoolForGenre(const char* sectionName, int genreId) noexcept
+{
+    return orderPoolByPriors(sectionPatternPoolForGenre(sectionName, genreId), genreId);
+}
+
 inline SectionPatternPool stylePatternPool(int styleIndex) noexcept
 {
     using P = SectionPatternPool;

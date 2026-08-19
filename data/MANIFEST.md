@@ -39,10 +39,47 @@ gitignored and regenerated locally.** Never commit `*.npy` — regenerate them.
 - **Provenance:** recorded/authored by the project.
 - **License:** project-owned.
 
-### External datasets (Phase 4 — not yet integrated)
-E-GMD, Lakh (`lmd_matched`), DadaGP, Slakh2100/MoisesDB. See `DATA_STRATEGY.md` §6
-and `training/README.md`. Each must have its license verified before
-redistribution; caches live under `training/data/` (gitignored).
+### External datasets (Phase 4 — arrangement layer, C1–C3 integrated)
+
+Caches live under `training/data/` (**gitignored**); only the small **derived
+artifacts** below are committed. Each source's license must be verified before
+any redistribution — we redistribute *derived aggregate statistics only*, never
+the source corpora or tag files.
+
+#### C1 — GMD (Groove MIDI Dataset) → groove templates
+- **Source:** GMD v1.0.0 MIDI-only (CC-BY 4.0), fetched by `training/download_gmd.py`
+  (TFDS cache under `training/data/tfds/`). ~1150 human drum takes with genre +
+  BPM in `info.csv`.
+- **Derived (committed):** `data/groove_templates.json` (per-genre velocity
+  hierarchy + microtiming) and the generated `src/midi/GrooveTemplateData.h` baked
+  into `Groove::Template`. Rock is data-derived directly; metal/punk are documented
+  transforms of the rock stats (GMD has no metal, and its punk is almost all fills).
+- **License note:** GMD is CC-BY 4.0; only aggregate per-genre statistics ship.
+
+#### C2 — Lakh `lmd_matched` + MSD genre tags → selection priors
+- **Source:** Lakh `lmd_matched` (`training/download_lakh.py`, ~116k MIDI) +
+  tagtraum CD2 MSD genre ground truth (`training/download_msd_genre.py`, separates
+  Rock/Metal/Punk). Tags map to files via the MSD track id in each path.
+- **Derived (committed):** `data/lakh_priors.json` (per-genre content-derived
+  tempo + groove-bucket distribution + pattern weights) and the generated
+  `src/inference/PatternPriors.h` (per-genre pattern popularity weights).
+- **License note:** tagtraum genre annotations are research/non-commercial —
+  verify terms before redistribution. The `.cls` tag file is **not** committed
+  (gitignored); only aggregate priors ship. Tempo is content-derived (drum-onset
+  pulse), not header BPM.
+
+#### C3 — DadaGP → articulation grammar *(access-gated; tooling only)*
+- **Source:** DadaGP (~26k GuitarPro token songs, rock/metal-heavy). **Access-gated**
+  — accept its terms / request access, then point
+  `training/build_dadagp_articulation.py --tokens-dir` at the local token set. Not
+  bundled.
+- **Derived (committed when run):** `data/dadagp_articulation.json` — per-perception-label
+  articulation distribution that augments/validates the perception classifier
+  (human self-labels stay authoritative for real audio, `DATA_STRATEGY.md` §6.3).
+
+#### C4 — Slakh2100 / MoisesDB *(gated — not in committed scope)*
+Deferred per `DATA_STRATEGY.md` §6.4. No tooling yet; only revisited if the §6.4
+A/B gate opens.
 
 ---
 
@@ -78,3 +115,24 @@ python3 training/train_groove_model.py                  # groove (22-class)
 
 Both fail their quality gate on any **dead (zero-recall) class** on the held-out
 set (§5.1) — an honest signal to record another take of the weak class.
+
+### Phase 4 arrangement-layer artifacts (C1–C3)
+
+```bash
+# C1 — GMD → groove templates (needs training/download_gmd.py first)
+python3 training/build_groove_template.py
+#   → data/groove_templates.json + src/midi/GrooveTemplateData.h
+
+# C2 — Lakh + MSD genre tags → selection priors
+python3 training/download_lakh.py         # ~1.3 GB (once)
+python3 training/download_msd_genre.py    # tagtraum CD2 genre tags (gitignored)
+python3 training/build_lakh_priors.py     # --max-files-per-genre 0 for the full 116k scan
+#   → data/lakh_priors.json + src/inference/PatternPriors.h
+
+# C3 — DadaGP → articulation grammar (DadaGP is access-gated, not bundled)
+python3 training/build_dadagp_articulation.py --tokens-dir /path/to/dadagp/tokens
+#   → data/dadagp_articulation.json
+```
+
+The generated headers (`GrooveTemplateData.h`, `PatternPriors.h`) and the JSON
+sidecars are committed; the external caches and the `.cls` tag file are not.

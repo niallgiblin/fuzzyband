@@ -13,13 +13,18 @@
  *     early, ghost notes early) plus a *bounded* gaussian around the structured
  *     offset instead of pure white noise.
  *
- * The numbers below are musically-baked defaults. Workstream C1 (E-GMD stats)
- * can replace them with data-derived distributions without touching the
- * rendering code — the rendering layer only reads this struct.
+ * Workstream C1 (DATA_STRATEGY.md §6.1) has since replaced the hand-authored
+ * velocity/microtiming numbers with **data-derived** distributions from the
+ * Groove MIDI Dataset (GMD, CC-BY 4.0). The per-16th values live in the
+ * auto-generated GrooveTemplateData.h (regenerate with
+ * `python3 training/build_groove_template.py`); the rendering layer is unchanged
+ * — it still only reads this fixed-size struct on the audio thread.
  */
 
 #include <cmath>
 #include <cstring>
+
+#include "midi/GrooveTemplateData.h"
 
 namespace Groove
 {
@@ -82,57 +87,60 @@ struct Template
     uint8_t ghostThreshold = 62;  // authored velocities <= this are treated as ghosts
 };
 
-/** @brief Rock default: downbeat/backbeat accents, laid-back backbeat, punchy kick. */
+/** @brief Fill a Template's per-16th arrays + jitter/ghost knobs from C1 data.
+ *  Non-derived feel fields (ghostTimingMs, bassPocketMs) keep the struct
+ *  defaults — GMD MIDI does not supply a guitar/bass pocket offset. */
+inline void applyData(Template& t,
+                      const float (&velocityMul)[16],
+                      const float (&timingMs)[16],
+                      float timingJitterMs,
+                      float velocityJitter,
+                      float ghostVelocityLo,
+                      float ghostVelocityHi,
+                      unsigned char ghostThreshold) noexcept
+{
+    for (int i = 0; i < 16; ++i)
+    {
+        t.velocityMul[i] = velocityMul[i];
+        t.timingMs[i]    = timingMs[i];
+    }
+    t.timingJitterMs  = timingJitterMs;
+    t.velocityJitter  = velocityJitter;
+    t.ghostVelocityLo = ghostVelocityLo;
+    t.ghostVelocityHi = ghostVelocityHi;
+    t.ghostThreshold  = ghostThreshold;
+}
+
+/** @brief Rock default: data-derived from GMD rock grooves (C1). */
 inline Template rock() noexcept
 {
     Template t;
-    for (int i = 0; i < 16; ++i)
-    {
-        t.velocityMul[i] = 1.0f;
-        t.timingMs[i] = 0.0f;
-    }
-
-    // ── Velocity hierarchy ─────────────────────────────────────────────────
-    t.velocityMul[0]  = 1.10f;   // beat 1 (downbeat)
-    t.velocityMul[4]  = 1.12f;   // backbeat 2
-    t.velocityMul[8]  = 1.04f;   // beat 3
-    t.velocityMul[12] = 1.10f;   // backbeat 4
-    for (int c : { 2, 6, 10, 14 }) t.velocityMul[c] = 0.95f;  // 8th-note hats
-    for (int c : { 1, 3, 5, 7, 9, 11, 13, 15 }) t.velocityMul[c] = 0.90f;  // off-16ths
-
-    // ── Structured microtiming ─────────────────────────────────────────────
-    t.timingMs[0]  = -1.0f;   // kick slightly early (punch)
-    t.timingMs[4]  = 4.0f;    // backbeat laid back
-    t.timingMs[8]  = 1.0f;    // beat 3 slightly late
-    t.timingMs[12] = 4.0f;    // backbeat laid back
-    // hats stay on grid (0.0)
-
-    t.timingJitterMs = 1.5f;
-    t.velocityJitter = 3.0f;
+    applyData(t, data::kRockVelocityMul, data::kRockTimingMs,
+              data::kRockTimingJitterMs, data::kRockVelocityJitter,
+              data::kRockGhostVelocityLo, data::kRockGhostVelocityHi,
+              data::kRockGhostThreshold);
     return t;
 }
 
-/** @brief Heavier template: tighter timing, stronger accents (metal preset). */
+/** @brief Metal template: rock stats tightened toward the grid (C1 derivation). */
 inline Template metal() noexcept
 {
-    Template t = rock();
-    t.velocityMul[0] = 1.12f;
-    t.velocityMul[4] = 1.12f;
-    t.velocityMul[12] = 1.12f;
-    t.timingMs[4] = 2.5f;
-    t.timingMs[12] = 2.5f;
-    t.timingJitterMs = 1.0f;
+    Template t;
+    applyData(t, data::kMetalVelocityMul, data::kMetalTimingMs,
+              data::kMetalTimingJitterMs, data::kMetalVelocityJitter,
+              data::kMetalGhostVelocityLo, data::kMetalGhostVelocityHi,
+              data::kMetalGhostThreshold);
     return t;
 }
 
-/** @brief Straight, driving template (punk preset): everything near the grid. */
+/** @brief Punk template: rock stats pulled near-grid with tight jitter (C1 derivation). */
 inline Template punk() noexcept
 {
-    Template t = metal();
-    t.timingMs[0] = 0.0f;
-    t.timingMs[4] = 1.0f;
-    t.timingMs[12] = 1.0f;
-    t.timingJitterMs = 0.8f;
+    Template t;
+    applyData(t, data::kPunkVelocityMul, data::kPunkTimingMs,
+              data::kPunkTimingJitterMs, data::kPunkVelocityJitter,
+              data::kPunkGhostVelocityLo, data::kPunkGhostVelocityHi,
+              data::kPunkGhostThreshold);
     return t;
 }
 
