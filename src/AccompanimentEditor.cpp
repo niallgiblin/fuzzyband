@@ -264,6 +264,11 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(songFormLabel);
     addAndMakeVisible(songFormCombo);
 
+    songSectionsLabel.setJustificationType(juce::Justification::centredLeft);
+    songSectionsLabel.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    songSectionsLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ade78));
+    addAndMakeVisible(songSectionsLabel);
+
     // Phase 2: editable section list. Editing it writes the custom form back to
     // the processor (which persists it); picking a preset seeds the list.
     sectionListEditor = std::make_unique<SectionListEditor>();
@@ -454,6 +459,9 @@ void AccompanimentEditor::resized()
     songFormLabel.setBounds(row.removeFromLeft(140));
     songFormCombo.setBounds(row);
     r.removeFromTop(8);
+
+    songSectionsLabel.setBounds(r.removeFromTop(18));
+    r.removeFromTop(2);
 
     // Phase 2: editable section list (height tracks the number of rows).
     // Guard for the early resized() that setSize() fires in the constructor,

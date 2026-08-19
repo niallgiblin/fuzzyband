@@ -41,10 +41,6 @@ public:
     struct GrooveCommit
     {
         int patternIndex = 0;
-        bool hasBassFrame = false;
-        float bassPitchOffset[16] = {};
-        float bassVelocity[16] = {};
-        float bassRootMidi = 40.0f;  // E2
         TransitionFillKind fillKind = TransitionFillKind::None;
     };
 

@@ -48,7 +48,6 @@ struct MetalGrooveInference::Impl
     std::string inputName;
     std::string outputNameBottleneck;
     std::string outputNameStyle;
-    std::string outputNameGrooveEmb;   // may be unused but available
 };
 
 MetalGrooveInference::MetalGrooveInference() = default;
@@ -93,7 +92,6 @@ bool MetalGrooveInference::tryLoadModel()
         impl->inputName = "mel";
         impl->outputNameBottleneck = "bottleneck";
         impl->outputNameStyle = "style_logits";
-        // impl->outputNameGrooveEmb left empty — unused for centroid lookup
 
         // Validate input shape
         const auto inputTypeInfo = impl->session->GetInputTypeInfo(0);

@@ -2,7 +2,7 @@
 
 /**
  * @file
- * @brief Shared pattern-selection rules used by both RuleBasedInference and OnnxInference.
+ * @brief Shared pattern-selection rules used by both RuleBasedInference and MetalGrooveInference.
  *
  * Header-only, stateless inline functions. Single source of truth for BPM thresholds
  * and exclusion logic — prevents threshold drift between rule-based and ONNX fallback paths.

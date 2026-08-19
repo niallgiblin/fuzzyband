@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.17] — Make the custom song-form editor visible and labelled
+
+- **Fix (user session): the modular section-list editor was there but its combo
+  boxes drew no text**, so the section-type dropdowns looked like empty boxes and
+  the editor read as "the old 3-choice combo only". The custom look-and-feel's
+  `drawComboBox` now draws the selected text (it previously replaced the base
+  implementation without drawing the label). This also fixes the value text for
+  the Genre / Bass octave / Song form combos.
+- Added a "Song sections (custom)" heading above the section list so the modular
+  editor (add / remove / move-up / move-down / per-section type + bars) is
+  clearly separate from the preset combo. The 3 presets remain as starting points.
+- v0.9.17 (versioned build per workflow).
+
 ## [0.9.16] — Slimmer editor UI (make room for the section list)
 
 - **UI cleanup (user session):** removed the tempo knob (rotary BPM), the

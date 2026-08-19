@@ -4,9 +4,9 @@
  * @file
  * @brief Learns guitar riff patterns (rhythm + melody) and mirrors them on bass.
  *
- * Phase 1 (Learning): Records attack timestamps and pitches while guitarist plays.
- * Phase 2 (Confirming): Detects when the riff repeats (IOI pattern matches).
- * Phase 3 (Locked): Plays bass following the learned rhythm and pitch pattern.
+ * Phase 1 (Learning): Records attack timestamps/pitches and detects when the riff
+ *   repeats (IOI pattern matches), locking immediately on a match.
+ * Phase 2 (Locked): Plays bass following the learned rhythm and pitch pattern.
  *
  * Reset: On silence or when pattern changes significantly.
  */
@@ -111,14 +111,13 @@ public:
     const char* getStateName() const noexcept {
         switch (state_) {
             case State::Learning: return "Learning";
-            case State::Confirming: return "Confirming";
             case State::Locked: return "Locked";
         }
         return "Unknown";
     }
 
 private:
-    enum class State { Learning, Confirming, Locked };
+    enum class State { Learning, Locked };
 
     bool detectAttack(float rms) noexcept;
     bool patternsMatch(int len, double bpm) const noexcept;

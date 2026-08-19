@@ -333,14 +333,6 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
             break;
         }
 
-        case State::Confirming:
-        {
-            // This state is now unused - we lock immediately from Learning
-            // Keep for potential future use
-            lockPattern(bpm, sampleTime);
-            break;
-        }
-
         case State::Locked:
         {
             // Advance playback position

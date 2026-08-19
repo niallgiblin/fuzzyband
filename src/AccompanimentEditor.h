@@ -84,13 +84,25 @@ public:
     }
 
     void drawComboBox(juce::Graphics& g, int width, int height, bool,
-                      int, int, int, int, juce::ComboBox&) override
+                      int, int, int, int, juce::ComboBox& box) override
     {
         auto bounds = juce::Rectangle<float>(0.0f, 0.0f, (float)width, (float)height);
         g.setColour(findColour(juce::ComboBox::backgroundColourId));
         g.fillRoundedRectangle(bounds, 4.0f);
         g.setColour(findColour(juce::ComboBox::outlineColourId));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 4.0f, 1.0f);
+
+        // Selected text — our custom look-and-feel must draw it explicitly
+        // (the base LookAndFeel_V4 does, but we replace the whole method).
+        if (box.getText().isNotEmpty())
+        {
+            g.setColour(findColour(juce::ComboBox::textColourId));
+            g.setFont(juce::FontOptions(13.0f));
+            g.drawFittedText(box.getText(),
+                             juce::Rectangle<int>(6, 0, juce::jmax(1, width - 24), height),
+                             juce::Justification::centredLeft, 1, 0.0f);
+        }
+
         const float arrowX = (float)width - 16.0f;
         const float arrowY = (float)height * 0.5f;
         juce::Path arrow;
@@ -146,6 +158,7 @@ private:
 
     juce::Label songFormLabel{ {}, "Song form" };
     juce::ComboBox songFormCombo;
+    juce::Label songSectionsLabel{ {}, "Song sections (custom)" };
     std::unique_ptr<SectionListEditor> sectionListEditor;  // Phase 2: editable custom form
     juce::Label sectionLabel;
     juce::ToggleButton loopToggle{ "Loop" };

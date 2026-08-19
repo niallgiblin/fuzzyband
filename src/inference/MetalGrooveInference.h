@@ -8,8 +8,8 @@
  * Uses precomputed pattern bottleneck centroids (cosine similarity nearest-neighbor)
  * for pattern selection.
  *
- * Replaces the scalar-feature OnnxInference for the unified Mel-CNN pipeline.
- * OnnxInference remains as fallback.
+ * The sole production inference path (v0.9.x). Falls back to RuleBasedInference
+ * only when the model fails to load.
  */
 
 #include "IInference.h"

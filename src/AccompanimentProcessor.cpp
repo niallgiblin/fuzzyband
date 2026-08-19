@@ -3,7 +3,6 @@
 #include "inference/RuleBasedInference.h"
 #include "inference/pattern_rules.h"
 #if defined(MA_ENABLE_ONNX)
-#include "inference/OnnxInference.h"
 #include "inference/MetalGrooveInference.h"
 #endif
 #include <chrono>
@@ -17,15 +16,10 @@ namespace
 std::unique_ptr<IInference> makeInference()
 {
 #if defined(MA_ENABLE_ONNX)
-    // Try new Mel-CNN model first (v0.8.0 unified pipeline)
+    // Mel-CNN is the sole production model; rule-based is the only fallback.
     auto groove = std::make_unique<MetalGrooveInference>();
     if (groove->tryLoadModel())
         return groove;
-
-    // Fall back to old scalar-feature ONNX model
-    auto onnx = std::make_unique<OnnxInference>();
-    if (onnx->tryLoadModel())
-        return onnx;
 #endif
     return std::make_unique<RuleBasedInference>();
 }
@@ -309,7 +303,6 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             commit.patternIndex = diversifiedIdx;
             commit.fillKind = chooseTransitionFillKind(lastCommittedStructureState, patternFeatures.state,
                                                        diversifiedIdx, patternFeatures.rmsEnergy, patternFeatures.rmsDelta);
-            commit.hasBassFrame = false;  // bass handled by audio thread
             hasGrooveCommit = true;
             acceptedDrumPattern = true;
         }
@@ -376,8 +369,8 @@ uint64_t AccompanimentProcessor::getOnnxErrorCount() const noexcept
 {
     uint64_t total = 0;
 #if defined(MA_ENABLE_ONNX)
-    if (auto* onnx = dynamic_cast<OnnxInference*>(inference.get()))
-        total += onnx->getLoadErrorCount() + onnx->getRunErrorCount();
+    if (auto* groove = dynamic_cast<MetalGrooveInference*>(inference.get()))
+        total += groove->getLoadErrorCount() + groove->getRunErrorCount();
 #endif
     return total;
 }
@@ -432,7 +425,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     prevBlockRms = rms;
     const float centroid = energyAnalyser.getSpectralCentroid();
     const float hfFlux = energyAnalyser.getHighFreqFlux();
-    structureTagger.setSubBassRatio(energyAnalyser.getSubBassRatio());
+    const float subBassRatio = energyAnalyser.getSubBassRatio();
+    structureTagger.setSubBassRatio(subBassRatio);
     const StructureState st = structureTagger.update(rms, centroid, hfFlux, numSamples, energyAnalyser.getPeakRms());
 
     const bool digitalSilence = (rms < 1.0e-6f);
@@ -507,6 +501,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     fv.pitchConfidence = pitchEstimator.getConfidence();
     fv.rmsDelta = rmsDelta;
     fv.policyIntensity = 0.5f;
+    fv.subBassRatio = subBassRatio;
     (void)featureQueue.try_enqueue(fv);
 
     // ── 6. Pattern playback ─────────────────────────────────────────────────

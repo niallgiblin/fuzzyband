@@ -89,29 +89,6 @@ void logStats(const char* label, const LatencyStats& stats)
 
 } // namespace
 
-TEST_CASE("ONNX pattern model latency p99 under 5ms", "[onnx][latency][benchmark]")
-{
-    auto session = loadSession(BinaryData::accompaniment_model_onnx, BinaryData::accompaniment_model_onnxSize);
-    std::array<float, 7> inputData{ 120.f, 0.2f, 9000.f, 0.2f, 0.f, 1.f, 0.f };
-    std::array<int64_t, 2> shape{ 1, 7 };
-
-    const auto stats = measureRunLatencyMs(
-        [&]() {
-            auto mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-            Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
-                mem, inputData.data(), inputData.size(), shape.data(), shape.size());
-            const char* inputNames[] = { "X" };
-            const char* outputNames[] = { "Y" };
-            auto outputs = session->Run(Ort::RunOptions{ nullptr }, inputNames, &inputTensor, 1, outputNames, 1);
-            REQUIRE_FALSE(outputs.empty());
-        },
-        100,
-        10000);
-
-    logStats("pattern", stats);
-    REQUIRE(stats.p99Ms < 5.0);
-}
-
 TEST_CASE("ONNX metal_groove model latency p99 under 5ms", "[onnx][latency][benchmark]")
 {
     auto session = loadSession(BinaryData::metal_groove_onnx, BinaryData::metal_groove_onnxSize);
