@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.8.12)
+project(MetalAccompaniment VERSION 0.9.16)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -261,9 +261,15 @@ if(MA_BUILD_TESTS)
         tests/test_sub_bass_energy.cpp
         tests/test_midi_pattern_library.cpp
         tests/test_pattern_rules.cpp
+        tests/test_groove_template.cpp
         tests/test_onnx_inference.cpp
         tests/test_metal_groove_inference.cpp
         tests/test_playback_gate.cpp
+        tests/test_stable_pitch_tracker.cpp
+        tests/test_pitch_estimator.cpp
+        tests/test_phrase_learner.cpp
+        tests/test_golden_signal.cpp
+        tests/test_structure_sequencer.cpp
 
         # Plugin sources compiled into the test executable
         src/analysis/EnergyAnalyser.cpp
@@ -289,6 +295,7 @@ if(MA_BUILD_TESTS)
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         MA_PLUGIN_VERSION="${PROJECT_VERSION}"
+        "MA_REPO_ROOT=\"${CMAKE_SOURCE_DIR}\""
     )
 
     if(APPLE)

@@ -10,10 +10,20 @@ JUCE 8 VST3/AU plugin (macOS primary). Stack details: `CLAUDE.md` and `ARCHITECT
 
 ## Configure and build (matches CI)
 
-From the repository root:
+ONNX Runtime is the production inference path, so `MA_ENABLE_ONNX` defaults to **ON**
+and a configure requires `ONNXRUNTIME_ROOT` (see [ONNX Runtime](#onnx-runtime-optional)
+below for how to obtain it). From the repository root:
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DMA_BUILD_STANDALONE=ON
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DMA_BUILD_STANDALONE=ON \
+  -DONNXRUNTIME_ROOT=/path/to/onnxruntime-osx-arm64-1.20.1
+cmake --build build --config Release --parallel
+```
+
+To build the rule-based path only (no ONNX Runtime download required), disable it explicitly:
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DMA_BUILD_STANDALONE=ON -DMA_ENABLE_ONNX=OFF
 cmake --build build --config Release --parallel
 ```
 
@@ -39,7 +49,7 @@ On the audio thread, **`FeatureVector::policyIntensity`** is set from the **`int
 |--------------|---------|--------|
 | `MA_BUILD_TESTS` | ON | Unit tests (`MetalAccompanimentTests`) |
 | `MA_BUILD_STANDALONE` | ON | Standalone app target |
-| `MA_ENABLE_ONNX` | OFF | ONNX Runtime — see [`docs/ONNX_READINESS.md`](docs/ONNX_READINESS.md) |
+| `MA_ENABLE_ONNX` | ON | ONNX Runtime (production inference path) — requires `ONNXRUNTIME_ROOT`; see [`docs/ONNX_READINESS.md`](docs/ONNX_READINESS.md) |
 | `ONNXRUNTIME_ROOT` | — | Required when `MA_ENABLE_ONNX=ON` (path to ONNX Runtime root with `include/` and `lib/`) |
 
 ### ONNX Runtime (optional)
@@ -87,15 +97,18 @@ HTML output is written to `docs/doxygen/html/` (ignored by git). You can also ru
 
 ## Linux (unsupported / best-effort)
 
-Use the **same three commands as CI** (not regularly validated on Linux):
+Not regularly validated on Linux. The quickest path is the rule-based build (no ONNX
+Runtime required):
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DMA_BUILD_STANDALONE=ON
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DMA_BUILD_STANDALONE=ON -DMA_ENABLE_ONNX=OFF
 cmake --build build --config Release --parallel
 ctest --test-dir build --output-on-failure --config Release
 ```
 
-Expect to install distro packages for ALSA, X11, and OpenGL as required by JUCE. `MA_ENABLE_ONNX` remains off by default; set `ONNXRUNTIME_ROOT` when you enable it.
+Expect to install distro packages for ALSA, X11, and OpenGL as required by JUCE. To build the
+production ONNX path, download a Linux ONNX Runtime archive and pass `ONNXRUNTIME_ROOT` (the
+`lib/libonnxruntime.so` variant).
 
 ## Windows
 

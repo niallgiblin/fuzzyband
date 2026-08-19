@@ -42,7 +42,8 @@ class StructureOnnxExport(nn.Module):
     so the C++ runtime feeds raw FeatureVector windows directly with no external normalization.
     """
 
-    _EPS = 1e-8
+    # Audit §8.1/F3: backstop floor; real centroid floor lives in merge_datasets.py.
+    _EPS = 1e-3
 
     def __init__(self, structure_net: StructureNet, mean: torch.Tensor, std: torch.Tensor) -> None:
         super().__init__()

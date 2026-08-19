@@ -1,6 +1,6 @@
-# Metal Accompaniment — v0.8.12
+# Metal Accompaniment — v0.9.16
 
-JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + bass MIDI** in real time. Ships with a **Mel-CNN ONNX pipeline** (mel spectrogram → pattern selection via cosine similarity) and a **rule-based fallback** (energy/structure/tempo). Version **0.8.2** — **Unified Mel-CNN Pipeline**.
+JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + bass MIDI** in real time. Ships with a **Mel-CNN ONNX pipeline** (mel spectrogram → pattern selection via cosine similarity) and a **rule-based fallback** (energy/structure/tempo). Version **0.9.16** — **Musicality & Rock Pivot** (rock-first genre default, groove engine, harmonic bass; drop-C pitch tracking, bass octave control; groove-lock rework, golden-signal tests, editable song form). See [`CHANGELOG.md`](CHANGELOG.md) for the full history.
 
 ## Quick start
 
@@ -68,6 +68,8 @@ python training/export_centroids.py
 |-----------|-------------|
 | `outputGain` | Guitar pass-through level (does not scale MIDI) |
 | `bpm` | Fallback tempo only — used when no DAW transport BPM is available (standalone) |
+| `genre` | Genre preset (Rock default, Hard Rock, Punk, Metal, Sludge): groove feel, velocity profile, section dynamics |
+| `swing` | Swing/shuffle ratio (0–100%) — delays off-8th drum events |
 | `songForm` | Section preset (VERSE/CHORUS/BRIDGE/etc.) |
 | `loop` | Loop song form |
 
@@ -76,9 +78,25 @@ sample position (`getTimeInSamples()`), so patterns stay locked to the project g
 seeks, loops, and transport start/stop. The `bpm` knob is only a fallback for hosts with
 no transport (e.g. the standalone build); audio-derived tempo tracking is not used.
 
+### Musicality (v0.9.0)
+
+- **Bass engine:** the authored bass lines in `MidiPatternLibrary` now actually play,
+  transposed to the guitarist's tracked root (harmony: root/fourth/fifth/octave per
+  section, beat-1 accents, ±5 humanisation, ~2 ms behind the kick). Patterns without
+  authored bass get a harmonic line from the root.
+- **Groove engine:** drums render through a velocity hierarchy (downbeat > backbeat >
+  8th hats > off-16ths) and structured microtiming (backbeat slightly late, kick
+  slightly early) with a bounded gaussian instead of white-noise jitter.
+- **Dynamic contrast:** per-section velocity multipliers — chorus backbeat is ≥15 louder
+  than verse backbeat.
+- **Ghost notes:** off-16th snare ghosts (velocity 30–55) in verse/breakdown sections.
+- **Rock-first pattern set:** Rock Backbeat, Rock Half-Time, Rock Shuffle, Punk D-Beat,
+  Rock Ballad, Rock 6/8 Feel (indices 22–27) — the metal set is retained as the
+  "heavy" pool and via the Metal/Sludge genre presets.
+
 ### On-screen diagnostics
 
-Live readouts: **BPM**, **State** (SILENT/SOFT/LOUD), **Pattern** (0–21), **RMS**, **Centroid**, **HF Flux**.
+Live readouts: **BPM**, **State** (SILENT/SOFT/LOUD), **Pattern** (0–27), **RMS**, **Centroid**, **HF Flux**.
 
 ## Build
 
@@ -127,6 +145,14 @@ Search "Metal" or "Niall" in the FX browser. Plugin appears under **Tools** cate
 
 | Version | Milestone |
 |---------|-----------|
+| **v0.9.7** | Bass octave control (−12/0/+12) for range-limited bass VSTs; confirmed MIDI 36 = C2 output for drop-C (VSTs using the middle-C=C3 convention display it as C1) |
+| **v0.9.6** | Drop-C pitch tracking: pitch estimator low end extended 75→55 Hz so C2 (65.4 Hz) and lower drop tunings are detected — the bass follows your root instead of defaulting to E2 |
+| **v0.9.5** | Solid SILENT under hot-input noise: silent-threshold cap raised (0.03→0.06) so the learned floor clears noise up to ~0.05 RMS; phrase learner gated on SILENT (no more noise-locked repeating bass); faster floor adaptation |
+| **v0.9.4** | Adaptive noise floor: SILENT is solid under guitar hum (threshold learns your noise floor; holds to SILENT cut to 1s; noise-floor readout in UI) |
+| **v0.9.3** | Bass stops during the Silent pattern (was: harmonic fallback droned the root under hum) |
+| **v0.9.2** | Frozen-transport fix: jamming with the DAW transport stopped now runs the plugin's own beat clock (was: stuck on Silent + block-rate machine-gun) |
+| **v0.9.1** | Bass stuck-note fix (multi-pitch bass note-off bookkeeping) |
+| **v0.9.0** | Musicality & Rock Pivot: bass engine, groove engine, dynamic contrast, ghost notes, rock pattern set, genre presets |
 | **v0.8.12** | Transport-anchored drum clock; DAW-transport-only tempo; dead-path cleanups |
 | **v0.8.2** | Mel queue integration — MetalGrooveInference wired end-to-end |
 | **v0.8.1** | Training pipeline + MetalGrooveInference ONNX integration |

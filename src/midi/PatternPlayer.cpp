@@ -23,6 +23,7 @@ void PatternPlayer::reset()
     bassRootMidi = 40;  // E2
     bassNotesPerBar = 2;
     bassLastMidiNote = 40;
+    bassNoteOffMidi = 40;
     bassNoteOffSample = -1;
     crashNoteOffSample = -1;
     armCrashPending = false;
@@ -30,6 +31,26 @@ void PatternPlayer::reset()
     pendingLearnedNote_ = false;
     sampleCounter = 0;
     expectedHostSample = 0;
+    lastHostSample = -1;
+
+    // Musicality pivot state (Workstream A / B1)
+    swing = 0.0f;
+    sectionId = Groove::SongSectionId::Verse;
+    setGenrePreset(0);  // Rock default
+}
+
+void PatternPlayer::setSwing(float newSwing) noexcept
+{
+    swing = juce::jlimit(0.0f, 1.0f, newSwing);
+}
+
+void PatternPlayer::setGenrePreset(int presetId) noexcept
+{
+    preset = Groove::presetFor(presetId);
+    grooveTemplate = Groove::templateFor(preset.templateId);
+    ghostDensity = preset.ghostDensity;
+    // The swing knob is user-owned; preset.defaultSwing is applied by the
+    // editor when the user changes genre, so we do not override it here.
 }
 
 void PatternPlayer::setBassSemitoneOffset(int semitones)
@@ -69,8 +90,9 @@ void PatternPlayer::clearPendingGrooveCommit() noexcept
 void PatternPlayer::setBpm(float newBpm)
 {
     // Host-authoritative: snap directly. EMA smoothing would drift the internal
-    // beat grid away from the DAW transport.
-    bpm = juce::jlimit(40.0f, 320.0f, newBpm);
+    // beat grid away from the DAW transport. B2: every clamp site agrees on
+    // [40, 300] (matches the APVTS bpm parameter and PatternRules::adjustedBpm).
+    bpm = juce::jlimit(40.0f, 300.0f, newBpm);
 }
 
 void PatternPlayer::setPatternIndex(int index)
@@ -95,19 +117,26 @@ void PatternPlayer::snapToBarStart()
 
 void PatternPlayer::snapBpm(float newBpm)
 {
-    bpm = juce::jlimit(40.0f, 320.0f, newBpm);
+    bpm = juce::jlimit(40.0f, 300.0f, newBpm);
 }
 
-int PatternPlayer::humanVel(int base) const
+float PatternPlayer::boundedGaussian(juce::Random& r, float mean, float sigma) noexcept
 {
-    const int delta = rng.nextInt(21) - 10;
-    return juce::jlimit(1, 127, base + delta);
+    if (sigma <= 0.0f)
+        return mean;
+    float u1 = r.nextFloat();
+    float u2 = r.nextFloat();
+    if (u1 <= 0.0f)
+        u1 = 1.0e-6f;
+    // Box–Muller; clamp to ±2.5 sigma so no event strays far from the grid.
+    const float z = std::sqrt(-2.0f * std::log(u1)) * std::cos(2.0f * juce::MathConstants<float>::pi * u2);
+    return mean + juce::jlimit(-2.5f, 2.5f, z) * sigma;
 }
 
-int PatternPlayer::humanSamples() const
+bool PatternPlayer::sectionAllowsGhosts() const noexcept
 {
-    const int maxOff = static_cast<int>(std::round(0.002 * sampleRate));
-    return rng.nextInt(maxOff * 2 + 1) - maxOff;
+    return sectionId == Groove::SongSectionId::Verse
+        || sectionId == Groove::SongSectionId::Breakdown;
 }
 
 void PatternPlayer::emitCrashHit(juce::MidiBuffer& midi,
@@ -190,6 +219,16 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
 
     const double patternLenBeats = static_cast<double>(pattern.lengthInBars) * 4.0;
     const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
+    const double samplesPerMs = sampleRate / 1000.0;
+    // Off-8th swing delay: swing=1 moves the "and" from 50% to 2/3 of the beat.
+    const double swingDelayMs = static_cast<double>(swing) * (1.0 / 6.0) * 60000.0 / juce::jmax(1.0f, bpm);
+
+    // Occupancy map for ghost-note placement (A3.2): cells with authored snares.
+    bool occupied[16] = {};
+    if (ghostDensity > 0.01f && sectionAllowsGhosts())
+        for (const auto& ev : pattern.drumEvents)
+            if (ev.note == 38)
+                occupied[Groove::grid16Of(ev.beatOffset)] = true;
 
     for (const auto& ev : pattern.drumEvents)
     {
@@ -199,14 +238,34 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
         const double startPhase = std::fmod(beatStart, patternLenBeats);
         const double first = beatStart + std::fmod(phase - startPhase + patternLenBeats, patternLenBeats);
 
+        // 16th grid cell within the bar — drives the velocity/timing hierarchy.
+        const int grid16 = Groove::grid16Of(ev.beatOffset);
+        const bool isGhost = (ev.velocity <= grooveTemplate.ghostThreshold);
+
         for (double t = first; t < beatEnd - 1.0e-9; t += patternLenBeats)
         {
             const double rel = t - beatStart;
-            int off = static_cast<int>(std::round(rel * samplesPerBeat));
-            off += humanSamples();
+
+            // ── Structured microtiming + swing + bounded gaussian (A2.2/A2.3) ──
+            float timeMs = grooveTemplate.timingMs[grid16];
+            if (swing > 0.0f && (grid16 % 4) == 2)
+                timeMs += static_cast<float>(swingDelayMs);
+            if (isGhost)
+                timeMs += grooveTemplate.ghostTimingMs;
+            timeMs += boundedGaussian(rng, 0.0f, grooveTemplate.timingJitterMs);
+
+            int off = static_cast<int>(std::round(rel * samplesPerBeat + timeMs * samplesPerMs));
             off = juce::jlimit(0, numSamples - 1, off);
 
-            const int vel = humanVel(static_cast<int>(ev.velocity));
+            // ── Velocity hierarchy: grid accent × section contrast × genre scale (A2.1/A3.1) ──
+            float mul = grooveTemplate.velocityMul[grid16] * sectionVelMul;
+            int vel = static_cast<int>(std::round(static_cast<float>(ev.velocity) * mul
+                                                  + boundedGaussian(rng, 0.0f, grooveTemplate.velocityJitter)));
+            if (isGhost)
+                vel = juce::jlimit(static_cast<int>(grooveTemplate.ghostVelocityLo),
+                                   static_cast<int>(grooveTemplate.ghostVelocityHi), vel);
+            vel = juce::jlimit(1, 127, vel);
+
             const int outNote = juce::jlimit(0, 127, static_cast<int>(ev.note));
 
             midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, outNote, static_cast<float>(vel) / 127.0f),
@@ -219,74 +278,241 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
             midi.addEvent(juce::MidiMessage::noteOff(kDrumChannel, outNote), sampleOffsetBase + noteOffOffset);
         }
     }
+
+    // ── Ghost notes (A3.2) ─────────────────────────────────────────────────
+    if (ghostDensity > 0.01f && sectionAllowsGhosts())
+        emitGhostNotes(midi, numSamples, beatStart, beatEnd, occupied, sampleOffsetBase);
 }
 
-void PatternPlayer::emitBeatAlignedBass(juce::MidiBuffer& midi,
-                                        int numSamples,
-                                        double beatStart,
-                                        double beatEnd,
-                                        int sampleOffsetBase)
+void PatternPlayer::emitGhostNotes(juce::MidiBuffer& midi,
+                                   int numSamples,
+                                   double beatStart,
+                                   double beatEnd,
+                                   const bool occupied[16],
+                                   int sampleOffsetBase)
+{
+    const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
+    const double samplesPerMs = sampleRate / 1000.0;
+    const int durSamps = juce::jmax(1, static_cast<int>(std::round(0.25 * samplesPerBeat)));
+
+    // Candidate ghost cells (off-16ths). All avoid landing on the same sample
+    // as an authored snare note-off, so no same-note overlap is possible.
+    const int lowCells[1] = { 9 };                        // "e" of 3 — the classic
+    const int highCells[4] = { 1, 9, 11, 15 };            // e of 1, e of 3, a of 3, a of 4
+    const int* cells = (ghostDensity >= 0.7f) ? highCells : lowCells;
+    const int numCells = (ghostDensity >= 0.7f) ? 4 : 1;
+
+    for (double barStart = std::floor(beatStart / 4.0) * 4.0; barStart < beatEnd - 1.0e-9; barStart += 4.0)
+    {
+        for (int c = 0; c < numCells; ++c)
+        {
+            const int cell = cells[c];
+            if (occupied[cell])
+                continue;
+            const double beat = barStart + static_cast<double>(cell) / 4.0;
+            if (beat < beatStart - 1.0e-9 || beat >= beatEnd - 1.0e-9)
+                continue;
+
+            const double rel = beat - beatStart;
+            float timeMs = grooveTemplate.ghostTimingMs
+                         + boundedGaussian(rng, 0.0f, grooveTemplate.timingJitterMs);
+            int off = static_cast<int>(std::round(rel * samplesPerBeat + timeMs * samplesPerMs));
+            off = juce::jlimit(0, numSamples - 1, off);
+
+            const float ghostLo = grooveTemplate.ghostVelocityLo;
+            const float ghostHi = grooveTemplate.ghostVelocityHi;
+            const int vel = juce::jlimit(1, 127,
+                static_cast<int>(std::round(ghostLo + rng.nextFloat() * (ghostHi - ghostLo))));
+
+            midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, 38, static_cast<float>(vel) / 127.0f),
+                          sampleOffsetBase + off);
+            midi.addEvent(juce::MidiMessage::noteOff(kDrumChannel, 38),
+                          sampleOffsetBase + juce::jmin(numSamples - 1, off + durSamps));
+        }
+    }
+}
+
+void PatternPlayer::emitBassRange(juce::MidiBuffer& midi,
+                                  int numSamples,
+                                  double beatStart,
+                                  double beatEnd,
+                                  const MidiPattern& pattern,
+                                  int sampleOffsetBase)
+{
+    if (beatEnd <= beatStart + 1.0e-9 || numSamples <= 0)
+        return;
+
+    // A1.1: authored bass lines (dead code until now) play when present;
+    // otherwise the harmonic engine (A1.2) builds one from the guitarist's root.
+    if (!pattern.bassEvents.empty())
+        emitPatternBass(midi, numSamples, beatStart, beatEnd, pattern, sampleOffsetBase);
+    else
+        emitHarmonicBass(midi, numSamples, beatStart, beatEnd, sampleOffsetBase);
+}
+
+void PatternPlayer::emitBassNote(juce::MidiBuffer& midi,
+                                 int numSamples,
+                                 int64_t blockStart,
+                                 int outNote,
+                                 int vel,
+                                 int off,
+                                 int durSamps,
+                                 int sampleOffsetBase)
+{
+    // Monophonic bass: close any previously scheduled note before the new one.
+    // The deferred note-off carries the correct note number (bassNoteOffMidi),
+    // so alternating/interval bass lines never leave a note stuck on.
+    if (bassNoteOffSample >= 0)
+    {
+        const int prevOff = (bassNoteOffSample < blockStart + numSamples)
+            ? juce::jlimit(0, numSamples - 1, static_cast<int>(bassNoteOffSample - blockStart))
+            : 0;
+        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassNoteOffMidi), sampleOffsetBase + prevOff);
+        bassNoteOffSample = -1;
+    }
+
+    midi.addEvent(juce::MidiMessage::noteOn(kBassChannel, outNote, static_cast<float>(vel) / 127.0f),
+                  sampleOffsetBase + off);
+    bassLastMidiNote = outNote;
+
+    const int64_t noteOffAbs = blockStart + static_cast<int64_t>(off) + static_cast<int64_t>(durSamps);
+    if (noteOffAbs < blockStart + numSamples)
+    {
+        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, outNote),
+                      sampleOffsetBase + juce::jlimit(0, numSamples - 1,
+                          static_cast<int>(noteOffAbs - blockStart)));
+    }
+    else
+    {
+        bassNoteOffMidi = outNote;
+        bassNoteOffSample = noteOffAbs;
+    }
+}
+
+void PatternPlayer::emitPatternBass(juce::MidiBuffer& midi,
+                                    int numSamples,
+                                    double beatStart,
+                                    double beatEnd,
+                                    const MidiPattern& pattern,
+                                    int sampleOffsetBase)
+{
+    const double patternLenBeats = static_cast<double>(pattern.lengthInBars) * 4.0;
+    const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
+    const double samplesPerMs = sampleRate / 1000.0;
+    const int64_t blockStart = sampleCounter;
+
+    for (const auto& ev : pattern.bassEvents)
+    {
+        const double phase = std::fmod(static_cast<double>(ev.beatOffset), patternLenBeats);
+        const double startPhase = std::fmod(beatStart, patternLenBeats);
+        const double first = beatStart + std::fmod(phase - startPhase + patternLenBeats, patternLenBeats);
+
+        const int grid16 = Groove::grid16Of(ev.beatOffset);
+
+        for (double t = first; t < beatEnd - 1.0e-9; t += patternLenBeats)
+        {
+            const double rel = t - beatStart;
+
+            // Bass sits slightly behind the kick for pocket (A1.2), with small jitter.
+            float timeMs = grooveTemplate.bassPocketMs
+                         + boundedGaussian(rng, 0.0f, grooveTemplate.timingJitterMs);
+            int off = static_cast<int>(std::round(rel * samplesPerBeat + timeMs * samplesPerMs));
+            off = juce::jlimit(0, numSamples - 1, off);
+
+            // Transpose the authored interval pattern to the live root, folding
+            // back into the playable bass register.
+            const int interval = static_cast<int>(ev.note) - kPatternBassRoot;
+            int outNote = bassRootMidi + bassSemitoneOffset + interval;
+            while (outNote < 28) outNote += 12;
+            while (outNote > 55) outNote -= 12;
+            outNote = juce::jlimit(0, 127, outNote);
+
+            // Accent beat 1, soften beat 3, passing notes quieter; humanise ±5.
+            float mul = sectionVelMul;
+            if (grid16 == 0)      mul *= 1.08f;   // downbeat
+            else if (grid16 == 8) mul *= 0.96f;   // beat 3
+            int vel = static_cast<int>(std::round(static_cast<float>(ev.velocity) * mul
+                                                  + boundedGaussian(rng, 0.0f, 4.0f)));
+            vel = juce::jlimit(1, 127, vel);
+
+            const int durSamps = juce::jmax(1, static_cast<int>(std::round(
+                static_cast<double>(ev.durationBeats) * kBassGate * samplesPerBeat)));
+
+            emitBassNote(midi, numSamples, blockStart, outNote, vel, off, durSamps, sampleOffsetBase);
+        }
+    }
+}
+
+void PatternPlayer::emitHarmonicBass(juce::MidiBuffer& midi,
+                                     int numSamples,
+                                     double beatStart,
+                                     double beatEnd,
+                                     int sampleOffsetBase)
 {
     if (beatEnd <= beatStart + 1.0e-9 || bassNotesPerBar <= 0)
         return;
 
     const int64_t blockStart = sampleCounter;
-    const int64_t blockEnd = blockStart + static_cast<int64_t>(numSamples);
     const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
-
-    // Handle any pending note-off from previous block
-    if (bassNoteOffSample >= 0 && bassNoteOffSample < blockEnd)
-    {
-        if (bassNoteOffSample <= blockStart)
-        {
-            midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassLastMidiNote), sampleOffsetBase);
-        }
-        else
-        {
-            const int off = static_cast<int>(bassNoteOffSample - blockStart);
-            midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassLastMidiNote),
-                          sampleOffsetBase + juce::jlimit(0, numSamples - 1, off));
-        }
-        bassNoteOffSample = -1;
-    }
-
-    // Calculate beat interval for bass notes
+    const double samplesPerMs = sampleRate / 1000.0;
     const double beatsPerNote = 4.0 / static_cast<double>(bassNotesPerBar);
 
-    // Find the first beat in this window that should trigger a bass note
+    // Find the first beat in this window that should trigger a bass note.
     double firstBeat = std::ceil(beatStart / beatsPerNote) * beatsPerNote;
+    const int bar = static_cast<int>(std::floor(beatStart / 4.0));
 
     for (double beat = firstBeat; beat < beatEnd - 1.0e-9; beat += beatsPerNote)
     {
-        // Calculate sample offset for this beat — NO humanization for tight lock to drums
         const double rel = beat - beatStart;
-        int off = static_cast<int>(std::round(rel * samplesPerBeat));
+        const int beatInBar = static_cast<int>(std::floor(std::fmod(beat, 4.0)));
+        const int degree = harmonyDegree(beatInBar, bar);
+
+        int outNote = bassRootMidi + bassSemitoneOffset + degree;
+        while (outNote < 28) outNote += 12;
+        while (outNote > 55) outNote -= 12;
+        outNote = juce::jlimit(0, 127, outNote);
+
+        // Accent beat 1, soften beat 3; humanise ±5.
+        float mul = sectionVelMul;
+        if (beatInBar == 0)      mul *= 1.08f;
+        else if (beatInBar == 2) mul *= 0.96f;
+        int vel = static_cast<int>(std::round(95.0f * mul + boundedGaussian(rng, 0.0f, 4.0f)));
+        vel = juce::jlimit(1, 127, vel);
+
+        // Slightly behind the kick for pocket.
+        float timeMs = grooveTemplate.bassPocketMs
+                     + boundedGaussian(rng, 0.0f, grooveTemplate.timingJitterMs);
+        int off = static_cast<int>(std::round(rel * samplesPerBeat + timeMs * samplesPerMs));
         off = juce::jlimit(0, numSamples - 1, off);
 
-        const int outNote = juce::jlimit(0, 127, bassRootMidi + bassSemitoneOffset);
-        const int vel = 100;  // Fixed velocity for consistency
+        // 85% gate (kept from the old engine, now a named parameter).
+        const double noteDuration = beatsPerNote * kBassGate;
+        const int durSamps = juce::jmax(1, static_cast<int>(std::round(noteDuration * samplesPerBeat)));
 
-        // Note-on
-        midi.addEvent(juce::MidiMessage::noteOn(kBassChannel, outNote, static_cast<float>(vel) / 127.0f),
-                      sampleOffsetBase + off);
-        bassLastMidiNote = outNote;
+        emitBassNote(midi, numSamples, blockStart, outNote, vel, off, durSamps, sampleOffsetBase);
+    }
+}
 
-        // Schedule note-off at 85% of beat interval (slight staccato feel)
-        const double noteDuration = beatsPerNote * 0.85;
-        const int durSamps = static_cast<int>(std::round(noteDuration * samplesPerBeat));
-        const int64_t noteOffSampleAbs = blockStart + static_cast<int64_t>(off) + static_cast<int64_t>(durSamps);
-
-        if (noteOffSampleAbs < blockEnd)
-        {
-            const int noteOffOff = static_cast<int>(noteOffSampleAbs - blockStart);
-            midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, outNote),
-                          sampleOffsetBase + juce::jlimit(0, numSamples - 1, noteOffOff));
-        }
-        else
-        {
-            // Defer note-off to next block
-            bassNoteOffSample = noteOffSampleAbs;
-        }
+int PatternPlayer::harmonyDegree(int beatInBar, int bar) const noexcept
+{
+    switch (sectionId)
+    {
+        case Groove::SongSectionId::Chorus:
+        case Groove::SongSectionId::Solo:
+            // Root → fifth → octave → fourth walk (A1.2: chorus walks).
+            { constexpr int kDeg[4] = { 0, 7, 12, 5 }; return kDeg[beatInBar & 3]; }
+        case Groove::SongSectionId::Verse:
+            // Hold root; occasional fourth on beat 3 of every 4th bar.
+            if (beatInBar == 2 && (bar & 3) == 3)
+                return 5;
+            return 0;
+        case Groove::SongSectionId::Breakdown:
+        case Groove::SongSectionId::Intro:
+        case Groove::SongSectionId::Outro:
+        case Groove::SongSectionId::Unknown:
+            return 0;
+        default:
+            return (beatInBar == 2) ? 7 : 0;  // Unknown: root/fifth alternating
     }
 }
 
@@ -295,9 +521,24 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
     if (library == nullptr || numSamples <= 0)
         return;
 
+    // ── Transport frozen? (DAW stopped / no moving playhead) ────────────────
+    // A stopped transport keeps getTimeInSamples() constant. Treating that as a
+    // jump every block wiped pending pattern changes (drums stuck on Silent)
+    // and anchored the beat clock to a fixed phase (bass/drums machine-gunning
+    // at block rate — the "harsh constant" sound). Instead, run the plugin's
+    // own beat clock when the host position is frozen, so jamming works with
+    // the transport stopped. Real seeks/loops still register as jumps.
+    const bool transportFrozen = (hostSamplePosition == lastHostSample);
+    lastHostSample = hostSamplePosition;
+    if (transportFrozen)
+        hostSamplePosition = sampleCounter + static_cast<int64_t>(numSamples);
+
     const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
     const double beatStart = static_cast<double>(hostSamplePosition) / samplesPerBeat;
     const double beatEnd = beatStart + static_cast<double>(numSamples) / samplesPerBeat;
+
+    // Section velocity multiplier for this block (A3.1).
+    sectionVelMul = preset.sectionVelocityMultiplier(sectionId) * preset.velocityScale;
 
     // Propagate a pattern index change requested via setPatternIndex().
     const int requested = patternIndex.load(std::memory_order_relaxed);
@@ -306,7 +547,7 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
 
     // Transport jump detection (seek / loop / re-instantiation) — drop any
     // deferred state that was scheduled relative to a previous timeline position.
-    if (hostSamplePosition != expectedHostSample)
+    if (!transportFrozen && hostSamplePosition != expectedHostSample)
     {
         pendingPatternIndex = -1;
         pendingGrooveCommitValid = false;
@@ -360,6 +601,7 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
     }
 
     const MidiPattern& pattern = library->getPattern(activePatternIndex);
+    const int prevPatternIndex = activePatternIndex;  // pre-change index for the split bass
 
     if (changeBeat < 0.0)
     {
@@ -401,24 +643,56 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
                                    library->getPattern(activePatternIndex), 0);
     }
 
+    // ── Bass note-off bookkeeping (A1) ──────────────────────────────────────
+    // Emit any deferred note-off that has come due this block. Runs regardless
+    // of the phrase-learner state so a note scheduled before a mode switch is
+    // still closed; carries the correct note number (monophonic bass).
+    if (bassNoteOffSample >= 0 && bassNoteOffSample < sampleCounter + numSamples)
+    {
+        const int off = juce::jlimit(0, numSamples - 1,
+                                     static_cast<int>(bassNoteOffSample - sampleCounter));
+        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassNoteOffMidi), off);
+        bassNoteOffSample = -1;
+    }
+
     // Learned bass note (PhraseLearner active).
     if (pendingLearnedNote_)
     {
         if (bassNoteOffSample >= 0)
         {
-            midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassLastMidiNote), 0);
+            midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassNoteOffMidi), 0);
             bassNoteOffSample = -1;
         }
 
         const int off = juce::jlimit(0, numSamples - 1, pendingLearnedOffset_);
         midi.addEvent(juce::MidiMessage::noteOn(kBassChannel, pendingLearnedMidi_, pendingLearnedVel_), off);
         bassLastMidiNote = pendingLearnedMidi_;
+        bassNoteOffMidi = pendingLearnedMidi_;
 
         bassNoteOffSample = sampleCounter + static_cast<int64_t>(off) + static_cast<int64_t>(pendingLearnedDuration_);
         pendingLearnedNote_ = false;
     }
 
-    // Beat-aligned bass: only when PhraseLearner is NOT active.
+    // Bass engine (A1): only when PhraseLearner is NOT mirroring the riff, and
+    // never during the Silent pattern (index 0) — silence means silence for the
+    // bass too. Previously the harmonic fallback kept droning the last root
+    // note whenever the state dropped to SILENT (hum-level audio keeps the
+    // plugin "active" so structureSilent never engages).
     if (!phraseLearnerActive_)
-        emitBeatAlignedBass(midi, numSamples, beatStart, beatEnd, 0);
+    {
+        const MidiPattern& bassPattern = library->getPattern(activePatternIndex);
+        if (changeBeat < 0.0)
+        {
+            if (activePatternIndex != 0)
+                emitBassRange(midi, numSamples, beatStart, beatEnd, bassPattern, 0);
+        }
+        else
+        {
+            // Old pattern up to the boundary, new pattern after it.
+            if (prevPatternIndex != 0)
+                emitBassRange(midi, numSamples, beatStart, changeBeat, pattern, 0);
+            if (activePatternIndex != 0)
+                emitBassRange(midi, numSamples, changeBeat, beatEnd, bassPattern, 0);
+        }
+    }
 }

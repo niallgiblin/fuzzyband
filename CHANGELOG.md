@@ -2,6 +2,379 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.16] — Slimmer editor UI (make room for the section list)
+
+- **UI cleanup (user session):** removed the tempo knob (rotary BPM), the
+  "Inference: …" label, and the "MIDI outputs on drum/bass …" help caption from
+  the editor so the Phase 2 section-list editor has room. Tempo still comes from
+  the DAW transport (the `bpm` parameter remains as the standalone fallback);
+  the inference backend name/error count and the routing note are still available
+  via `getActiveInferenceName()`/`getOnnxErrorCount()`, just no longer shown.
+- v0.9.16 (versioned build per workflow).
+
+## [0.9.15] — Fix crash on opening the plugin editor
+
+- **Fix (user session): REAPER crashed when pressing the track's FX button.** The
+  Phase 2 section-list editor is a `std::unique_ptr` created part-way through the
+  `AccompanimentEditor` constructor, but `setSize()` at the top of the
+  constructor fires `resized()` immediately — before the member existed — so
+  `sectionListEditor->getHeightHint()` dereferenced null. `resized()` now guards
+  the pointer. Added an `[editor]` construction smoke test so this class of
+  regression is caught by the integration suite.
+- v0.9.15 (versioned build per workflow). Suite: 167 unit + 30 integration/e2e green.
+
+## [0.9.14] — Groove lock rework, golden-signal tests, editable song form
+
+### P0 — Groove-lock rework (the "changes too quickly" fix)
+
+- **R1 — the bass note is frozen while locked.** Removed `PhraseLearner::retuneToLiveRoot()` and the live-root retune call in the processor: the learned riff's recorded pitches are now authoritative for the whole hold, so changing chord/root mid-hold no longer yanks the bass. The live-mirror is dropped once `Locked` (the learned pattern drives the bass alone); `StablePitchTracker` still feeds the fallback root when *not* locked.
+- **R2 — fixed hold.** `lockBars` is now a fixed window; returning to the riff no longer extends it (`justMatchedRiff()` extension removed).
+- **R4 — smooth release.** On hold expiry the audio thread arms a crash + a `Release` transition fill at the bar boundary and hands pattern selection back to the listener (which may re-lock a *new* riff).
+- **Full-riff capture (option A).** Lock now waits for ≥8 attacks and scans pattern lengths *descending* (longest first), and `lockPattern()` replicates the riff across the bar-aligned loop — so the learned playback is dense note-for-note instead of a 2-note slice. Removed the phase-jumping pattern-growth re-lock.
+
+### Golden-signal test harness
+
+- New `tests/fixtures/` (4×10 s real guitar excerpts: palm-mute chug, thrash chug, open-chord, single-note — documented in `tests/fixtures/README.md`) and `tests/test_golden_signal.cpp`, which runs the exact 0.1 s RMS window + `PitchEstimator` + `PhraseLearner` on real audio and asserts lock time + note density. Registered in CMake (the "unregistered tests" trap from bug #1).
+
+### Phase 2 — editable/persistent song form + reactive fills
+
+- `StructureSequencer::serializeForm()` / `parseFormString()` (form ↔ `"VERSE:8,CHORUS:8,…"`).
+- The song form persists as a session property, handed to the audio thread lock-free via `setCustomSongForm()` (message thread) + a version counter (audio thread). The old preset-index polling was replaced.
+- New section-list editor in the UI (add / remove / move / per-section type + bar count); the preset combo seeds it.
+- `chooseTransitionFillKind()` is now energy-aware (impact vs build-up vs subtle).
+
+### Phase 3 — ONNX normalization fix (C5 prereq, training-side)
+
+- The spectral-centroid std was clamped to `1e-8` (`merge_datasets.py`, `pattern/structure/bass_model.py`), making live inference saturate (audit §8.1/F3). Added a per-feature std floor (centroid ≈ 1 kHz, others 1e-3) and bumped the backstop epsilon to `1e-3`. **Requires re-running `merge_datasets.py` + re-exporting the ONNX models** to affect the shipped model.
+
+- v0.9.14 (versioned build per workflow). Suite: 163 unit + 29 integration/e2e green.
+
+## [0.9.13] — Follow-mode bass mirrors while the groove is locked
+
+- **Fix (user session): bass mirrored in Play mode but not in follow mode.** In
+  follow mode the groove lock engages on riff repeat, and the previous fix
+  blanket-suppressed the live mirror while held — so once the lock engaged, the
+  bass dropped back to looping the skeletal learned pattern instead of
+  mirroring your playing. Play mode never engages the lock, which is why it
+  sounded fine there.
+- **The mirror is now suppressed only for solo licks.** While the groove lock
+  holds the riff, riff-matching attacks (the guitarist playing the riff) are
+  still mirrored densely; non-matching attacks (a solo over the groove) are not
+  mirrored — the learned loop sustains. Outside the hold, every attack is
+  mirrored as before.
+- **Pattern growth:** the first lock still captures a skeletal slice (len=2),
+  but as more matching attacks accumulate the pattern is re-captured with the
+  longest matching length (up to 16 notes) — the groove-lock sustain loops the
+  full riff instead of a 2-note blip.
+- Verified on synthetic follow-mode sessions: held + playing riff → 12 notes/s
+  (mirror); held + solo → learned riff loops at the grown density, solo not
+  mirrored; released + solo → follows again. Suite: 159 unit + 25 integration
+  green.
+- v0.9.13 (versioned build per workflow).
+
+## [0.9.12] — Bass stays dense while you play (live mirror through the lock)
+
+- **Fix (user session): the bass still played sparse staccato notes while
+  riffing.** Diagnosis from your real recordings: the immediate mirror only ran
+  *before* the pattern lock; once locked, the learned-pattern playback took over
+  — and the lock fires on the first repeat, so the pattern is a skeletal 2-note
+  slice that plays a couple of short notes per 4-beat loop. That was the sparse
+  staccato.
+- **The live riff mirror now runs in the Locked state too:** while you are
+  playing, the bass follows every detected attack (measured on your recorded
+  takes: ~1.7 notes/s → **10–17 notes/s during active playing**, matching the
+  chug density). The learned loop only sustains when you stop, and the groove
+  lock still holds the riff through a solo (the mirror is suppressed only while
+  the groove lock is holding).
+- **Legato note length:** bass notes are ~0.9 beat instead of 0.4 — the bass
+  sustains through dense chugs instead of staccato blips.
+- v0.9.12 (versioned build per workflow). Also: installs now strip quarantine
+  xattrs (`xattr -cr`) — the iCloud-synced build folder was flagging fresh
+  builds so macOS refused to load them ("library load disallowed by system
+  policy").
+
+## [0.9.11] — Bass mirrors riffs as you play them (immediate mirror)
+
+- **Fix (user session): the bass still didn't mirror riffs — grounded in your
+  real recordings.** Ran the actual pipeline (analyser RMS + YIN pitch + learner)
+  over `data/raw/` takes: the RMS detector fires ~9×/s on real chugging, but the
+  **pitch-confidence gate starved the learner** — YIN's confidence on distorted
+  palm-mute guitar is bimodal (≈0 at most attack moments), so only a handful of
+  attacks were recorded, the mirror locked after 2–6 s with a skeletal 2-note
+  pattern, and the sparse beat-1 fallback was all you heard.
+- **Attacks are now gated on the RMS transient only — never on pitch
+  confidence.** The riff mirror is a *rhythm* mirror; the note value comes from
+  the held/confident pitch and is corrected later by the live-root retune. Lock
+  time on your real recordings dropped ~2.7×.
+- **New: immediate riff mirror.** While you're actively riffing (≥2 attacks in
+  the last 2 bars), the bass plays **every detected attack as it happens** with
+  the held pitch — no 2–6 s learning wait, no beat-1 drone. The beat-grid
+  fallback returns only when riffing stops (a lone accent doesn't count as
+  riffing). Once the pattern locks, the learned riff (with live-root retune)
+  takes over, and the groove lock still freezes drums+bass on riff repeat.
+- **Tests:** realistic-chug regression now feeds **zero pitch confidence** (the
+  distorted-guitar case) and must lock; new test asserts immediate-mirror
+  triggers fire before the lock. Suite: 159 unit + 25 integration cases green.
+- v0.9.11 (versioned build per workflow).
+
+## [0.9.10] — Bass actually mirrors your riffs again (attack-detector fix)
+
+- **Fix (user session): the bass stopped mirroring riffs.** The 0.9.8 attack
+  detector (`rms > prev × 1.2`) never fired on real playing: the analyser's
+  100 ms RMS window smooths palm-muted chugs into a few-% block-to-block swings,
+  so the learner recorded ~1 attack per 6 s, never locked, and the bass sat on
+  the sparse beat-1 fallback. New detector: an attack is a **sharp rise that
+  follows a recent decay** (a real note pulse), which fires on real chugging
+  (verified: a realistic 16th-note palm-mute chug locks in ~0.2 s) while still
+  rejecting constant tones, slow swells, and the analyser warm-up ramp.
+- **Fix: fallback bass density.** INTRO/OUTRO/BREAKDOWN fallback was a whole
+  note on beat 1 (read as "the bass isn't opening up"); now a minimum half-note
+  pulse everywhere.
+- **Tests:** new regression — "locks on a realistic palm-muted 16th chug"
+  (feeds the analyser-style windowed RMS, the profile the old detector failed
+  on). Suite: 158 unit + 25 integration cases green.
+- v0.9.10 (versioned build per workflow).
+
+## [0.9.9] — Generative groove lock (riff → drums+bass lock in)
+
+- **New: the groove auto-locks onto your riff.** In generative mode (Play off),
+  when the PhraseLearner detects your riff repeating, the **drums freeze on the
+  current pattern** and the **bass keeps looping the learned riff** while you
+  expand/solo over it — then it listens again. Behavior (per product spec):
+  - **Engage:** riff repeats once → lock (drums + bass hold the groove).
+  - **Hold:** `lockBars` bars (default 16, UI slider 4–64) after the last moment
+    you were playing the riff; **returning to the riff extends the hold**.
+  - **Release:** silence, Play-on, or the hold elapsing without riff activity.
+    After expiry the lock re-engages only if the riff is still being played
+    (2-bar freshness grace) — a stale learner never re-freezes the listener.
+  - **Bass while locked:** keeps retuning to your live root **only when you're
+    demonstrably playing the riff** (a riff-grid attack just landed); soloing or
+    held chords freeze the riff note-for-note, per the "freeze if unreliable"
+    decision. Intervals/contour preserved.
+  - **UI:** "Groove: LOCKED (riff)" status indicator (green) + "Lock (bars)"
+    slider. The lock status is also available to hosts via `isGrooveLocked()`.
+- **Fix: phrase learner missed attacks at loud/quiet transitions.** YIN's
+  confidence collapses to ~0 when its analysis ring mixes loud + quiet samples —
+  exactly when note attacks fire — so riff *starts* (after a rest or quiet
+  interlude) were dropped and the bass never learned them. The learner now holds
+  the last confidently-estimated pitch and accepts transition attacks with it.
+  This also makes the new auto-lock engage reliably on riff starts.
+- **Fix: "following the riff" is now robust.** The drift check compares each
+  attack against **any** note-to-note interval of the learned pattern (cycled),
+  instead of a playback-position-coupled expectation that failed on sub-bar
+  uniform chugs (whose bar-aligned pattern under-samples the bar).
+- **Tests:** PhraseLearner hold/follow unit tests (hold suppresses drift-unlock,
+  following fires while the riff plays) and a processor pipeline test (lock
+  engages on a chug → committed pattern frozen through a 4 s re-eval window →
+  hold expires after `lockBars` bars → stale learner does not re-engage →
+  rejection takes effect once listening resumes → silence stays released).
+  Suite: 157 unit + 25 integration cases green.
+- v0.9.9 (versioned build per workflow).
+
+## [0.9.8] — Bass actually follows the guitarist's root
+
+- **Fix (user session): the bass root was a major third off.** `StablePitchTracker`
+  computes the semitone offset anchored at C (`kBassRootPc = 0`, the drop-C root),
+  but the processor folded it onto **E2 = 40** (`bassRoot = 40 + offset`). Net:
+  guitar C → bass E, guitar E → bass G♯, guitar G → bass B₁. This is why the bass
+  "sounded off" while tracking. The processor now folds the offset onto **C2 = 36**
+  (the v0.9.6 intent), so the bass plays the guitarist's pitch class.
+- **Register fix — no more octave-down folding:** the tracker previously wrapped
+  the offset to ±6, which pushed roots at pc ≥ 7 an octave down (G → B₁ = 35,
+  below the audible range of many bass VSTs). It now returns the pitch class in
+  [0, 11], so every root lands in the C2–B2 octave (C→36, E→40, G→43, B→47).
+- **PhraseLearner loop is bar-aligned:** the learned riff used to loop at
+  `totalBeats + 0.5`, so a 4-beat riff looped at 4.5 beats and the bass drifted
+  against the drum bar every loop. The loop now rounds to a whole number of bars
+  (never shorter than the riff), and its phase is aligned to the riff's own cycle
+  — the first bass note lands on the guitarist's next phrase start.
+- **Locked bass follows the live root (A1 acceptance):** while the riff mirror is
+  locked, the pattern is re-rooted to the guitarist's current pitch class every
+  block (1/8-beat stability window), so a root change is audible at the next bass
+  note instead of waiting for a drift-triggered re-learn. Riff intervals/contour
+  are preserved.
+- **Fix: no more false riff locks.** The phrase learner's attack detector fired on
+  any positive RMS drift while loud, so it locked onto the warm-up ramp of any
+  sustained tone — hold a chord and the bass mirrored the transient and flickered
+  between mirror and fallback. Attacks now require a sharp single-block rise
+  (≥ +20% vs the previous block); a constant tone, a slow swell, or the analyser
+  warm-up never qualifies.
+- **Tests:** the pitch-following path was untested — `test_stable_pitch_tracker.cpp`
+  and `test_pitch_estimator.cpp` were never registered in CMake, and the tracker
+  test still asserted the old E-anchored contract. Updated the tracker tests to
+  the C-anchored [0, 11] contract, registered both files, and added
+  `tests/test_phrase_learner.cpp` (lock, bar alignment, phase alignment, live-root
+  retune, no false lock, silence reset). The "bass octave +12" pipeline test now
+  passes — it asserted the intended v0.9.6 mapping that the buggy code never
+  produced. Suite: 156 unit + 24 integration cases green.
+- v0.9.8 (versioned build per workflow).
+
+## [0.9.7] — Bass octave control + choice-param fix
+
+- **New UI control — "Bass octave" (−12 / 0 / +12):** shifts the bass MIDI an
+  octave (applies to the harmonic/pattern bass *and* phrase-learned notes).
+  Motivated by the user's bass VST: for drop-C the plugin correctly outputs
+  MIDI 36 = C2, but VSTs using the middle-C=C3 convention display it as "C1"
+  and some can't sound below ~E2 — the control fits the bass to the instrument's
+  range. Regression test: C2 input with +12 → bass around C3 (48).
+- **Choice-parameter read fix:** the APVTS adapter's raw value for a choice
+  parameter is already the *index*; a stray normalized multiply collapsed
+  Punk/Metal/Sludge genres to Metal and broke +12 (regression test: Sludge
+  routes SOFT low-energy to the metal half-time, not the rock set).
+- v0.9.7 (versioned build per workflow).
+
+## [0.9.6] — Drop-C pitch tracking
+
+- **Fix (user session):** the bass always played low E regardless of the guitar's
+  root. The YIN pitch estimator's low end was capped at 75 Hz (`sr/75`), but
+  drop-C's low string is C2 = 65.4 Hz — below the range — so no pitch was ever
+  detected, `StablePitchTracker` returned INT_MIN, and the processor fell back to
+  bassRoot = 40 (E2).
+- **Fix:** extended the estimator band to ~55 Hz (`sr/55`, ring holds ~5 periods
+  at 55 Hz) and lowered the accept gate to 50 Hz. Drop-C (and lower drop tunings)
+  are now detected; the pitch-class anchoring in `StablePitchTracker` maps C to
+  C2 (36) on the bass. New tests: 65.4 Hz → MIDI 36 and 55 Hz → MIDI 33.
+- v0.9.6 (versioned build per workflow).
+
+## [0.9.5] — Solid SILENT under hot-input noise
+
+- **Fix (user session):** with guitar volume up and not playing, the noise floor
+  was RMS ~0.04–0.05 — above the v0.9.4 silent-threshold cap (0.03) — so the
+  state hovered at the boundary and the bass "sometimes stopped, sometimes kept
+  going."
+- **Silent-threshold cap raised 0.03 → 0.06:** the learned noise floor can now
+  push the silent threshold above hot-input noise (up to ~0.05 RMS → threshold
+  0.06). Quiet playing is still protected: the threshold only rises to the cap
+  when the floor itself is high.
+- **Phrase learner gated on SILENT:** the learner's internal silence gate
+  (rms < 0.002–0.003) was far below the noise floor, so during "silence" it
+  locked onto the noise and mirrored it endlessly — the learned-bass path runs
+  regardless of the Silent pattern. The processor now resets the learner and
+  suppresses its triggers whenever the structure state is SILENT.
+- **Faster floor adaptation** (release 0.001 → learns a hotter noise floor in
+  ~15 s of quiet), creep gated to the quiet band so loud playing can't raise the
+  displayed floor.
+- Regression test: 15 s of noise-floor-level input → state SILENT, zero bass in
+  the final 3 s. v0.9.5 (versioned build per workflow).
+
+## [0.9.4] — Solid SILENT (adaptive noise floor)
+
+- **Fix:** SILENT was not solid — guitar hum/hiss (centroid ~3100 Hz, HF flux ~0.9
+  in the user's session) kept RMS hovering around the fixed `kSilentRms = 0.012`,
+  so the state flickered SILENT/SOFT and the accompaniment kept playing over the
+  noise floor.
+- **Adaptive noise floor:** `StructureTagger` now tracks the quietest RMS seen
+  (snaps down instantly, creeps up slowly with a ~20 s time constant) and sets
+  the silent threshold at `max(kSilentRms, min(floor × 1.5, 0.03))`. The gate
+  learns your actual noise floor instead of assuming a fixed one; the 0.03 cap
+  guarantees quiet playing is never misread as silence.
+- **Holds to SILENT reduced** for responsiveness: SOFT→SILENT 2.0→1.0 s,
+  LOUD→SILENT 3.0→1.0 s (phrase-breath gaps ≤ 0.75 s still keep the groove).
+- New UI readout **Noise floor** shows the learned floor so you can verify it
+  tracks your input. New regression tests for hum-solid SILENT and floor reset.
+- v0.9.4 (versioned build per workflow).
+
+## [0.9.3] — Bass stops on silence
+
+- **Fix:** when the guitarist stops, the state drops to SILENT and the pattern
+  switches to 0 (Silent). Drums correctly went quiet, but the bass kept droning
+  the last root note: pattern 0 has no authored `bassEvents`, so the harmonic
+  fallback engine played on — and hum-level input kept the plugin "active"
+  (`rms > 0.001`) so `structureSilent` never engaged. The bass engine is now
+  suppressed whenever the active pattern is 0 — the Silent pattern means silence
+  for the bass too. Regression test: switching to pattern 0 leaves bars 2-4
+  bass-free.
+- v0.9.3 (versioned build per workflow).
+
+## [0.9.2] — Frozen-transport fix (jam with the DAW stopped)
+
+- **Root cause of "no drums + harsh constant bass" in the DAW:** when the transport
+  is stopped, `getTimeInSamples()` returns a constant position. The transport-jump
+  detector saw a "jump" on every block, wiped the pending pattern change each
+  block (`activePatternIndex` stuck on 0 = Silent → no drums), and anchored the
+  beat clock to a fixed phase so the bass re-fired the same note at block rate —
+  the harsh constant drone.
+- **Fix:** `PatternPlayer` detects a frozen host position (`lastHostSample`) and
+  runs its own internal beat clock, so patterns play in time with the transport
+  stopped. Real seeks/loops still register as jumps and drop deferred state.
+  Regression test: a frozen host position produces one bar of Verse Groove
+  (~9 hits), not 188 block-rate hits.
+- **Build versioning:** this is v0.9.2 — every build from now on bumps the patch
+  version so the loaded binary is always identifiable in the plugin UI.
+
+## [0.9.1] — Bass stuck-note fix
+
+- **Fix:** multi-pitch bass (authored intervals + harmonic fallback) could leave a
+  note stuck on: the single deferred note-off slot emitted `noteOff` for the last
+  note played instead of the note whose note-off was due → a harsh constant drone.
+  Bass is monophonic, so one slot is correct as long as it carries the right note
+  number: `emitBassNote()` closes the previous note on each new note-on and
+  `bassNoteOffMidi` tracks the pending note. Regression test: multi-pitch bass
+  across small blocks leaves zero notes open.
+- This build is **v0.9.1** so the fixed binary is distinguishable from the first
+  v0.9.0 build in the plugin UI (top-right version label).
+
+## [0.9.0] — Musicality & Rock Pivot (Workstream A: P0+P1)
+
+**Implements the code phases of `docs/MUSICALITY_ROCK_PIVOT_PLAN.md`.** Fixes the
+musical ceiling — the plugin was only *selecting* canned metal loops over a root-note
+metronome bass with white-noise jitter; now it renders grooves and basslines with
+drummer-like hierarchy, structured microtiming, dynamic contrast and real harmony.
+
+### A1 — Bass engine (dead code revived + harmonic fallback)
+- `PatternPlayer` now reads `MidiPattern.bassEvents` — the 20+ authored bass lines
+  that were written but never emitted (Finding 1) now play, transposed to the
+  guitarist's tracked root (`liveRoot + (authoredNote − 36)`), folded into the
+  playable register.
+- New harmonic fallback engine (`emitHarmonicBass`) for patterns without authored
+  bass: root/fourth/fifth/octave movement per section (chorus walks root→fifth→
+  octave→fourth; verse holds root with an occasional fourth; breakdown roots),
+  beat-1 accents, ±5 humanisation, ~2 ms behind the kick for pocket, 85% gate kept
+  as a named parameter.
+- Beat-aligned root-metronome bass replaced; `bassNotesPerBar` still drives the
+  harmonic fallback density. (A multi-pitch note-off bookkeeping bug found in UAT
+  was fixed in **0.9.1** — see that entry.)
+
+### A2 — Groove & humanisation
+- `src/midi/GrooveTemplate.h`: per-16th-grid velocity hierarchy (downbeat >
+  backbeat > 8th hats > off-16th) and structured microtiming (backbeat ~4 ms late,
+  kick ~1 ms early, ghosts early) replacing the uniform ±10 velocity / ±2 ms timing
+  white noise. Jitter is now a bounded gaussian (±2.5σ) around the structured offset,
+  seeded deterministically (`setRandomSeed`).
+- Swing knob (`swing` APVTS param, 0–100%): delays off-8th events by up to 1/6 beat
+  (straight → triplet feel), mapped to a UI slider.
+
+### A3 — Dynamic contrast & articulation
+- Per-section velocity multipliers from the genre preset (verse 0.92 / chorus 1.06
+  at Rock): chorus backbeat is ≥15 louder than verse backbeat (plan §7 metric).
+  Reactive mode maps LOUD playing → CHORUS so dynamics track the guitarist.
+- Ghost notes: authored ≤62-velocity snares are rendered in the 30–55 ghost band and
+  slightly early; verse/breakdown sections additionally inject off-16th ghost snares
+  (density from the genre preset) at cells not occupied by authored snares.
+
+### A4.1 — Rock-first pattern set
+- 6 new patterns (indices 22–27): Rock Backbeat, Rock Half-Time, Rock Shuffle,
+  Punk D-Beat, Rock Ballad, Rock 6/8 Feel — each with authored drum **and** bass
+  events. `MidiPatternLibrary::kPatternCount` (28) is the single source of truth;
+  `PatternRules::kPatternCount` is synced and unit-tested.
+
+### B1/B2 — Genre presets & tempo unification
+- New `genre` APVTS param (Rock default / Hard Rock / Punk / Metal / Sludge): selects
+  groove template, velocity profile, section dynamics, ghost density, swing default.
+  Metal/Sludge keep the original metal routing; rock genres prefer rock patterns in
+  play-mode pools (`sectionPatternPoolForGenre`) and the reactive path
+  (`diversifyPatternForGenre`).
+- Every BPM clamp site now agrees on [40, 300] (`PatternPlayer` previously allowed
+  320; `PatternRules::adjustedBpm`, the APVTS param and the slider already clamped
+  to 300).
+
+### Known limitations / deferred (P2–P4 of the plan)
+- Groove template numbers are musically-baked defaults; C1 (E-GMD velocity/timing
+  stats) can replace them data-driven without touching rendering code.
+- `bass_model.onnx` is still not in the live path (unchanged); the plan defers its
+  integration/retirement decision.
+- Human UAT (blind A/B: humanisation on vs off) remains the final acceptance gate.
+
 ## [0.7.0] — Creative Companion (Playability Pivot)
 
 **Milestone M001.** ONNX-first inference that doesn't jitter: stable tempo, stable ML-driven structure detection, and musically distinct grooves — without replacing ML with manual controls.

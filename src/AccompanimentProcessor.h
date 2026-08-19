@@ -7,6 +7,7 @@
 
 #include <JuceHeader.h>
 #include <array>
+#include <limits>
 #include "analysis/EnergyAnalyser.h"
 #include "analysis/StructureTagger.h"
 #include "analysis/StructureSequencer.h"
@@ -70,10 +71,14 @@ public:
     juce::String getSectionName() const noexcept;
     int getDisplayStateIndex() const noexcept { return displayStateIndex.load(std::memory_order_relaxed); }
     int getDisplayPatternIndex() const noexcept { return displayPatternIndex.load(std::memory_order_relaxed); }
+
+    /** @brief The pattern the drums are actually playing (last committed). Tests/UI. */
+    int getLatestPatternIndex() const noexcept { return latestPatternIndex.load(std::memory_order_relaxed); }
     int getDisplayStyle() const noexcept { return displayStyle.load(std::memory_order_relaxed); }
     float getDisplayRms() const noexcept { return displayRms.load(std::memory_order_relaxed); }
     float getDisplayCentroid() const noexcept { return displayCentroid.load(std::memory_order_relaxed); }
     float getDisplayHfFlux() const noexcept { return displayHfFlux.load(std::memory_order_relaxed); }
+    float getDisplayNoiseFloor() const noexcept { return displayNoiseFloor.load(std::memory_order_relaxed); }
 
     void bumpDebugPattern();
 
@@ -81,10 +86,25 @@ public:
     const std::string& getActiveInferenceName() const noexcept { return activeInferenceName; }
     uint64_t getOnnxErrorCount() const noexcept;
 
+    /**
+     * @brief True when generative mode has auto-locked the groove onto a
+     *        repeated riff (drums frozen, bass holding the learned riff).
+     *        Written by the audio thread, read by the UI (and inference thread).
+     */
+    bool isGrooveLocked() const noexcept { return grooveLocked.load(std::memory_order_relaxed); }
+
     // Phase 23 rejection signal: written by message thread (Phase 24 button), read/decremented by inference thread.
     std::atomic<int> patternRejectionCount{ 0 };
 
     std::atomic<bool> playActive{ false };  // Play button state — when true, sequencer runs and playback is forced
+
+    /**
+     * @brief Set the editable song form from its serialized string
+     *        ("VERSE:8,CHORUS:8,..."). Call on the message thread; the parsed
+     *        form is handed to the audio thread lock-free and the string is
+     *        persisted with the session (Phase 2).
+     */
+    void setCustomSongForm(const juce::String& serialized);
 
     /** @brief Test-only: stop the background thread from draining @a featureQueue (integration tests). */
     void pauseBackgroundInferenceForTests();
@@ -137,6 +157,7 @@ private:
     std::atomic<float> displayRms{ 0.0f };
     std::atomic<float> displayCentroid{ 0.0f };
     std::atomic<float> displayHfFlux{ 0.0f };
+    std::atomic<float> displayNoiseFloor{ 0.012f };
 
     std::atomic<bool> inferenceRunning{ false };
     std::atomic<bool> inferencePaused{ false };
@@ -144,6 +165,24 @@ private:
     std::mutex inferenceDrainMutex;
 
     int64_t hostSampleTime = 0;
+
+    // Generative groove lock (Phase: lock-in). The audio thread runs the lock
+    // state machine; the inference thread and UI read grooveLocked.
+    std::atomic<bool> grooveLocked{ false };
+    bool grooveLockActive = false;     // audio-thread lock state
+    int64_t grooveLockEndSample = -1;  // hold ends here (hostSampleTime frame)
+    int64_t lastRiffMatchSample = std::numeric_limits<int64_t>::min() / 2;  // last riff-grid attack
+    bool prevPhraseLocked = false;     // phrase-lock edge detection
+    bool grooveLockReleaseArmed = false;  // P0/R4: arm a transition fill at lock expiry
+
+    // Phase 2: editable/persistent song form. The message thread parses the
+    // serialized form into a shared SongForm and bumps `songFormVersion`; the
+    // audio thread observes the version change and calls loadForm(). The
+    // shared_ptr is exchanged with the C++11 free atomic_load/atomic_store
+    // helpers (this libc++ predates the C++20 std::atomic<shared_ptr> type).
+    std::shared_ptr<SongForm> pendingSongForm;
+    std::atomic<int> songFormVersion{ 0 };
+    int loadedSongFormVersion = -1;
 
     int64_t lastDrumPatternChangeSample = -1;
     StructureState lastCommittedStructureState = StructureState::SILENT;

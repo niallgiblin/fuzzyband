@@ -14,8 +14,8 @@ TEST_CASE("StructureTagger hysteresis holds SOFT state", "[structure]")
     s = tagger.update(0.01f, 0.0f, 0.0f, 512);
     REQUIRE(s == StructureState::SOFT);
 
-    // Feed enough silent blocks to exceed the SOFT→SILENT hold (6.0s).
-    // At 44.1kHz/512 blocks: 6.0 / (512/44100) ≈ 517 blocks
+    // Feed enough silent blocks to exceed the SOFT→SILENT hold (1.0s).
+    // At 44.1kHz/512 blocks: 1.0 / (512/44100) ≈ 87 blocks
     for (int i = 0; i < 517; ++i)
         s = tagger.update(0.01f, 0.0f, 0.0f, 512);
 

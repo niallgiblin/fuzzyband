@@ -12,10 +12,17 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "MidiPatternLibrary.h"
+#include "GrooveTemplate.h"
 #include <atomic>
 
 /**
  * @brief Emits humanised drum (ch 10) and bass (ch 2) MIDI from the active pattern.
+ *
+ * Musicality pivot (Workstream A): drums render through a groove template
+ * (velocity hierarchy + structured microtiming + bounded gaussian, A2), section
+ * velocity contrast (A3.1) and ghost notes (A3.2); bass plays the authored
+ * `pattern.bassEvents` transposed to the guitarist's root, with a harmonic
+ * fallback engine (A1).
  *
  * Call @ref process from the audio thread; methods are real-time safe when documented.
  */
@@ -84,6 +91,22 @@ public:
     /** @brief Arm a crash cymbal (MIDI 49) hit at the next block start. Audio thread safe. */
     void armTransitionCrash() noexcept { armCrashPending = true; }
 
+    // ── Musicality pivot (Workstream A / B1) ──────────────────────────────────
+
+    /** @brief Swing/shuffle ratio in [0,1]; delays off-8th events (A2.3). Audio thread. */
+    void setSwing(float newSwing) noexcept;
+
+    /** @brief Current section; drives velocity contrast (A3.1) and bass harmony (A1.2). Audio thread. */
+    void setSection(Groove::SongSectionId s) noexcept { sectionId = s; }
+
+    /** @brief Select the genre preset: groove template, section velocities, ghost density (B1). Audio thread. */
+    void setGenrePreset(int presetId) noexcept;
+
+    /** @brief Seed the humanisation RNG deterministically (tests; A2.4 seed stability). */
+    void setRandomSeed(juce::int64 seed) noexcept { rng.setSeed(seed); }
+
+    float getSwing() const noexcept { return swing; }
+
     static constexpr int kBassChannel = 2;
 
 private:
@@ -95,12 +118,54 @@ private:
                                 const MidiPattern& pattern,
                                 int sampleOffsetBase);
 
-    /** Simple beat-aligned bass: emits root notes on beats based on bassNotesPerBar. */
-    void emitBeatAlignedBass(juce::MidiBuffer& midi,
-                             int numSamples,
-                             double beatStart,
-                             double beatEnd,
-                             int sampleOffsetBase);
+    /** @brief Emit off-16th ghost snare notes (A3.2) at cells not occupied by authored snares. */
+    void emitGhostNotes(juce::MidiBuffer& midi,
+                        int numSamples,
+                        double beatStart,
+                        double beatEnd,
+                        const bool occupied[16],
+                        int sampleOffsetBase);
+
+    /** @brief Route bass for a range: authored pattern bass, else harmonic fallback. */
+    void emitBassRange(juce::MidiBuffer& midi,
+                       int numSamples,
+                       double beatStart,
+                       double beatEnd,
+                       const MidiPattern& pattern,
+                       int sampleOffsetBase);
+
+    /** @brief Emit authored @c pattern.bassEvents transposed to the live root (A1.1). */
+    void emitPatternBass(juce::MidiBuffer& midi,
+                         int numSamples,
+                         double beatStart,
+                         double beatEnd,
+                         const MidiPattern& pattern,
+                         int sampleOffsetBase);
+
+    /** @brief Harmonic bass engine: root/fourth/fifth/octave per section (A1.2). */
+    void emitHarmonicBass(juce::MidiBuffer& midi,
+                          int numSamples,
+                          double beatStart,
+                          double beatEnd,
+                          int sampleOffsetBase);
+
+    /**
+     * @brief Emit one bass note. The bass is monophonic (note duration is always
+     * shorter than the note spacing), so this closes any previously scheduled
+     * note before the new note-on, and defers the new note's note-off with the
+     * correct note number — no stuck notes when successive notes differ in pitch.
+     */
+    void emitBassNote(juce::MidiBuffer& midi,
+                      int numSamples,
+                      int64_t blockStart,
+                      int outNote,
+                      int vel,
+                      int off,
+                      int durSamps,
+                      int sampleOffsetBase);
+
+    /** @brief Semitone interval for the harmonic bass on a beat within a bar. */
+    int harmonyDegree(int beatInBar, int bar) const noexcept;
 
     void emitTransitionFill(juce::MidiBuffer& midi,
                             int numSamples,
@@ -113,8 +178,11 @@ private:
                       int64_t hostSamplePosition,
                       int sampleOffset) noexcept;
 
-    int humanVel(int base) const;
-    int humanSamples() const;
+    /** @brief Bounded gaussian around a mean; clamps to ±2.5 sigma (A2.4). */
+    static float boundedGaussian(juce::Random& r, float mean, float sigma) noexcept;
+
+    /** @brief Whether ghost notes may be injected for the active section. */
+    bool sectionAllowsGhosts() const noexcept;
 
     const MidiPatternLibrary* library = nullptr;
 
@@ -130,6 +198,7 @@ private:
 
     int64_t sampleCounter = 0;       // last host sample position
     int64_t expectedHostSample = 0;  // next expected host position (jump detection)
+    int64_t lastHostSample = -1;     // raw host position from the previous block (frozen-transport detection)
 
     bool structureSilent = false;
     bool wasSilent = false;
@@ -140,6 +209,7 @@ private:
     int bassRootMidi = 40;      // E2 (drop-C metal root)
     int bassNotesPerBar = 2;    // default: half notes (beats 1 and 3)
     int bassLastMidiNote = 40;
+    int bassNoteOffMidi = 40;       // note whose note-off is pending (monophonic bass)
     int64_t bassNoteOffSample = -1;  // scheduled note-off sample position
 
     bool phraseLearnerActive_ = false;  // When true, beat-aligned bass is suppressed
@@ -155,6 +225,16 @@ private:
     bool armCrashPending = false;
     int64_t crashNoteOffSample = -1;
 
+    // ── Musicality pivot state (Workstream A / B1) ────────────────────────────
+    Groove::Template grooveTemplate;            // velocity hierarchy + microtiming
+    Groove::GenrePreset preset;                 // active genre preset (copy)
+    Groove::SongSectionId sectionId = Groove::SongSectionId::Verse;
+    float swing = 0.0f;                         // 0..1 (A2.3)
+    float sectionVelMul = 1.0f;                 // preset section multiplier (A3.1)
+    float ghostDensity = 0.0f;                  // 0..1 (A3.2)
+
     static constexpr int kDrumChannel = 10;
     static constexpr int kCrashNote = 49;
+    static constexpr int kPatternBassRoot = 36;  // library-authored bass root (C2)
+    static constexpr double kBassGate = 0.85;    // note gate (85% of written duration)
 };

@@ -749,6 +749,210 @@ MidiPattern buildChorusBlast()
     return p;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ROCK-FIRST pattern set (indices 22–27) — Workstream A4.1
+// All 4/4 (6/8 feel is a compound subdivision inside a 4/4 bar). Ghost notes
+// are authored at velocities <= 62 so the groove engine treats them as ghosts
+// (30–55 band, slightly early). Bass events are intervals relative to the
+// library root (36 = C2); PatternPlayer transposes them to the live root.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── 22: Rock Backbeat (closed-hat 8ths, kick 1/3, snare 2/4) ─────────────────
+
+MidiPattern buildRockBackbeat()
+{
+    MidiPattern p;
+    p.name = "Rock Backbeat";
+    p.lengthInBars = 2.0f;
+    p.drumEvents = {
+        // Bar 1
+        drum(kKick,      116, 0.0f),
+        drum(kHatClosed,  76, 0.5f),
+        drum(kSnare,     110, 1.0f),
+        drum(kHatClosed,  74, 1.5f),
+        drum(kKick,      112, 2.0f),
+        drum(kHatClosed,  74, 2.5f),
+        drum(kSnare,     110, 3.0f),
+        drum(kHatClosed,  72, 3.5f),
+        // Bar 2 — ghost snare on the "and" of 3
+        drum(kKick,      118, 4.0f),
+        drum(kHatClosed,  76, 4.5f),
+        drum(kSnare,     112, 5.0f),
+        drum(kHatClosed,  74, 5.5f),
+        drum(kKick,      114, 6.0f),
+        drum(kSnare,      48, 6.5f),  // ghost
+        drum(kHatClosed,  74, 6.5f),
+        drum(kSnare,     112, 7.0f),
+        drum(kHatClosed,  72, 7.5f),
+    };
+    p.bassEvents = {
+        bass(kBassRoot, 95, 0.0f, 1.9f),
+        bass(kBassRoot, 90, 2.0f, 1.9f),
+        bass(kBassRoot, 95, 4.0f, 1.9f),
+        bass(kBassRoot + 5, 92, 6.0f, 1.9f),
+    };
+    return p;
+}
+
+// ── 23: Rock Half-Time (snare on 3, sparse kicks, ride in bar 2) ─────────────
+
+MidiPattern buildRockHalfTime()
+{
+    MidiPattern p;
+    p.name = "Rock Half-Time";
+    p.lengthInBars = 2.0f;
+    p.drumEvents = {
+        // Bar 1
+        drum(kKick,      114, 0.0f),
+        drum(kHatClosed,  74, 0.5f),
+        drum(kHatClosed,  72, 1.5f),
+        drum(kSnare,     112, 2.0f),
+        drum(kHatClosed,  72, 2.5f),
+        drum(kRide,       82, 3.0f),
+        drum(kHatClosed,  70, 3.5f),
+        // Bar 2 — ride variation
+        drum(kKick,      116, 4.0f),
+        drum(kRide,       84, 4.0f),
+        drum(kHatClosed,  74, 4.5f),
+        drum(kKick,      110, 6.0f),
+        drum(kSnare,     114, 6.0f),
+        drum(kRide,       82, 6.0f),
+        drum(kSnare,      50, 7.0f),  // ghost
+    };
+    p.bassEvents = {
+        bass(kBassRoot, 93, 0.0f, 3.0f),
+        bass(kBassRoot + 7, 95, 4.0f, 3.0f),
+    };
+    return p;
+}
+
+// ── 24: Rock Shuffle (swing 8ths via the Swing knob; kick 1 + "and" of 3) ────
+
+MidiPattern buildRockShuffle()
+{
+    MidiPattern p;
+    p.name = "Rock Shuffle";
+    p.lengthInBars = 2.0f;
+    p.drumEvents = {
+        // Bar 1
+        drum(kKick,      116, 0.0f),
+        drum(kHatClosed,  78, 0.5f),
+        drum(kSnare,     112, 1.0f),
+        drum(kHatClosed,  76, 1.5f),
+        drum(kHatClosed,  76, 2.0f),
+        drum(kKick,      112, 2.5f),
+        drum(kHatClosed,  74, 2.5f),
+        drum(kSnare,     112, 3.0f),
+        drum(kHatClosed,  74, 3.5f),
+        // Bar 2 — kick variation
+        drum(kKick,      118, 4.0f),
+        drum(kHatClosed,  78, 4.5f),
+        drum(kSnare,     114, 5.0f),
+        drum(kHatClosed,  76, 5.5f),
+        drum(kHatClosed,  76, 6.0f),
+        drum(kKick,      114, 6.5f),
+        drum(kSnare,     112, 7.0f),
+        drum(kHatClosed,  74, 7.5f),
+    };
+    p.bassEvents = {
+        bass(kBassRoot,     96, 0.0f, 1.9f),
+        bass(kBassRoot + 7, 92, 2.0f, 1.9f),
+        bass(kBassRoot,     98, 4.0f, 1.9f),
+        bass(kBassRoot + 12, 94, 6.0f, 1.9f),
+    };
+    return p;
+}
+
+// ── 25: Punk D-Beat (straight 8ths, snare 2/4, ride quarters) ────────────────
+
+MidiPattern buildPunkDBeat()
+{
+    MidiPattern p;
+    p.name = "Punk D-Beat";
+    p.lengthInBars = 1.0f;
+    p.drumEvents = {
+        drum(kRide,       86, 0.0f),
+        drum(kKick,      118, 0.0f),
+        drum(kKick,      110, 0.5f),
+        drum(kSnare,     116, 1.0f),
+        drum(kKick,      114, 1.5f),
+        drum(kRide,       86, 2.0f),
+        drum(kKick,      116, 2.0f),
+        drum(kKick,      110, 2.5f),
+        drum(kSnare,     118, 3.0f),
+        drum(kKick,      114, 3.5f),
+        drum(kRide,       84, 3.0f),
+    };
+    p.bassEvents = {
+        bass(kBassRoot, 100, 0.0f, 0.45f),
+        bass(kBassRoot, 98,  0.5f, 0.45f),
+        bass(kBassRoot, 100, 1.0f, 0.45f),
+        bass(kBassRoot, 98,  1.5f, 0.45f),
+        bass(kBassRoot, 100, 2.0f, 0.45f),
+        bass(kBassRoot, 98,  2.5f, 0.45f),
+        bass(kBassRoot, 100, 3.0f, 0.45f),
+        bass(kBassRoot, 98,  3.5f, 0.45f),
+    };
+    return p;
+}
+
+// ── 26: Rock Ballad (ride + soft backbeats, sparse kicks) ────────────────────
+
+MidiPattern buildRockBallad()
+{
+    MidiPattern p;
+    p.name = "Rock Ballad";
+    p.lengthInBars = 2.0f;
+    p.drumEvents = {
+        // Bar 1
+        drum(kRide,       80, 0.0f),
+        drum(kKick,      106, 0.0f),
+        drum(kHatClosed,  62, 0.5f),
+        drum(kSnare,      96, 1.0f),
+        drum(kHatClosed,  60, 1.5f),
+        drum(kRide,       78, 2.0f),
+        drum(kKick,      102, 2.0f),
+        drum(kHatClosed,  60, 2.5f),
+        drum(kSnare,      94, 3.0f),
+        drum(kHatClosed,  58, 3.5f),
+        // Bar 2 — half-time feel
+        drum(kRide,       78, 4.0f),
+        drum(kKick,      108, 4.0f),
+        drum(kRide,       76, 6.0f),
+        drum(kSnare,      98, 6.0f),
+    };
+    p.bassEvents = {
+        bass(kBassRoot, 88, 0.0f, 3.5f),
+        bass(kBassRoot + 5, 84, 4.0f, 3.5f),
+    };
+    return p;
+}
+
+// ── 27: Rock 6/8 Feel (compound subdivision inside a 4/4 bar) ────────────────
+
+MidiPattern buildRockSixEight()
+{
+    MidiPattern p;
+    p.name = "Rock 6/8 Feel";
+    p.lengthInBars = 1.0f;
+    p.drumEvents = {
+        drum(kKick,      116, 0.0f),
+        drum(kRide,       84, 0.0f),
+        drum(kHatClosed,  62, 0.6667f),
+        drum(kHatClosed,  60, 1.3333f),
+        drum(kSnare,     110, 2.0f),
+        drum(kHatClosed,  60, 2.6667f),
+        drum(kKick,      112, 3.3333f),
+        drum(kHatClosed,  60, 3.3333f),
+    };
+    p.bassEvents = {
+        bass(kBassRoot, 94, 0.0f, 1.9f),
+        bass(kBassRoot + 7, 92, 2.0f, 1.3f),
+        bass(kBassRoot, 94, 3.3333f, 0.6f),
+    };
+    return p;
+}
+
 } // namespace
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -779,6 +983,12 @@ MidiPatternLibrary::MidiPatternLibrary()
     patterns.push_back(buildFillBig());          // 19
     patterns.push_back(buildVerseGhost());       // 20
     patterns.push_back(buildChorusBlast());      // 21
+    patterns.push_back(buildRockBackbeat());     // 22
+    patterns.push_back(buildRockHalfTime());     // 23
+    patterns.push_back(buildRockShuffle());      // 24
+    patterns.push_back(buildPunkDBeat());        // 25
+    patterns.push_back(buildRockBallad());       // 26
+    patterns.push_back(buildRockSixEight());     // 27
 }
 
 const MidiPattern& MidiPatternLibrary::getPattern(int index) const

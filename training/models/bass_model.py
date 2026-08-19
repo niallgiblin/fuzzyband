@@ -40,7 +40,8 @@ class BassOnnxExport(nn.Module):
     `forward` rejects ``x`` with ``x.shape[0] != 1``.
     """
 
-    _EPS = 1e-8
+    # Audit §8.1/F3: backstop floor; real centroid floor lives in merge_datasets.py.
+    _EPS = 1e-3
 
     def __init__(self, bass_net: BassNet, mean: torch.Tensor, std: torch.Tensor) -> None:
         super().__init__()

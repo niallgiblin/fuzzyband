@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "inference/pattern_rules.h"
 #include "analysis/FeatureVector.h"
+#include "midi/MidiPatternLibrary.h"
 
 // Helper to build a FeatureVector with the given fields
 static FeatureVector makeF(StructureState state, float bpm, float policyIntensity = 0.5f)
@@ -356,4 +357,73 @@ TEST_CASE("PatternRules::applyExclusion inactive when no match", "[pattern_rules
     REQUIRE(PatternRules::applyExclusion(2, -1, StructureState::SOFT, 2) == 2);
     REQUIRE(PatternRules::applyExclusion(3, 2, StructureState::SOFT, 3) == 3);
     REQUIRE(PatternRules::applyExclusion(0, 1, StructureState::SILENT, 0) == 0);
+}
+
+// ── Rock-first set compatibility (A4.1 / B1) ─────────────────────────────────
+
+TEST_CASE("PatternRules::kPatternCount stays in sync with the library", "[pattern_rules]")
+{
+    REQUIRE(PatternRules::kPatternCount == MidiPatternLibrary::kPatternCount);
+    MidiPatternLibrary lib;
+    REQUIRE(PatternRules::kPatternCount == lib.patternCount());
+}
+
+TEST_CASE("PatternRules::isPatternCompatibleWithState covers rock-first indices 22-27", "[pattern_rules][rock]")
+{
+    // SOFT-compatible: 22, 23, 24, 26, 27
+    for (int idx : { 22, 23, 24, 26, 27 })
+        REQUIRE(PatternRules::isPatternCompatibleWithState(idx, StructureState::SOFT) == true);
+    // LOUD-compatible: 25 (Punk D-Beat)
+    REQUIRE(PatternRules::isPatternCompatibleWithState(25, StructureState::LOUD) == true);
+    // Cross checks
+    REQUIRE(PatternRules::isPatternCompatibleWithState(25, StructureState::SOFT) == false);
+    REQUIRE(PatternRules::isPatternCompatibleWithState(22, StructureState::LOUD) == false);
+    REQUIRE(PatternRules::isPatternCompatibleWithState(22, StructureState::SILENT) == false);
+    REQUIRE(PatternRules::isPatternCompatibleWithState(24, StructureState::LOUD) == false);
+}
+
+TEST_CASE("PatternRules::diversifyPatternForGenre metal genre keeps metal routing", "[pattern_rules][rock]")
+{
+    // genre 3 (Metal): identical to diversifyPattern
+    FeatureVector f = makeFD(StructureState::SOFT, 110.0f, 0.03f, 500.0f);
+    REQUIRE(PatternRules::diversifyPatternForGenre(1, f, 1, 3) == PatternRules::diversifyPattern(1, f, 1));
+    REQUIRE(PatternRules::diversifyPatternForGenre(1, f, 1, 4) == PatternRules::diversifyPattern(1, f, 1));
+}
+
+TEST_CASE("PatternRules::diversifyPatternForGenre rock SOFT low-energy routes to rock patterns", "[pattern_rules][rock]")
+{
+    FeatureVector f = makeFD(StructureState::SOFT, 110.0f, 0.03f, 500.0f);
+    REQUIRE(PatternRules::diversifyPatternForGenre(1, f, 0, 0) == 22);  // Rock Backbeat
+    REQUIRE(PatternRules::diversifyPatternForGenre(1, f, 1, 0) == 23);  // Rock Half-Time
+    REQUIRE(PatternRules::diversifyPatternForGenre(2, f, 0, 1) == 22);
+    REQUIRE(PatternRules::diversifyPatternForGenre(3, f, 3, 2) == 23);
+}
+
+TEST_CASE("PatternRules::diversifyPatternForGenre rock SOFT high-energy stays on base", "[pattern_rules][rock]")
+{
+    FeatureVector f = makeFD(StructureState::SOFT, 110.0f, 0.10f, 500.0f);
+    REQUIRE(PatternRules::diversifyPatternForGenre(1, f, 1, 0) == 1);
+    REQUIRE(PatternRules::diversifyPatternForGenre(2, f, 0, 0) == 2);
+}
+
+TEST_CASE("PatternRules::diversifyPatternForGenre rock LOUD mid-tempo low-energy routes to shuffle/d-beat", "[pattern_rules][rock]")
+{
+    FeatureVector f = makeFD(StructureState::LOUD, 110.0f, 0.07f, 600.0f);
+    REQUIRE(PatternRules::diversifyPatternForGenre(4, f, 0, 0) == 24);  // Rock Shuffle
+    REQUIRE(PatternRules::diversifyPatternForGenre(4, f, 1, 0) == 25);  // Punk D-Beat
+    // High energy stays on base (chorus mid)
+    FeatureVector loud = makeFD(StructureState::LOUD, 120.0f, 0.15f, 600.0f);
+    REQUIRE(PatternRules::diversifyPatternForGenre(4, loud, 0, 0) == 4);
+}
+
+TEST_CASE("PatternRules::sectionPatternPoolForGenre rock pools prefer rock patterns", "[pattern_rules][rock]")
+{
+    const auto verse = PatternRules::sectionPatternPoolForGenre("VERSE", 0);
+    REQUIRE(verse.count > 0);
+    REQUIRE(verse.indices[0] == 22);
+    const auto chorus = PatternRules::sectionPatternPoolForGenre("CHORUS", 1);
+    REQUIRE(chorus.count > 0);
+    // Metal genre falls back to the original pools
+    const auto metalVerse = PatternRules::sectionPatternPoolForGenre("VERSE", 3);
+    REQUIRE(metalVerse.indices[0] == 1);
 }

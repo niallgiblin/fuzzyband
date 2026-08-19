@@ -2,8 +2,9 @@
  * @file
  * @brief YIN (cumulative mean normalized difference) pitch estimator.
  *
- * Search range targets roughly MIDI 28–64 (~82–329 Hz at 48 kHz): lag bounds derived from sample rate.
- * CPU is bounded per block (O(n * lagRange)); max lag ~600 at 48 kHz.
+ * Search range targets roughly MIDI 21–64 (~55–500 Hz at 48 kHz): lag bounds derived from sample rate.
+ * The low end (~55 Hz) covers drop-C tuning (C2 = 65.4 Hz); the 4096-sample ring holds several
+ * periods at 55 Hz. CPU is bounded per block (O(n * lagRange)); max lag ~872 at 48 kHz.
  */
 
 #include "PitchEstimator.h"
@@ -33,11 +34,12 @@ void PitchEstimator::prepare(double sampleRate, int maxBlockSize)
     d_.assign(static_cast<size_t>(maxTau + 1), 0.0f);
     cmndf_.assign(static_cast<size_t>(maxTau + 1), 0.0f);
 
-    // Guitar-ish band ~75–500 Hz: lag = sr/freq must stay inside [minLag_, maxLag_]
+    // Guitar-ish band ~55–500 Hz: lag = sr/freq must stay inside [minLag_, maxLag_]
     // (440 Hz @ 48 kHz → ~109 samples; do not set minLag_ above that.)
+    // The 55 Hz floor covers drop-C (C2 = 65.4 Hz) and lower drop tunings.
     const double sr = sampleRate_;
     minLag_ = std::max(2, static_cast<int>(std::floor(sr / 500.0)));
-    maxLag_ = std::min(kRingSize / 2 - 1, static_cast<int>(std::floor(sr / 75.0)));
+    maxLag_ = std::min(kRingSize / 2 - 1, static_cast<int>(std::floor(sr / 55.0)));
 
     lastMidiNote_ = 40.0f;
     lastConfidence_ = 0.0f;
@@ -165,7 +167,7 @@ void PitchEstimator::runYin(const float* x, int n)
     const float tauInterp = static_cast<float>(t) + std::clamp(offset, -0.5f, 0.5f);
     const double hz = static_cast<double>(sampleRate_) / static_cast<double>(tauInterp);
 
-    if (!std::isfinite(hz) || hz < 60.0 || hz > 500.0)
+    if (!std::isfinite(hz) || hz < 50.0 || hz > 500.0)
     {
         lastMidiNote_ = 40.0f;
         lastConfidence_ = 0.0f;

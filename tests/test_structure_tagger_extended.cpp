@@ -12,9 +12,9 @@
 //   blockSec = 512 / 44100 ≈ 0.011610 s
 //   SILENT exit = immediate (kHoldSilentSec = 0.0)
 //   SOFT→LOUD hold = 0.4s  → ≥ 35 blocks
-//   SOFT→SILENT hold = 2.0s → ≥ 173 blocks
+//   SOFT→SILENT hold = 1.0s → ≥ 87 blocks
 //   LOUD→SOFT hold = 2.0s   → ≥ 173 blocks
-//   LOUD→SILENT hold = 3.0s → ≥ 259 blocks
+//   LOUD→SILENT hold = 1.0s → ≥ 87 blocks
 
 namespace {
 constexpr double kSr      = 44100.0;
@@ -69,7 +69,7 @@ TEST_CASE("StructureTagger: SOFT to SILENT is blocked during short DI phrase gap
     t.prepare(kSr);
     t.update(kRmsSoft, 0.0f, 0.0f, kBlock);  // enter SOFT
 
-    // 50 silent blocks ≈ 0.58 s < 2.0 s → must stay in SOFT
+    // 50 silent blocks ≈ 0.58 s < 1.0 s → must stay in SOFT
     StructureState s = StructureState::SOFT;
     for (int i = 0; i < 50; ++i)
         s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
@@ -101,7 +101,7 @@ TEST_CASE("StructureTagger: LOUD to SOFT after 2.0 s hold", "[structure]")
     REQUIRE(s == StructureState::SOFT);
 }
 
-TEST_CASE("StructureTagger: LOUD to SILENT after 3.0 s hold", "[structure]")
+TEST_CASE("StructureTagger: LOUD to SILENT after 1.0 s hold", "[structure]")
 {
     StructureTagger t;
     t.prepare(kSr);
@@ -112,13 +112,13 @@ TEST_CASE("StructureTagger: LOUD to SILENT after 3.0 s hold", "[structure]")
         t.update(kRmsLoud, 0.0f, 0.0f, kBlock);
     REQUIRE(t.getCurrentState() == StructureState::LOUD);
 
-    // 258 silent blocks ≈ 2.996 s < 3.0 s → still LOUD
+    // 86 silent blocks ≈ 0.998 s < 1.0 s → still LOUD
     StructureState s = StructureState::LOUD;
-    for (int i = 0; i < 258; ++i)
+    for (int i = 0; i < 86; ++i)
         s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::LOUD);
 
-    // 259th block → cumulative ≈ 3.008 s → SILENT
+    // 87th block → cumulative ≈ 1.010 s → SILENT
     s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::SILENT);
 }
@@ -171,9 +171,11 @@ TEST_CASE("StructureTagger: LOUD→SOFT→SILENT ramp down", "[structure]")
         s = t.update(kRmsSoft, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::SOFT);
 
-    // SOFT → SILENT after 2.0s: 173 blocks
-    for (int i = 0; i < 173; ++i)
+    // SOFT → SILENT after 1.0s: 86 blocks stay SOFT, 87th goes SILENT
+    for (int i = 0; i < 86; ++i)
         s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
+    REQUIRE(s == StructureState::SOFT);
+    s = t.update(kRmsSilent, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::SILENT);
 }
 
@@ -218,4 +220,42 @@ TEST_CASE("StructureTagger: sub-bass ratio discriminates SOFT/LOUD", "[structure
     t.setSubBassRatio(0.15f);  // < kSubBassSoftCeil (0.20)
     s = t.update(0.055f, 0.0f, 0.0f, kBlock);
     REQUIRE(s == StructureState::SOFT);
+}
+
+// ─── Adaptive noise floor (solid SILENT) ─────────────────────────────────────
+
+TEST_CASE("StructureTagger: adaptive noise floor keeps SILENT solid under hum", "[structure][silent]")
+{
+    StructureTagger t;
+    t.prepare(kSr);
+
+    // Hum-level input (0.015, above the fixed kSilentRms = 0.012): the old code
+    // hovered SOFT forever; the adaptive floor must hold SILENT solidly.
+    StructureState s = StructureState::SILENT;
+    for (int i = 0; i < 200; ++i)  // ~2.3 s of hum
+        s = t.update(0.015f, 0.0f, 0.0f, kBlock);
+    REQUIRE(s == StructureState::SILENT);
+
+    // The floor has found the noise level: above the old fixed threshold,
+    // at or below the actual input.
+    REQUIRE(t.getNoiseFloorRms() > 0.012f);
+    REQUIRE(t.getNoiseFloorRms() <= 0.015f + 1.0e-3f);
+
+    // Real playing (rms 0.05) still leaves SILENT immediately.
+    s = t.update(0.05f, 0.0f, 0.0f, kBlock);
+    REQUIRE(s == StructureState::SOFT);
+}
+
+TEST_CASE("StructureTagger: true digital silence resets the adaptive floor", "[structure][silent]")
+{
+    StructureTagger t;
+    t.prepare(kSr);
+
+    for (int i = 0; i < 100; ++i)
+        t.update(0.018f, 0.0f, 0.0f, kBlock);   // hum-ish, above the base threshold
+    REQUIRE(t.getNoiseFloorRms() > 0.012f);
+
+    for (int i = 0; i < 100; ++i)
+        t.update(0.0f, 0.0f, 0.0f, kBlock);     // true digital silence
+    REQUIRE(t.getNoiseFloorRms() < 1.0e-3f);    // floor follows the quietest moment
 }

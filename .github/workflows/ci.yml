@@ -31,8 +31,25 @@ jobs:
       - name: ONNX audio-thread guardrail (ONNX-03)
         run: ./scripts/check_onnx_audio_thread.sh
 
+      - name: Download ONNX Runtime
+        run: |
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "arm64" ]; then
+            ONNX_ARCH="arm64"
+          else
+            ONNX_ARCH="x86_64"
+          fi
+          ONNX_URL="https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-osx-${ONNX_ARCH}-1.20.1.tgz"
+          curl -sL "$ONNX_URL" -o /tmp/onnxruntime.tgz
+          tar xzf /tmp/onnxruntime.tgz -C /tmp
+          echo "ONNXRUNTIME_ROOT=/tmp/onnxruntime-osx-${ONNX_ARCH}-1.20.1" >> "$GITHUB_ENV"
+
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DMA_BUILD_STANDALONE=ON
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DMA_BUILD_STANDALONE=ON \
+            -DMA_ENABLE_ONNX=ON \
+            -DONNXRUNTIME_ROOT="$ONNXRUNTIME_ROOT"
 
       - name: Build plugin and tests
         run: cmake --build build --config Release --parallel
@@ -76,19 +93,6 @@ jobs:
           python3 scripts/validate_onnx_contract.py --bass assets/bass_model.onnx
           python3 scripts/validate_onnx_contract.py --pattern assets/accompaniment_model.onnx
           echo "ONNX contract validation passed"
-
-      - name: Download ONNX Runtime (ONNX smoke)
-        run: |
-          ARCH=$(uname -m)
-          if [ "$ARCH" = "arm64" ]; then
-            ONNX_ARCH="arm64"
-          else
-            ONNX_ARCH="x86_64"
-          fi
-          ONNX_URL="https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-osx-${ONNX_ARCH}-1.20.1.tgz"
-          curl -sL "$ONNX_URL" -o /tmp/onnxruntime.tgz
-          tar xzf /tmp/onnxruntime.tgz -C /tmp
-          echo "ONNXRUNTIME_ROOT=/tmp/onnxruntime-osx-${ONNX_ARCH}-1.20.1" >> "$GITHUB_ENV"
 
       - name: ONNX-enabled build smoke (Phase 22)
         run: |

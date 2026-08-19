@@ -16,9 +16,9 @@
  *   3 s    silence (cooldown)
  *
  * Invariants checked after every section:
- *   - patternIndex ∈ [0, 10] (11-pattern library)
+ *   - patternIndex ∈ [0, kPatternCount-1] (28-pattern library, A4.1)
  *   - BPM ∈ [kMinBpm, kMaxBpm] for non-silent sections
- *   - structure state is a valid enum (0–4)
+ *   - structure state is a valid enum (0–2)
  *   - no exceptions/crashes (implicit — test survives)
  */
 
@@ -30,11 +30,12 @@
 
 #include <JuceHeader.h>
 #include "AccompanimentProcessor.h"
+#include "midi/MidiPatternLibrary.h"
 
 namespace {
 
 static constexpr float kMinBpm = 40.0f;
-static constexpr float kMaxBpm = 320.0f;
+static constexpr float kMaxBpm = 300.0f;  // B2: every clamp site agrees on [40, 300]
 
 static std::vector<float> sineSection(int numSamples, double freq, double sr, float amp)
 {
@@ -87,8 +88,8 @@ static void checkInvariants(const SectionResult& r,
          << " state=" << r.stateIndex
          << " rms=" << r.rms);
 
-    // Pattern index must be in [0, 10] for the 11-pattern library
-    CHECK((r.patternIndex >= 0 && r.patternIndex <= 10));
+    // Pattern index must be in [0, kPatternCount-1] for the 28-pattern library
+    CHECK((r.patternIndex >= 0 && r.patternIndex < MidiPatternLibrary::kPatternCount));
 
     // BPM must be in valid range for non-silent sections
     if (expectNonSilent)
@@ -201,9 +202,9 @@ TEST_CASE("Long-duration stability: 300+ seconds continuous processing", "[stabi
     // Pattern index must have been in valid range throughout (already checked per-section)
     // State must have been valid throughout (already checked per-section)
 
-    // At least SOFT (state 2) should be seen during SOFT sections, and LOUD (state 3) during LOUD sections
-    CHECK(statesSeen[2] > 0);   // SOFT from SOFT sections
-    CHECK(statesSeen[3] > 0);   // LOUD from LOUD sections
+    // At least SOFT (state 1) should be seen during SOFT sections, and LOUD (state 2) during LOUD sections
+    CHECK(statesSeen[1] > 0);   // SOFT
+    CHECK(statesSeen[2] > 0);   // LOUD
 
     proc.releaseResources();
 }

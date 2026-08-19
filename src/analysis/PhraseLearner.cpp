@@ -24,32 +24,45 @@ void PhraseLearner::reset() noexcept
     playbackPhase_ = 0.0;
     playbackStep_ = 0;
     lastTriggerSample_ = 0;
+    following_ = false;
+    justMatched_ = false;
     prevRms_ = 0.0f;
     rmsSmooth_ = 0.0f;
+    fallCounter_ = 0;
     lastAttackSample_ = 0;
+    lastGoodPitchMidi_ = 40.0f;
+    lastGoodPitchValid_ = false;
     silentBlockCount_ = 0;
 }
 
 bool PhraseLearner::detectAttack(float rms) noexcept
 {
-    // Smooth RMS for comparison (faster response)
+    const float prevRms = prevRms_;  // previous block's level, before this one
+    prevRms_ = rms;
     rmsSmooth_ = 0.85f * rmsSmooth_ + 0.15f * rms;
 
-    const float delta = rms - prevRms_;
-    prevRms_ = rms;
+    // Recent-decay tracking runs even for near-silent blocks: a note decaying
+    // into silence IS a fall, and it arms the next note's attack.
+    const bool fell = (rms < prevRms * 0.97f);
+    if (fell)
+        fallCounter_ = kFallWindowBlocks;
+    else if (fallCounter_ > 0)
+        --fallCounter_;
 
-    // Very low threshold - we want to catch most note attacks
     if (rms < 0.002f)
         return false;
 
-    // Attack: either a significant rise OR we're loud and rising
-    const float ratio = (rmsSmooth_ > 0.0005f) ? (rms / rmsSmooth_) : 1.0f;
-    
-    // More permissive: lower ratio threshold, OR just a positive delta when loud
-    const bool ratioTrigger = ratio > 1.2f;
-    const bool deltaTrigger = delta > 0.001f && rms > 0.01f;
-    
-    return ratioTrigger || deltaTrigger;
+    // A note attack is a sharp rise that follows a *recent decay* — real picking
+    // produces per-note pulses (rise → fall → rise), and the analyser's 100 ms
+    // RMS window smooths them into a few-% block-to-block swings. Requiring a
+    // recent fall is what separates real attacks from the false positives:
+    //  - a constant tone (no falls, no rises);
+    //  - a slow swell / analyser warm-up ramp (rises, but never falls);
+    //  - the RMS-smoothing warm-up right after audio starts (rms ≈ prevRms).
+    // Modest rise thresholds, because real palm-muted chugs rise only a few %
+    // per block through the RMS window.
+    const bool sharpRise = (rms > rmsSmooth_ * 1.15f) || (rms > prevRms * 1.08f);
+    return (fallCounter_ > 0) && sharpRise && rms > 0.01f;
 }
 
 bool PhraseLearner::patternsMatch(int len, double bpm) const noexcept
@@ -82,7 +95,7 @@ bool PhraseLearner::patternsMatch(int len, double bpm) const noexcept
     return true;
 }
 
-void PhraseLearner::lockPattern(double bpm) noexcept
+void PhraseLearner::lockPattern(double bpm, int64_t sampleTime) noexcept
 {
     if (patternLen_ < 2)
         return;
@@ -114,14 +127,72 @@ void PhraseLearner::lockPattern(double bpm) noexcept
         pattern_[static_cast<size_t>(i)].midiNote = mapToBassRange(attacks_[static_cast<size_t>(curIdx)].pitch);
     }
 
-    // Pattern length: use actual length plus a small gap for the repeat
-    // Don't round to bars - keep the actual learned timing
-    patternLenBeats_ = totalBeats + 0.5;  // Add half beat gap before repeat
+    // Bar-align the loop: a riff that fits in N bars loops at exactly 4*N beats
+    // so the bass stays in phase with the host bar grid (and the drums). The
+    // old "+0.5 beat gap" made a 4-beat riff loop at 4.5 beats — the bass
+    // drifted against the drum bar every loop.
+    const int bars = std::max(1, static_cast<int>(std::lround(totalBeats / 4.0)));
+    patternLenBeats_ = static_cast<double>(bars) * 4.0;
+    // The loop must never be shorter than the riff itself, or the last note is
+    // skipped when the phase wraps.
+    while (patternLenBeats_ <= totalBeats + 1.0e-9)
+        patternLenBeats_ += 4.0;
+
+    // ── Density fix (0.9.12 regression + P0/R1) ───────────────────────────────
+    // The bar-aligned loop is usually longer than the captured riff (e.g. a
+    // 4-note slice in a 4-beat loop), leaving dead space that reads as sparse
+    // staccato bass. Replicate the riff across the loop so the learned playback
+    // stays dense and note-for-note while the groove lock holds it. For a
+    // uniform chug (equal notes, uniform IOIs) the replication is exact.
+    {
+        const int riffLen = patternLen_;
+        if (riffLen >= 2 && patternLenBeats_ > totalBeats + 1.0e-9 && totalBeats > 1.0e-9)
+        {
+            const double ioiAvg = totalBeats / static_cast<double>(riffLen - 1);
+            const double cycleBeats = totalBeats + ioiAvg;  // riff repeat period
+            int dst = riffLen;
+            for (int cycle = 1; dst < kMaxPattern; ++cycle)
+            {
+                const double shift = static_cast<double>(cycle) * cycleBeats;
+                if (shift >= patternLenBeats_ - 1.0e-9)
+                    break;
+                for (int i = 0; i < riffLen && dst < kMaxPattern; ++i)
+                {
+                    const double beat = pattern_[static_cast<size_t>(i)].beatOffset + shift;
+                    if (beat >= patternLenBeats_ - 1.0e-9)
+                        break;
+                    pattern_[static_cast<size_t>(dst)].beatOffset = beat;
+                    pattern_[static_cast<size_t>(dst)].midiNote = pattern_[static_cast<size_t>(i)].midiNote;
+                    ++dst;
+                }
+            }
+            patternLen_ = dst;
+        }
+    }
 
     locked_ = true;
     state_ = State::Locked;
-    playbackPhase_ = 0.0;
-    playbackStep_ = 0;
+
+    // Align the loop phase to the riff's own cycle: current position within the
+    // loop = (now − phrase start) mod loop length. note[0] (the riff's first
+    // note) then fires at the next phrase start, keeping the bass in phase with
+    // the guitarist's repeats — and with the drums when the riff is bar-aligned.
+    const int64_t phraseStartSample = attacks_[static_cast<size_t>(startIdx)].sample;
+    double phase = static_cast<double>(sampleTime - phraseStartSample) * beatsPerSample;
+    phase = std::fmod(phase, patternLenBeats_);
+    if (phase < 0.0)
+        phase += patternLenBeats_;
+    playbackPhase_ = phase;
+
+    // Set the step to the first note at or after the current phase. The phase is
+    // usually mid-loop (the phrase started a few notes ago), so naively starting
+    // at step 0 would silently skip every note whose offset is already in the
+    // past — the bass would stay quiet until the loop wrapped. Advancing to the
+    // next upcoming note makes the learned playback fire promptly and densely.
+    int step = 0;
+    while (step < patternLen_ && pattern_[static_cast<size_t>(step)].beatOffset < phase)
+        ++step;
+    playbackStep_ = step;
 }
 
 int PhraseLearner::mapToBassRange(float midiNote) const noexcept
@@ -164,8 +235,26 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
     // Minimum interval between attacks
     const bool canAttack = (sampleTime - lastAttackSample_) > kMinAttackIntervalSamples;
 
-    // Detect attacks - very low pitch confidence threshold to catch more notes
-    const bool attack = canAttack && detectAttack(rms) && pitchConf > 0.05f;
+    // Hold the last confidently-estimated pitch: YIN confidence collapses at
+    // loud/quiet transitions, so attacks there use the held pitch instead of
+    // being dropped (the note itself is the same — only the estimate wavers).
+    if (pitchConf > 0.3f)
+    {
+        lastGoodPitchMidi_ = pitchMidi;
+        lastGoodPitchValid_ = true;
+    }
+
+    // Attacks are gated on the RMS transient ONLY — never on pitch confidence.
+    // On distorted palm-mute guitar YIN's confidence is bimodal (≈0 at most
+    // attack moments), so a pitch gate starved the learner to a few attacks per
+    // minute and the mirror played a skeletal riff. The riff mirror is a rhythm
+    // mirror; the note value comes from the held/confident pitch when available
+    // and is corrected later by the live-root retune.
+    const bool attack = canAttack && detectAttack(rms);
+    const float attackPitch = (pitchConf > 0.05f) ? pitchMidi : lastGoodPitchMidi_;
+
+    // Edge-triggered "following the riff": recomputed on every block.
+    justMatched_ = false;
 
     if (attack)
     {
@@ -173,10 +262,49 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
 
         // Record attack
         attacks_[attackWrite_].sample = sampleTime;
-        attacks_[attackWrite_].pitch = pitchMidi;
+        attacks_[attackWrite_].pitch = attackPitch;
         attackWrite_ = (attackWrite_ + 1) % kMaxAttacks;
         if (attackCount_ < kMaxAttacks)
             ++attackCount_;
+
+        // "Following the riff": the attack landed on the learned riff's grid —
+        // within a quarter beat of ANY note-to-note interval (cycled). Matching
+        // any interval is robust for uniform chugs, whose bar-aligned pattern
+        // under-samples the bar. Computed here (before the state machine) so the
+        // live mirror below can distinguish a riff note from a solo lick.
+        bool matched = false;
+        if (state_ == State::Locked && attackCount_ >= 2 && patternLen_ >= 2)
+        {
+            const int prevIdx = (attackWrite_ - 2 + kMaxAttacks) % kMaxAttacks;
+            const int curIdx = (attackWrite_ - 1 + kMaxAttacks) % kMaxAttacks;
+            const int64_t recentIoi = attacks_[curIdx].sample - attacks_[prevIdx].sample;
+            const double quarterBeatSamples = 0.25 * (60.0 / bpm) * sampleRate_;
+            for (int i = 0; i < patternLen_ && !matched; ++i)
+            {
+                const int next = (i + 1) % patternLen_;
+                double ioiBeats = pattern_[next].beatOffset - pattern_[i].beatOffset;
+                if (ioiBeats <= 0.0)
+                    ioiBeats += patternLenBeats_;
+                const double ioiSamples = ioiBeats * (60.0 / bpm) * sampleRate_;
+                matched = std::abs(static_cast<double>(recentIoi) - ioiSamples)
+                    <= quarterBeatSamples;
+            }
+        }
+        following_ = matched;
+        justMatched_ = matched;
+
+        // Live riff mirror: the bass follows each detected attack as it is
+        // played while the learner is still Learning (pre-lock). Once Locked,
+        // the mirror is dropped and the learned pattern alone drives the bass —
+        // the lock captures a dense, loop-filled riff (see lockPattern), so the
+        // playback is note-for-note and the note can never be yanked by the
+        // guitarist's live pitch (P0/R1: freeze the bass note while locked).
+        if (state_ != State::Locked)
+        {
+            result.trigger = true;
+            result.midiNote = mapToBassRange(attackPitch);
+            result.velocity = 0.9f;
+        }
     }
 
     // State machine
@@ -184,17 +312,20 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
     {
         case State::Learning:
         {
-            // Try to find pattern repetition for various lengths
-            // Minimum 2 notes * 2 repetitions = 4 attacks
-            if (attackCount_ >= 4)
+            // P0/§1.4 option A: wait for more evidence, then capture the longest
+            // matching slice in one shot (descending scan) so the loop-fill in
+            // lockPattern has a real riff to replicate — no re-lock churn later.
+            // Minimum 8 attacks (2 notes × 2 repetitions, with headroom) before
+            // attempting a lock; the immediate mirror covers the pre-lock gap.
+            if (attackCount_ >= 8)
             {
-                for (int len = 2; len <= std::min(16, attackCount_ / 2); ++len)
+                const int maxLen = std::min({ kMaxPattern, 16, attackCount_ / 2 });
+                for (int len = maxLen; len >= 2; --len)
                 {
                     if (patternsMatch(len, bpm))
                     {
                         patternLen_ = len;
-                        // Lock immediately after first repeat detected (don't wait for 3rd)
-                        lockPattern(bpm);
+                        lockPattern(bpm, sampleTime);
                         break;
                     }
                 }
@@ -206,7 +337,7 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
         {
             // This state is now unused - we lock immediately from Learning
             // Keep for potential future use
-            lockPattern(bpm);
+            lockPattern(bpm, sampleTime);
             break;
         }
 
@@ -248,35 +379,15 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
                 }
             }
 
-            // Check for pattern drift - if guitarist changes significantly, unlock
-            if (attack && locked_)
+            // Drift handling (the "following" match was computed on the attack
+            // block above): rhythm no longer fits → unlock and re-learn —
+            // unless the groove lock is holding the riff (keep looping it).
+            if (attack && locked_ && attackCount_ >= 2 && patternLen_ >= 2
+                && !holdActive_ && !following_)
             {
-                // Compare recent IOI with expected pattern IOI
-                if (attackCount_ >= 2 && patternLen_ >= 2)
-                {
-                    int prevIdx = (attackWrite_ - 2 + kMaxAttacks) % kMaxAttacks;
-                    int curIdx = (attackWrite_ - 1 + kMaxAttacks) % kMaxAttacks;
-                    int64_t recentIoi = attacks_[curIdx].sample - attacks_[prevIdx].sample;
-
-                    // Expected IOI from pattern at current step
-                    int expectedStep = (playbackStep_ > 0) ? playbackStep_ - 1 : patternLen_ - 1;
-                    int nextStep = (expectedStep + 1) % patternLen_;
-                    double expectedIoiBeats = pattern_[nextStep].beatOffset - pattern_[expectedStep].beatOffset;
-                    if (expectedIoiBeats < 0)
-                        expectedIoiBeats += patternLenBeats_;
-
-                    double expectedIoiSamples = expectedIoiBeats * (60.0 / bpm) * sampleRate_;
-                    double drift = std::abs(static_cast<double>(recentIoi) - expectedIoiSamples);
-
-                    // If drift > 1/4 beat, unlock and re-learn
-                    double quarterBeatSamples = 0.25 * (60.0 / bpm) * sampleRate_;
-                    if (drift > quarterBeatSamples * 2.0)
-                    {
-                        state_ = State::Learning;
-                        locked_ = false;
-                        patternLen_ = 0;
-                    }
-                }
+                state_ = State::Learning;
+                locked_ = false;
+                patternLen_ = 0;
             }
             break;
         }

@@ -43,7 +43,10 @@ class PatternOnnxExport(nn.Module):
     Loads 5-float norm_stats (training tensors stay [N,5]); ONNX bridge is export-only.
     """
 
-    _EPS = 1e-8
+    # Audit §8.1/F3: a flat 1e-8 floor divides the spectral centroid (whose proxy
+    # std collapses to ~0) by 1e-8. The norm_stats now carry a kHz-scale centroid
+    # floor (merge_datasets.py); this small backstop only guards truly zero stds.
+    _EPS = 1e-3
 
     def __init__(self, pattern_net: PatternNet, mean: torch.Tensor, std: torch.Tensor) -> None:
         super().__init__()

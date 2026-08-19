@@ -3,10 +3,9 @@
  *
  * Feeds 8 short SOFT sections and 4 LOUD sections separated by silence gaps.
  * The bar-quantized hold guard resets structure state between sections via
- * SILENT entry/exit.  Bar-phase-dependent half-time selection in SOFT sections
- * (barMod8 % 4 < 2) guarantees several sections trigger index 7,
- * while others stay at the base pattern (Verse slow, index 1).
- * LOUD sections produce Chorus mid / Chorus fast.
+ * SILENT entry/exit. With the rock-first genre default (B1), SOFT low-energy
+ * sections route to the rock set (Rock Backbeat / Rock Half-Time), while
+ * LOUD sections stay on Chorus mid/fast.
  *
  * Section layout (1.5 s silence gaps between musical sections):
  *   5 s   silence
@@ -16,15 +15,11 @@
  *   4 × (1.5 s silence + 3.0 s LOUD amp 0.04)  — collect each
  *   5 s   silence
  *
- * Bar-phase timing precomputed at 90 BPM, 48 kHz: 4 of 8 SOFT sections hit
- * barMod8 % 4 < 2 → diversifier returns 7 (Half-Time).  Remaining SOFT
- * sections return 1 (Verse slow).  LOUD sections return 4/5 (Chorus mid/fast).
- * → ≥2 distinct names, at least one non-basic pattern (Sparse Breakdown).
- *
- * Pattern indices (post-M002):
- *   0=Silent  1=Verse slow  2=Verse mid  3=Verse fast
- *   4=Chorus mid  5=Chorus fast  6=Breakdown
- *   7=Half-Time  8=Blast Beat  9=Sparse Breakdown  10=Thrash
+ * Pattern indices (post-A4.1):
+ *   0=Silent  1=Verse Groove  2=Verse Half-Time  3=Verse Fast
+ *   4=Chorus Mid  5=Chorus Fast  6=Breakdown  7=Half-Time
+ *   8=Blast Beat  9=Sparse Breakdown  10=Thrash
+ *   22=Rock Backbeat  23=Rock Half-Time  24=Rock Shuffle  25=Punk D-Beat
  */
 
 #include <catch2/catch_test_macros.hpp>
@@ -154,7 +149,7 @@ TEST_CASE("E2E: multi-section jam produces >=3 distinct groove names", "[e2e][gr
     bool hasNew = false;
     for (const auto& n : seenNames)
     {
-        if (n == "Half-Time" || n == "Sparse Breakdown")
+        if (n == "Rock Backbeat" || n == "Rock Half-Time" || n == "Half-Time" || n == "Sparse Breakdown")
         {
             hasNew = true;
             break;

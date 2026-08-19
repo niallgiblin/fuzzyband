@@ -69,9 +69,10 @@ int StablePitchTracker::update(float rawMidi, float rawConf, float bpm,
     if (pitchStableCounterSamples < stabilityWindowSamples)
         return INT_MIN;
 
-    // ── 5. Map to semitone offset ±6 from bass root E (pc=4) ─────────────────
-    int delta = currentPc - kBassRootPc;
-    if (delta > 6)  delta -= 12;
-    if (delta < -6) delta += 12;
-    return delta;
+    // ── 5. Map to a bass-root semitone offset ────────────────────────────────
+    // Pitch-class distance from C (drop-C root pc=0), in [0, 11]. No ±6 wrap:
+    // the processor folds this onto C2 (MIDI 36) so every root lands in the
+    // C2–B2 octave — never below C2 (the v0.9.7 "too low for the bass VST"
+    // issue) and never on the wrong pitch class.
+    return currentPc - kBassRootPc;
 }

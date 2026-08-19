@@ -93,6 +93,26 @@ public:
     /** @brief Set looping mode. When false, form plays once and stops. */
     void setLooping(bool loop) noexcept { looping = loop; reset(); }
 
+    // ── Custom-form serialization (Phase 2) ─────────────────────────────────
+    // The editable song form persists as a single string parameter of the form
+    // "VERSE:8,CHORUS:8,BREAKDOWN:4,SOLO:8,OUTRO:4".
+
+    /** @brief Serialize a form to its string form. */
+    static std::string serializeForm(const SongForm& form);
+
+    /**
+     * @brief Parse a serialized form string. Invalid/empty tokens are skipped;
+     *        if nothing valid remains, returns the first preset. Bar counts are
+     *        clamped to [1, 64].
+     */
+    static SongForm parseFormString(const std::string& serialized);
+
+    /** @brief The valid section-type names (INTRO … OUTRO). */
+    static const std::vector<const char*>& sectionNames() noexcept;
+
+    /** @brief Whether @p name is a valid section-type name. */
+    static bool isValidSectionName(const std::string& name) noexcept;
+
 private:
     static std::vector<SongForm> buildPresets();
 

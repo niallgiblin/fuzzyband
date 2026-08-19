@@ -1,0 +1,384 @@
+#include <catch2/catch_test_macros.hpp>
+#include <cmath>
+#include <vector>
+
+#include "analysis/PhraseLearner.h"
+
+namespace
+{
+constexpr double kSr       = 48000.0;
+constexpr float  kBpm      = 120.0f;
+constexpr int    kBlock    = 512;
+// Attack spacing: 7 blocks (6 quiet + 1 loud) = 3584 samples > 2000 min interval.
+constexpr int    kBlocksPerAttack = 7;
+
+/**
+ * @brief Feed synthetic chug attacks until the learner locks.
+ * Each attack cycle: 6 near-silent blocks then 1 loud block with @p pitch.
+ * Returns the total number of blocks fed.
+ */
+int feedUntilLocked(PhraseLearner& learner, float pitch, int maxAttacks = 12)
+{
+    int blocks = 0;
+    for (int a = 0; a < maxAttacks; ++a)
+    {
+        for (int b = 0; b < kBlocksPerAttack; ++b)
+        {
+            const bool loud = (b == kBlocksPerAttack - 1);
+            const int64_t sampleTime = static_cast<int64_t>(blocks) * kBlock;
+            const auto note = learner.process(
+                sampleTime,
+                loud ? 0.03f : 0.001f,
+                loud ? pitch : 40.0f,
+                loud ? 0.8f : 0.0f,
+                kBpm, kBlock);
+            (void)note;
+            ++blocks;
+            if (learner.isLocked())
+                return blocks;
+        }
+    }
+    return blocks;
+}
+
+/** @brief EnergyAnalyser-style 0.1 s RMS window over raw audio. */
+class RmsWindow
+{
+public:
+    explicit RmsWindow(double sampleRate)
+        : win(static_cast<size_t>(static_cast<int>(0.1 * sampleRate)), 0.0f) {}
+
+    float push(float s)
+    {
+        win[w] = s * s;
+        w = (w + 1) % static_cast<int>(win.size());
+        if (fill < static_cast<int>(win.size()))
+            ++fill;
+        return getRms();
+    }
+
+    /** @brief Current analyser-scaled RMS (×4, like EnergyAnalyser). */
+    float getRms() const
+    {
+        float acc = 0.0f;
+        for (int i = 0; i < fill; ++i)
+            acc += win[static_cast<size_t>(i)];
+        return (fill > 0) ? std::sqrt(acc / static_cast<float>(fill)) * 4.0f : 0.0f;
+    }
+
+private:
+    std::vector<float> win;
+    int w = 0;
+    int fill = 0;
+};
+
+/**
+ * @brief Feed a realistic palm-muted 16th chug (sharp attack + decay through
+ *        the analyser's RMS window) until the learner locks.
+ * Pitch confidence is fed as 0 (distorted palm-mute guitar collapses YIN
+ * confidence) — the rhythm mirror must lock regardless of pitch.
+ * Regression: the pitch-confidence gate starved attack recording, so the bass
+ * never mirrored real riffs (2–6 s lock with a skeletal pattern).
+ */
+bool lockOnRealisticChug(PhraseLearner& learner)
+{
+    learner.prepare(kSr);
+    RmsWindow win(kSr);
+    const double sixteenth = 0.125;  // 16th at 120 BPM
+    const int total = static_cast<int>(3.0 * kSr / kBlock);
+    for (int blk = 0; blk < total; ++blk)
+    {
+        for (int i = 0; i < kBlock; ++i)
+        {
+            const int n = blk * kBlock + i;
+            const double t = static_cast<double>(n) / kSr;
+            const int ni = static_cast<int>(t / sixteenth);
+            const double env = 0.3 + 0.7 * std::exp(-(t - ni * sixteenth) / 0.045);
+            win.push(static_cast<float>(0.4 * env * std::sin(2.0 * 3.14159265358979 * 65.406 * t)));
+        }
+        const float rms = win.getRms();
+        learner.process(static_cast<int64_t>(blk) * kBlock, rms, 36.0f, 0.0f, kBpm, kBlock);
+        if (learner.isLocked())
+            return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Feed a realistic chug and count immediate-mirror triggers before the
+ *        lock — the bass must play each detected attack right away (follows as
+ *        you play), not wait for the pattern to lock.
+ */
+int countImmediateTriggers(PhraseLearner& learner)
+{
+    learner.prepare(kSr);
+    RmsWindow win(kSr);
+    const double sixteenth = 0.125;
+    const int total = static_cast<int>(3.0 * kSr / kBlock);
+    int triggers = 0;
+    for (int blk = 0; blk < total; ++blk)
+    {
+        for (int i = 0; i < kBlock; ++i)
+        {
+            const int n = blk * kBlock + i;
+            const double t = static_cast<double>(n) / kSr;
+            const int ni = static_cast<int>(t / sixteenth);
+            const double env = 0.3 + 0.7 * std::exp(-(t - ni * sixteenth) / 0.045);
+            win.push(static_cast<float>(0.4 * env * std::sin(2.0 * 3.14159265358979 * 65.406 * t)));
+        }
+        const float rms = win.getRms();
+        const auto note = learner.process(static_cast<int64_t>(blk) * kBlock, rms, 36.0f, 0.0f, kBpm, kBlock);
+        if (note.trigger)
+            ++triggers;
+        if (learner.isLocked())
+            break;
+    }
+    return triggers;
+}
+} // namespace
+
+TEST_CASE("PhraseLearner: locks a repeated riff after one repeat", "[phrase][bass]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+
+    const int blocks = feedUntilLocked(learner, 36.0f);  // C2 chug
+
+    REQUIRE(learner.isLocked());
+    REQUIRE(learner.getAttackCount() >= 4);
+    REQUIRE(learner.getPatternLength() >= 2);
+    // Riff cycle is ~0.15 beats — must loop at the bar-aligned minimum of 4 beats.
+    REQUIRE(learner.getPatternLenBeats() == 4.0);
+    REQUIRE(blocks > 0);
+}
+
+TEST_CASE("PhraseLearner: locks on a realistic palm-muted 16th chug with zero pitch confidence", "[phrase][bass]")
+{
+    // Regression: the pitch-confidence gate starved attack recording on
+    // distorted palm-mute guitar (YIN confidence ≈ 0 at attack moments), so the
+    // bass never mirrored riffs — a 2–6 s lock with a skeletal 2-note pattern.
+    // The rhythm mirror must lock regardless of pitch confidence.
+    PhraseLearner learner;
+    REQUIRE(lockOnRealisticChug(learner));
+    REQUIRE(learner.getPatternLength() >= 2);
+}
+
+TEST_CASE("PhraseLearner: immediate mirror triggers bass notes before the lock", "[phrase][bass]")
+{
+    // The bass must follow each detected attack right away (attack-driven
+    // mirror) instead of waiting for the pattern to lock — otherwise the bass
+    // sits on the sparse beat-1 fallback for seconds.
+    PhraseLearner learner;
+    const int triggers = countImmediateTriggers(learner);
+    REQUIRE(triggers >= 4);
+    REQUIRE(learner.isLocked());  // and it still locks quickly afterwards
+}
+
+TEST_CASE("PhraseLearner: locked pattern pitch matches the chugged root (C2)", "[phrase][bass]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    (void)feedUntilLocked(learner, 36.0f);
+
+    for (int i = 0; i < learner.getPatternLength(); ++i)
+        REQUIRE(learner.getPatternNote(i) == 36);  // C2
+}
+
+TEST_CASE("PhraseLearner: locked bass does NOT change note while hold is active (R1)", "[phrase][bass][lock]")
+{
+    // P0/R1: while the groove lock holds, the bass must play the learned riff
+    // note-for-note. The live-root retune is gone, so a root change by the
+    // guitarist (chugging E2=40 instead of the locked C2=36) must NOT yank the
+    // bass — every triggered note stays at the learned pitch.
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    const int lockedAt = feedUntilLocked(learner, 36.0f);  // lock on C2
+    REQUIRE(learner.isLocked());
+    REQUIRE(learner.getPatternNote(0) == 36);
+    learner.setHoldActive(true);
+
+    // Keep chugging the same rhythm, but now at E2 (40) — a different root.
+    bool sawTrigger = false;
+    int block = lockedAt;
+    for (int a = 0; a < 12; ++a)
+    {
+        for (int b = 0; b < kBlocksPerAttack; ++b)
+        {
+            const bool loud = (b == kBlocksPerAttack - 1);
+            const int64_t st = static_cast<int64_t>(block) * kBlock;
+            const auto note = learner.process(
+                st,
+                loud ? 0.03f : 0.001f,
+                loud ? 40.0f : 36.0f,
+                loud ? 0.8f : 0.0f,
+                kBpm, kBlock);
+            if (note.trigger)
+            {
+                sawTrigger = true;
+                REQUIRE(note.midiNote == 36);  // frozen — never the live 40
+            }
+            ++block;
+        }
+    }
+    REQUIRE(sawTrigger);
+    // The learned pattern itself is unchanged by the root change.
+    for (int i = 0; i < learner.getPatternLength(); ++i)
+        REQUIRE(learner.getPatternNote(i) == 36);
+    REQUIRE(learner.isLocked());  // held → still locked
+}
+
+TEST_CASE("PhraseLearner: locked chug playback is dense (≥6 notes/s, 0.9.12 regression)", "[phrase][bass]")
+{
+    // Regression: the lock used to capture a 2-note slice, so the learned
+    // playback was sparse staccato (1–2 notes/s). With full-riff capture +
+    // loop-fill, a locked chug must sustain a dense pulse on its own.
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    const int lockedAt = feedUntilLocked(learner, 36.0f);
+    REQUIRE(learner.isLocked());
+    learner.setHoldActive(true);
+
+    // Feed ~2 s of the same chug and count locked-playback triggers.
+    const int blocks = static_cast<int>(2.0 * kSr / kBlock);
+    int triggers = 0;
+    int block = lockedAt;
+    for (int i = 0; i < blocks; ++i)
+    {
+        const int pos = i % kBlocksPerAttack;
+        const bool loud = (pos == kBlocksPerAttack - 1);
+        const int64_t st = static_cast<int64_t>(block) * kBlock;
+        const auto note = learner.process(
+            st, loud ? 0.03f : 0.001f, 36.0f, loud ? 0.8f : 0.0f, kBpm, kBlock);
+        if (note.trigger)
+            ++triggers;
+        ++block;
+    }
+
+    const double notesPerSec = static_cast<double>(triggers) / 2.0;
+    REQUIRE(notesPerSec >= 6.0);
+}
+
+TEST_CASE("PhraseLearner: lock phase is aligned inside the loop (bar-aligned loop)", "[phrase][bass]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    (void)feedUntilLocked(learner, 36.0f);
+
+    // Loop length is a whole number of bars.
+    const double len = learner.getPatternLenBeats();
+    REQUIRE(std::fmod(len, 4.0) == 0.0);
+    REQUIRE(len >= 4.0);
+    // Phase is a valid position inside the loop.
+    const double phase = learner.getPlaybackPhase();
+    REQUIRE(phase >= 0.0);
+    REQUIRE(phase < len);
+}
+
+TEST_CASE("PhraseLearner: sustained tone does NOT lock (attack detector ignores slow ramps)", "[phrase][bass]")
+{
+    // Regression: the old delta trigger (any positive drift while loud) fired on
+    // the RMS warm-up ramp of a sustained tone, so the learner locked onto a
+    // held chord's transient and mirrored junk on bass.
+    PhraseLearner learner;
+    learner.prepare(kSr);
+
+    // Constant tone: steady RMS, zero attacks.
+    for (int i = 0; i < 300; ++i)
+    {
+        learner.process(static_cast<int64_t>(i) * kBlock, 0.2f, 36.0f, 0.9f, kBpm, kBlock);
+        REQUIRE_FALSE(learner.isLocked());
+    }
+
+    // Slow swell (+2% per block): a relative rise far below a real attack's
+    // sharpness (a chug jumps ×3–30) — must never be treated as an attack.
+    PhraseLearner swell;
+    swell.prepare(kSr);
+    float rms = 0.02f;
+    for (int i = 0; i < 400; ++i)
+    {
+        swell.process(static_cast<int64_t>(i) * kBlock, rms, 36.0f, 0.9f, kBpm, kBlock);
+        rms = std::min(0.4f, rms * 1.02f);
+        REQUIRE_FALSE(swell.isLocked());
+    }
+}
+
+TEST_CASE("PhraseLearner: silence resets learning state", "[phrase][bass]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    (void)feedUntilLocked(learner, 36.0f);
+    REQUIRE(learner.isLocked());
+
+    // 200+ blocks of silence (kSilenceResetBlocks = 200) resets the learner.
+    for (int i = 0; i < 210; ++i)
+    {
+        learner.process(static_cast<int64_t>(i) * kBlock, 0.0001f, 40.0f, 0.0f, kBpm, kBlock);
+    }
+    REQUIRE_FALSE(learner.isLocked());
+    REQUIRE(learner.getPatternLength() == 0);
+}
+
+TEST_CASE("PhraseLearner: hold suppresses drift-unlock (bass keeps the riff)", "[phrase][bass][lock]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    (void)feedUntilLocked(learner, 36.0f);
+    REQUIRE(learner.isLocked());
+
+    // Helper: one deviant attack = one quiet block then one loud block
+    // (rising RMS so the attack detector fires), spaced ~1 beat apart.
+    auto feedDeviantAttacks = [&](int64_t startSample, int count) {
+        for (int i = 0; i < count; ++i)
+        {
+            const int64_t base = startSample + static_cast<int64_t>(i) * 47 * kBlock;
+            learner.process(base, 0.04f, 40.0f, 0.8f, kBpm, kBlock);
+            learner.process(base + kBlock, 0.09f, 40.0f, 0.8f, kBpm, kBlock);
+        }
+    };
+
+    // Hold engaged (groove lock): a deviant rhythm (~1-beat spacing vs the
+    // learned ~0.15-beat chug) must NOT unlock the mirror.
+    learner.setHoldActive(true);
+    feedDeviantAttacks(static_cast<int64_t>(1000) * kBlock, 4);
+    REQUIRE(learner.isLocked());
+    REQUIRE_FALSE(learner.isFollowingRiff());
+    REQUIRE(learner.getPatternNote(0) == 36);  // still the learned C2 riff
+
+    // Release the hold: the next deviant attack now unlocks the old riff
+    // (the learner then re-learns the new rhythm — that is the listening mode).
+    learner.setHoldActive(false);
+    const int64_t releaseBase = static_cast<int64_t>(4000) * kBlock;
+    learner.process(releaseBase, 0.04f, 40.0f, 0.8f, kBpm, kBlock);
+    learner.process(releaseBase + kBlock, 0.09f, 40.0f, 0.8f, kBpm, kBlock);
+    REQUIRE_FALSE(learner.isLocked());
+}
+
+TEST_CASE("PhraseLearner: isFollowingRiff fires while the riff is being played", "[phrase][bass][lock]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    const int lockedAt = feedUntilLocked(learner, 36.0f);
+    REQUIRE(learner.isLocked());
+    learner.setHoldActive(true);
+
+    // Keep playing the same riff (same 7-block attack cycle) → the learner must
+    // report matching attacks (justMatchedRiff) and follow.
+    bool sawFollowing = false;
+    int block = lockedAt;
+    for (int a = 0; a < 6; ++a)
+    {
+        for (int b = 0; b < kBlocksPerAttack; ++b)
+        {
+            const bool loud = (b == kBlocksPerAttack - 1);
+            const int64_t st = static_cast<int64_t>(block) * kBlock;
+            learner.process(st, loud ? 0.03f : 0.001f,
+                            loud ? 36.0f : 40.0f, loud ? 0.8f : 0.0f, kBpm, kBlock);
+            ++block;
+            if (learner.justMatchedRiff())
+                sawFollowing = true;
+        }
+    }
+    REQUIRE(sawFollowing);
+    REQUIRE(learner.isFollowingRiff());
+    REQUIRE(learner.isLocked());  // held → still locked
+}

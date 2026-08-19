@@ -3,10 +3,11 @@
 #include <string>
 #include "midi/MidiPatternLibrary.h"
 
-TEST_CASE("MidiPatternLibrary: pattern count is 11", "[midi_pattern_library]")
+TEST_CASE("MidiPatternLibrary: pattern count matches the shared constant", "[midi_pattern_library]")
 {
     MidiPatternLibrary lib;
-    REQUIRE(lib.patternCount() == 22);
+    REQUIRE(lib.patternCount() == MidiPatternLibrary::kPatternCount);
+    REQUIRE(lib.patternCount() == 28);  // 22 metal + 6 rock-first (A4.1)
 }
 
 TEST_CASE("MidiPatternLibrary: new patterns have non-empty names", "[midi_pattern_library]")
@@ -65,11 +66,11 @@ TEST_CASE("MidiPatternLibrary: getPattern(-1) clamps to 0", "[midi_pattern_libra
     REQUIRE(p.drumEvents.empty());
 }
 
-TEST_CASE("MidiPatternLibrary: getPattern(999) clamps to 10", "[midi_pattern_library]")
+TEST_CASE("MidiPatternLibrary: getPattern(999) clamps to the last pattern", "[midi_pattern_library]")
 {
     MidiPatternLibrary lib;
     const auto& p = lib.getPattern(999);
-    REQUIRE(p.name == "Chorus Blast");
+    REQUIRE(p.name == "Rock 6/8 Feel");
 }
 
 TEST_CASE("MidiPatternLibrary: blast beat has alternating kick and snare", "[midi_pattern_library]")
@@ -102,4 +103,39 @@ TEST_CASE("MidiPatternLibrary: sparse breakdown has no hats or ride", "[midi_pat
         REQUIRE(e.note != 46);
         REQUIRE(e.note != 51);
     }
+}
+
+// ── Rock-first set (A4.1) ────────────────────────────────────────────────────
+
+TEST_CASE("MidiPatternLibrary: rock patterns 22-27 exist with drum and bass content", "[midi_pattern_library][rock]")
+{
+    MidiPatternLibrary lib;
+    const char* expectedNames[] = { "Rock Backbeat", "Rock Half-Time", "Rock Shuffle",
+                                    "Punk D-Beat", "Rock Ballad", "Rock 6/8 Feel" };
+    for (int i = 0; i < 6; ++i)
+    {
+        const int idx = 22 + i;
+        const auto& p = lib.getPattern(idx);
+        REQUIRE(p.name == expectedNames[i]);
+        REQUIRE_FALSE(p.drumEvents.empty());
+        REQUIRE_FALSE(p.bassEvents.empty());  // authored bass lines must reach the player (A1.1)
+    }
+}
+
+TEST_CASE("MidiPatternLibrary: rock backbeat has kick 1/3 and snare 2/4", "[midi_pattern_library][rock]")
+{
+    MidiPatternLibrary lib;
+    const auto& p = lib.getPattern(22);
+    bool kick1 = false, kick3 = false, snare2 = false, snare4 = false;
+    for (const auto& e : p.drumEvents)
+    {
+        if (e.note == 36 && e.beatOffset < 0.5f) kick1 = true;
+        if (e.note == 36 && e.beatOffset >= 1.75f && e.beatOffset <= 2.25f) kick3 = true;
+        if (e.note == 38 && e.beatOffset >= 0.75f && e.beatOffset <= 1.25f) snare2 = true;
+        if (e.note == 38 && e.beatOffset >= 2.75f && e.beatOffset <= 3.25f) snare4 = true;
+    }
+    REQUIRE(kick1);
+    REQUIRE(kick3);
+    REQUIRE(snare2);
+    REQUIRE(snare4);
 }

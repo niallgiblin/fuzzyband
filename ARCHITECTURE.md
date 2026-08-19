@@ -3,8 +3,10 @@
 > This document describes the component boundaries, threading model, and data
 > flow for the current implementation. Originally written for Phase 1 rule-based;
 > updated to reflect **ONNX inference**, **feature capture**, and **extracted
-> modules** from v0.5.0 Phase 31 (PlaybackGate, StablePitchTracker, TempoStabiliser,
-> PatternRules). Current milestone: **v0.6.0 ML Correctness & Evaluation**.
+> modules** from v0.5.0 Phase 31 (PlaybackGate, StablePitchTracker,
+> PatternRules). Tempo is sourced from the DAW transport; the audio-derived tempo path
+> (`OnsetDetector`) has been retired. Current focus: **Data Improvement Strategy**
+> ([`docs/DATA_STRATEGY.md`](docs/DATA_STRATEGY.md)).
 
 ---
 
@@ -26,9 +28,7 @@ flowchart LR
 
         subgraph AudioThread["Audio thread: processBlock, real-time"]
             InputGuard["Scrub NaN / clip input"]
-            Onsets["OnsetDetector"]
-            Beat["BeatTracker"]
-            Tempo["TempoStabiliser"]
+            Transport["DAW transport → BPM"]
             Energy["EnergyAnalyser"]
             Structure["StructureTagger"]
             Pitch["PitchEstimator"]
@@ -60,16 +60,12 @@ flowchart LR
     end
 
     Plugin --> InputGuard
-    InputGuard --> Onsets
     InputGuard --> Energy
     InputGuard --> Pitch
-    Onsets --> Beat
-    Onsets --> Tempo
-    Beat --> Tempo
     Energy --> Structure
     Structure --> Gate
-    Beat --> Gate
-    Tempo --> Features
+    Transport --> Features
+    Transport --> Player
     Energy --> Features
     Structure --> Features
     Pitch --> Features
@@ -103,35 +99,16 @@ flowchart LR
 
 ## Component Reference
 
-### `OnsetDetector`
+### Tempo source (DAW transport)
 
-**File:** `src/analysis/OnsetDetector.h/.cpp`  
-**Thread:** Audio (called from `processBlock`)  
-**Purpose:** Detects note attacks in the guitar signal and maintains a running
-tempo estimate.
+**Where:** `AccompanimentProcessor::processBlock` (audio thread)  
+**Purpose:** Provide the beat clock BPM for `PatternPlayer` and `FeatureVector`.
 
-**Algorithm:**
-1. Compute magnitude spectrum per buffer via `juce::dsp::FFT`
-2. Spectral flux = sum of positive differences between successive spectra
-3. Peak-pick flux signal above a configurable threshold
-4. Collect inter-onset intervals (IOI), median-filter over last 8
-5. Convert median IOI to BPM, clamp to [80, 220]
-
-**Public interface:**
-```cpp
-class OnsetDetector {
-public:
-    void prepare(double sampleRate, int blockSize);
-    void process(const float* audioData, int numSamples);
-    float getCurrentBpm() const;          // thread-safe read
-    bool  onsetDetectedThisBlock() const; // reset each block
-};
-```
-
-**Key parameters:**
-- `fluxThreshold` — sensitivity (default 0.35, tune by ear)
-- `minBpm` / `maxBpm` — clamp range (default 80 / 220)
-- `ioiWindowSize` — smoothing window (default 8 onsets)
+The DAW transport is the single source of tempo: `getPlayHead()->getPosition()->getBpm()`.
+If no valid host BPM is available (e.g. the standalone build, or a stopped transport),
+the manual `bpm` APVTS parameter is used, falling back to 120 BPM. There is **no
+audio-derived tempo estimator** — the earlier `OnsetDetector` (spectral-flux onset +
+inter-onset-interval BPM) has been retired.
 
 ---
 
@@ -315,7 +292,7 @@ Pattern indices 0–6 correspond to the outputs of `RuleBasedInference`.
 clock, and fills the JUCE `MidiBuffer` with note-on/off events.
 
 **Key behaviours:**
-- Beat clock derived from `OnsetDetector::getCurrentBpm()` and sample position
+- Beat clock derived from the DAW transport BPM (see [Tempo source](#tempo-source-daw-transport)) and sample position
 - Pattern transitions are quantised to bar boundaries to avoid mid-bar glitches
 - Note velocity is humanised: ±10 random offset per hit
 - Note timing is humanised: ±2ms random offset per hit
@@ -344,7 +321,6 @@ Runs the inference background thread.
 **Ownership:**
 ```
 AccompanimentProcessor
-├── OnsetDetector
 ├── EnergyAnalyser
 ├── StructureTagger
 ├── std::unique_ptr<IInference>    ← RuleBasedInference or OnnxInference
@@ -361,7 +337,7 @@ AccompanimentProcessor
 
 **Input path:** Non-finite samples are cleared to 0, then the buffer is clipped to `[-2, 2]` (SIMD `clip` alone is not sufficient for NaN on all targets).
 
-**Sample rate:** `prepareToPlay` clamps a non-positive rate to 44100 Hz before wiring components; `OnsetDetector`, `EnergyAnalyser`, and `StructureTagger` each guard again if `prepare()` is ever called with an invalid rate.
+**Sample rate:** `prepareToPlay` clamps a non-positive rate to 44100 Hz before wiring components; `EnergyAnalyser` and `StructureTagger` each guard again if `prepare()` is ever called with an invalid rate.
 
 **Soft bypass:** `processBlockBypassed()` clears MIDI, sends all-notes-off, resets the pattern player, and copies mono input to the right channel so the dry guitar still reaches the output.
 
@@ -384,7 +360,7 @@ Runs in `processBlock()`. Has a hard real-time deadline (~5ms at 256 samples /
 
 **What it does:**
 1. Scrubs non-finite input samples, then clips to `[-2, 2]`
-2. Calls `OnsetDetector::process()` and `EnergyAnalyser::process()`
+2. Reads the DAW transport BPM (manual-knob / 120 fallback) and calls `EnergyAnalyser::process()`
 3. Calls `StructureTagger::update()` to get current state
 4. Pushes a `FeatureVector` onto the lock-free queue (non-blocking, always succeeds)
 5. Reads `latestPatternIndex` via `std::atomic::load(memory_order_acquire)` (pairs with inference/UI stores)
@@ -424,8 +400,7 @@ processBlock() called by host
         │
         ├─► scrub non-finite samples; clip to [-2, 2]
         │
-        ├─► OnsetDetector::process(audioData)
-        │       └─► updates internal BPM estimate
+        ├─► read DAW transport BPM (manual-knob / 120 fallback)
         │
         ├─► EnergyAnalyser::process(audioData)
         │       └─► updates rms, centroid, highFreqFlux

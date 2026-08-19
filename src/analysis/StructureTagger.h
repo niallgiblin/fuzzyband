@@ -36,8 +36,11 @@ public:
 
     StructureState getCurrentState() const { return currentState; }
 
+    /** @brief Current adaptive noise floor (RMS), for diagnostics. */
+    float getNoiseFloorRms() const noexcept { return noiseFloorRms; }
+
 private:
-    StructureState computeDesiredState(float rms, float centroid, float peakRms) const;
+    StructureState computeDesiredState(float rms, float centroid, float peakRms, float silentFloor) const;
     double holdRequiredForTransition(StructureState from, StructureState to) const noexcept;
 
     double sampleRate = 44100.0;
@@ -47,6 +50,12 @@ private:
 
     float subBassRatio = 0.0f;
 
+    // Adaptive noise floor for solid SILENT detection: tracks the quietest RMS
+    // seen (snaps down instantly, creeps up slowly) so the silent threshold
+    // clears the DAW/input noise floor (guitar hum, hiss) instead of hovering
+    // at the fixed kSilentRms and flickering SILENT/SOFT.
+    float noiseFloorRms = kNoiseFloorInit;
+
     // Energy thresholds for 3-state classification
     static constexpr float kSilentRms = 0.012f;
     static constexpr float kSilentPeakRatio = 0.02f;
@@ -54,12 +63,18 @@ private:
     static constexpr float kLoudRms = 0.075f;       // RMS floor: SOFT → LOUD boundary
     static constexpr float kLoudPeakRatio = 0.50f;
 
+    // Adaptive silence gate: silentFloor = max(kSilentRms, min(noiseFloor × margin, ceiling))
+    static constexpr float kSilentMargin = 1.5f;        // threshold sits 1.5× above the noise floor
+    static constexpr float kSilentFloorCeiling = 0.06f; // never declare silence above this RMS
+    static constexpr float kNoiseFloorRelease = 0.001f; // upward creep per block (~15 s to adapt to a hotter noise floor)
+    static constexpr float kNoiseFloorInit = 0.02f;     // start above typical hum so it snaps down to it
+
     // Hold times (seconds) — responsive pacing
     static constexpr double kHoldSilentSec         = 0.0;
     static constexpr double kHoldSoftToLoudSec     = 0.4;
-    static constexpr double kHoldSoftToSilentSec   = 2.0;
+    static constexpr double kHoldSoftToSilentSec   = 1.0;
     static constexpr double kHoldLoudToSoftSec     = 2.0;
-    static constexpr double kHoldLoudToSilentSec   = 3.0;
+    static constexpr double kHoldLoudToSilentSec   = 1.0;
 
     // Sub-bass ratio thresholds for SOFT/LOUD discrimination
     static constexpr float kSubBassLoudFloor = 0.35f;   // Above this: palm-mute chug → LOUD bias

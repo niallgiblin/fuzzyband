@@ -1,5 +1,13 @@
 #include "StructureSequencer.h"
 #include <algorithm>
+#include <sstream>
+
+namespace
+{
+const std::vector<const char*> kSectionNames = {
+    "INTRO", "VERSE", "CHORUS", "BREAKDOWN", "SOLO", "OUTRO",
+};
+} // namespace
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Presets
@@ -165,4 +173,78 @@ int StructureSequencer::getBarsInSection() const noexcept
 bool StructureSequencer::isLastBar() const noexcept
 {
     return barsElapsed == getBarsInSection() - 1;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Custom-form serialization (Phase 2)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const std::vector<const char*>& StructureSequencer::sectionNames() noexcept
+{
+    return kSectionNames;
+}
+
+bool StructureSequencer::isValidSectionName(const std::string& name) noexcept
+{
+    for (const char* n : kSectionNames)
+        if (name == n)
+            return true;
+    return false;
+}
+
+std::string StructureSequencer::serializeForm(const SongForm& form)
+{
+    std::string out;
+    for (size_t i = 0; i < form.sections.size(); ++i)
+    {
+        if (i > 0)
+            out += ',';
+        out += form.sections[i].name;
+        out += ':';
+        out += std::to_string(form.sections[i].bars);
+    }
+    return out;
+}
+
+SongForm StructureSequencer::parseFormString(const std::string& serialized)
+{
+    SongForm form;
+    form.name = "Custom";
+
+    // Split on ',' then each token on ':'. Unknown names and unparsable bar
+    // counts are skipped; a fully invalid string falls back to preset 0.
+    std::stringstream ss(serialized);
+    std::string token;
+    while (std::getline(ss, token, ','))
+    {
+        const size_t colon = token.find(':');
+        if (colon == std::string::npos)
+            continue;
+
+        std::string name = token.substr(0, colon);
+        const std::string barsStr = token.substr(colon + 1);
+
+        // Trim surrounding whitespace on the name.
+        name.erase(0, name.find_first_not_of(" \t\r\n"));
+        name.erase(name.find_last_not_of(" \t\r\n") + 1);
+
+        if (!isValidSectionName(name))
+            continue;
+
+        int bars = 0;
+        try
+        {
+            bars = std::stoi(barsStr);
+        }
+        catch (...)
+        {
+            continue;
+        }
+
+        form.sections.push_back(SongSection{ name, std::clamp(bars, 1, 64) });
+    }
+
+    if (form.sections.empty())
+        return presets[0];
+    return form;
 }

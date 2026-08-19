@@ -8,6 +8,7 @@
 #include <JuceHeader.h>
 
 class AccompanimentProcessor;
+class SectionListEditor;  // defined in AccompanimentEditor.cpp (Phase 2 custom song form)
 
 /**
  * @brief Pacific NW moss/forest theme — semi-transparent controls over background image.
@@ -136,19 +137,31 @@ private:
     juce::Label versionLabel;
     juce::Label userPolicyHeading;
 
-    juce::Label bpmSliderLabel{ {}, "Tempo (BPM)" };
-    juce::Slider bpmSlider;
+    juce::Label genreLabel{ {}, "Genre" };
+    juce::ComboBox genreCombo;
+    juce::Label swingLabel{ {}, "Swing" };
+    juce::Slider swingSlider;
+    juce::Label bassOctaveLabel{ {}, "Bass octave" };
+    juce::ComboBox bassOctaveCombo;
 
     juce::Label songFormLabel{ {}, "Song form" };
     juce::ComboBox songFormCombo;
+    std::unique_ptr<SectionListEditor> sectionListEditor;  // Phase 2: editable custom form
     juce::Label sectionLabel;
     juce::ToggleButton loopToggle{ "Loop" };
 
+    juce::Label lockBarsLabel{ {}, "Lock (bars)" };
+    juce::Slider lockBarsSlider;
+    juce::Label grooveStatusLabel;  // generative lock indicator
+
     juce::TextButton playButton{ "▶ PLAY" };
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> genreAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> swingAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> bassOctaveAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> songFormAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lockBarsAttachment;
 
     juce::Rectangle<int> userPolicyArea;
 
@@ -159,10 +172,7 @@ private:
     juce::Label rmsLabel;
     juce::Label centroidLabel;
     juce::Label hfFluxLabel;
-
-    juce::Label inferenceLabel;
-
-    juce::Label helpCaptionLabel;
+    juce::Label noiseFloorLabel;
 
     FuzzybandLookAndFeel lookAndFeel;
 

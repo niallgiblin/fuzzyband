@@ -7,11 +7,11 @@ void StructureTagger::prepare(double newSampleRate)
     pendingTransitionSec = 0.0;
     currentState = StructureState::SILENT;
     pendingState = StructureState::SILENT;
+    noiseFloorRms = kNoiseFloorInit;
 }
 
-StructureState StructureTagger::computeDesiredState(float rms, float /*centroid*/, float peakRms) const
+StructureState StructureTagger::computeDesiredState(float rms, float /*centroid*/, float peakRms, float silentFloor) const
 {
-    const float silentFloor = std::max(kSilentRms, peakRms * kSilentPeakRatio);
     if (rms < silentFloor)
         return StructureState::SILENT;
 
@@ -60,7 +60,25 @@ double StructureTagger::holdRequiredForTransition(StructureState from, Structure
 StructureState StructureTagger::update(float rms, float centroid, float /*highFreqFlux*/, int numSamples, float peakRms)
 {
     const double blockSec = static_cast<double>(numSamples) / sampleRate;
-    const StructureState desired = computeDesiredState(rms, centroid, peakRms);
+
+    // ── Adaptive noise floor (solid SILENT) ─────────────────────────────────
+    // Snap down instantly when a quieter moment appears (the real noise floor),
+    // creep up slowly while still inside the quiet band (rms below the ceiling)
+    // so loud playing never raises the floor. The silent threshold sits
+    // kSilentMargin × above the floor, capped so genuinely quiet playing is
+    // never misread as silence.
+    if (rms < noiseFloorRms)
+        noiseFloorRms = rms;
+    else if (rms < kSilentFloorCeiling)
+        noiseFloorRms += kNoiseFloorRelease * (rms - noiseFloorRms);
+    if (noiseFloorRms < 0.0f)
+        noiseFloorRms = 0.0f;
+
+    const float silentFloor = std::max(kSilentRms,
+        std::min(noiseFloorRms * kSilentMargin, kSilentFloorCeiling));
+    const float silentFloorWithPeak = std::max(silentFloor, peakRms * kSilentPeakRatio);
+
+    const StructureState desired = computeDesiredState(rms, centroid, peakRms, silentFloorWithPeak);
 
     if (desired == currentState)
     {

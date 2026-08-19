@@ -40,6 +40,27 @@ static std::vector<float> sineSection(int numSamples, double freq, double sr, fl
     return v;
 }
 
+// "Phrased" section: onSec of tone, offSec of true silence, repeated. Real
+// playing has phrase gaps; the adaptive noise floor learns sustained quiet as
+// silence, so soft-playing test sections must include gaps to keep the floor
+// reset (the floor snaps to 0 during the gaps).
+static std::vector<float> phrasedSection(int numSamples, double freq, double sr, float amp,
+                                         double onSec, double offSec)
+{
+    std::vector<float> v(static_cast<size_t>(numSamples), 0.0f);
+    const int onN = static_cast<int>(onSec * sr);
+    const int offN = static_cast<int>(offSec * sr);
+    int pos = 0;
+    while (pos < numSamples)
+    {
+        const int end = std::min(pos + onN, numSamples);
+        for (int i = pos; i < end; ++i)
+            v[static_cast<size_t>(i)] = amp * static_cast<float>(std::sin(2.0 * M_PI * freq * i / sr));
+        pos = end + offN;
+    }
+    return v;
+}
+
 // Feed `audio` through the processor in `blockSize` blocks, pausing + flushing each block.
 // Returns the pattern index at the end of the section.
 int feedSection(AccompanimentProcessor& proc,
@@ -182,9 +203,10 @@ TEST_CASE("E2E: final silence after signal causes RMS to drop", "[e2e][transitio
 }
 
 // Amplitude thresholds calibrated against EnergyAnalyser rmsEnergy (= raw_rms * 4.0, clamped [0,1]):
-//   amp 0.010 → raw_rms ≈ 0.0071 → rmsEnergy ≈ 0.0283 → SOFT (between kSilentRms and kLoudRms)
-//   amp 0.015 → raw_rms ≈ 0.0106 → rmsEnergy ≈ 0.0424 → SOFT (between kSilentRms and kLoudRms)
-//   amp 0.25  → raw_rms ≈ 0.1768 → rmsEnergy ≈ 0.707  → LOUD
+//   amp 0.015 → raw_rms ≈ 0.0106 → rmsEnergy ≈ 0.0424 → SOFT (above the adaptive silence gate, below kLoudRms)
+//   amp 0.04  → raw_rms ≈ 0.0283 → rmsEnergy ≈ 0.113  → LOUD
+// Verses use *phrased* audio (0.4 s on / 0.12 s off) so the adaptive noise floor
+// stays reset — sustained constant low-level input is learned as the noise floor.
 TEST_CASE("E2E: palm-muted verse to full-chord chorus — no flip-flopping", "[e2e][transitions]")
 {
     const double sr    = 48000.0;
@@ -194,11 +216,11 @@ TEST_CASE("E2E: palm-muted verse to full-chord chorus — no flip-flopping", "[e
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
 
-    // Phase 1: Palm-muted verse (SOFT) — 10s of amp 0.015
-    // StructureTagger: rmsEnergy ≈ 0.0424 → SOFT (above kAmbientCeil, below kLoudRms)
+    // Phase 1: Palm-muted verse (SOFT) — 10s of phrased amp 0.015
+    // StructureTagger: rmsEnergy ≈ 0.0424 → SOFT (above silence, below kLoudRms)
     {
         const int n = static_cast<int>(10.0 * sr);
-        auto verse = sineSection(n, 1500.0, sr, 0.015f);
+        auto verse = phrasedSection(n, 1500.0, sr, 0.015f, 0.4, 0.12);
         feedSection(proc, verse.data(), n, block);
     }
 
@@ -217,7 +239,10 @@ TEST_CASE("E2E: palm-muted verse to full-chord chorus — no flip-flopping", "[e
     const int stateAfterChorus = proc.getDisplayStateIndex();
     REQUIRE(stateAfterChorus == 2); // 2 = LOUD
 
-    // Phase 3: Return to palm-muted (SOFT) — 10s of amp 0.015
+    // Phase 3: Return to palm-muted (SOFT) — 10s of sustained amp 0.015.
+    // Sustained (not phrased) so the LOUD→SOFT hold timer sees a stable desired
+    // state; the floor starts near 0 (snapped by Phase 1's phrase gaps), so the
+    // section stays above the learned threshold.
     {
         const int n = static_cast<int>(10.0 * sr);
         auto verse2 = sineSection(n, 1500.0, sr, 0.015f);
@@ -264,7 +289,9 @@ TEST_CASE("E2E: rapid SOFT/LOUD alternation — hold guard prevents flip-floppin
     for (int bar = 0; bar < 8; ++bar)
     {
         const float amp = (bar % 2 == 0) ? 0.04f : 0.015f; // alternate LOUD/SOFT
-        auto seg = sineSection(samplesPerBar, 1500.0, sr, amp);
+        auto seg = (bar % 2 == 0)
+            ? sineSection(samplesPerBar, 1500.0, sr, amp)
+            : phrasedSection(samplesPerBar, 1500.0, sr, amp, 0.4, 0.12);  // soft: phrased so the floor stays reset
         feedSection(proc, seg.data(), samplesPerBar, block);
         const int s = proc.getDisplayStateIndex();
         if (s != lastState)

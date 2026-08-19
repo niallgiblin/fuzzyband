@@ -10,6 +10,7 @@
  */
 
 #include "analysis/FeatureVector.h"
+#include "midi/MidiPatternLibrary.h"
 #include <algorithm>
 #include <cstring>
 
@@ -18,7 +19,9 @@ namespace PatternRules
 
 static constexpr float kSoftMidBpmThreshold  = 120.0f;
 static constexpr float kSoftLoudBpmThreshold = 160.0f;
-static constexpr int   kPatternCount         = 22;
+
+/** @brief Total pattern count; kept in sync with MidiPatternLibrary (unit-tested). */
+static constexpr int kPatternCount = MidiPatternLibrary::kPatternCount;
 
 /**
  * @brief Apply policyIntensity offset to BPM.
@@ -53,15 +56,21 @@ inline int rulePatternForState(const FeatureVector& f) noexcept
 
 /**
  * @brief Return true if patternIndex is appropriate for the given structural state.
- * SILENT→0, SOFT→1-3 or 7, LOUD→4-5 or 8-10.
+ * SILENT→0, SOFT→1-3,7,20,22-24,26-27, LOUD→4-6,8-10,13-15,25.
  */
 inline bool isPatternCompatibleWithState(int patternIndex, StructureState state) noexcept
 {
     switch (state)
     {
         case StructureState::SILENT: return patternIndex == 0;
-        case StructureState::SOFT:   return (patternIndex >= 1 && patternIndex <= 3) || patternIndex == 7 || patternIndex == 20;
-        case StructureState::LOUD:   return (patternIndex >= 4 && patternIndex <= 5) || (patternIndex >= 8 && patternIndex <= 10) || (patternIndex >= 13 && patternIndex <= 14) || patternIndex == 6 || patternIndex == 9 || patternIndex == 15;
+        case StructureState::SOFT:
+            return (patternIndex >= 1 && patternIndex <= 3) || patternIndex == 7 || patternIndex == 20
+                || patternIndex == 22 || patternIndex == 23 || patternIndex == 24
+                || patternIndex == 26 || patternIndex == 27;
+        case StructureState::LOUD:
+            return (patternIndex >= 4 && patternIndex <= 5) || (patternIndex >= 8 && patternIndex <= 10)
+                || (patternIndex >= 13 && patternIndex <= 14) || patternIndex == 6
+                || patternIndex == 9 || patternIndex == 15 || patternIndex == 25;
     }
     return false;
 }
@@ -109,6 +118,43 @@ inline int diversifyPattern(int base, const FeatureVector& f, int barMod8) noexc
             return 8; // blast beat
         if (f.bpm >= 140.0f && (barMod8 % 2) == 0)
             return 10; // thrash
+        return base;
+    }
+
+    return base;
+}
+
+/**
+ * @brief B1: genre-aware diversification for the reactive path.
+ * Rock-leaning genres (0-2: Rock, Hard Rock, Punk) route SOFT low-energy into
+ * the rock-first pattern set (Rock Backbeat / Rock Half-Time) and mid-tempo
+ * LOUD into Rock Shuffle / Punk D-Beat. Metal/Sludge (>= 3) keep the original
+ * metal routing. Conditions are disjoint from the metal rules so existing
+ * metal behaviour is preserved when the genre is metal.
+ */
+inline int diversifyPatternForGenre(int base, const FeatureVector& f, int barMod8, int genreId) noexcept
+{
+    if (genreId >= 3)
+        return diversifyPattern(base, f, barMod8);
+
+    if (base == 0) return 0;
+    if (base >= 7) return base;
+
+    if (base >= 1 && base <= 3)  // SOFT
+    {
+        if (f.rmsEnergy < 0.04f)
+            return (barMod8 % 2 == 0) ? 22 : 23;  // Rock Backbeat / Rock Half-Time
+        return base;
+    }
+
+    if (base >= 4 && base <= 6)  // LOUD
+    {
+        if (f.rmsEnergy < 0.06f && f.bpm < 140.0f)
+            return 9;  // sparse
+        if (f.bpm >= 160.0f && f.spectralCentroid > 800.0f)
+            return 8;  // blast beat
+        if (f.bpm < 130.0f && f.rmsEnergy < 0.09f)
+            return (barMod8 % 2 == 0) ? 24 : 25;  // Rock Shuffle / Punk D-Beat
         return base;
     }
 
@@ -178,8 +224,35 @@ inline SectionPatternPool sectionPatternPool(const char* sectionName) noexcept
 }
 
 /**
- * @brief M009: Map playing style classifier output (0-4) to pattern indices.
+ * @brief B1: genre-aware section → pattern pool mapping for play (song-form) mode.
+ * Rock-leaning genres (0-2) prefer the rock-first pattern set; Metal/Sludge
+ * (>= 3) keep the original metal pools.
  */
+inline SectionPatternPool sectionPatternPoolForGenre(const char* sectionName, int genreId) noexcept
+{
+    using P = SectionPatternPool;
+
+    if (!sectionName)
+        return P{ 0, {} };
+
+    if (genreId >= 3)
+        return sectionPatternPool(sectionName);
+
+    if (std::strcmp(sectionName, "INTRO") == 0)
+        return P{ 2, { 11, 12 } };
+    if (std::strcmp(sectionName, "VERSE") == 0)
+        return P{ 4, { 22, 23, 1, 2 } };         // Rock Backbeat, Rock Half-Time, Verse Groove, Verse Half-Time
+    if (std::strcmp(sectionName, "CHORUS") == 0)
+        return P{ 4, { 4, 24, 25, 14 } };         // Chorus Mid, Rock Shuffle, Punk D-Beat, Chorus Open
+    if (std::strcmp(sectionName, "BREAKDOWN") == 0)
+        return P{ 3, { 6, 15, 9 } };
+    if (std::strcmp(sectionName, "SOLO") == 0)
+        return P{ 3, { 4, 14, 24 } };
+    if (std::strcmp(sectionName, "OUTRO") == 0)
+        return P{ 2, { 16, 26 } };                // Outro Decay, Rock Ballad
+
+    return P{ 0, {} };
+}
 inline SectionPatternPool stylePatternPool(int styleIndex) noexcept
 {
     using P = SectionPatternPool;

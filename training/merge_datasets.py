@@ -19,7 +19,13 @@ import torch
 _TRAINING_DIR = Path(__file__).resolve().parent
 _PROCESSED_DIR = _TRAINING_DIR / "data/processed"
 _LAKH_TENSORS = _TRAINING_DIR / "data/lakh/lakh_tensors.pt"
-_EPS = 1e-8
+# P0/C5 (docs/SLUDGE_METAL_DOMAIN_AUDIT.md §8.1, F3): the proxy-derived
+# spectral-centroid std collapses to ~0, so a flat `1e-8` floor divides live
+# audio centroids by 1e-8 and saturates the network. Use a per-feature minimum
+# std: the centroid gets a kHz-scale floor (capture-derived magnitude ≈ 3666),
+# everything else keeps a small floor. NOTE: this only takes effect after
+# re-running merge_datasets.py and re-exporting the ONNX models.
+_EPS = 1e-3
 _FEATURE_ORDER = [
     "bpm",
     "rmsEnergy",
@@ -27,6 +33,9 @@ _FEATURE_ORDER = [
     "highFreqFlux",
     "state_float",
 ]
+# Minimum standard deviation per feature (index-aligned with _FEATURE_ORDER).
+# centroid is Hz-scale (thousands), the rest are small normalized quantities.
+_FEATURE_MIN_STD = [1e-3, 1e-3, 1e3, 1e-3, 1e-3]
 _MIN_EXAMPLES_PER_CLASS = 50
 _GATE_CLASSES = [1, 2, 3, 4, 5, 6]
 
@@ -213,7 +222,9 @@ def main() -> int:
     # ── Joint normalization ───────────────────────────────────────────────
     merged_mean = np.mean(X_merged_raw, axis=0)
     merged_std = np.std(X_merged_raw, axis=0, ddof=0)
-    merged_std = np.maximum(merged_std, _EPS)
+    # Per-feature std floor (audit §8.1/F3): keeps the centroid std from being
+    # clamped to ~0 and blowing up live normalization.
+    merged_std = np.maximum(merged_std, np.asarray(_FEATURE_MIN_STD, dtype=np.float64))
 
     X_merged_norm = ((X_merged_raw - merged_mean) / merged_std).astype(np.float32)
     X_gmd_val_norm_new = ((X_gmd_val_raw - merged_mean) / merged_std).astype(np.float32)
