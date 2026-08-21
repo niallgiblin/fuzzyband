@@ -83,8 +83,13 @@ public:
         g.drawEllipse(thumb.reduced(1.5f), 1.0f);
     }
 
+    juce::Font getComboBoxFont(juce::ComboBox&) override
+    {
+        return juce::FontOptions(13.0f);
+    }
+
     void drawComboBox(juce::Graphics& g, int width, int height, bool,
-                      int, int, int, int, juce::ComboBox& box) override
+                      int, int, int, int, juce::ComboBox&) override
     {
         auto bounds = juce::Rectangle<float>(0.0f, 0.0f, (float)width, (float)height);
         g.setColour(findColour(juce::ComboBox::backgroundColourId));
@@ -92,16 +97,8 @@ public:
         g.setColour(findColour(juce::ComboBox::outlineColourId));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 4.0f, 1.0f);
 
-        // Selected text — our custom look-and-feel must draw it explicitly
-        // (the base LookAndFeel_V4 does, but we replace the whole method).
-        if (box.getText().isNotEmpty())
-        {
-            g.setColour(findColour(juce::ComboBox::textColourId));
-            g.setFont(juce::FontOptions(13.0f));
-            g.drawFittedText(box.getText(),
-                             juce::Rectangle<int>(6, 0, juce::jmax(1, width - 24), height),
-                             juce::Justification::centredLeft, 1, 0.0f);
-        }
+        // Do not draw the selected item here. ComboBox already has a Label
+        // child that paints the text — drawing it again ghosts/doubles it.
 
         const float arrowX = (float)width - 16.0f;
         const float arrowY = (float)height * 0.5f;
@@ -109,6 +106,16 @@ public:
         arrow.addTriangle(arrowX, arrowY - 3.0f, arrowX + 7.0f, arrowY - 3.0f, arrowX + 3.5f, arrowY + 3.0f);
         g.setColour(findColour(juce::ComboBox::arrowColourId));
         g.fillPath(arrow);
+    }
+
+    void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override
+    {
+        label.setBounds(8, 1, juce::jmax(1, box.getWidth() - 30), box.getHeight() - 2);
+        label.setFont(getComboBoxFont(box));
+        label.setJustificationType(juce::Justification::centredLeft);
+        label.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+        label.setColour(juce::Label::textColourId, findColour(juce::ComboBox::textColourId));
+        label.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
     }
 
     void drawButtonBackground(juce::Graphics& g, juce::Button& button,
@@ -124,6 +131,44 @@ public:
         g.fillRoundedRectangle(bounds, 4.0f);
         g.setColour(juce::Colour(0x886a9a50));
         g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
+    }
+
+    void drawButtonText(juce::Graphics& g, juce::TextButton& button,
+                        bool, bool) override
+    {
+        const auto textColour = button.findColour(button.getToggleState()
+                ? juce::TextButton::textColourOnId
+                : juce::TextButton::textColourOffId)
+            .withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f);
+        g.setColour(textColour);
+        g.setFont(getTextButtonFont(button, button.getHeight()));
+
+        // Draw a Path icon instead of a Unicode glyph — plugin fonts often
+        // lack ▶, which then shows as mojibake (â¶ PLAY).
+        if (button.getComponentID() == "play")
+        {
+            auto bounds = button.getLocalBounds().reduced(8, 4);
+            auto icon = bounds.removeFromLeft(14).toFloat();
+            const float cx = icon.getCentreX();
+            const float cy = icon.getCentreY();
+            if (button.getToggleState())
+            {
+                g.fillRect(cx - 5.0f, cy - 6.0f, 3.5f, 12.0f);
+                g.fillRect(cx + 1.5f, cy - 6.0f, 3.5f, 12.0f);
+            }
+            else
+            {
+                juce::Path tri;
+                tri.addTriangle(cx - 4.0f, cy - 6.0f, cx - 4.0f, cy + 6.0f, cx + 6.0f, cy);
+                g.fillPath(tri);
+            }
+            g.drawFittedText("PLAY", bounds, juce::Justification::centredLeft, 1);
+            return;
+        }
+
+        g.drawFittedText(button.getButtonText(),
+                         button.getLocalBounds().reduced(2),
+                         juce::Justification::centred, 1);
     }
 };
 
@@ -159,6 +204,7 @@ private:
     juce::Label songFormLabel{ {}, "Song form" };
     juce::ComboBox songFormCombo;
     juce::Label songSectionsLabel{ {}, "Song sections (custom)" };
+    juce::Viewport songSectionsViewport;
     std::unique_ptr<SectionListEditor> sectionListEditor;  // Phase 2: editable custom form
     juce::Label sectionLabel;
     juce::ToggleButton loopToggle{ "Loop" };
@@ -167,7 +213,43 @@ private:
     juce::Slider lockBarsSlider;
     juce::Label grooveStatusLabel;  // generative lock indicator
 
-    juce::TextButton playButton{ "▶ PLAY" };
+    // A5.2: post-lock transition grammar controls + live status.
+    juce::Label transitionBarsLabel{ {}, "Transition (bars)" };
+    juce::Slider transitionBarsSlider;
+    juce::Label transitionSectionsLabel{ {}, "Transition sections" };
+    juce::Slider transitionSectionsSlider;
+    juce::Label transitionStatusLabel;  // live "Section B · CHORUS · 5/8 bars"
+
+    // DAW-style input scope: live waveform + playhead.
+    class ScopeComponent final : public juce::Component
+    {
+    public:
+        ScopeComponent() = default;
+
+        /** @brief Called from the editor timer with the latest scope data. */
+        void setScopeData(const float* samples, int count, float playheadFraction) noexcept
+        {
+            for (int i = 0; i < count && i < static_cast<int>(kMaxSamples); ++i)
+                samples_[static_cast<size_t>(i)] = samples[i];
+            count_ = juce::jmin(count, static_cast<int>(kMaxSamples));
+            playheadFraction_ = playheadFraction;
+            repaint();
+        }
+
+        void paint(juce::Graphics&) override;
+
+    private:
+        static constexpr int kMaxSamples = 2048;
+        std::array<float, kMaxSamples> samples_{};
+        int count_ = 0;
+        float playheadFraction_ = 0.0f;
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScopeComponent)
+    };
+    ScopeComponent scopeComponent;
+
+    juce::TextButton playButton{ "PLAY" };
+    juce::TextButton recordRiffButton{ "Record riff" };
+    juce::TextButton forgetRiffButton{ "Forget" };
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> genreAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> swingAttachment;
@@ -175,6 +257,8 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> songFormAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lockBarsAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> transitionBarsAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> transitionSectionsAttachment;
 
     juce::Rectangle<int> userPolicyArea;
 

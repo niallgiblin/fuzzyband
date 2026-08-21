@@ -76,3 +76,11 @@ int StablePitchTracker::update(float rawMidi, float rawConf, float bpm,
     // issue) and never on the wrong pitch class.
     return currentPc - kBassRootPc;
 }
+
+int StablePitchTracker::getLastPitchClassOffset() const noexcept
+{
+    if (!pitchHoldValid)
+        return INT_MIN;
+    const int pc = ((static_cast<int>(std::round(lastStablePitchMidi)) % 12) + 12) % 12;
+    return pc - kBassRootPc;
+}

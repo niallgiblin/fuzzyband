@@ -229,7 +229,11 @@ def build_dataset(raw_dir: Path, processed_dir: Path, *, seed: int = 42) -> tupl
     y_arr = np.array(y_list, dtype=np.int64)
 
     # ── Grouped split by source recording (§5.1) ─────────────────────────────
-    splits = assign_grouped_split(source_list, y_list, seed=seed, val_frac=0.2)
+    # val_frac=0.2, test_frac=0.2: every class with >= 3 source takes gets a
+    # true held-out test take; classes with only 2 takes keep train+val (the
+    # splitter never starves train) and are reported absent from test below.
+    splits = assign_grouped_split(source_list, y_list, seed=seed,
+                                  val_frac=0.2, test_frac=0.2)
 
     meta_rows = [
         {
@@ -322,6 +326,21 @@ def main() -> int:
         print(f"\nWARNING: {len(missing_val)} class(es) absent from val (single source recording):")
         for name in sorted(set(missing_val)):
             print(f"  - {name}  → record a second take to enable held-out validation")
+
+    # Classes absent from test have no true held-out set (§5.1). With only two
+    # source takes, one must stay in train and one in val — flag loudly so the
+    # fix is recording another take, not reusing val as test.
+    test_classes = {r["class_idx"] for r in meta_rows if r["split"] == "test"}
+    missing_test = [
+        next((k for k, v in class_map.items() if v == r["class_idx"]), str(r["class_idx"]))
+        for r in {r["class_idx"]: r for r in meta_rows}.values()
+        if r["class_idx"] not in test_classes
+    ]
+    if missing_test:
+        print(f"\nWARNING: {len(missing_test)} class(es) have NO test take (only "
+              f"2 source recordings):")
+        for name in sorted(set(missing_test)):
+            print(f"  - {name}  → record a third take to enable an honest test split")
 
     print("\n✓ Groove dataset ready for training.")
     return 0

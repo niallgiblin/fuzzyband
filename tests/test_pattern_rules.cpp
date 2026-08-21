@@ -480,3 +480,202 @@ TEST_CASE("PatternRules::orderedSectionPatternPoolForGenre matches ordered membe
         REQUIRE(PatternRules::priorWeight(ord.indices[i - 1], 0)
                 >= PatternRules::priorWeight(ord.indices[i], 0));
 }
+
+// ─── A5.2: post-lock transition grammar ───────────────────────────────────────
+
+TEST_CASE("PatternRules::sectionFamilyOfPattern maps patterns to their home section", "[pattern_rules][A5.2]")
+{
+    // Pattern 1 = verse groove → VERSE; 4 = chorus mid → CHORUS; 6 = breakdown → BREAKDOWN.
+    REQUIRE(std::strcmp(PatternRules::sectionFamilyOfPattern(1, 0), "VERSE") == 0);
+    REQUIRE(std::strcmp(PatternRules::sectionFamilyOfPattern(4, 0), "CHORUS") == 0);
+    REQUIRE(std::strcmp(PatternRules::sectionFamilyOfPattern(6, 0), "BREAKDOWN") == 0);
+    // Unknown indices fall back to a default family (still valid).
+    REQUIRE(PatternRules::sectionFamilyOfPattern(999, 0) != nullptr);
+}
+
+TEST_CASE("PatternRules::pickNextSectionAfterLock never repeats the riff's own family", "[pattern_rules][A5.2]")
+{
+    // Locked onto a verse pattern → next section must NOT be VERSE-family.
+    const auto ts = PatternRules::pickNextSectionAfterLock(1, 0, "");
+    REQUIRE(ts.name != nullptr);
+    REQUIRE(ts.pool.count > 0);
+    REQUIRE(std::strcmp(ts.name, "VERSE") != 0);
+
+    // Locked onto a breakdown pattern → next must not be BREAKDOWN.
+    const auto ts2 = PatternRules::pickNextSectionAfterLock(6, 0, "");
+    REQUIRE(std::strcmp(ts2.name, "BREAKDOWN") != 0);
+
+    // Locked onto a chorus pattern → next must not be CHORUS.
+    const auto ts3 = PatternRules::pickNextSectionAfterLock(4, 0, "");
+    REQUIRE(std::strcmp(ts3.name, "CHORUS") != 0);
+}
+
+TEST_CASE("PatternRules::pickNextSectionAfterLock avoids the previously-played section", "[pattern_rules][A5.2]")
+{
+    // First transition → B. Second transition (avoiding B) must differ.
+    const auto first = PatternRules::pickNextSectionAfterLock(1, 0, "");
+    const auto second = PatternRules::pickNextSectionAfterLock(1, 0, first.name);
+    REQUIRE(std::strcmp(second.name, first.name) != 0);
+}
+
+TEST_CASE("PatternRules::pickNextSectionAfterLock is deterministic and always returns a valid pool", "[pattern_rules][A5.2]")
+{
+    const auto a = PatternRules::pickNextSectionAfterLock(4, 0, "");
+    const auto b = PatternRules::pickNextSectionAfterLock(4, 0, "");
+    REQUIRE(std::strcmp(a.name, b.name) == 0);
+    REQUIRE(a.pool.count > 0);
+
+    // Works for every pattern index without crashing.
+    for (int p = 0; p < MidiPatternLibrary::kPatternCount; ++p)
+    {
+        const auto ts = PatternRules::pickNextSectionAfterLock(p, 0, "");
+        REQUIRE(ts.pool.count > 0);
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Style steering (A4.1): diversifyPatternForStyle
+// ══════════════════════════════════════════════════════════════════════════
+
+TEST_CASE("PatternRules::diversifyPatternForStyle palm-mute routes to half-time/breakdown family", "[pattern_rules][style]")
+{
+    // Style pool {7,1,9} (half-time, verse groove, sparse breakdown).
+    // SOFT state filters to {7,1}; rotation by bar phase.
+    FeatureVector soft = makeFD(StructureState::SOFT, 100.0f, 0.08f, 400.0f);
+    REQUIRE(PatternRules::diversifyPatternForStyle(1, 0, 0, soft.state) == 7);
+    REQUIRE(PatternRules::diversifyPatternForStyle(1, 0, 1, soft.state) == 1);
+    REQUIRE(PatternRules::diversifyPatternForStyle(1, 0, 2, soft.state) == 7);
+    // LOUD state filters to {9} only (sparse breakdown).
+    FeatureVector loud = makeFD(StructureState::LOUD, 140.0f, 0.2f, 700.0f);
+    REQUIRE(PatternRules::diversifyPatternForStyle(4, 0, 0, loud.state) == 9);
+    REQUIRE(PatternRules::diversifyPatternForStyle(4, 0, 3, loud.state) == 9);
+}
+
+TEST_CASE("PatternRules::diversifyPatternForStyle open-chord routes to chorus/breakdown", "[pattern_rules][style]")
+{
+    // Style pool {4,6,14} (chorus mid, breakdown, open groove) — all LOUD-compatible.
+    FeatureVector f = makeFD(StructureState::LOUD, 120.0f, 0.2f, 600.0f);
+    REQUIRE(PatternRules::diversifyPatternForStyle(4, 1, 0, f.state) == 4);
+    REQUIRE(PatternRules::diversifyPatternForStyle(4, 1, 1, f.state) == 6);
+    REQUIRE(PatternRules::diversifyPatternForStyle(4, 1, 2, f.state) == 14);
+}
+
+TEST_CASE("PatternRules::diversifyPatternForStyle single-note routes to fast family", "[pattern_rules][style]")
+{
+    // Style pool {3,10,2} (verse fast, thrash, verse half-time).
+    FeatureVector f = makeFD(StructureState::SOFT, 140.0f, 0.12f, 800.0f);
+    REQUIRE(PatternRules::diversifyPatternForStyle(3, 2, 0, f.state) == 3);
+    REQUIRE(PatternRules::diversifyPatternForStyle(3, 2, 1, f.state) == 2);  // SOFT filters out 10
+    // LOUD: only 10 (thrash) survives the state filter.
+    FeatureVector loud = makeFD(StructureState::LOUD, 150.0f, 0.2f, 900.0f);
+    REQUIRE(PatternRules::diversifyPatternForStyle(3, 2, 0, loud.state) == 10);
+    REQUIRE(PatternRules::diversifyPatternForStyle(3, 2, 5, loud.state) == 10);
+}
+
+TEST_CASE("PatternRules::diversifyPatternForStyle silence/unknown/base-0 keep base", "[pattern_rules][style]")
+{
+    FeatureVector f = makeFD(StructureState::LOUD, 120.0f, 0.2f, 600.0f);
+    REQUIRE(PatternRules::diversifyPatternForStyle(4, 4, 0, f.state) == 4);   // silence style
+    REQUIRE(PatternRules::diversifyPatternForStyle(4, 5, 0, f.state) == 4);   // out-of-range style
+    REQUIRE(PatternRules::diversifyPatternForStyle(4, -1, 0, f.state) == 4);  // negative style
+    REQUIRE(PatternRules::diversifyPatternForStyle(0, 0, 0, f.state) == 0);   // silent base
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Pool phrasing & seeded rotation: pickPoolPattern / barsPerGrooveForSection
+// ══════════════════════════════════════════════════════════════════════════
+
+TEST_CASE("PatternRules::pickPoolPattern is deterministic per (seed, slot)", "[pattern_rules][pool]")
+{
+    const auto verse = PatternRules::sectionPatternPoolForGenre("VERSE", 0);  // {22,23,1,2}
+    REQUIRE(verse.count >= 2);
+    const int a = PatternRules::pickPoolPattern(verse, 7u, 0, -1);
+    const int b = PatternRules::pickPoolPattern(verse, 7u, 0, -1);
+    REQUIRE(a == b);
+    REQUIRE(a >= 0);
+    // Across 16 slots the rotation must visit more than one pool member
+    // (the whole point of the seeded rotation).
+    bool allSame = true;
+    const int first = PatternRules::pickPoolPattern(verse, 7u, 0, -1);
+    for (int s = 1; s < 16; ++s)
+        if (PatternRules::pickPoolPattern(verse, 7u, s, -1) != first)
+        {
+            allSame = false;
+            break;
+        }
+    REQUIRE_FALSE(allSame);
+}
+
+TEST_CASE("PatternRules::pickPoolPattern never repeats the excluded pattern", "[pattern_rules][pool]")
+{
+    const auto verse = PatternRules::sectionPatternPoolForGenre("VERSE", 0);  // {22,23,1,2}
+    // Every pick must differ from the exclude (the previously-played groove).
+    for (int slot = 0; slot < 64; ++slot)
+    {
+        const int pick = PatternRules::pickPoolPattern(verse, 3u, slot, 22);
+        REQUIRE(pick >= 0);
+        REQUIRE(pick != 22);
+    }
+    // Exclusion of a member not in the pool is harmless — the pick stays a member.
+    const int pick2 = PatternRules::pickPoolPattern(verse, 3u, 0, 999);
+    REQUIRE(pick2 >= 0);
+    REQUIRE(pick2 != 999);
+}
+
+TEST_CASE("PatternRules::pickPoolPattern handles empty and single-member pools", "[pattern_rules][pool]")
+{
+    PatternRules::SectionPatternPool empty{ 0, {} };
+    REQUIRE(PatternRules::pickPoolPattern(empty, 1u, 0, -1) == -1);
+
+    PatternRules::SectionPatternPool one{ 1, { 16, 0, 0, 0 } };
+    REQUIRE(PatternRules::pickPoolPattern(one, 1u, 0, -1) == 16);
+    REQUIRE(PatternRules::pickPoolPattern(one, 1u, 0, 16) == 16);  // only member, excluded or not
+}
+
+TEST_CASE("PatternRules::barsPerGrooveForSection phrases sections", "[pattern_rules][pool]")
+{
+    REQUIRE(PatternRules::barsPerGrooveForSection("VERSE") == 2);
+    REQUIRE(PatternRules::barsPerGrooveForSection("CHORUS") == 2);
+    REQUIRE(PatternRules::barsPerGrooveForSection("SOLO") == 2);
+    REQUIRE(PatternRules::barsPerGrooveForSection("BREAKDOWN") == 4);
+    REQUIRE(PatternRules::barsPerGrooveForSection("INTRO") == 4);
+    REQUIRE(PatternRules::barsPerGrooveForSection("OUTRO") == 4);
+    REQUIRE(PatternRules::barsPerGrooveForSection(nullptr) == 2);
+    REQUIRE(PatternRules::barsPerGrooveForSection("UNKNOWN") == 2);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Fill variety: selectFillPattern
+// ══════════════════════════════════════════════════════════════════════════
+
+TEST_CASE("PatternRules::selectFillPattern sizes the last-bar fill to energy", "[pattern_rules][fill]")
+{
+    // Mid-section build always uses the short fill.
+    REQUIRE(PatternRules::selectFillPattern(1, 0.8f, 0) == 17);
+    REQUIRE(PatternRules::selectFillPattern(2, 0.05f, 7) == 17);
+    // Quiet last bar → short fill.
+    REQUIRE(PatternRules::selectFillPattern(0, 0.05f, 0) == 17);
+    // Loud/mid last bar → the fill size varies with seed, never outside [17,19].
+    for (unsigned s = 0; s < 64; ++s)
+    {
+        const int loud = PatternRules::selectFillPattern(0, 0.8f, s);
+        REQUIRE(loud >= 18);
+        REQUIRE(loud <= 19);
+        const int mid = PatternRules::selectFillPattern(0, 0.3f, s);
+        REQUIRE(mid >= 17);
+        REQUIRE(mid <= 18);
+    }
+}
+
+TEST_CASE("PatternRules::selectFillPattern Fill Medium is reachable (was dead)", "[pattern_rules][fill]")
+{
+    bool sawMedium = false;
+    for (unsigned s = 0; s < 64; ++s)
+        if (PatternRules::selectFillPattern(0, 0.8f, s) == 18) { sawMedium = true; break; }
+    REQUIRE(sawMedium);
+    // The loud tier also reaches the big fill, and seed varies the choice.
+    bool sawBig = false;
+    for (unsigned s = 0; s < 64; ++s)
+        if (PatternRules::selectFillPattern(0, 0.8f, s) == 19) { sawBig = true; break; }
+    REQUIRE(sawBig);
+}

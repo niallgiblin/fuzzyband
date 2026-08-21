@@ -1,6 +1,7 @@
 #include "PhraseLearner.h"
 #include <cmath>
 #include <algorithm>
+#include <climits>
 
 PhraseLearner::PhraseLearner()
 {
@@ -30,9 +31,14 @@ void PhraseLearner::reset() noexcept
     rmsSmooth_ = 0.0f;
     fallCounter_ = 0;
     lastAttackSample_ = 0;
-    lastGoodPitchMidi_ = 40.0f;
+    lastGoodPitchMidi_ = 36.0f;
     lastGoodPitchValid_ = false;
     silentBlockCount_ = 0;
+    userCapturing_ = false;
+    gridCapturing_ = false;
+    gridListening_ = false;
+    gridOccupied_ = 0;
+    gridSlots_.fill({});
 }
 
 bool PhraseLearner::detectAttack(float rms) noexcept
@@ -197,28 +203,159 @@ void PhraseLearner::lockPattern(double bpm, int64_t sampleTime) noexcept
 
 int PhraseLearner::mapToBassRange(float midiNote) const noexcept
 {
-    // Simply drop octaves to get into bass range [28, 52] (E1 to E3)
-    // This preserves the exact pitch class (same note name, lower octave)
-    int bassNote = static_cast<int>(std::round(midiNote));
+    // Pitch class only — YIN on distorted guitar octave-flips constantly.
+    // Fold onto C2–B2 (MIDI 36–47), the same register StablePitchTracker uses.
+    const int rounded = static_cast<int>(std::round(midiNote));
+    const int pc = ((rounded % 12) + 12) % 12;
+    return 36 + pc;
+}
 
-    // Drop octaves until in bass range
-    while (bassNote > 52) bassNote -= 12;
-    // But don't go too low
-    while (bassNote < 28) bassNote += 12;
+int PhraseLearner::resolveBassNote(float pitchMidi, int stablePitchClassOffset) const noexcept
+{
+    if (stablePitchClassOffset != INT_MIN)
+    {
+        int off = stablePitchClassOffset;
+        if (off < 0) off = 0;
+        if (off > 11) off = 11;
+        return 36 + off;
+    }
+    return mapToBassRange(pitchMidi);
+}
 
-    return bassNote;
+float PhraseLearner::bassVelocityForRms(float rms) noexcept
+{
+    // Learned bass used to fire at 0.9 (~MIDI 114) with 90% beat gates — a
+    // wall of sound sitting on top of the drums. Sit under the kit: MIDI ~61–86.
+    float vel = 0.48f + rms * 4.0f;
+    if (vel < 0.48f) vel = 0.48f;
+    if (vel > 0.68f) vel = 0.68f;
+    return vel;
+}
+
+void PhraseLearner::beginUserCapture() noexcept
+{
+    reset();
+    userCapturing_ = true;
+}
+
+void PhraseLearner::cancelUserCapture() noexcept
+{
+    userCapturing_ = false;
+    reset();
+}
+
+bool PhraseLearner::commitUserCapture(double bpm, int64_t sampleTime) noexcept
+{
+    if (!userCapturing_ || attackCount_ < 2)
+        return false;
+
+    userCapturing_ = false;
+    patternLen_ = std::min(attackCount_, kMaxPattern);
+    lockPattern(bpm, sampleTime);
+    return locked_;
+}
+
+void PhraseLearner::beginGridCapture() noexcept
+{
+    reset();
+    userCapturing_ = true;
+    gridCapturing_ = true;
+}
+
+void PhraseLearner::beginLiveGridListen() noexcept
+{
+    reset();
+    userCapturing_ = false;
+    // Passive listen: stamp the grid as a side observation but keep the learner
+    // in normal Learning mode so auto-lock and the fallback bass still work.
+    gridCapturing_ = false;
+    gridListening_ = true;
+}
+
+void PhraseLearner::cancelLiveGridListen() noexcept
+{
+    gridListening_ = false;
+    gridOccupied_ = 0;
+    gridSlots_.fill({});
+}
+
+void PhraseLearner::stampGridRange(double beat0, double beat1, float peak, int bassMidi) noexcept
+{
+    if (!gridCapturing_ && !gridListening_)
+        return;
+    if (peak < 0.025f)
+        return;
+    if (beat1 <= beat0)
+        return;
+
+    int midi = bassMidi;
+    if (midi < 28) midi = 36;
+    if (midi > 55) midi = 36 + (((midi % 12) + 12) % 12);
+
+    constexpr double kLoop = static_cast<double>(kGridBars) * 4.0;
+    const double a = std::max(0.0, beat0);
+    const double b = std::min(kLoop, beat1);
+    if (b <= a)
+        return;
+
+    const int slot0 = std::max(0, static_cast<int>(std::floor(a * 4.0)));
+    const int slot1 = std::min(kGridSlots - 1,
+                               static_cast<int>(std::floor((b - 1.0e-9) * 4.0)));
+    for (int s = slot0; s <= slot1; ++s)
+    {
+        auto& slot = gridSlots_[static_cast<size_t>(s)];
+        if (!slot.occupied)
+        {
+            slot.occupied = true;
+            ++gridOccupied_;
+        }
+        slot.midiNote = midi;
+    }
+}
+
+bool PhraseLearner::commitGridCapture() noexcept
+{
+    if ((!gridCapturing_ && !gridListening_) || gridOccupied_ < 2)
+        return false;
+
+    patternLen_ = 0;
+    for (int s = 0; s < kGridSlots && patternLen_ < kMaxPattern; ++s)
+    {
+        const auto& slot = gridSlots_[static_cast<size_t>(s)];
+        if (!slot.occupied)
+            continue;
+        pattern_[static_cast<size_t>(patternLen_)].beatOffset =
+            static_cast<double>(s) * 0.25;
+        pattern_[static_cast<size_t>(patternLen_)].midiNote = slot.midiNote;
+        ++patternLen_;
+    }
+
+    if (patternLen_ < 2)
+        return false;
+
+    patternLenBeats_ = static_cast<double>(kGridBars) * 4.0;
+    userCapturing_ = false;
+    gridCapturing_ = false;
+    gridListening_ = false;
+    locked_ = true;
+    state_ = State::Locked;
+    playbackPhase_ = 0.0;
+    playbackStep_ = 0;
+    return true;
 }
 
 PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, float pitchMidi,
-                                                float pitchConf, float bpm, int numSamples) noexcept
+                                                float pitchConf, float bpm, int numSamples,
+                                                int stablePitchClassOffset) noexcept
 {
     BassNote result;
     result.trigger = false;
-    result.midiNote = 40;
-    result.velocity = 0.9f;
+    result.midiNote = 36;
+    result.velocity = 0.58f;
 
-    // Silence detection
-    if (rms < 0.003f)
+    // Silence detection — disabled during user capture so gaps between riff
+    // notes do not wipe the take.
+    if (rms < 0.003f && !userCapturing_)
     {
         ++silentBlockCount_;
         if (silentBlockCount_ > kSilenceResetBlocks)
@@ -252,6 +389,7 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
     // and is corrected later by the live-root retune.
     const bool attack = canAttack && detectAttack(rms);
     const float attackPitch = (pitchConf > 0.05f) ? pitchMidi : lastGoodPitchMidi_;
+    const int attackBassNote = resolveBassNote(attackPitch, stablePitchClassOffset);
 
     // Edge-triggered "following the riff": recomputed on every block.
     justMatched_ = false;
@@ -262,7 +400,7 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
 
         // Record attack
         attacks_[attackWrite_].sample = sampleTime;
-        attacks_[attackWrite_].pitch = attackPitch;
+        attacks_[attackWrite_].pitch = static_cast<float>(attackBassNote);
         attackWrite_ = (attackWrite_ + 1) % kMaxAttacks;
         if (attackCount_ < kMaxAttacks)
             ++attackCount_;
@@ -293,17 +431,14 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
         following_ = matched;
         justMatched_ = matched;
 
-        // Live riff mirror: the bass follows each detected attack as it is
-        // played while the learner is still Learning (pre-lock). Once Locked,
-        // the mirror is dropped and the learned pattern alone drives the bass —
-        // the lock captures a dense, loop-filled riff (see lockPattern), so the
-        // playback is note-for-note and the note can never be yanked by the
-        // guitarist's live pitch (P0/R1: freeze the bass note while locked).
-        if (state_ != State::Locked)
+        // Live riff mirror: follow each attack while Learning (pre-lock).
+        // Active capture is silent accompaniment — no bass until commit.
+        // Once Locked, the learned pattern alone drives the bass.
+        if (state_ != State::Locked && !userCapturing_ && !gridCapturing_)
         {
             result.trigger = true;
-            result.midiNote = mapToBassRange(attackPitch);
-            result.velocity = 0.9f;
+            result.midiNote = attackBassNote;
+            result.velocity = bassVelocityForRms(rms);
         }
     }
 
@@ -312,6 +447,11 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
     {
         case State::Learning:
         {
+            // Active grid capture records occupancy, not attack slices. Passive
+            // listen leaves auto-lock running (it stamps the grid in parallel).
+            if (userCapturing_ || gridCapturing_)
+                break;
+
             // P0/§1.4 option A: wait for more evidence, then capture the longest
             // matching slice in one shot (descending scan) so the loop-fill in
             // lockPattern has a real riff to replicate — no re-lock churn later.
@@ -365,7 +505,7 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
                 {
                     result.trigger = true;
                     result.midiNote = pattern_[playbackStep_].midiNote;
-                    result.velocity = 0.9f;
+                    result.velocity = bassVelocityForRms(rms);
                     ++playbackStep_;
                     lastTriggerSample_ = sampleTime;
                 }

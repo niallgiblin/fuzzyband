@@ -2,6 +2,49 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.26] — Follow-mode style steering, play-mode groove variety, riff-lock progress UI
+
+Implements the four "feel more alive" items from the variety audit of the rock pivot
+(see the `MUSICALITY_ROCK_PIVOT_PLAN.md` / `DATA_STRATEGY.md` A4.1/A4.3 workstreams),
+plus the riff-lock progress display.
+
+- **Style steering (A4.1 wiring).** The perception head (`classifyStyle` — palm-mute /
+  open-chord / single-note / sustain / silence) was computed and displayed but never
+  influenced selection. It now steers follow-mode grooves once a style is stable for
+  3 consecutive inference windows (~150 ms): chugging → half-time/breakdown family,
+  open chords → chorus/breakdown, single-note runs → fast/thrash, sustain → sparse.
+  The style pool is filtered to the current structure state (SOFT/LOUD) so a style
+  can never force a structurally-wrong pattern; silence and unknown styles leave the
+  model/rule selection untouched. The existing 2-bar commit hold still gates actual
+  pattern changes.
+- **Phrased pool rotation (A4.3).** Play mode no longer cycles one pattern *per bar*
+  (`bar % count`). Each groove is now held for a musical phrase — 2 bars for
+  VERSE/CHORUS/SOLO, 4 for BREAKDOWN/INTRO/OUTRO — and the rotation is **seeded per
+  section instance** (global bar count at section entry, re-seeded on section change,
+  play start, and form-loop wrap), so verse 1 ≠ verse 2 and every Play session
+  re-variates. The previously-played groove is never repeated immediately. Applies to
+  post-lock transition pools too.
+  *Implementation note:* the rotation is computed once per **phrase slot** (not per
+  block or per bar) — computing it per block made `lastPlayedPoolPattern` flip-flop
+  within a bar, so the bar-quantized change reverted the engine to per-bar cycling.
+- **Fill variety.** `selectFillPattern` now sizes the last-bar fill to the section-end
+  energy (loud → big/medium, quiet → short) and varies within the tier by the section
+  seed. Fill Medium (18) — previously unreachable — is now used.
+- **Riff-lock progress in the UI.** While a riff lock is held (recorded take or live
+  grid listen), the Groove status label now shows how many bars are done and how many
+  remain before the transition fires — "Groove: LOCKED — bar X/Y · N left before
+  transition" — via new `getLockBarCurrent()` / `getLockBarsRemaining()` /
+  `getLockBarsTotal()` published from the audio thread.
+- **Variety rationale:** Lakh priors are deliberately NOT used as runtime weights —
+  they are heavily peaked (0.0/1.0), which would collapse pools to one pattern; priors
+  remain build-time pool ordering (`orderPoolByPriors`).
+- Tests: new `pickPoolPattern` / `diversifyPatternForStyle` / `selectFillPattern` /
+  `barsPerGrooveForSection` unit tests, a processor integration test proving play
+  mode phrases grooves into 2-bar holds, re-seeds per section instance, and fills
+  the last bar, and riff-lock progress assertions in the record + grid-listen tests.
+
+- v0.9.26 (versioned build per workflow).
+
 ## Data Improvement P3 — honest data foundation (training only, no plugin build)
 
 Implements `docs/DATA_STRATEGY.md` Phase 3 (§5). Training/tooling only — no C++

@@ -55,6 +55,19 @@ public:
     void setPatternIndex(int index);
     void setStructureSilent(bool silent);
 
+    /**
+     * @brief Replace pattern drums/bass with a metronome: kick on beat 1,
+     *        side-stick on 2/3/4. Used while recording a riff.
+     */
+    void setClickTrack(bool on) noexcept { clickTrack_ = on; }
+    bool isClickTrack() const noexcept { return clickTrack_; }
+
+    /**
+     * @brief The host-clock sample this block will use (frozen-transport aware).
+     *        Matches the clock @ref process will apply; call before process().
+     */
+    int64_t previewResolvedHostSample(int64_t hostSamplePosition, int numSamples) const noexcept;
+
     /** @brief Drops deferred pattern changes; the host grid is authoritative, so no beat reset occurs. */
     void snapToBarStart();
 
@@ -174,6 +187,13 @@ private:
                       int64_t hostSamplePosition,
                       int sampleOffset) noexcept;
 
+    /** Metronome: kick on 1, side-stick on 2/3/4. */
+    void emitClickTrack(juce::MidiBuffer& midi,
+                        int numSamples,
+                        double beatStart,
+                        double beatEnd,
+                        int64_t hostSamplePosition) noexcept;
+
     /** @brief Bounded gaussian around a mean; clamps to ±2.5 sigma (A2.4). */
     static float boundedGaussian(juce::Random& r, float mean, float sigma) noexcept;
 
@@ -198,6 +218,10 @@ private:
 
     bool structureSilent = false;
     bool wasSilent = false;
+    bool clickTrack_ = false;
+    bool wasClickTrack_ = false;
+    int64_t clickNoteOffSample = -1;
+    int clickNoteOffNote = 37;
 
     int bassSemitoneOffset = 0;
 
@@ -231,6 +255,8 @@ private:
 
     static constexpr int kDrumChannel = 10;
     static constexpr int kCrashNote = 49;
+    static constexpr int kClickKickNote = 36;
+    static constexpr int kClickStickNote = 37;
     static constexpr int kPatternBassRoot = 36;  // library-authored bass root (C2)
     static constexpr double kBassGate = 0.85;    // note gate (85% of written duration)
 };

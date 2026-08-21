@@ -3,6 +3,7 @@
 #include <set>
 #include <vector>
 #include <utility>
+#include <algorithm>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "midi/MidiPatternLibrary.h"
 #include "midi/PatternPlayer.h"
@@ -574,4 +575,45 @@ TEST_CASE("A3.1: chorus renders louder than verse for the same pattern", "[midi]
     const int chorusMax = maxDrumVel(Groove::SongSectionId::Chorus, 5);
     REQUIRE(verseMax > 0);
     REQUIRE(chorusMax > verseMax + 5);
+}
+
+TEST_CASE("PatternPlayer click track: kick on 1, side-stick on 2/3/4, no pattern drums", "[midi][click]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.snapBpm(120.0f);
+    player.setPatternIndex(1);
+    player.setStructureSilent(false);
+    player.setClickTrack(true);
+
+    juce::MidiBuffer acc;
+    constexpr int block = 512;
+    constexpr int64_t barSamples = 96000;  // 1 bar at 120 BPM / 48 kHz
+    for (int64_t pos = 0; pos < barSamples; pos += block)
+    {
+        juce::MidiBuffer midi;
+        const int n = static_cast<int>(std::min<int64_t>(block, barSamples - pos));
+        player.process(midi, n, pos);
+        acc.addEvents(midi, 0, -1, 0);
+    }
+
+    int kicks = 0, sticks = 0, snares = 0, hats = 0;
+    for (const auto meta : acc)
+    {
+        const auto msg = meta.getMessage();
+        if (!msg.isNoteOn() || msg.getChannel() != 10)
+            continue;
+        const int note = msg.getNoteNumber();
+        if (note == 36) ++kicks;
+        else if (note == 37) ++sticks;
+        else if (note == 38) ++snares;
+        else if (note == 42) ++hats;
+    }
+
+    REQUIRE(kicks == 1);
+    REQUIRE(sticks == 3);
+    REQUIRE(snares == 0);
+    REQUIRE(hats == 0);
 }

@@ -40,6 +40,13 @@ public:
                int numSamples, double sampleRate,
                bool isSilent) noexcept;
 
+    /**
+     * @brief Last held pitch-class offset in [0, 11] (0 = C), or INT_MIN if none.
+     *        Safe to read on the audio thread after update(); does not require
+     *        this block's stability window to have elapsed.
+     */
+    int getLastPitchClassOffset() const noexcept;
+
 private:
     static constexpr int   kBassRootPc         = 0;  // C = MIDI 36 % 12 (drop C)
 

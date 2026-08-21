@@ -26,6 +26,10 @@ void PatternPlayer::reset()
     bassNoteOffMidi = 40;
     bassNoteOffSample = -1;
     crashNoteOffSample = -1;
+    clickNoteOffSample = -1;
+    clickNoteOffNote = kClickStickNote;
+    clickTrack_ = false;
+    wasClickTrack_ = false;
     armCrashPending = false;
     phraseLearnerActive_ = false;
     pendingLearnedNote_ = false;
@@ -103,6 +107,54 @@ void PatternPlayer::setPatternIndex(int index)
 void PatternPlayer::setStructureSilent(bool silent)
 {
     structureSilent = silent;
+}
+
+int64_t PatternPlayer::previewResolvedHostSample(int64_t hostSamplePosition, int numSamples) const noexcept
+{
+    if (hostSamplePosition == lastHostSample)
+        return sampleCounter + static_cast<int64_t>(numSamples);
+    return hostSamplePosition;
+}
+
+void PatternPlayer::emitClickTrack(juce::MidiBuffer& midi,
+                                   int numSamples,
+                                   double beatStart,
+                                   double beatEnd,
+                                   int64_t hostSamplePosition) noexcept
+{
+    const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
+    const int durSamps = juce::jmax(1, static_cast<int>(std::round(0.12 * samplesPerBeat)));
+
+    if (clickNoteOffSample >= 0 && clickNoteOffSample < hostSamplePosition + numSamples)
+    {
+        const int off = juce::jlimit(0, numSamples - 1,
+                                     static_cast<int>(clickNoteOffSample - hostSamplePosition));
+        midi.addEvent(juce::MidiMessage::noteOff(kDrumChannel, clickNoteOffNote), off);
+        clickNoteOffSample = -1;
+    }
+
+    for (double t = std::ceil(beatStart - 1.0e-12); t < beatEnd - 1.0e-12; t += 1.0)
+    {
+        int beatInBar = static_cast<int>(std::floor(t + 1.0e-9)) % 4;
+        if (beatInBar < 0)
+            beatInBar += 4;
+
+        const int note = (beatInBar == 0) ? kClickKickNote : kClickStickNote;
+        const juce::uint8 vel = (beatInBar == 0) ? static_cast<juce::uint8>(110)
+                                                 : static_cast<juce::uint8>(85);
+        const int onOff = juce::jlimit(0, numSamples - 1,
+            static_cast<int>(std::round((t - beatStart) * samplesPerBeat)));
+
+        if (clickNoteOffSample >= 0)
+        {
+            midi.addEvent(juce::MidiMessage::noteOff(kDrumChannel, clickNoteOffNote), onOff);
+            clickNoteOffSample = -1;
+        }
+
+        midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, note, vel), onOff);
+        clickNoteOffNote = note;
+        clickNoteOffSample = hostSamplePosition + onOff + durSamps;
+    }
 }
 
 void PatternPlayer::snapToBarStart()
@@ -556,12 +608,13 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         crashNoteOffSample = -1;
         pendingLearnedNote_ = false;
         armCrashPending = false;
+        clickNoteOffSample = -1;
     }
     expectedHostSample = hostSamplePosition + static_cast<int64_t>(numSamples);
     sampleCounter = hostSamplePosition;
 
     // Silence: cut all notes and clear deferred state.
-    if (structureSilent)
+    if (structureSilent && !clickTrack_)
     {
         if (!wasSilent)
             for (int ch = 1; ch <= 16; ++ch)
@@ -569,10 +622,26 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         wasSilent = true;
         bassNoteOffSample = -1;
         crashNoteOffSample = -1;
+        clickNoteOffSample = -1;
+        wasClickTrack_ = false;
         return;
     }
 
+    if (wasClickTrack_ && !clickTrack_)
+    {
+        midi.addEvent(juce::MidiMessage::noteOff(kDrumChannel, kClickKickNote), 0);
+        midi.addEvent(juce::MidiMessage::noteOff(kDrumChannel, kClickStickNote), 0);
+        clickNoteOffSample = -1;
+    }
+    wasClickTrack_ = clickTrack_;
+
     wasSilent = false;
+
+    if (clickTrack_)
+    {
+        emitClickTrack(midi, numSamples, beatStart, beatEnd, hostSamplePosition);
+        return;
+    }
 
     // Deferred crash note-off from a previous block.
     if (crashNoteOffSample >= 0 && crashNoteOffSample < hostSamplePosition + numSamples)

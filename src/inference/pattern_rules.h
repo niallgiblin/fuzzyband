@@ -321,11 +321,236 @@ inline SectionPatternPool stylePatternPool(int styleIndex) noexcept
 
 /**
  * @brief Select a fill pattern index based on transition type.
+ *
+ * Last-bar fills are sized to the section-end energy (loud → big/medium,
+ * quiet → short) and varied within the tier by @p seed, so a repeated section
+ * never plays the identical fill twice. Fill Medium (18) — previously dead —
+ * is now reachable. Mid-section calls (barsRemaining > 0) stay on the short
+ * fill as a subtle build.
+ *
+ * @param barsRemaining bars until the section end (0 = last bar)
+ * @param rmsEnergy     current input RMS (0..1)
+ * @param seed          per-section-instance seed for within-tier variety
  */
-inline int selectFillPattern(int barsRemaining) noexcept
+inline int selectFillPattern(int barsRemaining, float rmsEnergy = 1.0f, unsigned seed = 0) noexcept
 {
-    if (barsRemaining <= 0) return 19;  // Big fill on last bar
-    return 17;                          // Short fill otherwise
+    if (barsRemaining > 0) return 17;                 // mid-section build: short fill
+    if (rmsEnergy >= 0.45f) return (seed & 1u) ? 19 : 18;  // loud end → big or medium
+    if (rmsEnergy >= 0.20f) return (seed & 1u) ? 18 : 17;  // mid end  → medium or short
+    return 17;                                               // quiet end → short
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Pool phrasing & seeded rotation (variety): hold each groove for a musical
+// phrase (2-4 bars), seed the rotation per section *instance* so verse 1 and
+// verse 2 diverge, and exclude the immediately-previous groove. All
+// deterministic, allocation-free, audio-thread safe (≤4 pool members).
+// ══════════════════════════════════════════════════════════════════════════
+
+/** @brief SplitMix32-style avalanche of (seed, slot) — good low-bit diffusion
+ *  so even seed 0 spreads pool members. Deterministic per (seed, slot). */
+inline unsigned hashMix(unsigned a, unsigned b) noexcept
+{
+    unsigned h = a * 0x9E3779B1u + b;
+    h ^= h >> 16;
+    h *= 0x7FEB352Du;
+    h ^= h >> 15;
+    h *= 0x846CA68Bu;
+    h ^= h >> 16;
+    return h;
+}
+
+/**
+ * @brief How many bars one groove is held before rotating (phrasing, A4.3).
+ * Breakdown/Intro/Outro hold longer (4 bars); VERSE/CHORUS/SOLO move every 2.
+ */
+inline int barsPerGrooveForSection(const char* sectionName) noexcept
+{
+    if (sectionName == nullptr) return 2;
+    if (std::strcmp(sectionName, "BREAKDOWN") == 0) return 4;
+    if (std::strcmp(sectionName, "INTRO") == 0)     return 4;
+    if (std::strcmp(sectionName, "OUTRO") == 0)     return 4;
+    return 2;  // VERSE / CHORUS / SOLO / default
+}
+
+/**
+ * @brief Pick one pattern from a section pool for a groove slot.
+ *
+ * Uniform seed-hashed pick (NOT prior-weighted: the Lakh priors are heavily
+ * peaked — many 0.0 / 1.0 weights — so weighting would collapse a pool to a
+ * single pattern, killing variety; priors stay as build-time pool *ordering*).
+ * The pick is deterministic per (seed, grooveSlot) — a section instance plays
+ * the same phrases on every repeat — and `excludeIndex` (the previously played
+ * groove) is never picked again, so consecutive phrases always differ.
+ *
+ * @param pool         the section's pattern pool (≤4 members)
+ * @param seed         per-section-instance seed (e.g. global bar at entry)
+ * @param grooveSlot   phrase index within the section (bar / barsPerGroove)
+ * @param excludeIndex pattern played in the previous phrase (-1 = none)
+ * @return picked pattern index, or -1 if the pool is empty
+ */
+inline int pickPoolPattern(const SectionPatternPool& pool, unsigned seed,
+                           int grooveSlot, int excludeIndex) noexcept
+{
+    if (pool.count <= 0) return -1;
+    if (pool.count == 1) return pool.indices[0];
+
+    const unsigned h = hashMix(seed, static_cast<unsigned>(grooveSlot));
+    const int chosen = pool.indices[static_cast<int>(h % static_cast<unsigned>(pool.count))];
+
+    if (chosen != excludeIndex)
+        return chosen;
+
+    // Avoid an immediate repeat: step forward to the next member != exclude.
+    int pos = 0;
+    for (int i = 0; i < pool.count; ++i)
+        if (pool.indices[i] == chosen) { pos = i; break; }
+    for (int s = 1; s < pool.count; ++s)
+    {
+        const int cand = pool.indices[(pos + s) % pool.count];
+        if (cand != excludeIndex) return cand;
+    }
+    return chosen;  // pool of one distinct pattern
+}
+
+/**
+ * @brief A4.1: route the selection through the playing-style pool when the
+ * perception head has classified a stable articulation.
+ *
+ * stylePatternPool maps style → groove family: palm-mute chugs → half-time /
+ * breakdown, open chords → chorus / breakdown, single-note runs → fast / thrash,
+ * sustain → sparse. The style pool is filtered to the current structure state
+ * (SOFT/LOUD) so a style can never force a structurally-wrong pattern, rotated
+ * by bar phase for variety. Silence, unknown styles and empty/state-filtered
+ * pools leave the base selection untouched.
+ *
+ * @param base       the (genre-diversified) selection before style steering
+ * @param styleIndex perception class 0..4 (4 = silence)
+ * @param barMod8    bar phase in [0,7] for pool rotation
+ * @param state      current structure state (state-compat filter)
+ * @return style-steered pattern index, or @p base when no steering applies
+ */
+inline int diversifyPatternForStyle(int base, int styleIndex, int barMod8, StructureState state) noexcept
+{
+    if (base == 0 || styleIndex < 0 || styleIndex > 3) return base;
+
+    const SectionPatternPool pool = stylePatternPool(styleIndex);
+    if (pool.count <= 0) return base;
+
+    int compat[4];
+    int n = 0;
+    for (int i = 0; i < pool.count && n < 4; ++i)
+        if (isPatternCompatibleWithState(pool.indices[i], state))
+            compat[n++] = pool.indices[i];
+    if (n == 0) return base;
+
+    const int idx = barMod8 % n;
+    return compat[idx];
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Post-lock transition grammar (A5.2): which section follows a groove-lock
+// expiry, and which follows that. Deterministic, data-informed (Lakh priors).
+// ══════════════════════════════════════════════════════════════════════════
+
+/** @brief One decision in the transition grammar: a target section + its pool. */
+struct TransitionSection
+{
+    const char* name = "VERSE";
+    SectionPatternPool pool{};
+};
+
+/**
+ * @brief The section family a pattern index belongs to (for contrast routing).
+ * Determined by pool membership (first section whose pool contains it).
+ */
+inline const char* sectionFamilyOfPattern(int patternIndex, int genreId) noexcept
+{
+    // Check in musical-energy order so ambiguous patterns (e.g. 4 = chorus-mid
+    // AND solo-open) resolve to their most structural home first.
+    const char* sections[] = { "CHORUS", "BREAKDOWN", "VERSE", "SOLO", "INTRO", "OUTRO" };
+    for (const char* name : sections)
+    {
+        auto pool = sectionPatternPoolForGenre(name, genreId);
+        for (int i = 0; i < pool.count; ++i)
+            if (pool.indices[i] == patternIndex)
+                return name;
+    }
+    return "VERSE"; // default family for unknown indices
+}
+
+/**
+ * @brief Data-derived popularity of a section pool for the genre (sum of priors).
+ */
+inline float sectionPoolPopularity(const char* sectionName, int genreId) noexcept
+{
+    auto pool = sectionPatternPoolForGenre(sectionName, genreId);
+    float total = 0.0f;
+    for (int i = 0; i < pool.count; ++i)
+        total += priorWeight(pool.indices[i], genreId);
+    return total;
+}
+
+/**
+ * @brief Pick the next section after a groove lock expires.
+ *
+ * The locked riff's pattern maps to a *family* (VERSE/CHORUS/BREAKDOWN/…). The
+ * next section must be a **contrast** — never the same family as the riff, and
+ * not the section that was just played (so A→B→A→C cycles don't repeat B).
+ * Among candidates, the most data-derived popular pool for the genre wins
+ * (Lakh priors, C2). Deterministic, no allocation, audio-thread safe.
+ *
+ * @param lockedPatternIndex the pattern that was frozen by the lock
+ * @param genreId            genre preset id (for priors + genre pools)
+ * @param avoidSection       section to avoid ("", or a section name to skip)
+ * @return the chosen TransitionSection (name + ordered pool)
+ */
+inline TransitionSection pickNextSectionAfterLock(int lockedPatternIndex, int genreId,
+                                                  const char* avoidSection) noexcept
+{
+    const char* family = sectionFamilyOfPattern(lockedPatternIndex, genreId);
+
+    // Contrast ladder: families ordered by musical energy, skipping the riff's
+    // own family. We score candidates by Lakh popularity and pick the winner.
+    const char* ladder[] = { "VERSE", "CHORUS", "BREAKDOWN", "SOLO", "INTRO", "OUTRO" };
+    const char* best = nullptr;
+    float bestScore = -1.0f;
+
+    for (const char* name : ladder)
+    {
+        if (std::strcmp(name, family) == 0)
+            continue;                       // never repeat the riff's own feel
+        if (avoidSection != nullptr && avoidSection[0] != '\0'
+            && std::strcmp(name, avoidSection) == 0)
+            continue;                       // never immediately repeat the last section
+
+        const float score = sectionPoolPopularity(name, genreId);
+        if (score > bestScore)
+        {
+            bestScore = score;
+            best = name;
+        }
+    }
+
+    // Last-resort fallback: any section that is not the riff's own family.
+    if (best == nullptr)
+    {
+        for (const char* name : ladder)
+        {
+            if (std::strcmp(name, family) != 0)
+            {
+                best = name;
+                break;
+            }
+        }
+    }
+    if (best == nullptr)
+        best = "VERSE";
+
+    TransitionSection ts;
+    ts.name = best;
+    ts.pool = orderedSectionPatternPoolForGenre(best, genreId);
+    return ts;
 }
 
 } // namespace PatternRules

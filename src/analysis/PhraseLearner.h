@@ -12,6 +12,7 @@
  */
 
 #include <array>
+#include <climits>
 #include <cstdint>
 
 class PhraseLearner
@@ -20,8 +21,8 @@ public:
     struct BassNote
     {
         bool trigger = false;     // Should emit a note this block?
-        int midiNote = 40;        // Which note (bass range)
-        float velocity = 0.9f;
+        int midiNote = 36;        // Which note (C2–B2 bass register)
+        float velocity = 0.58f;   // MIDI ~74; 0.9 was a wall of sound
     };
 
     PhraseLearner();
@@ -37,10 +38,77 @@ public:
      * @param pitchConf     Pitch confidence [0,1]
      * @param bpm           Current BPM
      * @param numSamples    Block size
+     * @param stablePitchClassOffset  Pitch-class offset from C in [0,11], or
+     *        INT_MIN if the tracker has no held class. Preferred over raw YIN
+     *        MIDI (which octave-flips on distorted guitar).
      * @return BassNote with trigger=true if bass should play this block
      */
     BassNote process(int64_t sampleTime, float rms, float pitchMidi, float pitchConf,
-                     float bpm, int numSamples) noexcept;
+                     float bpm, int numSamples,
+                     int stablePitchClassOffset = INT_MIN) noexcept;
+
+    /**
+     * @brief User-armed capture: reset and record every attack until
+     *        @ref commitUserCapture. No auto-lock, no live bass mirror.
+     */
+    void beginUserCapture() noexcept;
+
+    /** @brief True between @ref beginUserCapture / @ref beginGridCapture and commit/cancel. */
+    bool isUserCapturing() const noexcept { return userCapturing_; }
+
+    /**
+     * @brief Lock the entire recorded attack sequence as the bass riff.
+     *        Returns false if fewer than 2 attacks were captured.
+     */
+    bool commitUserCapture(double bpm, int64_t sampleTime) noexcept;
+
+    /** @brief Abort a capture without locking. */
+    void cancelUserCapture() noexcept;
+
+    static constexpr int kGridBars = 4;
+    static constexpr int kGridSlotsPerBar = 16;
+    static constexpr int kGridSlots = kGridBars * kGridSlotsPerBar;  // 64 sixteenths
+
+    /**
+     * @brief Arm a metronome-locked piano-roll capture: 4 bars of 16th slots.
+     *        Occupancy is stamped with @ref stampGridRange; attacks are ignored.
+     */
+    void beginGridCapture() noexcept;
+
+    /**
+     * @brief Arm a 4-bar 16th-grid listen in follow mode (drums keep playing).
+     *        Same occupancy capture as Record riff, aligned to the drum clock.
+     */
+    void beginLiveGridListen() noexcept;
+
+    /** @brief Abort a passive grid listen without touching capture state. */
+    void cancelLiveGridListen() noexcept;
+
+    bool isGridCapturing() const noexcept { return gridCapturing_; }
+
+    /** @brief True during follow-mode grid LISTEN (passive). Unlike active
+     *         capture, listening does NOT disable auto-lock or the fallback
+     *         bass — it only stamps the grid as a side observation. */
+    bool isGridListening() const noexcept { return gridListening_; }
+
+    /** @brief True while any grid take (record or listen) is armed. */
+    bool isGridTakeActive() const noexcept { return gridCapturing_ || gridListening_; }
+
+    /**
+     * @brief Mark 16th slots in [@p beat0, @p beat1) occupied when @p peak is
+     *        above the guitar-playing floor. Beats are relative to riff start
+     *        (0 = bar 1 beat 1, 16 = end of bar 4).
+     */
+    void stampGridRange(double beat0, double beat1, float peak, int bassMidi) noexcept;
+
+    /**
+     * @brief Lock occupied 16th slots as a 4-bar (16-beat) bass loop.
+     *        Returns false if fewer than 2 slots were occupied.
+     */
+    bool commitGridCapture() noexcept;
+
+    /** @brief Occupied 16th slots in the current grid take (0 if not capturing). */
+    int getGridOccupiedCount() const noexcept { return gridOccupied_; }
 
     /** True when pattern is locked and bass is actively playing. */
     bool isLocked() const noexcept { return state_ == State::Locked; }
@@ -123,6 +191,8 @@ private:
     bool patternsMatch(int len, double bpm) const noexcept;
     void lockPattern(double bpm, int64_t sampleTime) noexcept;
     int mapToBassRange(float midiNote) const noexcept;
+    int resolveBassNote(float pitchMidi, int stablePitchClassOffset) const noexcept;
+    static float bassVelocityForRms(float rms) noexcept;
 
     double sampleRate_ = 48000.0;
     State state_ = State::Learning;
@@ -138,7 +208,7 @@ private:
     int attackCount_ = 0;
 
     // Learned pattern
-    static constexpr int kMaxPattern = 32;
+    static constexpr int kMaxPattern = 64;
     struct PatternNote {
         double beatOffset = 0.0;   // Offset from pattern start in beats
         int midiNote = 40;         // Bass MIDI note
@@ -154,6 +224,15 @@ private:
     int64_t lastTriggerSample_ = 0;
 
     // Groove-lock state (set by the processor; see setHoldActive)
+    bool userCapturing_ = false;    // User-armed whole-riff capture (no auto-lock)
+    bool gridCapturing_ = false;    // Active metronome-locked 16th-grid take (Record riff)
+    bool gridListening_ = false;    // Passive follow-mode grid listen (side observation)
+    struct GridSlot {
+        bool occupied = false;
+        int midiNote = 36;
+    };
+    std::array<GridSlot, kGridSlots> gridSlots_{};
+    int gridOccupied_ = 0;
     bool holdActive_ = false;       // Suppresses drift-unlock (bass keeps the riff)
     bool following_ = false;        // Last attack matched the learned riff's grid
     bool justMatched_ = false;      // Edge: matched on the current block
@@ -170,7 +249,7 @@ private:
     // loud/quiet transitions (the analysis ring mixes loud + quiet samples) —
     // exactly when note attacks fire. Holding the last good pitch lets those
     // attacks still be recorded with a sensible note instead of being dropped.
-    float lastGoodPitchMidi_ = 40.0f;
+    float lastGoodPitchMidi_ = 36.0f;
     bool  lastGoodPitchValid_ = false;
 
     // Silence detection - longer threshold to avoid premature reset

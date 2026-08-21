@@ -19,6 +19,7 @@
 #include "analysis/PhraseLearner.h"
 #include "analysis/FeatureVector.h"
 #include "inference/IInference.h"
+#include "inference/pattern_rules.h"
 #include "midi/MidiPatternLibrary.h"
 #include "midi/PatternPlayer.h"
 #include "readerwriterqueue.h"
@@ -93,6 +94,52 @@ public:
      */
     bool isGrooveLocked() const noexcept { return grooveLocked.load(std::memory_order_relaxed); }
 
+    /** @brief 1-based current bar within the riff-lock hold (0 = not locked). */
+    int getLockBarCurrent() const noexcept { return lockBarCurrent.load(std::memory_order_relaxed); }
+    /** @brief Bars left in the riff-lock hold before the transition (0 = not locked). */
+    int getLockBarsRemaining() const noexcept { return lockBarsRemaining.load(std::memory_order_relaxed); }
+    /** @brief Total bars in the current riff-lock hold (0 = not locked). */
+    int getLockBarsTotal() const noexcept { return lockBarsTotal.load(std::memory_order_relaxed); }
+
+    /** @brief Follow-mode: arm a user riff capture (message thread). Audio thread consumes. */
+    void requestRiffCaptureStart() noexcept { riffCaptureStart.store(true, std::memory_order_release); }
+    /** @brief Follow-mode: commit the captured riff and start the lock (message thread). */
+    void requestRiffCaptureStop() noexcept { riffCaptureStop.store(true, std::memory_order_release); }
+    /** @brief Clear the learned/recorded riff and return to follow (message thread). */
+    void requestRiffForget() noexcept { riffForget.store(true, std::memory_order_release); }
+    bool isRiffCapturing() const noexcept { return riffCaptureActive.load(std::memory_order_relaxed); }
+    int getRiffCaptureNoteCount() const noexcept { return riffCaptureNoteCount.load(std::memory_order_relaxed); }
+    /** @brief 0 = count-in (or waiting for bar), 1–4 = recording bar. */
+    int getRiffCaptureBar() const noexcept { return riffCaptureBar.load(std::memory_order_relaxed); }
+    bool isLiveGridListening() const noexcept { return liveListenActive.load(std::memory_order_relaxed); }
+    int getLiveListenBar() const noexcept { return liveListenBar.load(std::memory_order_relaxed); }
+    int getLiveListenNoteCount() const noexcept { return liveListenNotes.load(std::memory_order_relaxed); }
+    bool hasLearnedRiff() const noexcept { return riffHeld.load(std::memory_order_relaxed); }
+
+    // ── Post-lock transition grammar (A5.2) ──────────────────────────────────
+    // After a groove lock expires, the engine plays a *contrast* section for a
+    // few bars before returning to the riff / follow. UI reads these atomics.
+
+    /** @brief True while a post-lock transition section is playing (drums on the section pool). */
+    bool isTransitionSectionActive() const noexcept { return transitionSectionActive.load(std::memory_order_relaxed); }
+    /** @brief Name of the current transition section ("CHORUS", "BREAKDOWN", …). */
+    const char* getTransitionSectionName() const noexcept { return transitionSectionName.load(std::memory_order_relaxed); }
+    /** @brief Bars remaining in the current transition section hold. */
+    int getTransitionBarsRemaining() const noexcept { return transitionBarsRemaining.load(std::memory_order_relaxed); }
+    /** @brief Total bars in the current transition section hold. */
+    int getTransitionBarsTotal() const noexcept { return transitionBarsTotal.load(std::memory_order_relaxed); }
+    /** @brief How many distinct transition sections have been visited since the lock released (1 = B, 2 = C, …). */
+    int getTransitionSectionNumber() const noexcept { return transitionSectionNumber.load(std::memory_order_relaxed); }
+
+    // ── Display scope: rolling input waveform + playhead (DAW-style) ─────────
+    static constexpr int kScopeSize = 2048;  // ring of decimated input samples
+    /** @brief Copy of the most recent decimated input samples for UI drawing. */
+    void copyScopeSamples(float* out, int maxCount) const noexcept;
+    /** @brief Number of samples currently in the scope ring (0..kScopeSize). */
+    int getScopeCount() const noexcept { return scopeWriteIndex.load(std::memory_order_relaxed) % kScopeSize; }
+    /** @brief Playhead position in [0,1) within the current bar (UI). */
+    float getPlayheadFraction() const noexcept { return playheadFraction.load(std::memory_order_relaxed); }
+
     // Phase 23 rejection signal: written by message thread (Phase 24 button), read/decremented by inference thread.
     std::atomic<int> patternRejectionCount{ 0 };
 
@@ -105,6 +152,9 @@ public:
      *        persisted with the session (Phase 2).
      */
     void setCustomSongForm(const juce::String& serialized);
+
+    /** @brief Persisted custom form string, or empty if none. Message thread. */
+    juce::String getCustomSongForm();
 
     /** @brief Test-only: stop the background thread from draining @a featureQueue (integration tests). */
     void pauseBackgroundInferenceForTests();
@@ -171,9 +221,83 @@ private:
     std::atomic<bool> grooveLocked{ false };
     bool grooveLockActive = false;     // audio-thread lock state
     int64_t grooveLockEndSample = -1;  // hold ends here (hostSampleTime frame)
+    int64_t grooveLockStartSample = -1; // hold began here (hostSampleTime frame)
     int64_t lastRiffMatchSample = std::numeric_limits<int64_t>::min() / 2;  // last riff-grid attack
     bool prevPhraseLocked = false;     // phrase-lock edge detection
     bool grooveLockReleaseArmed = false;  // P0/R4: arm a transition fill at lock expiry
+
+    // ── Riff-lock hold progress (audio thread → UI) ───────────────────────────
+    // While a riff lock is held (recorded take or live grid listen), the UI
+    // shows "bar X of Y, N left" so the guitarist knows when the transition
+    // fires. All values 0 when not locked.
+    std::atomic<int> lockBarCurrent{ 0 };    // 1-based current bar in the hold
+    std::atomic<int> lockBarsRemaining{ 0 }; // bars left before the transition
+    std::atomic<int> lockBarsTotal{ 0 };     // total bars in the hold
+
+    std::atomic<bool> riffCaptureStart{ false };   // message → audio: begin capture
+    std::atomic<bool> riffCaptureStop{ false };    // message → audio: commit/cancel capture
+    std::atomic<bool> riffForget{ false };         // message → audio: wipe learned riff
+    std::atomic<bool> riffCaptureActive{ false };  // audio → UI
+    std::atomic<int> riffCaptureNoteCount{ 0 };    // occupied 16th slots → UI
+    std::atomic<int> riffCaptureBar{ 0 };          // 0=count-in, 1–4=recording bar
+    std::atomic<bool> liveListenActive{ false };   // follow-mode grid listen → UI
+    std::atomic<int> liveListenBar{ 0 };
+    std::atomic<int> liveListenNotes{ 0 };
+    std::atomic<bool> riffHeld{ false };           // phraseLearner.isLocked() → UI
+
+    enum class RiffCapturePhase { Idle, WaitBar, CountIn, Recording };
+    RiffCapturePhase riffCapturePhase = RiffCapturePhase::Idle;
+    double riffCountInStartBeat = 0.0;
+
+    enum class LiveGridPhase { Idle, WaitBar, Filling };
+    LiveGridPhase liveGridPhase = LiveGridPhase::Idle;
+    double liveGridStartBeat = 0.0;
+
+    // ── Post-lock transition grammar (A5.2): audio-thread state ──────────────
+    // When a groove lock expires, instead of releasing straight back to the
+    // listener, the engine holds a *contrast* section (pickNextSectionAfterLock)
+    // for `transitionBars` bars, then returns to the riff/follow. The section
+    // number counts B, C, … so the UI can show which transition we are in.
+    enum class PostLockPhase { Idle, TransitionHold };
+    PostLockPhase postLockPhase = PostLockPhase::Idle;
+    int64_t transitionEndSample = -1;       // hostSampleTime when the hold ends
+    int64_t transitionStartSample = -1;     // hostSampleTime when the hold began (pool rotation)
+    PatternRules::SectionPatternPool transitionPool{};  // patterns to rotate during hold
+    const char* transitionSectionNameStr = "VERSE";
+    int transitionSectionNumberLocal = 0;   // audio-thread section counter
+    int transitionBarsTotalLocal = 0;       // hold length in bars (from APVTS)
+    std::atomic<bool> transitionSectionActive{ false };
+    std::atomic<const char*> transitionSectionName{ "VERSE" };
+    std::atomic<int> transitionBarsRemaining{ 0 };
+    std::atomic<int> transitionBarsTotal{ 0 };
+    std::atomic<int> transitionSectionNumber{ 0 };
+
+    // ── Pool phrasing & seeded rotation (variety): audio-thread state ────────
+    // Each section instance seeds its pool rotation from the global bar count
+    // at entry, holds each groove for barsPerGrooveForSection bars, and never
+    // repeats the immediately-previous groove. Reseeded on section change and
+    // on play start, so verse 1 ≠ verse 2 and every Play session re-variates.
+    int lastSectionIndex = -1;      // section we last seeded for
+    int sectionEntryBar = 0;        // global bar count at current section entry
+    bool wasPlayOn = false;         // play-start edge detection (re-seed)
+    int lastSeenBarsElapsed = -1;   // loop/restart edge detection (re-seed on wrap)
+    int lastPlayedPoolPattern = -1; // immediate-repeat exclusion (play + post-lock)
+    int lastRotationSlot = -1;      // phrase slot the rotation was last computed for
+    int cachedPoolPick = -1;        // the rotation's pick for lastRotationSlot
+    int lastTransitionSlot = -1;    // post-lock hold slot the rotation was computed for
+    int cachedTransitionPick = -1;  // the post-lock rotation's pick
+
+    // ── Style steering (perception layer): inference-thread state ────────────
+    // The style head (classifyStyle) steers follow-mode selection only after a
+    // style has been stable for kStyleStableWindows consecutive windows; the
+    // 2-bar commit hold does the rest of the smoothing.
+    int lastStyleIndex = 4;         // 4 = silence
+    int styleStabilityCount = 0;    // consecutive windows of the same style
+
+    // ── Display scope (audio thread → UI) ────────────────────────────────────
+    std::array<float, kScopeSize> scopeSamples{};      // rolling decimated input
+    std::atomic<int> scopeWriteIndex{ 0 };
+    std::atomic<float> playheadFraction{ 0.0f };       // position within current bar
 
     // Phase 2: editable/persistent song form. The message thread parses the
     // serialized form into a shared SongForm and bumps `songFormVersion`; the

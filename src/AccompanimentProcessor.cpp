@@ -24,6 +24,10 @@ std::unique_ptr<IInference> makeInference()
     return std::make_unique<RuleBasedInference>();
 }
 
+/** @brief Consecutive same-style windows required before style steering engages
+ *  (~150 ms at the ~50 Hz drain). The 2-bar commit hold does the real smoothing. */
+constexpr int kStyleStableWindows = 3;
+
 PatternPlayer::TransitionFillKind chooseTransitionFillKind(StructureState from,
                                                            StructureState to,
                                                            int targetPatternIndex,
@@ -115,6 +119,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::crea
         "Groove lock (bars)",
         4, 64, 16));
 
+    // Post-lock transition grammar (A5.2): how long each transition section
+    // holds, and how many distinct sections to visit before returning to follow.
+    layout.add(std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID{ "transitionBars", 1 },
+        "Transition (bars)",
+        2, 32, 8));
+    layout.add(std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID{ "transitionSections", 1 },
+        "Transition sections",
+        1, 4, 2));
+
     return layout;
 }
 
@@ -160,6 +175,30 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     lastCommittedStructureState = StructureState::SILENT;
     playbackGate.reset();
     prevBlockRms = 0.0f;
+    riffCapturePhase = RiffCapturePhase::Idle;
+    riffCountInStartBeat = 0.0;
+    liveGridPhase = LiveGridPhase::Idle;
+    liveGridStartBeat = 0.0;
+    riffCaptureActive.store(false, std::memory_order_relaxed);
+    riffCaptureNoteCount.store(0, std::memory_order_relaxed);
+    riffCaptureBar.store(0, std::memory_order_relaxed);
+    liveListenActive.store(false, std::memory_order_relaxed);
+    liveListenBar.store(0, std::memory_order_relaxed);
+    liveListenNotes.store(0, std::memory_order_relaxed);
+    riffHeld.store(false, std::memory_order_relaxed);
+
+    // A5.2 post-lock transition state + display scope.
+    postLockPhase = PostLockPhase::Idle;
+    transitionStartSample = -1;
+    transitionEndSample = -1;
+    transitionSectionNumberLocal = 0;
+    transitionSectionActive.store(false, std::memory_order_relaxed);
+    transitionSectionName.store("VERSE", std::memory_order_relaxed);
+    transitionBarsRemaining.store(0, std::memory_order_relaxed);
+    transitionBarsTotal.store(0, std::memory_order_relaxed);
+    transitionSectionNumber.store(0, std::memory_order_relaxed);
+    scopeWriteIndex.store(0, std::memory_order_relaxed);
+    playheadFraction.store(0.0f, std::memory_order_relaxed);
 
     patternPlayer.prepare(sr, samplesPerBlock);
     patternPlayer.reset();
@@ -215,7 +254,8 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         // Generative groove lock: while the riff is locked, the drum pattern is
         // frozen — no selection, no commits. Queues still drain upstream (stale
         // features are dropped), so nothing blocks or accumulates unbounded.
-        if (grooveLocked.load(std::memory_order_acquire))
+        if (grooveLocked.load(std::memory_order_acquire)
+            || transitionSectionActive.load(std::memory_order_acquire))
             return;
 
         // Use rule-based state directly — no shadow structure blending
@@ -234,6 +274,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
 
         int idx = 0;
         bool usedMelPath = false;
+        int styleNow = 4;  // perception class; 4 = silence (no steering)
 #if defined(MA_ENABLE_ONNX)
         {
             MelWindow latestMel{};
@@ -251,8 +292,8 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
                 if (auto* groove = dynamic_cast<MetalGrooveInference*>(inference.get()))
                 {
                     idx = groove->selectPatternFromMel(latestMel.data.data(), excludeParam);
-                    displayStyle.store(groove->classifyStyle(latestMel.data.data()),
-                                       std::memory_order_relaxed);
+                    styleNow = groove->classifyStyle(latestMel.data.data());
+                    displayStyle.store(styleNow, std::memory_order_relaxed);
                     usedMelPath = true;
                 }
             }
@@ -304,21 +345,48 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
                                    static_cast<int>(std::lround(rawGenre->load())));
         const int diversifiedIdx = PatternRules::diversifyPatternForGenre(idx, latest, barMod8, genreId);
 
+        // Style steering (perception-layer wiring, A4.1): when the style head
+        // has classified a *stable* non-silence articulation, route the groove
+        // family through the style pool so how you play (chug → half-time/
+        // breakdown, open chord → chorus, single-note → fast, sustain → sparse)
+        // drives selection. Stability gate: kStyleStableWindows consecutive
+        // windows of the same class; the 2-bar commit hold below does the rest
+        // of the smoothing, so steering only biases the next eligible commit.
+        int finalIdx = diversifiedIdx;
+        if (styleNow >= 0 && styleNow <= 3)
+        {
+            if (styleNow == lastStyleIndex)
+                ++styleStabilityCount;
+            else
+            {
+                lastStyleIndex = styleNow;
+                styleStabilityCount = 1;
+            }
+            if (styleStabilityCount >= kStyleStableWindows)
+                finalIdx = PatternRules::diversifyPatternForStyle(
+                    diversifiedIdx, styleNow, barMod8, latest.state);
+        }
+        else
+        {
+            lastStyleIndex = 4;
+            styleStabilityCount = 0;
+        }
+
         if (drumHoldExpired || excludeParam >= 0 || transitionEvent || autoChangeReady)
         {
-            commit.patternIndex = diversifiedIdx;
+            commit.patternIndex = finalIdx;
             commit.fillKind = chooseTransitionFillKind(lastCommittedStructureState, patternFeatures.state,
-                                                       diversifiedIdx, patternFeatures.rmsEnergy, patternFeatures.rmsDelta);
+                                                       finalIdx, patternFeatures.rmsEnergy, patternFeatures.rmsDelta);
             hasGrooveCommit = true;
             acceptedDrumPattern = true;
         }
-        displayPatternIndex.store(diversifiedIdx, std::memory_order_relaxed);
+        displayPatternIndex.store(finalIdx, std::memory_order_relaxed);
 
         if (hasGrooveCommit && grooveCommitQueue.try_enqueue(commit))
         {
             if (acceptedDrumPattern)
             {
-                latestPatternIndex.store(diversifiedIdx, std::memory_order_release);
+                latestPatternIndex.store(finalIdx, std::memory_order_release);
                 lastDrumPatternChangeSample = latest.sampleTimestamp;
                 lastCommittedStructureState = patternFeatures.state;
             }
@@ -399,6 +467,19 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     }
     juce::FloatVectorOperations::clip(in, in, -2.0f, 2.0f, numSamples);
 
+    // ── 0. Display scope feed (audio thread → UI, decimated) ────────────────
+    // Every 8th input sample is pushed into a small rolling ring so the editor
+    // can draw a live waveform. Decimation keeps the audio-thread cost trivial.
+    {
+        const float* p = in;
+        const int n = numSamples;
+        for (int i = 0; i < n; i += 8)
+        {
+            const int idx = scopeWriteIndex.fetch_add(1, std::memory_order_relaxed);
+            scopeSamples[static_cast<size_t>(idx % kScopeSize)] = p[i];
+        }
+    }
+
     float* outL = buffer.getWritePointer(0);
     float* outR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : outL;
 
@@ -441,12 +522,15 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // only as a fallback when the host provides no transport BPM (e.g. the
     // standalone build, which has no playhead). Audio-derived tempo is not used.
     float bpmForPlayer = 120.0f;
+    int64_t rawHostPos = hostSampleTime;
     if (auto* ph = getPlayHead())
     {
         if (auto pos = ph->getPosition())
         {
             if (auto t = pos->getBpm())
                 bpmForPlayer = static_cast<float>(*t);
+            if (auto ts = pos->getTimeInSamples())
+                rawHostPos = *ts;
         }
     }
     if (!(bpmForPlayer > 0.0f) || bpmForPlayer > 1000.0f)
@@ -550,20 +634,99 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             auto pool = PatternRules::sectionPatternPoolForGenre(secName, genreId);
             if (pool.count > 0)
             {
+                const int secIndex = structureSequencer.getCurrentSectionIndex();
+                const int barsElapsedNow = structureSequencer.getBarsElapsed();
+                // Reseed on section change, play start, and loop/restart (bars
+                // elapsed wrapping), so each section instance — including each
+                // repeat of a looped form — starts a different rotation.
+                if (secIndex != lastSectionIndex || !wasPlayOn
+                    || barsElapsedNow < lastSeenBarsElapsed)
+                {
+                    lastSectionIndex = secIndex;
+                    sectionEntryBar = structureSequencer.getGlobalBarCount();
+                    lastPlayedPoolPattern = -1;
+                    lastRotationSlot = -1;
+                    cachedPoolPick = -1;
+                }
+                lastSeenBarsElapsed = barsElapsedNow;
                 const int bar = structureSequencer.getGlobalBarCount();
                 const bool isLast = structureSequencer.isLastBar();
-                effectivePatternIdx = isLast
-                    ? PatternRules::selectFillPattern(0)
-                    : pool.indices[bar % pool.count];
+                const unsigned seed = static_cast<unsigned>(sectionEntryBar)
+                                    ^ static_cast<unsigned>(secIndex * 31u);
+                if (isLast)
+                {
+                    // Last bar of the section: an energy-sized, seed-varied fill
+                    // (item 4) instead of the always-big fill.
+                    effectivePatternIdx = PatternRules::selectFillPattern(0, rms, seed);
+                }
+                else
+                {
+                    // Phrased rotation: hold each groove barsPerGroove bars, pick
+                    // per seed+phrase slot, never repeat the previous groove.
+                    // Computed ONCE per phrase slot (this branch runs every
+                    // block) so both bars of a phrase share the pick and the
+                    // exclusion only fires between phrases.
+                    const int barsPerGroove = PatternRules::barsPerGrooveForSection(secName);
+                    const int grooveSlot = (bar - sectionEntryBar) / barsPerGroove;
+                    if (grooveSlot != lastRotationSlot)
+                    {
+                        const int picked = PatternRules::pickPoolPattern(
+                            pool, seed, grooveSlot, lastPlayedPoolPattern);
+                        if (picked >= 0)
+                        {
+                            cachedPoolPick = picked;
+                            lastPlayedPoolPattern = picked;
+                        }
+                        lastRotationSlot = grooveSlot;
+                    }
+                    if (cachedPoolPick >= 0)
+                        effectivePatternIdx = cachedPoolPick;
+                }
             }
         }
     }
+    else if (postLockPhase == PostLockPhase::TransitionHold)
+    {
+        // A5.2: during a post-lock transition, rotate through the chosen
+        // section's pool on bar boundaries (like play-mode pools, but driven by
+        // the transition grammar instead of the song form).
+        if (transitionPool.count > 0)
+        {
+            const int64_t samplesPerBarT =
+                static_cast<int64_t>(4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
+            const int64_t barsElapsed = (samplesPerBarT > 0 && transitionStartSample >= 0)
+                ? (hostSampleTime - transitionStartSample) / samplesPerBarT
+                : 0;
+            // Pick once per phrase slot (this branch runs every block during
+            // the hold) so the exclusion only fires between phrases.
+            const int barsPerGrooveT = PatternRules::barsPerGrooveForSection(transitionSectionNameStr);
+            const int grooveSlotT = static_cast<int>(barsElapsed) / barsPerGrooveT;
+            if (grooveSlotT != lastTransitionSlot)
+            {
+                const int pickedT = PatternRules::pickPoolPattern(
+                    transitionPool, 0u, grooveSlotT, lastPlayedPoolPattern);
+                if (pickedT >= 0)
+                {
+                    cachedTransitionPick = pickedT;
+                    lastPlayedPoolPattern = pickedT;
+                }
+                lastTransitionSlot = grooveSlotT;
+            }
+            if (cachedTransitionPick >= 0)
+                effectivePatternIdx = cachedTransitionPick;
+        }
+    }
+    wasPlayOn = playOn;
     patternPlayer.setPatternIndex(effectivePatternIdx);
 
     // Section for velocity contrast (A3.1) and bass harmony (A1.2).
     // Reactive mode maps loud playing to CHORUS so dynamics track the guitarist.
+    // A5.2: during a post-lock transition, the transition section drives the
+    // velocity profile so the hold sounds like a real section, not follow mode.
     const char* section = playOn ? structureSequencer.getCurrentSectionName() : "VERSE";
-    if (!playOn && st == StructureState::LOUD)
+    if (!playOn && postLockPhase == PostLockPhase::TransitionHold)
+        section = transitionSectionNameStr;
+    else if (!playOn && st == StructureState::LOUD)
         section = "CHORUS";
     patternPlayer.setSection(Groove::sectionIdFromName(section));
 
@@ -574,7 +737,10 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     int previewRem = debugPreviewSamplesRemaining.load(std::memory_order_acquire);
     if (previewRem > 0)
         debugPreviewSamplesRemaining.store(juce::jmax(0, previewRem - numSamples), std::memory_order_release);
-    patternPlayer.setStructureSilent(trulySilent && previewRem <= 0);
+    const bool capturingRiff = riffCaptureActive.load(std::memory_order_acquire)
+        || riffCaptureStart.load(std::memory_order_acquire);
+    patternPlayer.setClickTrack(capturingRiff);
+    patternPlayer.setStructureSilent((trulySilent && previewRem <= 0) && !capturingRiff);
 
     // ── 8. Dequeue groove commit ───────────────────────────────────────────
     // Inference → audio thread handoff for bar-quantized pattern changes with
@@ -597,8 +763,262 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     {
         const bool silentNow = (st == StructureState::SILENT) || digitalSilence;
 
-        // Run phrase learner - it tracks attacks and pitches, detects riff repetition
-        const auto bassNote = silentNow
+        int lockBars = 16;
+        if (auto* rawLockBars = apvts.getRawParameterValue("lockBars"))
+        {
+            lockBars = juce::jlimit(4, 64, static_cast<int>(std::lround(rawLockBars->load())));
+        }
+        const int64_t samplesPerBar = static_cast<int64_t>(
+            4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
+        const int64_t lockDuration = static_cast<int64_t>(lockBars) * samplesPerBar;
+        const int64_t reEngageGrace = 2 * samplesPerBar;
+
+        // Track the guitarist's root pitch class first so captured/mirrored
+        // bass notes use the stable class, not raw YIN (which octave-flips).
+        const int semitoneOffset = stablePitchTracker.update(
+            pitchEstimator.getMidiNote(),
+            pitchEstimator.getConfidence(),
+            bpmForPlayer, numSamples, sr,
+            silentNow && !riffCaptureActive.load(std::memory_order_acquire)
+                      && !riffCaptureStart.load(std::memory_order_acquire));
+        const int pcForBass = (semitoneOffset != INT_MIN)
+            ? semitoneOffset
+            : stablePitchTracker.getLastPitchClassOffset();
+
+        const int64_t clockSample = patternPlayer.previewResolvedHostSample(rawHostPos, numSamples);
+        const double samplesPerBeat = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
+        const double beatStart = static_cast<double>(clockSample) / samplesPerBeat;
+        const double beatEnd = beatStart + static_cast<double>(numSamples) / samplesPerBeat;
+
+        float blockPeak = 0.0f;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float a = std::abs(in[i]);
+            if (a > blockPeak)
+                blockPeak = a;
+        }
+
+        auto abortRiffCapture = [this]() noexcept
+        {
+            phraseLearner.cancelUserCapture();
+            phraseLearner.setHoldActive(false);
+            riffCaptureActive.store(false, std::memory_order_release);
+            riffCaptureNoteCount.store(0, std::memory_order_relaxed);
+            riffCaptureBar.store(0, std::memory_order_relaxed);
+            riffCapturePhase = RiffCapturePhase::Idle;
+            patternPlayer.setClickTrack(false);
+        };
+
+        auto abortLiveListen = [this]() noexcept
+        {
+            liveGridPhase = LiveGridPhase::Idle;
+            liveGridStartBeat = 0.0;
+            liveListenActive.store(false, std::memory_order_release);
+            liveListenBar.store(0, std::memory_order_relaxed);
+            liveListenNotes.store(0, std::memory_order_relaxed);
+            // Passive listen arms gridListening_ in the learner; clear it so a
+            // stale listen cannot keep the grid armed after the UI stops it.
+            if (phraseLearner.isGridListening())
+            {
+                phraseLearner.cancelLiveGridListen();
+            }
+        };
+
+        auto engageGrooveLockFromRiff = [this, lockDuration, lockBars]() noexcept
+        {
+            grooveLockActive = true;
+            grooveLockEndSample = hostSampleTime + lockDuration;
+            grooveLockStartSample = hostSampleTime;
+            lockBarsTotal.store(lockBars, std::memory_order_relaxed);
+            lastRiffMatchSample = hostSampleTime;
+            grooveLockReleaseArmed = false;
+            phraseLearner.setHoldActive(true);
+        };
+
+        auto finishRiffCapture = [this, engageGrooveLockFromRiff, abortRiffCapture]() noexcept
+        {
+            const bool ok = phraseLearner.commitGridCapture();
+            riffCaptureActive.store(false, std::memory_order_release);
+            riffCapturePhase = RiffCapturePhase::Idle;
+            patternPlayer.setClickTrack(false);
+            if (ok)
+                engageGrooveLockFromRiff();
+            else
+                abortRiffCapture();
+        };
+
+        if (riffForget.exchange(false, std::memory_order_acq_rel))
+        {
+            abortRiffCapture();
+            abortLiveListen();
+            phraseLearner.reset();
+            grooveLockActive = false;
+            grooveLockEndSample = -1;
+            grooveLockReleaseArmed = false;
+            lastRiffMatchSample = std::numeric_limits<int64_t>::min() / 2;
+            prevPhraseLocked = false;
+            grooveLocked.store(false, std::memory_order_release);
+            riffHeld.store(false, std::memory_order_release);
+        }
+
+        if (riffCaptureStart.exchange(false, std::memory_order_acq_rel))
+        {
+            abortLiveListen();
+            phraseLearner.beginGridCapture();
+            riffCaptureActive.store(true, std::memory_order_release);
+            riffCaptureNoteCount.store(0, std::memory_order_relaxed);
+            riffCaptureBar.store(0, std::memory_order_relaxed);
+            riffCapturePhase = RiffCapturePhase::WaitBar;
+            riffCountInStartBeat = 0.0;
+            grooveLockActive = false;
+            grooveLockEndSample = -1;
+            grooveLockReleaseArmed = false;
+            grooveLocked.store(false, std::memory_order_release);
+            phraseLearner.setHoldActive(false);
+            patternPlayer.setClickTrack(true);
+        }
+
+        const bool capturingNow = riffCaptureActive.load(std::memory_order_acquire);
+
+        if (capturingNow)
+        {
+            constexpr double kBar = 4.0;
+            constexpr double kCountInBeats = 4.0;
+            constexpr double kRecordBeats = static_cast<double>(PhraseLearner::kGridBars) * 4.0;
+
+            if (riffCapturePhase == RiffCapturePhase::WaitBar)
+            {
+                const double nextBar = std::ceil(beatStart / kBar - 1.0e-9) * kBar;
+                if (nextBar < beatEnd - 1.0e-9)
+                {
+                    riffCountInStartBeat = nextBar;
+                    riffCapturePhase = RiffCapturePhase::CountIn;
+                }
+            }
+
+            if (riffCapturePhase == RiffCapturePhase::CountIn
+                && beatEnd >= riffCountInStartBeat + kCountInBeats - 1.0e-9)
+            {
+                riffCapturePhase = RiffCapturePhase::Recording;
+            }
+
+            if (riffCapturePhase == RiffCapturePhase::Recording)
+            {
+                const double recStart = riffCountInStartBeat + kCountInBeats;
+                const double recEnd = recStart + kRecordBeats;
+                const double cap0 = juce::jmax(beatStart, recStart);
+                const double cap1 = juce::jmin(beatEnd, recEnd);
+                if (cap1 > cap0)
+                {
+                    const int bassMidi = (pcForBass != INT_MIN) ? 36 + pcForBass : 36;
+                    phraseLearner.stampGridRange(
+                        cap0 - recStart, cap1 - recStart, blockPeak, bassMidi);
+                }
+
+                const int bar = 1 + static_cast<int>(std::floor((cap0 - recStart) / kBar));
+                riffCaptureBar.store(juce::jlimit(1, PhraseLearner::kGridBars, bar),
+                                     std::memory_order_relaxed);
+                riffCaptureNoteCount.store(phraseLearner.getGridOccupiedCount(),
+                                           std::memory_order_relaxed);
+
+                if (beatEnd >= recEnd - 1.0e-9)
+                    finishRiffCapture();
+            }
+            else
+            {
+                riffCaptureBar.store(0, std::memory_order_relaxed);
+                riffCaptureNoteCount.store(phraseLearner.getGridOccupiedCount(),
+                                           std::memory_order_relaxed);
+            }
+        }
+
+        if (capturingNow || playOn)
+        {
+            abortLiveListen();
+        }
+        else if (phraseLearner.isLocked())
+        {
+            liveGridPhase = LiveGridPhase::Idle;
+            liveListenActive.store(false, std::memory_order_release);
+            liveListenBar.store(0, std::memory_order_relaxed);
+            liveListenNotes.store(0, std::memory_order_relaxed);
+        }
+        else
+        {
+            constexpr double kBar = 4.0;
+            constexpr double kListenBeats = static_cast<double>(PhraseLearner::kGridBars) * 4.0;
+            liveListenActive.store(true, std::memory_order_release);
+
+            if (liveGridPhase == LiveGridPhase::Idle
+                || liveGridPhase == LiveGridPhase::WaitBar)
+            {
+                if (!silentNow)
+                {
+                    const double nextBar = std::ceil(beatStart / kBar - 1.0e-9) * kBar;
+                    if (nextBar < beatEnd - 1.0e-9)
+                    {
+                        phraseLearner.beginLiveGridListen();
+                        liveGridStartBeat = nextBar;
+                        liveGridPhase = LiveGridPhase::Filling;
+                    }
+                    else
+                    {
+                        liveGridPhase = LiveGridPhase::WaitBar;
+                    }
+                }
+                liveListenBar.store(0, std::memory_order_relaxed);
+                liveListenNotes.store(phraseLearner.getGridOccupiedCount(),
+                                      std::memory_order_relaxed);
+            }
+
+            if (liveGridPhase == LiveGridPhase::Filling)
+            {
+                const double recStart = liveGridStartBeat;
+                const double recEnd = recStart + kListenBeats;
+                const double cap0 = juce::jmax(beatStart, recStart);
+                const double cap1 = juce::jmin(beatEnd, recEnd);
+                if (cap1 > cap0)
+                {
+                    const int bassMidi = (pcForBass != INT_MIN) ? 36 + pcForBass : 36;
+                    phraseLearner.stampGridRange(
+                        cap0 - recStart, cap1 - recStart, blockPeak, bassMidi);
+                }
+
+                const int bar = 1 + static_cast<int>(std::floor((cap0 - recStart) / kBar));
+                liveListenBar.store(juce::jlimit(1, PhraseLearner::kGridBars, bar),
+                                    std::memory_order_relaxed);
+                liveListenNotes.store(phraseLearner.getGridOccupiedCount(),
+                                      std::memory_order_relaxed);
+
+                if (beatEnd >= recEnd - 1.0e-9)
+                {
+                    // The full 4-bar listen window has elapsed. A grid lock must
+                    // be backed by real rhythmic evidence: ≥8 detected attacks.
+                    // A sustained drone / open chord fills every 16th slot yet is
+                    // NOT a riff — committing it would freeze the groove onto a
+                    // single pitch and break root-following bass (the guitarist
+                    // holding a chord is not "playing in time").
+                    const bool rhythmicEvidence = phraseLearner.getAttackCount() >= 8;
+                    if (rhythmicEvidence
+                        && phraseLearner.getGridOccupiedCount() >= 8
+                        && phraseLearner.commitGridCapture())
+                    {
+                        engageGrooveLockFromRiff();
+                        abortLiveListen();
+                    }
+                    else
+                    {
+                        phraseLearner.reset();
+                        liveGridPhase = LiveGridPhase::WaitBar;
+                        liveListenBar.store(0, std::memory_order_relaxed);
+                        liveListenNotes.store(0, std::memory_order_relaxed);
+                    }
+                }
+            }
+        }
+
+        // Do not wipe a user take on phrase-breath silence.
+        const auto bassNote = (silentNow && !capturingNow)
             ? PhraseLearner::BassNote{}
             : phraseLearner.process(
                 hostSampleTime,
@@ -606,12 +1026,25 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 pitchEstimator.getMidiNote(),
                 pitchEstimator.getConfidence(),
                 bpmForPlayer,
-                numSamples
+                numSamples,
+                pcForBass
             );
-        if (silentNow)
+        if (silentNow && !capturingNow && !phraseLearner.isLocked()
+            && !phraseLearner.isGridCapturing())
             phraseLearner.reset();
 
-        const bool phraseLocked = phraseLearner.isLocked() && !silentNow;
+        if (riffCaptureStop.exchange(false, std::memory_order_acq_rel)
+            && riffCaptureActive.load(std::memory_order_acquire))
+        {
+            if (riffCapturePhase == RiffCapturePhase::Recording
+                && phraseLearner.getGridOccupiedCount() >= 2)
+                finishRiffCapture();
+            else
+                abortRiffCapture();
+        }
+
+        const bool phraseLocked = phraseLearner.isLocked();
+        riffHeld.store(phraseLocked, std::memory_order_release);
 
         // ── 9b. Generative groove lock ────────────────────────────────────────
         // In generative mode (Play off), when the phrase learner detects the
@@ -619,22 +1052,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // freezes (inference commits are suppressed) and the bass keeps looping
         // the learned riff while the guitarist expands/solos over it.
         //
-        // P0/R2: the hold is a FIXED `lockBars`-bar window — returning to the
-        // riff does NOT extend it. After expiry the lock re-engages only if the
-        // riff is still being played (fresh match within a 2-bar grace) — a
-        // stale learner must not re-freeze the listener. Silence or Play-on
-        // releases it.
-        int lockBars = 16;
-        if (auto* rawLockBars = apvts.getRawParameterValue("lockBars"))
-        {
-            // Discrete params (AudioParameterInt) report their raw integer value
-            // through the APVTS adapter (same convention as the choice params).
-            lockBars = juce::jlimit(4, 64, static_cast<int>(std::lround(rawLockBars->load())));
-        }
-        const int64_t samplesPerBar = static_cast<int64_t>(
-            4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
-        const int64_t lockDuration = static_cast<int64_t>(lockBars) * samplesPerBar;
-        const int64_t reEngageGrace = 2 * samplesPerBar;  // riff freshness window
+        // User capture: the lock is engaged only on Stop (above). Auto-lock
+        // still exists as a fallback when the user does not record first.
+        // P0/R2: the hold is a FIXED `lockBars`-bar window.
 
         if (phraseLearner.justMatchedRiff())
             lastRiffMatchSample = hostSampleTime;
@@ -642,13 +1062,23 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         const bool phraseLockEdge = (phraseLocked && !prevPhraseLocked);
         prevPhraseLocked = phraseLocked;
 
-        if (playOn || silentNow || digitalSilence)
+        const bool capturingHeld = riffCaptureActive.load(std::memory_order_acquire);
+        if (playOn)
         {
             grooveLockActive = false;
             grooveLockEndSample = -1;
             grooveLockReleaseArmed = false;
+            if (capturingHeld)
+            {
+                phraseLearner.cancelUserCapture();
+                riffCaptureActive.store(false, std::memory_order_release);
+                riffCaptureNoteCount.store(0, std::memory_order_relaxed);
+                riffCaptureBar.store(0, std::memory_order_relaxed);
+                riffCapturePhase = RiffCapturePhase::Idle;
+                patternPlayer.setClickTrack(false);
+            }
         }
-        else if (!grooveLockActive)
+        else if (!capturingHeld && !grooveLockActive)
         {
             // Engage: the riff just repeated (lock edge), or the riff was played
             // within the re-engage grace after a hold expired.
@@ -657,71 +1087,207 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             {
                 grooveLockActive = true;
                 grooveLockEndSample = hostSampleTime + lockDuration;
+                grooveLockStartSample = hostSampleTime;
+                lockBarsTotal.store(lockBars, std::memory_order_relaxed);
                 lastRiffMatchSample = hostSampleTime;
                 grooveLockReleaseArmed = false;
             }
         }
-        else
+        else if (!capturingHeld)
         {
             // Held: the window is fixed — release exactly when it elapses.
             if (hostSampleTime >= grooveLockEndSample)
             {
                 grooveLockActive = false;
-                grooveLockReleaseArmed = true;  // P0/R4: transition out of the lock
+                grooveLockReleaseArmed = true;
             }
         }
         grooveLocked.store(grooveLockActive, std::memory_order_release);
         phraseLearner.setHoldActive(grooveLockActive);
 
-        // P0/R4: on lock expiry, arm a crash + a release fill at the bar
-        // boundary, then hand pattern selection back to the listener (the
-        // inference thread resumes as soon as grooveLocked flips false).
+        // ── Riff-lock hold progress (UI): bar done / bars remaining ───────────
+        // While locked, publish the 1-based current bar and the bars left before
+        // the transition fires. Zeroed when not locked so the UI hides it.
+        if (grooveLockActive && grooveLockStartSample >= 0 && samplesPerBar > 0)
+        {
+            const int64_t elapsed = hostSampleTime - grooveLockStartSample;
+            const int total = lockBarsTotal.load(std::memory_order_relaxed);
+            const int current = juce::jlimit(1, juce::jmax(1, total),
+                                             static_cast<int>(elapsed / samplesPerBar) + 1);
+            lockBarCurrent.store(current, std::memory_order_relaxed);
+            lockBarsRemaining.store(juce::jmax(0, total - current), std::memory_order_relaxed);
+        }
+        else
+        {
+            lockBarCurrent.store(0, std::memory_order_relaxed);
+            lockBarsRemaining.store(0, std::memory_order_relaxed);
+            lockBarsTotal.store(0, std::memory_order_relaxed);
+        }
+
+        // ── P0/R4 + A5.2: on lock expiry, engage a post-lock TRANSITION SECTION
+        // instead of releasing straight back to the listener. The transition
+        // grammar (PatternRules::pickNextSectionAfterLock) picks a *contrast*
+        // section (never the riff's own feel, never the last one played) and
+        // holds it for `transitionBars` bars before returning to follow. If the
+        // riff re-appears mid-transition, we cut back to it immediately.
         if (grooveLockReleaseArmed)
         {
             grooveLockReleaseArmed = false;
+
+            const int transitionBars = [this]() -> int
+            {
+                if (auto* raw = apvts.getRawParameterValue("transitionBars"))
+                    return juce::jlimit(2, 32, static_cast<int>(std::lround(raw->load())));
+                return 8;
+            }();
+            const int64_t samplesPerBarT =
+                static_cast<int64_t>(4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
+
+            int genreIdT = 0;
+            if (auto* rawGenre = apvts.getRawParameterValue("genre"))
+                genreIdT = juce::jlimit(0, Groove::presetCount() - 1,
+                                        static_cast<int>(std::lround(rawGenre->load())));
+
+            const int lockedPat = latestPatternIndex.load(std::memory_order_acquire);
+            const auto ts = PatternRules::pickNextSectionAfterLock(
+                lockedPat, genreIdT, transitionSectionNameStr);
+
+            postLockPhase = PostLockPhase::TransitionHold;
+            transitionPool = ts.pool;
+            transitionSectionNameStr = ts.name;
+            lastPlayedPoolPattern = -1;  // fresh rotation for the new hold section
+            lastTransitionSlot = -1;
+            cachedTransitionPick = -1;
+            transitionSectionName.store(ts.name, std::memory_order_release);
+            ++transitionSectionNumberLocal;
+            transitionSectionNumber.store(transitionSectionNumberLocal, std::memory_order_release);
+            transitionBarsTotalLocal = transitionBars;
+            transitionBarsTotal.store(transitionBars, std::memory_order_release);
+            transitionBarsRemaining.store(transitionBars, std::memory_order_release);
+            transitionStartSample = hostSampleTime;
+            transitionEndSample = hostSampleTime + static_cast<int64_t>(transitionBars) * samplesPerBarT;
+            transitionSectionActive.store(true, std::memory_order_release);
+
+            // Musical entrance: crash + a build-up fill into the section's most
+            // popular pool pattern (bar-quantized by PatternPlayer).
             patternPlayer.armTransitionCrash();
-            PatternPlayer::GrooveCommit releaseCommit{};
-            releaseCommit.patternIndex = latestPatternIndex.load(std::memory_order_acquire);
-            releaseCommit.fillKind = PatternPlayer::TransitionFillKind::Release;
-            patternPlayer.queueGrooveCommit(releaseCommit);
+            PatternPlayer::GrooveCommit entry{};
+            entry.patternIndex = (ts.pool.count > 0) ? ts.pool.indices[0] : lockedPat;
+            entry.fillKind = PatternPlayer::TransitionFillKind::BuildUp;
+            patternPlayer.queueGrooveCommit(entry);
         }
 
-        // Track the guitarist's root pitch class every block (C-anchored,
-        // 1/8-beat stability window). It feeds only the fallback harmonic bass
-        // (when NOT riffing) — the locked phrase bass is frozen to the learned
-        // riff (P0/R1: the bass no longer retunes to the live root).
-        const int semitoneOffset = stablePitchTracker.update(
-            pitchEstimator.getMidiNote(),
-            pitchEstimator.getConfidence(),
-            bpmForPlayer, numSamples, sr, silentNow);
+        // ── A5.2: run the transition hold. ────────────────────────────────────
+        if (postLockPhase == PostLockPhase::TransitionHold)
+        {
+            // The riff returning cuts the transition short and re-locks.
+            const bool riffFresh = (hostSampleTime - lastRiffMatchSample) < reEngageGrace;
+            if (phraseLockEdge || riffFresh)
+            {
+                postLockPhase = PostLockPhase::Idle;
+                transitionSectionActive.store(false, std::memory_order_release);
+                grooveLockActive = true;
+                grooveLockEndSample = hostSampleTime + lockDuration;
+                grooveLockStartSample = hostSampleTime;
+                lockBarsTotal.store(lockBars, std::memory_order_relaxed);
+                lastRiffMatchSample = hostSampleTime;
+                grooveLockReleaseArmed = false;
+            }
+            else if (hostSampleTime >= transitionEndSample)
+            {
+                // Hold finished. Continue to the next contrast section (up to
+                // `transitionSections` total), then hand back to follow mode.
+                int maxSections = 2;
+                if (auto* raw = apvts.getRawParameterValue("transitionSections"))
+                    maxSections = juce::jlimit(1, 4, static_cast<int>(std::lround(raw->load())));
+
+                if (transitionSectionNumberLocal < maxSections)
+                {
+                    int genreIdT2 = 0;
+                    if (auto* rawGenre = apvts.getRawParameterValue("genre"))
+                        genreIdT2 = juce::jlimit(0, Groove::presetCount() - 1,
+                                                 static_cast<int>(std::lround(rawGenre->load())));
+                    const int lockedPat2 = latestPatternIndex.load(std::memory_order_acquire);
+                    const auto ts2 = PatternRules::pickNextSectionAfterLock(
+                        lockedPat2, genreIdT2, transitionSectionNameStr);
+
+                    const int transitionBars2 = [this]() -> int
+                    {
+                        if (auto* raw = apvts.getRawParameterValue("transitionBars"))
+                            return juce::jlimit(2, 32, static_cast<int>(std::lround(raw->load())));
+                        return 8;
+                    }();
+                    const int64_t samplesPerBarT2 =
+                        static_cast<int64_t>(4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
+
+                    transitionPool = ts2.pool;
+                    transitionSectionNameStr = ts2.name;
+                    lastPlayedPoolPattern = -1;  // fresh rotation for the next hold section
+                    lastTransitionSlot = -1;
+                    cachedTransitionPick = -1;
+                    transitionSectionName.store(ts2.name, std::memory_order_release);
+                    ++transitionSectionNumberLocal;
+                    transitionSectionNumber.store(transitionSectionNumberLocal, std::memory_order_release);
+                    transitionBarsTotalLocal = transitionBars2;
+                    transitionBarsTotal.store(transitionBars2, std::memory_order_release);
+                    transitionBarsRemaining.store(transitionBars2, std::memory_order_release);
+                    transitionStartSample = hostSampleTime;
+                    transitionEndSample = hostSampleTime + static_cast<int64_t>(transitionBars2) * samplesPerBarT2;
+
+                    patternPlayer.armTransitionCrash();
+                    PatternPlayer::GrooveCommit next{};
+                    next.patternIndex = (ts2.pool.count > 0) ? ts2.pool.indices[0] : lockedPat2;
+                    next.fillKind = PatternPlayer::TransitionFillKind::BuildUp;
+                    patternPlayer.queueGrooveCommit(next);
+                }
+                else
+                {
+                    // Transition sequence complete — release to follow with a
+                    // crash + Release fill (inference resumes via grooveLocked=false).
+                    postLockPhase = PostLockPhase::Idle;
+                    transitionSectionActive.store(false, std::memory_order_release);
+                    patternPlayer.armTransitionCrash();
+                    PatternPlayer::GrooveCommit releaseCommit{};
+                    releaseCommit.patternIndex = latestPatternIndex.load(std::memory_order_acquire);
+                    releaseCommit.fillKind = PatternPlayer::TransitionFillKind::Release;
+                    patternPlayer.queueGrooveCommit(releaseCommit);
+                }
+            }
+            else
+            {
+                // Countdown for the UI.
+                const int64_t samplesPerBarC =
+                    static_cast<int64_t>(4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
+                const int64_t remaining = transitionEndSample - hostSampleTime;
+                const int barsLeft = (samplesPerBarC > 0)
+                    ? static_cast<int>((remaining + samplesPerBarC - 1) / samplesPerBarC)
+                    : 0;
+                transitionBarsRemaining.store(juce::jmax(0, barsLeft), std::memory_order_release);
+            }
+        }
 
         // ── 9c. Live riff mirror ─────────────────────────────────────────────
         // While the guitarist is playing a riff (evidence of riffing: ≥2
         // attacks in the last 2 bars), the bass mirrors each detected attack
         // immediately — no 2–6 s learning wait and no sparse beat-1 fallback.
-        // This suppresses the beat-grid fallback for the duration of riffing;
-        // the grid returns when riffing stops. A lone accent (1 attack) does
-        // not count as riffing.
+        // Active grid capture (Record riff) suppresses the fallback bass; passive
+        // live LISTEN does not — the drummer keeps playing while it observes.
         const bool riffActive = !silentNow
             && phraseLearner.countRecentAttacks(hostSampleTime, 2 * samplesPerBar) >= 2;
-        patternPlayer.setPhraseLearnerActive(phraseLocked || riffActive);
+        patternPlayer.setPhraseLearnerActive(
+            phraseLocked || riffActive || phraseLearner.isGridCapturing());
 
-        // Trigger either the locked pattern's note or the live attack's note.
-        // Legato duration (~0.9 beat): the bass sustains through dense chugs
-        // instead of staccato blips (monophonic handling overlaps cleanly).
-        if (bassNote.trigger)
+        // Shorter gate (~0.4 beat) so dense chugs do not stack into a wall.
+        if (bassNote.trigger && !riffCaptureActive.load(std::memory_order_acquire)
+            && !phraseLearner.isGridCapturing())
         {
-            const int durationSamples = static_cast<int>((60.0 / bpmForPlayer) * 0.9 * sr);  // ~90% of beat
+            const int durationSamples = static_cast<int>((60.0 / bpmForPlayer) * 0.4 * sr);
             patternPlayer.triggerLearnedBassNote(bassNote.midiNote + bassTranspose, bassNote.velocity, 0, durationSamples);
         }
 
         if (phraseLocked)
         {
-            // Locked: the bass plays the learned riff note-for-note (R1). The
-            // live-root retune is gone — the recorded pitches are authoritative
-            // for the whole hold, so a root change by the guitarist does not
-            // yank the bass. `StablePitchTracker` keeps running purely for the
-            // fallback root when NOT locked.
+            // Locked: the bass plays the learned riff note-for-note (R1).
         }
         else if (!riffActive)
         {
@@ -730,9 +1296,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             int bassRoot = 36;  // C2 fallback (drop-C root — matches the tracker anchor)
             if (semitoneOffset != INT_MIN)
             {
-                // Pitch-class following folded onto C2: C→36, E→40, G→43, B→47.
-                // Every root lands in the C2–B2 octave — never below C2 (too low
-                // for range-limited bass VSTs) and never a wrong pitch class.
                 bassRoot = 36 + semitoneOffset;
                 while (bassRoot < 28) bassRoot += 12;
                 while (bassRoot > 55) bassRoot -= 12;
@@ -741,8 +1304,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             int notesPerBar = 2;
             if (std::strcmp(section, "CHORUS") == 0 || std::strcmp(section, "SOLO") == 0)
                 notesPerBar = 4;
-            // Minimum pulse: half notes everywhere (a whole-note drone on beat 1
-            // read as "the bass isn't opening up" — user session feedback).
             else if (std::strcmp(section, "INTRO") == 0 || std::strcmp(section, "OUTRO") == 0 || std::strcmp(section, "BREAKDOWN") == 0)
                 notesPerBar = 2;
             
@@ -751,16 +1312,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     }
 
     // ── 10. Process MIDI ────────────────────────────────────────────────────
-    int64_t hostPos = hostSampleTime;
-    if (auto* ph = getPlayHead())
-    {
-        if (auto pos = ph->getPosition())
-        {
-            if (auto t = pos->getTimeInSamples())
-                hostPos = *t;
-        }
-    }
-    patternPlayer.process(midi, numSamples, hostPos);
+    patternPlayer.process(midi, numSamples, rawHostPos);
 
     // ── 11. Gain passthrough ────────────────────────────────────────────────
     float gain = 1.0f;
@@ -783,6 +1335,32 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     displayNoiseFloor.store(structureTagger.getNoiseFloorRms(), std::memory_order_relaxed);
     displayStateIndex.store(static_cast<int>(st), std::memory_order_relaxed);
     displayPatternIndex.store(effectivePatternIdx, std::memory_order_relaxed);
+
+    // Playhead fraction within the current bar (DAW-style UI cursor).
+    {
+        const double sppb = 4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr;
+        if (sppb > 0.0)
+        {
+            const double frac = std::fmod(static_cast<double>(hostSampleTime), sppb) / sppb;
+            playheadFraction.store(static_cast<float>(frac), std::memory_order_relaxed);
+        }
+    }
+}
+
+void AccompanimentProcessor::copyScopeSamples(float* out, int maxCount) const noexcept
+{
+    if (out == nullptr || maxCount <= 0)
+        return;
+    const int head = scopeWriteIndex.load(std::memory_order_relaxed);
+    const int count = juce::jmin(maxCount, kScopeSize);
+    // Ring: [head-count, head) newest last. Copy oldest→newest so the UI draws
+    // left→right in time order.
+    for (int i = 0; i < count; ++i)
+    {
+        const int idx = (head - count + i) % kScopeSize;
+        const int wrapped = (idx < 0) ? idx + kScopeSize : idx;
+        out[i] = scopeSamples[static_cast<size_t>(wrapped)];
+    }
 }
 
 void AccompanimentProcessor::bumpDebugPattern()
@@ -802,6 +1380,12 @@ void AccompanimentProcessor::setCustomSongForm(const juce::String& serialized)
         StructureSequencer::parseFormString(serialized.toStdString()));
     std::atomic_store(&pendingSongForm, std::move(form));
     songFormVersion.fetch_add(1, std::memory_order_release);
+}
+
+juce::String AccompanimentProcessor::getCustomSongForm()
+{
+    const juce::var prop = apvts.state.getProperty("customSongForm");
+    return prop.isString() ? prop.toString() : juce::String{};
 }
 
 void AccompanimentProcessor::getStateInformation(juce::MemoryBlock& destData)

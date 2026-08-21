@@ -7,6 +7,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <set>
+#include <utility>
+#include <vector>
 
 #include <JuceHeader.h>
 #include "AccompanimentProcessor.h"
@@ -528,6 +531,11 @@ TEST_CASE("Processor pipeline: generative groove lock freezes drums, expires, th
         p->setValueNotifyingHost(0.0f);
     INFO("lockBars raw after set: " << proc.getApvts().getRawParameterValue("lockBars")->load()
          << " (expect ~0.0)");
+    // Short post-lock transition (2 bars = 4s) so it completes within the test.
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(2.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
 
     auto feed = [&](float amp, double freq, int numBlocks, int& blockIdx) {
         for (int b = 0; b < numBlocks; ++b)
@@ -585,10 +593,14 @@ TEST_CASE("Processor pipeline: generative groove lock freezes drums, expires, th
     REQUIRE(proc.isGrooveLocked());
     REQUIRE(proc.getLatestPatternIndex() == frozenPattern);
 
-    // Phase 2b: keep feeding past the 4-bar hold (8s) → lock expires and the
-    // stale learner must NOT re-engage (no riff activity for > grace).
+    // Phase 2b: keep feeding past the 4-bar hold (8s) → lock expires and a
+    // post-lock TRANSITION section engages (A5.2). The transition freezes
+    // selection by design, so feed through it (2 bars = 4s) before rejection.
     feed(0.05, 400.0, static_cast<int>(7.0 * sr / block), blockIdx);
     REQUIRE_FALSE(proc.isGrooveLocked());
+    if (proc.isTransitionSectionActive())
+        feed(0.05, 400.0, static_cast<int>(5.0 * sr / block), blockIdx);
+    REQUIRE_FALSE(proc.isTransitionSectionActive());
 
     // Phase 3: listening again — the pattern is no longer frozen. A pattern
     // rejection now takes effect deterministically: excluding the *current*
@@ -606,7 +618,132 @@ TEST_CASE("Processor pipeline: generative groove lock freezes drums, expires, th
     proc.releaseResources();
 }
 
-// ─── P0 groove-lock rework (R1/R2/R4) ─────────────────────────────────────────
+// ─── A5.2: post-lock transition grammar ───────────────────────────────────────
+
+TEST_CASE("Processor pipeline: post-lock transition section engages, holds, then releases", "[integration][pipeline][transition]")
+{
+    // Capture a riff (deterministic lock — the auto-lock heuristic is the user's
+    // in-progress work and is not relied on here), let the lock expire, and
+    // verify the transition grammar: a contrast section engages, its countdown
+    // runs, and after the configured hold it releases back to follow.
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    // Short lock (4 bars) and short transition (4 bars), 1 section so the
+    // sequence is: lock → B(4 bars) → release to follow.
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(4.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
+
+    auto feed = [&](float amp, double freq, int numBlocks, int& blockIdx) {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(blockIdx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++blockIdx;
+        }
+    };
+
+    // Phase 1: deterministic capture → lock engages (same path as the
+    // record-riff test: count-in 1 bar + record 4 bars).
+    proc.requestRiffCaptureStart();
+    int blockIdx = 0;
+    feed(0.4, 110.0, static_cast<int>(5.25 * 4.0 * 60.0 / 120.0 * sr / block), blockIdx);
+    REQUIRE(proc.isGrooveLocked());
+
+    // Phase 2: sustained non-riff input past the 4-bar lock hold (8s @120bpm) →
+    // lock expires and a transition section engages (not straight back to follow).
+    feed(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    REQUIRE_FALSE(proc.isGrooveLocked());
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE(proc.getTransitionSectionNumber() >= 1);
+    REQUIRE(proc.getTransitionBarsTotal() == 4);
+    // The transition section must not be the riff's own family's section name —
+    // the grammar guarantees contrast (picked against pattern family).
+    REQUIRE(std::string(proc.getTransitionSectionName()) != "VERSE");
+
+    // Phase 3: feed through the 4-bar transition hold (8s) → releases to follow.
+    feed(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    REQUIRE_FALSE(proc.isTransitionSectionActive());
+    REQUIRE_FALSE(proc.isGrooveLocked());
+
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: transition countdown updates live", "[integration][pipeline][transition]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(8.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
+
+    auto feedN = [&](float amp, double freq, int numBlocks, int& idx) {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(idx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++idx;
+        }
+    };
+
+    // Deterministic capture → lock.
+    proc.requestRiffCaptureStart();
+    int blockIdx = 0;
+    feedN(0.4, 110.0, static_cast<int>(5.25 * 4.0 * 60.0 / 120.0 * sr / block), blockIdx);
+    REQUIRE(proc.isGrooveLocked());
+
+    // Feed past the lock hold (4 bars = 8s) into the transition; countdown
+    // starts near the total (8-bar hold).
+    feedN(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+    const int initial = proc.getTransitionBarsRemaining();
+    REQUIRE(initial >= 7);  // 8-bar hold, entered near the top of the countdown
+
+    // Feed a couple more seconds — the countdown must have moved down.
+    feedN(0.05, 400.0, static_cast<int>(1.0 * sr / block), blockIdx);
+    const int later = proc.getTransitionBarsRemaining();
+    REQUIRE(later < initial);
+
+    proc.releaseResources();
+}
 
 // Feed a 24-block chug cycle (20 quiet + 4 loud) at `freq`, collecting ch.2
 // note-ons into `bassNotes`. Advances `blockIdx` and flushes inference per block.
@@ -868,6 +1005,100 @@ TEST_CASE("Processor pipeline: custom song form loads and persists (Phase 2)", "
     procB.releaseResources();
 }
 
+TEST_CASE("Processor pipeline: record riff auto-locks a 4-bar metronome take", "[integration][pipeline][capture]")
+{
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(48000.0, 512);
+    proc.pauseBackgroundInferenceForTests();
+    proc.requestRiffCaptureStart();
+
+    auto sig = makeSineBuffer(512, 110.0, 48000.0, 0.4f);
+    // Count-in (1 bar) + record (4 bars) + a little headroom.
+    const int blocks = static_cast<int>(5.25 * 4.0 * 60.0 / 120.0 * 48000.0 / 512.0);
+    feedBlocks(proc, sig, 512, blocks);
+
+    REQUIRE_FALSE(proc.isRiffCapturing());
+    REQUIRE(proc.isGrooveLocked());
+
+    // The lock hold progress is published for the UI: total = lockBars
+    // (default 16), current bar starts at 1, remaining = total - current.
+    const int tot = proc.getLockBarsTotal();
+    const int cur = proc.getLockBarCurrent();
+    const int rem = proc.getLockBarsRemaining();
+    REQUIRE(tot == 16);
+    REQUIRE(cur >= 1);
+    REQUIRE(cur <= tot);
+    REQUIRE(rem == tot - cur);
+
+    // Advance ~2 bars into the hold and verify the progress moved.
+    const int barsToAdvance = static_cast<int>(2.0 * 4.0 * 60.0 / 120.0 * 48000.0 / 512.0);
+    feedBlocks(proc, sig, 512, barsToAdvance);
+    REQUIRE(proc.getLockBarCurrent() >= 2);
+    REQUIRE(proc.getLockBarCurrent() <= tot);
+    REQUIRE(proc.getLockBarsRemaining() == tot - proc.getLockBarCurrent());
+
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: follow-mode grid listen locks without Record", "[integration][pipeline][capture]")
+{
+    // The live grid listen observes the guitarist playing IN TIME with the
+    // drums for a 4-bar window and locks the groove onto the take without the
+    // user pressing Record. The input must be a real RHYTHM (a chug produces
+    // attacks); a pure sustained tone is a drone, not a riff, and must not lock
+    // (it leaves the fallback bass following the root).
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(48000.0, 512);
+    proc.pauseBackgroundInferenceForTests();
+
+    // Chug cycle: 20 quiet + 4 loud blocks of a C2 sine → real attack pulses.
+    constexpr int cycle = 24;
+    const int totalBlocks = static_cast<int>(4.5 * 4.0 * 60.0 / 120.0 * 48000.0 / 512.0);
+    for (int b = 0; b < totalBlocks; ++b)
+    {
+        const int pos = b % cycle;
+        const bool loud = (pos >= cycle - 4);
+        juce::AudioBuffer<float> buf(2, 512);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* p = buf.getWritePointer(ch);
+            const double t = static_cast<double>(b) * 512.0 / 48000.0;
+            for (int i = 0; i < 512; ++i)
+            {
+                const double tt = t + static_cast<double>(i) / 48000.0;
+                p[i] = static_cast<float>((loud ? 0.5 : 0.08)
+                                          * std::sin(2.0 * M_PI * 65.406 * tt));
+            }
+        }
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+    }
+
+    REQUIRE_FALSE(proc.isRiffCapturing());
+    REQUIRE(proc.hasLearnedRiff());
+    REQUIRE(proc.isGrooveLocked());
+
+    // Live-listen lock publishes the hold progress for the UI too.
+    const int tot = proc.getLockBarsTotal();
+    const int cur = proc.getLockBarCurrent();
+    REQUIRE(tot == 16);
+    REQUIRE(cur >= 1);
+    REQUIRE(cur <= tot);
+    REQUIRE(proc.getLockBarsRemaining() == tot - cur);
+
+    proc.requestRiffForget();
+    {
+        auto buf = makeSineBuffer(512, 110.0, 48000.0, 0.4f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+    }
+    REQUIRE_FALSE(proc.hasLearnedRiff());
+    REQUIRE_FALSE(proc.isGrooveLocked());
+
+    proc.releaseResources();
+}
+
 TEST_CASE("Editor construction smoke test", "[integration][editor]")
 {
     juce::MessageManager::getInstance();
@@ -876,8 +1107,106 @@ TEST_CASE("Editor construction smoke test", "[integration][editor]")
         proc.prepareToPlay(48000.0, 512);
         juce::AudioProcessorEditor* ed = proc.createEditor();
         REQUIRE(ed != nullptr);
+        REQUIRE(ed->getHeight() >= 760);
+        REQUIRE(ed->getWidth() >= 520);
         delete ed;
         proc.releaseResources();
     }
     juce::MessageManager::deleteInstance();
+}
+
+// ─── Play-mode variety: phrased rotation, per-instance seed, energy fills ────
+// Implements recommendations 2-4: pool rotation holds each groove for a 2-bar
+// phrase (no more per-bar cycling), the rotation is seeded per section INSTANCE
+// (the two VERSEs below diverge — seed(VERSE#1)=22 vs seed(VERSE#2)=51), the
+// previous groove is never repeated, and the last bar of each section is an
+// energy-sized fill (short on quiet input) instead of the always-big fill.
+//
+// Determinism notes:
+// - Play starts at host sample 0 (the first play block also loads the custom
+//   form), so the beat grid is aligned to bar boundaries and bar-quantized
+//   pattern changes apply without a one-bar lag.
+// - Signatures filter transition crashes (note 49) and ghost snares (vel < 50)
+//   — the only velocity-variable events — and round each event to the NEAREST
+//   16th (the data-derived microtiming, ±9 ms, plus bounded jitter, ±15 ms,
+//   can otherwise push a floor-divided boundary event into the previous tick).
+// - Verified rotation (rock VERSE pool {22,23,1,2}, barsPerGroove 2):
+//   VERSE#1 (seed 22): slots [2, 22, 2] → bars 9-10 hold 1-bar pattern 2,
+//   bar 11 = 22, bar 12 = fill. VERSE#2 (seed 51): slots [22, 1, 22] →
+//   bar 13 = 22 (≠ VERSE#1's first groove), bar 15 = 1, bar 16 = fill.
+
+TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section instance, and fills the last bar", "[integration][pipeline][play][variety]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    // INTRO:9 then two VERSE sections. The first play block loads the form AND
+    // starts the grid at host sample 0 (beat 0 = bar boundary), so changes are
+    // applied without lag. Entry-bar seed: VERSE#1 = 9 ^ (1*31) = 22,
+    // VERSE#2 = 13 ^ (2*31) = 51.
+    proc.setCustomSongForm("INTRO:9,VERSE:4,VERSE:4");
+    proc.playActive.store(true, std::memory_order_release);
+
+    // Quiet (non-digital-silence) audio so play-mode drums are not gated.
+    auto quiet = makeSineBuffer(block, 110.0, sr, 0.0005f);
+
+    // 17 bars at 120 BPM = 2 s/bar = 96000 samples/bar = 187.5 blocks/bar.
+    constexpr int64_t kSamplesPerBar = 96000;
+    constexpr int kBlocksPerBar = 188;
+    constexpr int kTotalBars = 17;
+
+    // Per-bar signature: {(note, 16th-tick)} on the drum channel.
+    constexpr int kSnare = 38;
+    constexpr int kCrash = 49;
+    std::vector<std::set<std::pair<int, int>>> barSigs(kTotalBars);
+    int64_t blockStartSample = 0;
+    for (int b = 0; b < kBlocksPerBar * kTotalBars; ++b)
+    {
+        juce::MidiBuffer midi;
+        proc.processBlock(quiet, midi);
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (!msg.isNoteOn() || msg.getChannel() != 10) continue;
+            const int note = msg.getNoteNumber();
+            if (note == kCrash) continue;                       // transition crash
+            if (note == kSnare && msg.getVelocity() < 50) continue;  // ghost snare
+            // Round to the NEAREST 16th: the data-derived groove microtiming
+            // (timingMs up to ±9 ms) plus bounded jitter (±15 ms) can pull an
+            // event scheduled at a 16th boundary into the previous tick under
+            // a floor division — rounding makes the signature deterministic.
+            const int64_t rounded = blockStartSample + meta.samplePosition + 3000;
+            const int bar = static_cast<int>(rounded / kSamplesPerBar);
+            const int tick = static_cast<int>((rounded % kSamplesPerBar) / 6000);
+            if (bar >= 0 && bar < kTotalBars && tick >= 0 && tick < 16)
+                barSigs[bar].insert({ note, tick });
+        }
+        blockStartSample += block;
+    }
+    proc.playActive.store(false, std::memory_order_release);
+
+    for (int bar = 0; bar < kTotalBars; ++bar)
+        REQUIRE_FALSE(barSigs[bar].empty());
+
+    // Phrase hold (item 3): VERSE#1's first groove (1-bar pattern 2) is held
+    // for exactly 2 bars — no per-bar cycling.
+    REQUIRE(barSigs[9] == barSigs[10]);
+
+    // Rotation (item 2): the second phrase of VERSE#1 differs (22 vs 2)...
+    REQUIRE(barSigs[11] != barSigs[9]);
+    // ...and the previous groove is never repeated (VERSE#2 rotates too).
+    REQUIRE(barSigs[15] != barSigs[13]);
+
+    // Per-instance seed (item 3): VERSE#2 (entry bar 13) differs from VERSE#1
+    // (entry bar 9) — a repeated section is NOT the same bars again.
+    REQUIRE(barSigs[13] != barSigs[9]);
+
+    // Last bar of each section is a fill (item 4) — differs from the groove.
+    REQUIRE(barSigs[12] != barSigs[11]);
+    REQUIRE(barSigs[16] != barSigs[15]);
+
+    proc.releaseResources();
 }

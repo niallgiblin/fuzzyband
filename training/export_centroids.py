@@ -53,6 +53,11 @@ def compute_centroids(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute per-class bottleneck centroids (128-dim).
 
+    **Leak guard:** callers MUST pass the TRAINING split only (see main()).
+    Computing centroids from train + val bakes held-out audio into the deployed
+    lookup table (src/inference/pattern_embeddings.h) and inflates any val/test
+    measurement of the nearest-centroid runtime path.
+
     Returns:
         centroids: (n_classes, 128) mean bottleneck per class
         counts: (n_classes,) samples per class
@@ -224,13 +229,35 @@ def main() -> int:
     print(f"Loaded checkpoint: {args.checkpoint}")
 
     # ── Phase B: Compute centroids ───────────────────────────────────────
+    # Leak guard: centroids MUST come from the training split only. The frozen
+    # grouped split (meta_groove.csv) is the single source of truth — if it is
+    # missing or stale, fail loudly rather than falling back to all-data
+    # centroids (which would bake val into the deployed lookup table again).
     print("\n--- Phase B: Computing per-class bottleneck centroids ---")
-    centroids, counts = compute_centroids(model, X, y, device)
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
+        from dataset_split import load_split_indices  # noqa: PLC0415
+    except ImportError:
+        print("ERROR: dataset_split.py not importable — cannot load frozen split.", file=sys.stderr)
+        return 1
+
+    meta_path = args.data_dir / "meta_groove.csv"
+    frozen = load_split_indices(meta_path, len(X))
+    if frozen is None or len(frozen[0]) == 0:
+        print(f"ERROR: no usable frozen grouped split at {meta_path}. Refusing to "
+              f"export all-data centroids (val leak). Rebuild the dataset first "
+              f"(scripts/build_mel_groove_dataset.py).", file=sys.stderr)
+        return 1
+    train_idx, val_idx, test_idx = frozen
+    n_train, n_val, n_test = len(train_idx), len(val_idx), len(test_idx)
+    print(f"Frozen split: train={n_train} val={n_val} test={n_test}")
+
+    centroids, counts = compute_centroids(model, X[train_idx], y[train_idx], device)
 
     idx_to_name = {v: k for k, v in class_map.items()}
     for i in range(n_classes):
         name = idx_to_name.get(i, f"class_{i}")
-        print(f"  {name:>30s}: {counts[i]:>5d} samples, "
+        print(f"  {name:>30s}: {counts[i]:>5d} samples (train), "
               f"centroid norm={np.linalg.norm(centroids[i]):.4f}")
 
     # Save centroids as JSON
@@ -241,9 +268,17 @@ def main() -> int:
         "class_map": class_map,
         "centroids": centroids.tolist(),
         "sample_counts": counts.tolist(),
+        "split_provenance": {
+            "computed_from": "train_only",
+            "meta_file": str(meta_path),
+            "n_train": n_train,
+            "n_val": n_val,
+            "n_test": n_test,
+        },
     }
     centroids_json.write_text(json.dumps(centroids_dict, indent=2), encoding="utf-8")
     print(f"\nCentroids saved: {centroids_json}")
+    print(f"  (computed from TRAIN split only — deployed-path leak guard)")
 
     # ── Export C++ header ────────────────────────────────────────────────
     print(f"\n--- Exporting C++ header: {args.cpp_out} ---")
@@ -254,7 +289,7 @@ def main() -> int:
     if not args.skip_onnx:
         print(f"\n--- Phase C: Exporting ONNX model: {args.onnx_out} ---")
 
-        # Build export model: backbone (from checkpoint) + embedding head (fresh) + style head (fresh)
+        # Build export model: backbone (from checkpoint) + embedding head (fresh) + style head
         export_model = GrooveModelForExport(
             n_classes=n_classes,
             embedding_dim=args.embedding_dim,
@@ -264,11 +299,28 @@ def main() -> int:
         # Copy backbone weights
         export_model.backbone.load_state_dict(model.backbone.state_dict())
 
-        # Embedding head and style head are randomly initialized
-        # (They'll be trained separately with triplet loss if needed)
-        print("  Note: embedding head weights are randomly initialized.")
-        print("  For production, train with triplet loss on the embedding head.")
-        print("  For now, centroids in bottleneck space will be used instead.")
+        # The style head must ship TRAINED, not random: it feeds the UI "Style:"
+        # readout and (potentially) style-driven selection. train_style_head.py
+        # trains Linear(128,5) on the perception taxonomy over the frozen
+        # backbone; load it here if present. Random init is never acceptable for
+        # a deployed head (measured 0.285 acc / 0.0 silence recall).
+        style_head_path = args.model_dir / "style_head.pt"
+        if style_head_path.exists():
+            import torch as _torch
+            style_ckpt = _torch.load(style_head_path, weights_only=True, map_location="cpu")
+            export_model.style_head.load_state_dict(style_ckpt["state_dict"])
+            print(f"  Style head loaded from {style_head_path} "
+                  f"(val acc {style_ckpt.get('val_acc', float('nan')):.4f}, "
+                  f"macro-F1 {style_ckpt.get('val_macro_f1', float('nan')):.4f})")
+        else:
+            print("  WARNING: no trained style head found — the exported style_logits "
+                  "will be a RANDOM head. Run training/train_style_head.py first.",
+                  file=sys.stderr)
+
+        # Embedding head stays unused at runtime (pattern selection uses the
+        # bottleneck + centroids), so random init there is harmless.
+        print("  Note: embedding head (groove_embedding) is unused at runtime; "
+              "pattern selection uses the bottleneck + centroids.")
 
         args.onnx_out.parent.mkdir(parents=True, exist_ok=True)
         try:

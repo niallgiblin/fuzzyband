@@ -382,3 +382,165 @@ TEST_CASE("PhraseLearner: isFollowingRiff fires while the riff is being played",
     REQUIRE(learner.isFollowingRiff());
     REQUIRE(learner.isLocked());  // held → still locked
 }
+
+TEST_CASE("PhraseLearner: octave-flipped YIN still maps to C2 pitch class", "[phrase][bass]")
+{
+    // Distorted guitar YIN often reports C3 (48) for a C2 chug. The bass must
+    // fold to pitch class on C2–B2, not follow the raw octave.
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    (void)feedUntilLocked(learner, 48.0f);  // C3
+    REQUIRE(learner.isLocked());
+    for (int i = 0; i < learner.getPatternLength(); ++i)
+        REQUIRE(learner.getPatternNote(i) == 36);  // C2
+}
+
+TEST_CASE("PhraseLearner: learned bass velocity sits under the drums", "[phrase][bass]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    int blocks = 0;
+    bool saw = false;
+    for (int a = 0; a < 4 && !saw; ++a)
+    {
+        for (int b = 0; b < kBlocksPerAttack; ++b)
+        {
+            const bool loud = (b == kBlocksPerAttack - 1);
+            const auto note = learner.process(
+                static_cast<int64_t>(blocks) * kBlock,
+                loud ? 0.03f : 0.001f,
+                36.0f, loud ? 0.8f : 0.0f, kBpm, kBlock);
+            ++blocks;
+            if (note.trigger)
+            {
+                saw = true;
+                REQUIRE(note.velocity <= 0.68f);
+                REQUIRE(note.velocity >= 0.48f);
+            }
+        }
+    }
+    REQUIRE(saw);
+}
+
+TEST_CASE("PhraseLearner: user capture locks the whole recorded riff", "[phrase][bass][capture]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    learner.beginUserCapture();
+    REQUIRE(learner.isUserCapturing());
+    REQUIRE_FALSE(learner.isLocked());
+
+    // 10 attack cycles — the first rise may not count until a fall has armed
+    // the detector, so we over-feed and require a full-riff lock (>= 8 notes).
+    int blocks = 0;
+    for (int a = 0; a < 10; ++a)
+    {
+        for (int b = 0; b < kBlocksPerAttack; ++b)
+        {
+            const bool loud = (b == kBlocksPerAttack - 1);
+            const auto note = learner.process(
+                static_cast<int64_t>(blocks) * kBlock,
+                loud ? 0.03f : 0.001f,
+                36.0f, loud ? 0.8f : 0.0f, kBpm, kBlock);
+            REQUIRE_FALSE(note.trigger);  // silent accompaniment while recording
+            REQUIRE_FALSE(learner.isLocked());
+            ++blocks;
+        }
+    }
+    REQUIRE(learner.getAttackCount() >= 8);
+    REQUIRE(learner.commitUserCapture(kBpm, static_cast<int64_t>(blocks) * kBlock));
+    REQUIRE(learner.isLocked());
+    REQUIRE_FALSE(learner.isUserCapturing());
+    REQUIRE(learner.getPatternLength() >= 8);
+}
+
+TEST_CASE("PhraseLearner: user capture with too few notes fails closed", "[phrase][bass][capture]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    learner.beginUserCapture();
+    learner.process(0, 0.03f, 36.0f, 0.8f, kBpm, kBlock);
+    REQUIRE_FALSE(learner.commitUserCapture(kBpm, kBlock));
+    REQUIRE_FALSE(learner.isLocked());
+}
+
+TEST_CASE("PhraseLearner: grid capture locks a full 4-bar 16th riff", "[phrase][bass][capture][grid]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    learner.beginGridCapture();
+    REQUIRE(learner.isUserCapturing());
+    REQUIRE_FALSE(learner.isLocked());
+
+    for (int slot = 0; slot < PhraseLearner::kGridSlots; ++slot)
+    {
+        const double t0 = static_cast<double>(slot) * 0.25;
+        learner.stampGridRange(t0, t0 + 0.24, 0.2f, 36);
+    }
+
+    REQUIRE(learner.getGridOccupiedCount() == PhraseLearner::kGridSlots);
+    REQUIRE(learner.commitGridCapture());
+    REQUIRE(learner.isLocked());
+    REQUIRE_FALSE(learner.isUserCapturing());
+    REQUIRE(learner.getPatternLength() == PhraseLearner::kGridSlots);
+    REQUIRE(learner.getPatternLenBeats() == 16.0);
+    REQUIRE(learner.getPatternNote(0) == 36);
+    REQUIRE(learner.getPatternNote(PhraseLearner::kGridSlots - 1) == 36);
+}
+
+TEST_CASE("PhraseLearner: grid capture with rests still loops at 4 bars", "[phrase][bass][capture][grid]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    learner.beginGridCapture();
+
+    // Downbeats only — 16 notes across 4 bars, lots of empty 16ths.
+    for (int beat = 0; beat < 16; ++beat)
+        learner.stampGridRange(static_cast<double>(beat),
+                               static_cast<double>(beat) + 0.05, 0.2f, 40);
+
+    REQUIRE(learner.getGridOccupiedCount() == 16);
+    REQUIRE(learner.commitGridCapture());
+    REQUIRE(learner.getPatternLength() == 16);
+    REQUIRE(learner.getPatternLenBeats() == 16.0);
+    REQUIRE(learner.getPatternNote(0) == 40);
+}
+
+TEST_CASE("PhraseLearner: empty grid capture fails closed", "[phrase][bass][capture][grid]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    learner.beginGridCapture();
+    REQUIRE_FALSE(learner.commitGridCapture());
+    REQUIRE_FALSE(learner.isLocked());
+}
+
+TEST_CASE("PhraseLearner: live grid listen uses the same 16th occupancy lock", "[phrase][bass][capture][grid]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    learner.beginLiveGridListen();
+    // Passive listen is NOT active capture: gridCapturing_ stays false (so the
+    // processor keeps auto-lock + fallback bass running); listening_ is set.
+    REQUIRE_FALSE(learner.isGridCapturing());
+    REQUIRE(learner.isGridListening());
+    REQUIRE_FALSE(learner.isUserCapturing());
+
+    for (int slot = 0; slot < PhraseLearner::kGridSlots; ++slot)
+    {
+        const double t0 = static_cast<double>(slot) * 0.25;
+        learner.stampGridRange(t0, t0 + 0.24, 0.2f, 38);
+        const auto note = learner.process(
+            static_cast<int64_t>(slot) * kBlock, 0.03f, 38.0f, 0.8f, kBpm, kBlock);
+        // Passive listen leaves the live mirror running (real picking still
+        // plays bass) — but a low-RMS block below the attack floor triggers
+        // nothing, so the mirror stays quiet here.
+        REQUIRE_FALSE(learner.isLocked());
+    }
+
+    REQUIRE(learner.getGridOccupiedCount() == PhraseLearner::kGridSlots);
+    REQUIRE(learner.commitGridCapture());
+    REQUIRE(learner.isLocked());
+    REQUIRE(learner.getPatternLenBeats() == 16.0);
+    REQUIRE(learner.getPatternNote(0) == 38);
+}

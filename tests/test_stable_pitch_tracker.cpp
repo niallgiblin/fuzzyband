@@ -173,3 +173,13 @@ TEST_CASE("StablePitchTracker: E (MIDI 40, pc=4) returns offset 4", "[stable_pit
     const int result = runToStable(tracker, 40.0f);
     REQUIRE(result == 4);
 }
+
+TEST_CASE("StablePitchTracker: getLastPitchClassOffset holds after a low-confidence block", "[stable_pitch]")
+{
+    StablePitchTracker tracker;
+    REQUIRE(runToStable(tracker, 36.0f) == 0);
+    REQUIRE(tracker.getLastPitchClassOffset() == 0);
+    const int thisBlock = tracker.update(36.0f, 0.05f, kTestBpm, kBlockSize, kTestSr, false);
+    REQUIRE(thisBlock == INT_MIN);
+    REQUIRE(tracker.getLastPitchClassOffset() == 0);
+}
