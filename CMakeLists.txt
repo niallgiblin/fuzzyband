@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.9.26)
+project(MetalAccompaniment VERSION 0.9.27)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -514,4 +514,26 @@ if(DOXYGEN_EXECUTABLE)
         COMMENT "Generating Doxygen HTML API documentation (docs/doxygen/html/)"
         VERBATIM
     )
+endif()
+
+# JUCE's VST3 helper writes moduleinfo.json AFTER the bundle is codesigned,
+# which invalidates the seal. macOS then refuses to load the plugin in a
+# signed host (REAPER): "library load disallowed by system policy".
+# Re-sign last so the installed artefact stays valid. Must stay at the end
+# of this file so it runs after JUCE's own POST_BUILD steps.
+if(APPLE)
+    foreach(_ma_fmt VST3 AU Standalone)
+        if(TARGET MetalAccompaniment_${_ma_fmt})
+            add_custom_command(TARGET MetalAccompaniment_${_ma_fmt} POST_BUILD
+                # Strip Finder/resource-fork metadata the bundle may have picked up
+                # (com.apple.FinderInfo / fpfs) — codesign rejects it as "detritus",
+                # which otherwise breaks the AU build.
+                COMMAND xattr -cr "$<TARGET_BUNDLE_DIR:MetalAccompaniment_${_ma_fmt}>"
+                COMMAND codesign --force --sign - --deep --timestamp=none
+                        "$<TARGET_BUNDLE_DIR:MetalAccompaniment_${_ma_fmt}>"
+                COMMENT "Re-sign MetalAccompaniment ${_ma_fmt} after JUCE bundle finalization"
+                VERBATIM
+            )
+        endif()
+    endforeach()
 endif()

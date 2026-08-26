@@ -59,8 +59,8 @@ private:
     // Energy thresholds for 3-state classification
     static constexpr float kSilentRms = 0.012f;
     static constexpr float kSilentPeakRatio = 0.02f;
-    static constexpr float kLoudRmsFloor = 0.055f;
-    static constexpr float kLoudRms = 0.075f;       // RMS floor: SOFT → LOUD boundary
+    static constexpr float kLoudRmsFloor = 0.30f;
+    static constexpr float kLoudRms = 0.60f;        // RMS floor: SOFT → LOUD boundary
     static constexpr float kLoudPeakRatio = 0.50f;
 
     // Adaptive silence gate: silentFloor = max(kSilentRms, min(noiseFloor × margin, ceiling))

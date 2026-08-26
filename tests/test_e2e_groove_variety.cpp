@@ -12,7 +12,7 @@
  *  10 s   LOUD  warmup (skipped)
  *   5 s   silence
  *   8 × (1.5 s silence + 2.5 s SOFT amp 0.013) — collect each
- *   4 × (1.5 s silence + 3.0 s LOUD amp 0.04)  — collect each
+ *   4 × (1.5 s silence + 3.0 s LOUD amp 0.12)  — collect each
  *   5 s   silence
  *
  * Pattern indices (post-A4.1):
@@ -117,7 +117,7 @@ TEST_CASE("E2E: multi-section jam produces >=3 distinct groove names", "[e2e][gr
     // Warmup LOUD (skipped)
     {
         const int n = static_cast<int>(10.0 * sr);
-        auto sig = sineSection(n, 1500.0, sr, 0.04f);
+        auto sig = sineSection(n, 1500.0, sr, 0.12f);
         (void)feedSection(proc, sig.data(), n, block);
     }
     runSilence(5.0);
@@ -133,7 +133,7 @@ TEST_CASE("E2E: multi-section jam produces >=3 distinct groove names", "[e2e][gr
     for (int i = 0; i < 4; ++i)
     {
         runSilence(1.5);
-        runAndCollect(0.04f, 3.0);
+        runAndCollect(0.12f, 3.0);
     }
 
     runSilence(5.0);

@@ -5,8 +5,9 @@
 //
 // Feature values that drive each StructureState:
 //   SILENT: rms < kSilentRms(0.012)                      → rms = 0.005
-//   SOFT:   rms >= 0.012 and rms < kLoudRms(0.075)       → rms = 0.040
-//   LOUD:   rms >= 0.075                                 → rms = 0.090
+//   SOFT:   rms >= 0.012 and rms < kLoudRms(0.60)        → rms = 0.040
+//   LOUD:   rms >= kLoudRms(0.60)                        → rms = 0.650
+//   (tests pass peakRms=0, so loudFloor == kLoudRms == 0.60)
 //
 // Timings at 44100 Hz, 512-sample blocks:
 //   blockSec = 512 / 44100 ≈ 0.011610 s
@@ -20,7 +21,7 @@ namespace {
 constexpr double kSr      = 44100.0;
 constexpr int    kBlock   = 512;
 constexpr float  kRmsSoft    = 0.040f;
-constexpr float  kRmsLoud    = 0.090f;
+constexpr float  kRmsLoud    = 0.650f;
 constexpr float  kRmsSilent  = 0.005f;
 } // namespace
 

@@ -1,165 +1,219 @@
-# Metal Accompaniment — v0.9.16
+# Metal Accompaniment — v0.9.27
 
-JUCE **8** **VST3 / AU** plugin: listens to guitar audio and outputs **drum + bass MIDI** in real time. Ships with a **Mel-CNN ONNX pipeline** (mel spectrogram → pattern selection via cosine similarity) and a **rule-based fallback** (energy/structure/tempo). Version **0.9.16** — **Musicality & Rock Pivot** (rock-first genre default, groove engine, harmonic bass; drop-C pitch tracking, bass octave control; groove-lock rework, golden-signal tests, editable song form). See [`CHANGELOG.md`](CHANGELOG.md) for the full history.
+A JUCE **8** **VST3 / AU** plugin for guitarists. You play guitar into it; it listens, and it writes **drum + bass MIDI** in real time so a drum kit and a bass instrument in your DAW can play along with you.
 
-## Quick start
+It does **not** guess your tempo from the guitar. It accompanies you at the **DAW’s global project tempo**, locked to the host transport and the project grid.
+
+Current plugin version (shown top-right in the UI): **v0.9.27**. Full history: [`CHANGELOG.md`](CHANGELOG.md).
+
+---
+
+## What you need to play it
+
+This is an **audio effect that produces MIDI**, not a standalone band. You need a guitar into a DAW, plus virtual drums and bass that can *hear* that MIDI.
+
+### Computer and software
+
+| Need | Notes |
+|------|--------|
+| **macOS** | Primary target. VST3 + AU. |
+| **A DAW with MIDI routing** | Reaper, Ableton Live, Logic Pro, or similar. The host must expose project tempo and a playhead. |
+| **Metal Accompaniment v0.9.27** | VST3: `~/Library/Audio/Plug-Ins/VST3/`. AU: `~/Library/Audio/Plug-Ins/Components/` (after install). |
+| **CPU / buffer** | Designed for M-series at **256-sample** buffers. Smaller buffers (128) are fine if the session stays xrun-free. |
+
+Windows/Linux VST3 builds exist in CMake, but day-to-day development and the AU path are macOS.
+
+### Audio hardware
+
+| Need | Why |
+|------|-----|
+| **Audio interface** with a **Hi-Z / instrument** input | Clean DI guitar is what the analyser hears. |
+| **Low-latency monitoring** | You are playing *with* a drummer. Round-trip latency should feel like a click track (interface direct monitor or DAW monitoring, not a long software chain). |
+| **Headphones or monitors** | Hear guitar + drums + bass together. |
+| **Instrument cable** | Guitar → interface input 1 (typical). |
+
+A USB interface with one instrument input is enough. You do **not** need a MIDI controller — the plugin *emits* MIDI; it does not take MIDI in.
+
+### Instruments and virtual instruments
+
+| Need | Why |
+|------|-----|
+| **Electric guitar** | The plugin classifies playing style (palm mute / open chords / single-note / sustain) and energy (silent / soft / loud). Drop-C and similar low tunings are supported for bass root tracking. |
+| **Drum VSTi or sampler that speaks GM drums** | MIDI channel **10**. Kick = 36, snare = 38, hats/cymbals/toms use the General MIDI percussion map (see [MIDI map](#midi-map) below). Any kit that maps GM percussion will work (e.g. Addictive Drums, Superior Drummer, Battery, a GM drum sampler). |
+| **Bass VSTi or sampler** | MIDI channel **2**. The plugin sends pitched bass notes (not GM percussion). Use a bass instrument, not a drum kit. If the bass sounds an octave too low/high, use **Bass octave** in the plugin UI. |
+
+You can use hardware drum/bass modules instead of VSTs as long as they receive MIDI from the DAW on those channels.
+
+### What this plugin is *not*
+
+- Not a guitar amp. Put your amp/cab/IR **after** it (or on a parallel guitar path).
+- Not a MIDI instrument you “play from a keyboard.” It has audio input, not MIDI input.
+- Not a tempo detector. Set the **project BPM**; play in time with it (or with the drums it generates).
+
+---
+
+## How it interacts with your DAW
+
+### Signal flow
+
+```
+Guitar (DI) ──► Metal Accompaniment ──► guitar audio out (dry pass-through)
+                         │
+                         └── MIDI out ──► drum track  (ch 10)
+                                       └► bass track  (ch 2)
+```
+
+Insert **Metal Accompaniment** on the **guitar audio track**, **before** amp/cab/distortion. The analyser is trained on **dry DI**. Distortion upstream will confuse energy, style, and pitch.
+
+Typical insert order on the guitar track:
+
+1. Guitar input (DI)
+2. **Metal Accompaniment**
+3. Amp / cab / IR / FX
+
+The plugin passes guitar through (`outputGain` scales that audio only — not MIDI velocity).
+
+### Tempo: the DAW is the drummer’s click
+
+**The drums and bass play at the DAW global tempo.**
+
+- While the transport is **running**, BPM comes from the host playhead (`getBpm()`). The beat clock is anchored to host sample position, so grooves stay on the **project grid** across play, stop, seek, and loop.
+- You do **not** tap tempo. You do **not** match the plugin to your playing speed. You set the session BPM (e.g. 120) and play *into* that grid, the same way you would play to a click or a drummer who already knows the song tempo.
+- The on-plugin **Tempo (BPM)** parameter is a **fallback** for hosts with no playhead (the standalone app). In a normal DAW session it is ignored when the host reports a valid tempo.
+- If you **jam with the transport stopped**, the plugin keeps time itself at the last valid host BPM (or the fallback knob / 120). That is for noodling; for a real take, **press play** so MIDI lines up with the arrangement.
+
+Change the DAW tempo → the accompaniment changes with it on the next blocks. Loop the timeline → patterns stay locked to bar 1 of the loop, not to “how long you’ve been playing.”
+
+### MIDI routing (the part that makes it audible)
+
+The plugin **produces MIDI** and **does not accept MIDI**. Your DAW must route that output to instruments:
+
+1. **Guitar track** — audio in, Metal Accompaniment inserted, audio out to your amp sim / master as usual.
+2. **Drum track** — a GM drum instrument. Receive MIDI **from the guitar track**, **channel 10 only**.
+3. **Bass track** — a bass instrument. Receive MIDI **from the guitar track**, **channel 2 only**.
+
+If drums and bass share one MIDI cable/bus, filter by channel on each instrument so the kit does not play bass notes and the bass does not play kicks.
+
+**Reaper (typical):**
+
+1. Scan plugins; search **Metal** or **Niall**. Category: **Tools**.
+2. Guitar track: input = your interface instrument channel; insert Metal Accompaniment (before amp).
+3. Drum track: VSTi; route MIDI from the guitar track; MIDI filter **channel 10**.
+4. Bass track: bass VSTi; same MIDI source; filter **channel 2**.
+5. Set **project BPM**, arm the guitar track, **press play**, play in time.
+
+Ableton / Logic: same idea — audio effect on the guitar audio channel, then a MIDI send or sidechain-style MIDI routing from that track to two instrument tracks. Logic users load the **AU** (`kAudioUnitType_MusicEffect`).
+
+### Two ways to sit in a session
+
+| DAW transport | What happens |
+|---------------|----------------|
+| **Playing** | Accompaniment locked to the arrangement: bars, loops, and tempo changes. This is the intended mode. |
+| **Stopped** | Internal beat clock so you can still hear drums/bass while sketching. MIDI will **not** line up with existing clips until you hit play. |
+
+---
+
+## Playing: follow vs play vs riff lock
+
+### Follow (default — PLAY button off)
+
+The plugin **listens** and picks a groove from how you play:
+
+- Energy → **SILENT / SOFT / LOUD** (verse-like vs chorus-like).
+- Mel-CNN style head (once stable ~150 ms) steers the groove family: chugging → half-time/breakdown, open chords → chorus/breakdown, single-note runs → fast/thrash, sustain → sparse.
+- Pattern changes commit on **bar boundaries**, with a hold so the kit does not flicker every strum.
+
+You still play **at the DAW tempo**. Follow changes *which* groove, not *how fast*.
+
+### Play (PLAY button on)
+
+Scripted **song form** (intro / verse / chorus / …) at the DAW tempo. The sequencer walks the form; grooves rotate by musical phrase (2 bars for verse/chorus/solo, 4 for breakdown/intro/outro) so it does not sit on one pattern forever. Use **Loop** to repeat the form.
+
+### Record riff / groove lock
+
+**Record riff:** 1-bar count-in (kick on 1, stick on 2/3/4), then play a **4-bar** riff to the click. The plugin locks drums + bass to that take. While locked, the UI shows how many bars remain before a **transition** (contrast sections, then back to follow). **Forget** clears the riff.
+
+**Lock (bars)** / **Transition (bars)** / **Transition sections** control how long the lock holds after you leave the riff, and how many contrast sections play before follow returns.
+
+---
+
+## Controls (v0.9.27)
+
+| Control | What it does |
+|---------|----------------|
+| **Genre** | Rock (default), Hard Rock, Punk, Metal, Sludge — groove feel, velocities, pattern pool. |
+| **Swing** | Delays off-8th drum events (0–100%). Genre can set a default. |
+| **Bass octave** | −12 / 0 / +12 for bass VSTs with a limited or mis-labelled range. MIDI 36 = C2 (some instruments display that as C1). |
+| **Song form** | Presets (Standard Metal, Sludge/Drone, Short Punk, …) plus an editable custom section list. |
+| **Loop** | Repeat the song form in Play mode. |
+| **Lock (bars)** | How long a riff lock holds after you stop playing the riff (returning to it extends it). |
+| **Transition (bars / sections)** | After lock expires: length and count of contrast sections before follow. |
+| **PLAY** | On = song-form playback. Off = follow/listen. |
+| **Record riff / Forget** | Capture or clear a 4-bar riff lock. |
+| **Output Gain** | Guitar pass-through level only. |
+
+Live readouts: **BPM** (host tempo), **State**, **Pattern**, **Style**, **RMS**, **Centroid**, **HF Flux**, **noise floor**, groove/lock status.
+
+---
+
+## MIDI map
+
+**Drums — channel 10 (GM percussion)**
+
+| Note | Instrument |
+|------|------------|
+| 36 | Kick |
+| 38 | Snare |
+| 41 / 45 / 48 | Floor / mid / high tom |
+| 42 / 46 | Closed / open hat |
+| 49 | Crash |
+| 51 / 53 | Ride / ride bell |
+| 52 | China |
+| 55 | Splash |
+
+**Bass — channel 2** — pitched notes, transposed to the tracked guitar root (drop-C tracking down to ~C2). Octave shift is the **Bass octave** control.
+
+---
+
+## What’s new in v0.9.26
+
+- **Follow-mode style steering** — palm-mute / open-chord / single-note / sustain actually biases which groove family you get (still gated by SOFT/LOUD and the 2-bar commit hold).
+- **Play-mode phrase rotation** — grooves hold for a phrase (not one pattern per bar); verse 1 ≠ verse 2.
+- **Fill variety** — last-bar fills scale with section energy (Fill Medium is now used).
+- **Riff-lock progress** in the UI — “bar X/Y · N left before transition.”
+
+---
+
+## Build (developers)
+
+Requirements: **CMake 3.22+**, C++20, **Git**, **ONNX Runtime** (`brew install onnxruntime`).
 
 ```bash
-# Build with ONNX (default)
 cmake -B build-onnx -DCMAKE_BUILD_TYPE=Release -DMA_ENABLE_ONNX=ON \
   -DONNXRUNTIME_ROOT=/opt/homebrew/opt/onnxruntime
 cmake --build build-onnx --parallel
 
-# Install VST3
 cp -R "build-onnx/MetalAccompaniment_artefacts/Release/VST3/Metal Accompaniment.vst3" \
   ~/Library/Audio/Plug-Ins/VST3/
 ```
 
-**Insert order:** guitar → Metal Accompaniment → amp/cab sims → FX. Dry DI signal before any distortion.
-
-## Architecture (v0.8.x)
-
-```
-Guitar Audio (mono, 44.1kHz)
-    │
-    ├─ AudioRingBuffer (accumulates 22,050 samples = 512ms)
-    │      │
-    │      ▼
-    │  MelSpectrogramExtractor → mel[2048] = [64 bands × 32 frames]
-    │      │
-    │      ▼  (lock-free queue → background thread)
-    │  MetalGrooveInference (ONNX)
-    │      │
-    │      ├─ CNN Backbone (3 conv blocks → 128-dim bottleneck)
-    │      │
-    │      └─ Cosine similarity vs 22 precomputed centroids → pattern index
-    │
-    ├─ EnergyAnalyser → RMS, centroid, HF flux, sub-bass ratio
-    ├─ StructureTagger → SILENT / SOFT / LOUD (3-state)
-    ├─ PlaybackGate → silence gating, phrase-breath holds
-    │
-    ▼
-PatternPlayer → MIDI out (ch10 drums, ch2 bass)
-```
-
-## ML pipeline
-
-| Model | File | Role |
-|-------|------|------|
-| **Metal Groove** | `assets/metal_groove.onnx` | Mel-CNN: 22-way pattern selection via bottleneck centroids + 5-way style classifier. Active by default. |
-| Legacy pattern | `assets/accompaniment_model.onnx` | Scalar-feature ONNX fallback (7-float input → pattern index) |
-
-**Training pipeline** (`training/`):
-```bash
-# 1. Record labeled guitar audio per pattern class → data/raw/pattern_XX_name/*.wav
-# 2. Extract C++-aligned mel spectrograms
-python training/scripts/build_mel_groove_dataset.py
-# 3. Train 22-way classifier (quality gates: acc ≥60%, top-3 ≥80%)
-python training/train_groove_model.py --device mps --epochs 80
-# 4. Export centroids (C++ header) + ONNX model
-python training/export_centroids.py
-```
-
-**Latest training results:** 95.6% test accuracy, 99.6% top-3, all per-class recall ≥0.86.
-
-## Plugin parameters
-
-| Parameter | Description |
-|-----------|-------------|
-| `outputGain` | Guitar pass-through level (does not scale MIDI) |
-| `bpm` | Fallback tempo only — used when no DAW transport BPM is available (standalone) |
-| `genre` | Genre preset (Rock default, Hard Rock, Punk, Metal, Sludge): groove feel, velocity profile, section dynamics |
-| `swing` | Swing/shuffle ratio (0–100%) — delays off-8th drum events |
-| `songForm` | Section preset (VERSE/CHORUS/BRIDGE/etc.) |
-| `loop` | Loop song form |
-
-**Tempo is DAW-transport-authoritative.** The drum/bass clock is anchored to the host
-sample position (`getTimeInSamples()`), so patterns stay locked to the project grid across
-seeks, loops, and transport start/stop. The `bpm` knob is only a fallback for hosts with
-no transport (e.g. the standalone build); audio-derived tempo tracking is not used.
-
-### Musicality (v0.9.0)
-
-- **Bass engine:** the authored bass lines in `MidiPatternLibrary` now actually play,
-  transposed to the guitarist's tracked root (harmony: root/fourth/fifth/octave per
-  section, beat-1 accents, ±5 humanisation, ~2 ms behind the kick). Patterns without
-  authored bass get a harmonic line from the root.
-- **Groove engine:** drums render through a velocity hierarchy (downbeat > backbeat >
-  8th hats > off-16ths) and structured microtiming (backbeat slightly late, kick
-  slightly early) with a bounded gaussian instead of white-noise jitter.
-- **Dynamic contrast:** per-section velocity multipliers — chorus backbeat is ≥15 louder
-  than verse backbeat.
-- **Ghost notes:** off-16th snare ghosts (velocity 30–55) in verse/breakdown sections.
-- **Rock-first pattern set:** Rock Backbeat, Rock Half-Time, Rock Shuffle, Punk D-Beat,
-  Rock Ballad, Rock 6/8 Feel (indices 22–27) — the metal set is retained as the
-  "heavy" pool and via the Metal/Sludge genre presets.
-
-### On-screen diagnostics
-
-Live readouts: **BPM**, **State** (SILENT/SOFT/LOUD), **Pattern** (0–27), **RMS**, **Centroid**, **HF Flux**.
-
-## Build
-
-Requirements: **CMake 3.22+**, C++20 compiler, **Git** (FetchContent), **ONNX Runtime** (Homebrew: `brew install onnxruntime`).
+Artifacts: VST3 and AU under `build-onnx/MetalAccompaniment_artefacts/Release/`.
 
 ```bash
-cmake -B build-onnx -DCMAKE_BUILD_TYPE=Release -DMA_ENABLE_ONNX=ON \
-  -DONNXRUNTIME_ROOT=/opt/homebrew/opt/onnxruntime
-cmake --build build-onnx --parallel
-```
-
-Artifacts:
-- VST3: `build-onnx/MetalAccompaniment_artefacts/Release/VST3/Metal Accompaniment.vst3`
-- AU: `build-onnx/MetalAccompaniment_artefacts/Release/AU/Metal Accompaniment.component`
-
-## Tests
-
-```bash
-# Unit + integration + E2E (101/103 pass in current build)
 build-onnx/MetalAccompanimentTests
 build-onnx/MetalAccompanimentIntegrationTests
-
-# ONNX latency benchmark (p99 <5ms)
-build-onnx/MetalAccompanimentTests "[onnx][latency]"
 ```
 
-## Reaper setup
+Training the mel-CNN and exporting `assets/metal_groove.onnx` is documented under `training/` and [`docs/DATA_STRATEGY.md`](docs/DATA_STRATEGY.md).
 
-1. Install plugin, **re-scan VST3**
-2. Insert **Metal Accompaniment** on guitar track (before amp sims)
-3. Route MIDI from plugin track → drum instrument track (ch10 drums, ch2 bass)
-4. Play — patterns switch reactively based on your playing style
-
-Search "Metal" or "Niall" in the FX browser. Plugin appears under **Tools** category.
+---
 
 ## Documentation
 
 | Doc | Content |
 |-----|---------|
-| [`SIMPLIFY.md`](SIMPLIFY.md) | v0.8.0 architecture & implementation plan |
-| [`docs/ONNX_IO.md`](docs/ONNX_IO.md) | ONNX tensor contracts (metal_groove + legacy) |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Component boundaries, threading, data flow |
-| [`.planning/ROADMAP.md`](.planning/ROADMAP.md) | GSD milestone & phase tracking |
-
-## Version history
-
-| Version | Milestone |
-|---------|-----------|
-| **v0.9.7** | Bass octave control (−12/0/+12) for range-limited bass VSTs; confirmed MIDI 36 = C2 output for drop-C (VSTs using the middle-C=C3 convention display it as C1) |
-| **v0.9.6** | Drop-C pitch tracking: pitch estimator low end extended 75→55 Hz so C2 (65.4 Hz) and lower drop tunings are detected — the bass follows your root instead of defaulting to E2 |
-| **v0.9.5** | Solid SILENT under hot-input noise: silent-threshold cap raised (0.03→0.06) so the learned floor clears noise up to ~0.05 RMS; phrase learner gated on SILENT (no more noise-locked repeating bass); faster floor adaptation |
-| **v0.9.4** | Adaptive noise floor: SILENT is solid under guitar hum (threshold learns your noise floor; holds to SILENT cut to 1s; noise-floor readout in UI) |
-| **v0.9.3** | Bass stops during the Silent pattern (was: harmonic fallback droned the root under hum) |
-| **v0.9.2** | Frozen-transport fix: jamming with the DAW transport stopped now runs the plugin's own beat clock (was: stuck on Silent + block-rate machine-gun) |
-| **v0.9.1** | Bass stuck-note fix (multi-pitch bass note-off bookkeeping) |
-| **v0.9.0** | Musicality & Rock Pivot: bass engine, groove engine, dynamic contrast, ghost notes, rock pattern set, genre presets |
-| **v0.8.12** | Transport-anchored drum clock; DAW-transport-only tempo; dead-path cleanups |
-| **v0.8.2** | Mel queue integration — MetalGrooveInference wired end-to-end |
-| **v0.8.1** | Training pipeline + MetalGrooveInference ONNX integration |
-| **v0.8.0** | Unified Mel-CNN Pipeline (22-pattern classifier) |
-| v0.6.0 | ML Correctness & Evaluation |
-| v0.5.0 | Rhythmic Coherence |
-| v0.4.0 | ML Playability & Simplification |
-| v0.3.0 | Real ML Training Pipeline |
-| v0.2.0 | ML + Generative |
-| v0.1.0 | Rule-based MVP |
+| [`CHANGELOG.md`](CHANGELOG.md) | Version history |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Threading, DAW-tempo clock, inference |
+| [`docs/ONNX_IO.md`](docs/ONNX_IO.md) | ONNX tensor contracts |
+| [`docs/DATA_STRATEGY.md`](docs/DATA_STRATEGY.md) | Data / model improvement |
+| [`.planning/ROADMAP.md`](.planning/ROADMAP.md) | Milestone tracking |

@@ -3,8 +3,8 @@
  *
  * Synthesises a composite audio signal:
  *   5 s  silence
- *  10 s  soft-like  (1500 Hz sine, amplitude 0.3 — RMS ≈ 0.212, below kLoudRms=0.075 → SOFT)
- *  10 s  loud-like  (1500 Hz sine, amplitude 0.6 — RMS ≈ 0.424, above kLoudRms=0.075 → LOUD)
+ *  10 s  soft-like  (1500 Hz sine, amplitude 0.015 — RMS ≈ 0.042, below kLoudRmsFloor=0.30 → SOFT)
+ *  10 s  loud-like  (1500 Hz sine, amplitude 0.12 — RMS ≈ 0.339, above kLoudRmsFloor=0.30 → LOUD)
  *   5 s  silence
  *
  * Feeds it through AccompanimentProcessor in 512-sample blocks and verifies:
@@ -14,7 +14,7 @@
  *   - After the final silence, display RMS drops back below the silent threshold.
  *
  * Classification uses pure RMS with sub-bass discrimination:
- * below kSilentRms(0.012) → SILENT, above kLoudRms(0.075) → LOUD,
+ * below kSilentRms(0.012) → SILENT, above kLoudRmsFloor(0.30) → LOUD,
  * in between → SOFT.
  *
  * Note: state transitions are delayed by the hold times in StructureTagger.
@@ -120,8 +120,8 @@ TEST_CASE("E2E: verse-like section causes display state to leave SILENT", "[e2e]
         feedSection(proc, sil.data(), n, block);
     }
 
-    // 10 s of 1500 Hz sine at amplitude 0.3 — RMS ≈ 0.212, safely below kLoudRms(0.35) → SOFT
-    // After the 0.1 s RMS warmup and immediate SILENT exit, state should enter SOFT
+    // 10 s of 1500 Hz sine at amplitude 0.3 — RMS ≈ 0.848 (above kLoudRmsFloor 0.30) → LOUD
+    // After the 0.1 s RMS warmup and immediate SILENT exit, state should leave SILENT
     {
         const int n = static_cast<int>(10.0 * sr);
         auto soft = sineSection(n, 1500.0, sr, 0.3f);
@@ -152,11 +152,11 @@ TEST_CASE("E2E: chorus-like section after verse drives pattern index to [4,5]", 
         feedSection(proc, soft.data(), n, block);
     }
 
-    // LOUD section: amplitude 0.04 for 14 s — RMS ≈ 0.113, safely above kLoudRms(0.075)
-    // but below kBreakdownRms(0.12). StructureTagger needs > 2 s of LOUD input.
+    // LOUD section: amplitude 0.12 for 14 s — RMS ≈ 0.339, above kLoudRmsFloor(0.30)
+    // StructureTagger needs > 2 s of LOUD input.
     {
         const int n = static_cast<int>(14.0 * sr);
-        auto loud = sineSection(n, 1500.0, sr, 0.04f);
+        auto loud = sineSection(n, 1500.0, sr, 0.12f);
         feedSection(proc, loud.data(), n, block);
     }
 
@@ -203,8 +203,8 @@ TEST_CASE("E2E: final silence after signal causes RMS to drop", "[e2e][transitio
 }
 
 // Amplitude thresholds calibrated against EnergyAnalyser rmsEnergy (= raw_rms * 4.0, clamped [0,1]):
-//   amp 0.015 → raw_rms ≈ 0.0106 → rmsEnergy ≈ 0.0424 → SOFT (above the adaptive silence gate, below kLoudRms)
-//   amp 0.04  → raw_rms ≈ 0.0283 → rmsEnergy ≈ 0.113  → LOUD
+//   amp 0.015 → raw_rms ≈ 0.0106 → rmsEnergy ≈ 0.0424 → SOFT (above the adaptive silence gate, below kLoudRmsFloor)
+//   amp 0.12  → raw_rms ≈ 0.0849 → rmsEnergy ≈ 0.339  → LOUD
 // Verses use *phrased* audio (0.4 s on / 0.12 s off) so the adaptive noise floor
 // stays reset — sustained constant low-level input is learned as the noise floor.
 TEST_CASE("E2E: palm-muted verse to full-chord chorus — no flip-flopping", "[e2e][transitions]")
@@ -217,7 +217,7 @@ TEST_CASE("E2E: palm-muted verse to full-chord chorus — no flip-flopping", "[e
     proc.pauseBackgroundInferenceForTests();
 
     // Phase 1: Palm-muted verse (SOFT) — 10s of phrased amp 0.015
-    // StructureTagger: rmsEnergy ≈ 0.0424 → SOFT (above silence, below kLoudRms)
+    // StructureTagger: rmsEnergy ≈ 0.0424 → SOFT (above silence, below kLoudRmsFloor)
     {
         const int n = static_cast<int>(10.0 * sr);
         auto verse = phrasedSection(n, 1500.0, sr, 0.015f, 0.4, 0.12);
@@ -228,10 +228,10 @@ TEST_CASE("E2E: palm-muted verse to full-chord chorus — no flip-flopping", "[e
     const int stateAfterVerse = proc.getDisplayStateIndex();
     REQUIRE(stateAfterVerse == 1); // 1 = SOFT
 
-    // Phase 2: Full-chord chorus (LOUD) — 15s of amp 0.04
+    // Phase 2: Full-chord chorus (LOUD) — 15s of amp 0.12
     {
         const int n = static_cast<int>(15.0 * sr);
-        auto chorus = sineSection(n, 1500.0, sr, 0.04f);
+        auto chorus = sineSection(n, 1500.0, sr, 0.12f);
         feedSection(proc, chorus.data(), n, block);
     }
 
@@ -270,7 +270,7 @@ TEST_CASE("E2E: rapid SOFT/LOUD alternation — hold guard prevents flip-floppin
     // Establish initial LOUD state with sustained signal
     {
         const int n = static_cast<int>(5.0 * sr);
-        auto loud = sineSection(n, 1500.0, sr, 0.04f);
+        auto loud = sineSection(n, 1500.0, sr, 0.12f);
         feedSection(proc, loud.data(), n, block);
     }
     const int initialState = proc.getDisplayStateIndex();
@@ -288,7 +288,7 @@ TEST_CASE("E2E: rapid SOFT/LOUD alternation — hold guard prevents flip-floppin
 
     for (int bar = 0; bar < 8; ++bar)
     {
-        const float amp = (bar % 2 == 0) ? 0.04f : 0.015f; // alternate LOUD/SOFT
+        const float amp = (bar % 2 == 0) ? 0.12f : 0.015f; // alternate LOUD/SOFT
         auto seg = (bar % 2 == 0)
             ? sineSection(samplesPerBar, 1500.0, sr, amp)
             : phrasedSection(samplesPerBar, 1500.0, sr, amp, 0.4, 0.12);  // soft: phrased so the floor stays reset

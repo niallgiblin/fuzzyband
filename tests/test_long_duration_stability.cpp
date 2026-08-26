@@ -11,7 +11,7 @@
  *     2 s  silence gap
  *     8 s  SOFT  (amp 0.013, 1500 Hz sine)
  *     2 s  silence gap
- *     8 s  LOUD  (amp 0.04,  1500 Hz sine)  — below kBreakdownRms(0.12)
+ *     8 s  LOUD  (amp 0.12, 1500 Hz sine)  — above kLoudRmsFloor(0.30)
  *  )
  *   3 s    silence (cooldown)
  *
@@ -167,7 +167,7 @@ TEST_CASE("Long-duration stability: 300+ seconds continuous processing", "[stabi
         runSilence(2.0);
         runSection(0.013f, 8.0, "SOFT");
         runSilence(2.0);
-        runSection(0.04f,  8.0, "LOUD");
+        runSection(0.12f,  8.0, "LOUD");
 
         if ((r + 1) % 5 == 0)
             std::cerr << "[STABILITY]  round " << (r + 1) << "/" << rounds

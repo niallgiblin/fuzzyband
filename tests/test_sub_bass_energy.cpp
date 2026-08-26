@@ -116,10 +116,10 @@ TEST_CASE("StructureTagger: RMS above loudFloor still returns LOUD regardless of
     StructureTagger tagger;
     tagger.prepare(44100.0);
 
-    // RMS=0.090 (≥ kLoudRms=0.075) — RMS alone triggers LOUD
+    // RMS=0.65 (≥ kLoudRms=0.60, peakRms=0) — RMS alone triggers LOUD
     // Sub-bass ratio is low but RMS dominates
     tagger.setSubBassRatio(0.0f);
-    const StructureState s = tagger.update(0.090f, 500.0f, 0.0f, 512);
+    const StructureState s = tagger.update(0.650f, 500.0f, 0.0f, 512);
 
     REQUIRE(s == StructureState::LOUD);
 }
@@ -151,7 +151,7 @@ TEST_CASE("StructureTagger: sub-bass ratio in middle range falls through to RMS 
     tagger.prepare(44100.0);
 
     // subBassRatio=0.30: between kSubBassSoftCeil (0.20) and kSubBassLoudFloor (0.35)
-    // RMS=0.040 < loudFloor (0.075) → should fall through to SOFT (RMS catch-all)
+    // RMS=0.040 < loudFloor (0.60, peakRms=0) → should fall through to SOFT (RMS catch-all)
     tagger.setSubBassRatio(0.30f);
     const StructureState s = tagger.update(0.040f, 600.0f, 0.0f, 512);
 
@@ -163,9 +163,9 @@ TEST_CASE("StructureTagger: very loud RMS goes to LOUD with sub-bass", "[sub_bas
     StructureTagger tagger;
     tagger.prepare(44100.0);
 
-    // RMS=0.15 ≥ kLoudRms=0.075 → LOUD (no separate BREAKDOWN state)
+    // RMS=0.65 ≥ kLoudRms=0.60 → LOUD (no separate BREAKDOWN state)
     tagger.setSubBassRatio(0.1f);  // low sub-bass, but RMS alone triggers LOUD
-    const StructureState s = tagger.update(0.150f, 300.0f, 0.0f, 512);
+    const StructureState s = tagger.update(0.650f, 300.0f, 0.0f, 512);
 
     REQUIRE(s == StructureState::LOUD);
 }
