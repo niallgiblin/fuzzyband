@@ -42,6 +42,13 @@ public:
      *  @return pattern index [0, 21] */
     int selectPatternFromMel(const float* melData, int excludeIndex = -1);
 
+    /** @brief Variety-aware mel selection. When @p seed >= 0 it draws from the
+     *  top-K nearest grooves (weighted by similarity) so the best fit dominates
+     *  but a neighbouring groove can occasionally be chosen — "a diverse pattern
+     *  the ML can alter slightly". With seed < 0 it is the deterministic argmax.
+     *  @return pattern index [0, 21] */
+    int selectPatternFromMel(const float* melData, int excludeIndex, int seed);
+
     /** @brief Style classification from mel data (free, from same inference output).
      *  @return style index 0-4 (palm_mute, open_chord, single_note, sustain, silence) */
     int classifyStyle(const float* melData);

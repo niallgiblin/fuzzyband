@@ -1,10 +1,35 @@
-# Metal Accompaniment — v0.9.27
+# Metal Accompaniment — v0.9.29
 
 A JUCE **8** **VST3 / AU** plugin for guitarists. You play guitar into it; it listens, and it writes **drum + bass MIDI** in real time so a drum kit and a bass instrument in your DAW can play along with you.
 
 It does **not** guess your tempo from the guitar. It accompanies you at the **DAW’s global project tempo**, locked to the host transport and the project grid.
 
-Current plugin version (shown top-right in the UI): **v0.9.27**. Full history: [`CHANGELOG.md`](CHANGELOG.md).
+Current plugin version (shown top-right in the UI): **v0.9.29**. Full history: [`CHANGELOG.md`](CHANGELOG.md).
+
+> **v0.9.29** is the latest on the download page. New releases are tagged and the
+> website populates itself — see [`docs/RELEASING.md`](docs/RELEASING.md).
+
+---
+
+## Download
+
+Newest builds for **all three platforms** are on the download page:
+
+- **macOS** (universal, Apple Silicon + Intel) — **VST3 + AU + Standalone**
+- **Windows** (x64) — **VST3 + Standalone**
+- **Linux** (x64) — **VST3 + Standalone**
+
+Each download is **self-contained** (the ONNX model and runtime are bundled), so there's
+nothing else to install.
+
+> **Non-tech users:** grab the package for your OS below and follow the install note.
+> **Developers:** skip the download and build from source (see [Build](#build-developers)).
+
+[**Download Metal Accompaniment →**](https://niallgiblin.github.io/fuzzyband/)
+
+For the macOS Gatekeeper "unverified" notice, see the installation notes in the
+[`docs/RELEASING.md`](docs/RELEASING.md) — right-click **Open**, or
+`xattr -dr com.apple.quarantine` the bundle once.
 
 ---
 
@@ -18,7 +43,7 @@ This is an **audio effect that produces MIDI**, not a standalone band. You need 
 |------|--------|
 | **macOS** | Primary target. VST3 + AU. |
 | **A DAW with MIDI routing** | Reaper, Ableton Live, Logic Pro, or similar. The host must expose project tempo and a playhead. |
-| **Metal Accompaniment v0.9.27** | VST3: `~/Library/Audio/Plug-Ins/VST3/`. AU: `~/Library/Audio/Plug-Ins/Components/` (after install). |
+| **Metal Accompaniment v0.9.29** | VST3: `~/Library/Audio/Plug-Ins/VST3/`. AU: `~/Library/Audio/Plug-Ins/Components/` (after install). |
 | **CPU / buffer** | Designed for M-series at **256-sample** buffers. Smaller buffers (128) are fine if the session stays xrun-free. |
 
 Windows/Linux VST3 builds exist in CMake, but day-to-day development and the AU path are macOS.
@@ -137,7 +162,7 @@ Scripted **song form** (intro / verse / chorus / …) at the DAW tempo. The sequ
 
 ---
 
-## Controls (v0.9.27)
+## Controls (v0.9.29)
 
 | Control | What it does |
 |---------|----------------|
@@ -216,4 +241,5 @@ Training the mel-CNN and exporting `assets/metal_groove.onnx` is documented unde
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Threading, DAW-tempo clock, inference |
 | [`docs/ONNX_IO.md`](docs/ONNX_IO.md) | ONNX tensor contracts |
 | [`docs/DATA_STRATEGY.md`](docs/DATA_STRATEGY.md) | Data / model improvement |
+| [`docs/RELEASING.md`](docs/RELEASING.md) | Cut a release; how the download site populates itself |
 | [`.planning/ROADMAP.md`](.planning/ROADMAP.md) | Milestone tracking |

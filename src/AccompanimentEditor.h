@@ -198,16 +198,11 @@ private:
     juce::ComboBox genreCombo;
     juce::Label swingLabel{ {}, "Swing" };
     juce::Slider swingSlider;
-    juce::Label bassOctaveLabel{ {}, "Bass octave" };
-    juce::ComboBox bassOctaveCombo;
 
-    juce::Label songFormLabel{ {}, "Song form" };
-    juce::ComboBox songFormCombo;
-    juce::Label songSectionsLabel{ {}, "Song sections (custom)" };
+    juce::Label songSectionsLabel{ {}, "Sections" };
     juce::Viewport songSectionsViewport;
-    std::unique_ptr<SectionListEditor> sectionListEditor;  // Phase 2: editable custom form
+    std::unique_ptr<SectionListEditor> sectionListEditor;  // editable custom form
     juce::Label sectionLabel;
-    juce::ToggleButton loopToggle{ "Loop" };
 
     juce::Label lockBarsLabel{ {}, "Lock (bars)" };
     juce::Slider lockBarsSlider;
@@ -227,22 +222,28 @@ private:
         ScopeComponent() = default;
 
         /** @brief Called from the editor timer with the latest scope data. */
-        void setScopeData(const float* samples, int count, float playheadFraction) noexcept
+        void setScopeData(const float* samples, int count, float playheadFraction,
+                          int samplesPerBar) noexcept
         {
             for (int i = 0; i < count && i < static_cast<int>(kMaxSamples); ++i)
                 samples_[static_cast<size_t>(i)] = samples[i];
             count_ = juce::jmin(count, static_cast<int>(kMaxSamples));
             playheadFraction_ = playheadFraction;
+            samplesPerBar_ = juce::jmax(1, samplesPerBar);
             repaint();
         }
 
         void paint(juce::Graphics&) override;
 
     private:
-        static constexpr int kMaxSamples = 2048;
+        // Must hold a full bar at the tempos the plugin targets so the bar-aligned
+        // scope (downbeat at the left, 1-2-3-4 notches) has all the samples it needs.
+        // Keep in sync with AccompanimentProcessor::kScopeSize.
+        static constexpr int kMaxSamples = 16384;
         std::array<float, kMaxSamples> samples_{};
         int count_ = 0;
         float playheadFraction_ = 0.0f;
+        int samplesPerBar_ = 1;   // decimated samples per bar (bar-aligned render)
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScopeComponent)
     };
     ScopeComponent scopeComponent;
@@ -253,9 +254,6 @@ private:
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> genreAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> swingAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> bassOctaveAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> songFormAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lockBarsAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> transitionBarsAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> transitionSectionsAttachment;
@@ -266,10 +264,6 @@ private:
     juce::Label stateLabel;
     juce::Label patternLabel;
     juce::Label styleLabel;
-    juce::Label rmsLabel;
-    juce::Label centroidLabel;
-    juce::Label hfFluxLabel;
-    juce::Label noiseFloorLabel;
 
     FuzzybandLookAndFeel lookAndFeel;
 

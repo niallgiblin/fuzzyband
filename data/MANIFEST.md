@@ -32,11 +32,16 @@ gitignored and regenerated locally.** Never commit `*.npy` — regenerate them.
 - **Grow it with:** `training/slice_annotations.py` (slices a labeled take into
   per-class clips under `data/raw/<label>/`).
 
-### `data/raw/pattern_00_*..pattern_21_*/` — 22-class groove reference audio
+### `data/raw/pattern_00_*..pattern_27_*/` — 28-class groove reference audio
 - **What:** reference takes, one directory per groove pattern class (index in
   `data/processed/class_map.json`), feeding the production mel-CNN
-  (`assets/metal_groove.onnx`).
-- **Provenance:** recorded/authored by the project.
+  (`assets/metal_groove.onnx`). Indices 0-21 are the metal set, 22-27 the rock set.
+- **Provenance:** **project-generated** by `training/scripts/render_pattern_kit.py`
+  (a procedural GM drum-kit render of the hand-authored `MidiPatternLibrary` patterns —
+  drums ch 10, mono 44.1 kHz / 24-bit, 3 takes each). The original takes, added with the
+  initial prototype, were *low-frequency synthesized tones* (~0% energy above 3 kHz) and
+  have been replaced; the old set is backed up at `data/raw_synth_backup/`. Groove
+  *definitions* are hand-authored C++; only feel/priors come from GMD/Lakh (below).
 - **License:** project-owned.
 
 ### External datasets (Phase 4 — arrangement layer, C1–C3 integrated)

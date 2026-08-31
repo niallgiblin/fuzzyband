@@ -120,7 +120,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::crea
         4, 64, 16));
 
     // Post-lock transition grammar (A5.2): how long each transition section
-    // holds, and how many distinct sections to visit before returning to follow.
+    // holds, and how many distinct sections to visit before returning to the riff.
     layout.add(std::make_unique<juce::AudioParameterInt>(
         juce::ParameterID{ "transitionBars", 1 },
         "Transition (bars)",
@@ -291,7 +291,14 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             {
                 if (auto* groove = dynamic_cast<MetalGrooveInference*>(inference.get()))
                 {
-                    idx = groove->selectPatternFromMel(latestMel.data.data(), excludeParam);
+                    // Seed variety by the current bar number so the preferred
+                    // groove stays dominant but the drums vary bar-to-bar (the
+                    // ML "alters slightly" the best fit).
+                    const double bpmSafe = latest.bpm > 0.0f ? latest.bpm : 120.0f;
+                    const double spbSeed = 4.0 * 60.0 / bpmSafe * sr;
+                    const int melSeed = (spbSeed > 0.0)
+                        ? static_cast<int>(latest.sampleTimestamp / spbSeed) : 0;
+                    idx = groove->selectPatternFromMel(latestMel.data.data(), excludeParam, melSeed);
                     styleNow = groove->classifyStyle(latestMel.data.data());
                     displayStyle.store(styleNow, std::memory_order_relaxed);
                     usedMelPath = true;
@@ -364,7 +371,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             }
             if (styleStabilityCount >= kStyleStableWindows)
                 finalIdx = PatternRules::diversifyPatternForStyle(
-                    diversifiedIdx, styleNow, barMod8, latest.state);
+                    diversifiedIdx, styleNow, barMod8, latest.state, genreId);
         }
         else
         {
@@ -732,7 +739,16 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     // ── 7. Silence gating ───────────────────────────────────────────────────
     const bool audioActive = (rms > 0.001f);
-    const bool trulySilent = (!playOn && !audioActive) || digitalSilence;
+    // Item: "only starts listening at Record riff / Play" — the plugin is idle
+    // (silent, not learning) until the user arms it via Play or a riff capture.
+    // Once armed (song form playing, riff captured/locked, or a post-lock
+    // transition running) it behaves as before. Otherwise it stays quiet.
+    const bool armActive = playOn
+        || riffCaptureActive.load(std::memory_order_acquire)
+        || riffCaptureStart.load(std::memory_order_acquire)
+        || grooveLocked.load(std::memory_order_acquire)
+        || transitionSectionActive.load(std::memory_order_acquire);
+    const bool trulySilent = ((!playOn && !audioActive) || digitalSilence || !armActive);
 
     int previewRem = debugPreviewSamplesRemaining.load(std::memory_order_acquire);
     if (previewRem > 0)
@@ -789,6 +805,16 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         const double samplesPerBeat = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
         const double beatStart = static_cast<double>(clockSample) / samplesPerBeat;
         const double beatEnd = beatStart + static_cast<double>(numSamples) / samplesPerBeat;
+
+        // Scope playhead must track the SAME clock as the drums (the resolved
+        // host position, not the plugin's own counter). Otherwise, when the DAW
+        // transport isn't at sample 0 (or loops/seeks), the bar-aligned waveform's
+        // downbeat lands off the audible drum downbeat.
+        const double sppbScope = 4.0 * samplesPerBeat;
+        if (sppbScope > 0.0)
+            playheadFraction.store(static_cast<float>(
+                std::fmod(static_cast<double>(clockSample), sppbScope) / sppbScope),
+                std::memory_order_relaxed);
 
         float blockPeak = 0.0f;
         for (int i = 0; i < numSamples; ++i)
@@ -943,8 +969,10 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             liveListenBar.store(0, std::memory_order_relaxed);
             liveListenNotes.store(0, std::memory_order_relaxed);
         }
-        else
+        else if (armActive)
         {
+            // Live grid listen / follow (only once the engine is armed — Play,
+            // riff capture, or a lock). Idle does not auto-listen/auto-lock.
             constexpr double kBar = 4.0;
             constexpr double kListenBeats = static_cast<double>(PhraseLearner::kGridBars) * 4.0;
             liveListenActive.store(true, std::memory_order_release);
@@ -1018,7 +1046,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
 
         // Do not wipe a user take on phrase-breath silence.
-        const auto bassNote = (silentNow && !capturingNow)
+        const auto bassNote = ((silentNow || !armActive) && !capturingNow)
             ? PhraseLearner::BassNote{}
             : phraseLearner.process(
                 hostSampleTime,
@@ -1029,7 +1057,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 numSamples,
                 pcForBass
             );
-        if (silentNow && !capturingNow && !phraseLearner.isLocked()
+        // Idle (armActive false) or silence: don't keep the riff mirror learning
+        // in the background — the plugin only learns once the user arms it.
+        if ((silentNow || !armActive) && !capturingNow && !phraseLearner.isLocked()
             && !phraseLearner.isGridCapturing())
             phraseLearner.reset();
 
@@ -1078,10 +1108,13 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 patternPlayer.setClickTrack(false);
             }
         }
-        else if (!capturingHeld && !grooveLockActive)
+        else if (!capturingHeld && !grooveLockActive
+                 && postLockPhase != PostLockPhase::TransitionHold)
         {
             // Engage: the riff just repeated (lock edge), or the riff was played
-            // within the re-engage grace after a hold expired.
+            // within the re-engage grace after a hold expired. Skipped while a
+            // post-lock transition is playing — the transition hold is the sole
+            // authority on re-locking the riff during that window.
             const bool riffFresh = (hostSampleTime - lastRiffMatchSample) < reEngageGrace;
             if (phraseLockEdge || riffFresh)
             {
@@ -1093,7 +1126,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 grooveLockReleaseArmed = false;
             }
         }
-        else if (!capturingHeld)
+        else if (!capturingHeld && grooveLockActive)
         {
             // Held: the window is fixed — release exactly when it elapses.
             if (hostSampleTime >= grooveLockEndSample)
@@ -1103,7 +1136,11 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             }
         }
         grooveLocked.store(grooveLockActive, std::memory_order_release);
-        phraseLearner.setHoldActive(grooveLockActive);
+        // Keep the learned riff held whenever the groove is locked OR a post-lock
+        // transition is playing, so it never drifts-unlocks mid-transition and is
+        // always available to re-lock when the transition returns to the riff (A).
+        phraseLearner.setHoldActive(grooveLockActive
+            || postLockPhase == PostLockPhase::TransitionHold);
 
         // ── Riff-lock hold progress (UI): bar done / bars remaining ───────────
         // While locked, publish the 1-based current bar and the bars left before
@@ -1128,8 +1165,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // instead of releasing straight back to the listener. The transition
         // grammar (PatternRules::pickNextSectionAfterLock) picks a *contrast*
         // section (never the riff's own feel, never the last one played) and
-        // holds it for `transitionBars` bars before returning to follow. If the
-        // riff re-appears mid-transition, we cut back to it immediately.
+        // holds it for `transitionBars` bars before returning to the riff (A).
+        // If the riff re-appears mid-transition, we cut back to it immediately.
         if (grooveLockReleaseArmed)
         {
             grooveLockReleaseArmed = false;
@@ -1180,9 +1217,13 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // ── A5.2: run the transition hold. ────────────────────────────────────
         if (postLockPhase == PostLockPhase::TransitionHold)
         {
-            // The riff returning cuts the transition short and re-locks.
-            const bool riffFresh = (hostSampleTime - lastRiffMatchSample) < reEngageGrace;
-            if (phraseLockEdge || riffFresh)
+            // The riff re-appearing AFTER the transition began cuts it short and
+            // re-locks. `lastRiffMatchSample > transitionStartSample` is an edge
+            // check: a match from BEFORE the transition (e.g. the riff that was
+            // playing at lock expiry) does NOT cut it — the transition gets to
+            // play until the riff genuinely comes back.
+            const bool riffReappeared = lastRiffMatchSample > transitionStartSample;
+            if (phraseLockEdge || riffReappeared)
             {
                 postLockPhase = PostLockPhase::Idle;
                 transitionSectionActive.store(false, std::memory_order_release);
@@ -1196,7 +1237,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             else if (hostSampleTime >= transitionEndSample)
             {
                 // Hold finished. Continue to the next contrast section (up to
-                // `transitionSections` total), then hand back to follow mode.
+                // `transitionSections` total), then return to the riff (A).
                 int maxSections = 2;
                 if (auto* raw = apvts.getRawParameterValue("transitionSections"))
                     maxSections = juce::jlimit(1, 4, static_cast<int>(std::lround(raw->load())));
@@ -1242,15 +1283,15 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 }
                 else
                 {
-                    // Transition sequence complete — release to follow with a
-                    // crash + Release fill (inference resumes via grooveLocked=false).
+                    // Transition sequence complete — firmly return to the locked
+                    // riff (A): re-engage the groove lock so the cycle continues
+                    // (A → B → A), instead of dropping straight to follow/listen.
+                    // The riff was kept held in the learner, so it re-locks
+                    // seamlessly and the drums resume the frozen riff groove.
                     postLockPhase = PostLockPhase::Idle;
                     transitionSectionActive.store(false, std::memory_order_release);
+                    engageGrooveLockFromRiff();
                     patternPlayer.armTransitionCrash();
-                    PatternPlayer::GrooveCommit releaseCommit{};
-                    releaseCommit.patternIndex = latestPatternIndex.load(std::memory_order_acquire);
-                    releaseCommit.fillKind = PatternPlayer::TransitionFillKind::Release;
-                    patternPlayer.queueGrooveCommit(releaseCommit);
                 }
             }
             else
@@ -1336,15 +1377,22 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     displayStateIndex.store(static_cast<int>(st), std::memory_order_relaxed);
     displayPatternIndex.store(effectivePatternIdx, std::memory_order_relaxed);
 
-    // Playhead fraction within the current bar (DAW-style UI cursor).
-    {
-        const double sppb = 4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr;
-        if (sppb > 0.0)
-        {
-            const double frac = std::fmod(static_cast<double>(hostSampleTime), sppb) / sppb;
-            playheadFraction.store(static_cast<float>(frac), std::memory_order_relaxed);
-        }
-    }
+    // Playhead fraction is computed earlier in the block from the resolved host
+    // clock (so it aligns with the drums' transport grid).
+}
+
+int AccompanimentProcessor::getScopeSamplesPerBar() const noexcept
+{
+    // The scope ring is written every kScopeDecimation-th input sample (see the
+    // display-scope feed in processBlock). A bar is 4 beats = 4 * 60/bpm seconds.
+    constexpr int kScopeDecimation = 8;
+    const double sr = cachedSampleRate.load(std::memory_order_relaxed);
+    float bpm = displayBpm.load(std::memory_order_relaxed);
+    if (!(bpm > 0.0f) || bpm > 1000.0f)
+        bpm = 120.0f;
+    const double rawBar = 4.0 * 60.0 / static_cast<double>(bpm) * sr;
+    const int decBar = static_cast<int>(rawBar / static_cast<double>(kScopeDecimation));
+    return juce::jmax(1, decBar);
 }
 
 void AccompanimentProcessor::copyScopeSamples(float* out, int maxCount) const noexcept
@@ -1407,12 +1455,13 @@ void AccompanimentProcessor::setStateInformation(const void* data, int sizeInByt
         apvts.replaceState(tree);
 
     // Restore the editable form from the persisted property, falling back to the
-    // first preset when no custom form was saved (older sessions).
+    // default practice form (INTRO → VERSE → CHORUS → VERSE → CHORUS → OUTRO)
+    // when no custom form was saved (older sessions).
     const juce::var prop = apvts.state.getProperty("customSongForm");
     if (prop.isString())
         setCustomSongForm(prop.toString());
     else
-        setCustomSongForm(juce::String(StructureSequencer::serializeForm(StructureSequencer::getPresets().front())));
+        setCustomSongForm("INTRO:4,VERSE:8,CHORUS:8,VERSE:8,CHORUS:8,OUTRO:4");
 }
 
 void AccompanimentProcessor::processBlockBypassed(

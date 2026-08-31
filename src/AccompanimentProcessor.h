@@ -118,7 +118,8 @@ public:
 
     // ── Post-lock transition grammar (A5.2) ──────────────────────────────────
     // After a groove lock expires, the engine plays a *contrast* section for a
-    // few bars before returning to the riff / follow. UI reads these atomics.
+    // few bars before firmly returning to the locked riff (A). UI reads these
+    // atomics.
 
     /** @brief True while a post-lock transition section is playing (drums on the section pool). */
     bool isTransitionSectionActive() const noexcept { return transitionSectionActive.load(std::memory_order_relaxed); }
@@ -132,7 +133,12 @@ public:
     int getTransitionSectionNumber() const noexcept { return transitionSectionNumber.load(std::memory_order_relaxed); }
 
     // ── Display scope: rolling input waveform + playhead (DAW-style) ─────────
-    static constexpr int kScopeSize = 2048;  // ring of decimated input samples
+    // Ring of decimated input samples. Sized to hold at least a full bar at the
+    // tempos the plugin targets so the editor can render a bar-aligned scope
+    // with the downbeat at the left and beat notches 1-2-3-4. (8x decimation.)
+    static constexpr int kScopeSize = 16384;
+    /** @brief Decimated samples per bar at the current BPM (~kScopeSize/... ). */
+    int getScopeSamplesPerBar() const noexcept;
     /** @brief Copy of the most recent decimated input samples for UI drawing. */
     void copyScopeSamples(float* out, int maxCount) const noexcept;
     /** @brief Number of samples currently in the scope ring (0..kScopeSize). */
@@ -256,8 +262,9 @@ private:
     // ── Post-lock transition grammar (A5.2): audio-thread state ──────────────
     // When a groove lock expires, instead of releasing straight back to the
     // listener, the engine holds a *contrast* section (pickNextSectionAfterLock)
-    // for `transitionBars` bars, then returns to the riff/follow. The section
-    // number counts B, C, … so the UI can show which transition we are in.
+    // for `transitionBars` bars, then re-engages the riff (A → B → A). The
+    // section number counts B, C, … so the UI can show which transition we are
+    // in.
     enum class PostLockPhase { Idle, TransitionHold };
     PostLockPhase postLockPhase = PostLockPhase::Idle;
     int64_t transitionEndSample = -1;       // hostSampleTime when the hold ends

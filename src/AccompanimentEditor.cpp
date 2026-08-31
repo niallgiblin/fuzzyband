@@ -343,25 +343,6 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(swingLabel);
     addAndMakeVisible(swingSlider);
 
-    bassOctaveLabel.setJustificationType(juce::Justification::centredLeft);
-    bassOctaveLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-    bassOctaveLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
-    bassOctaveCombo.addItem("-12 (down)", 1);
-    bassOctaveCombo.addItem("0 (normal)", 2);
-    bassOctaveCombo.addItem("+12 (up)", 3);
-    bassOctaveCombo.setTooltip("Shift the bass MIDI an octave. MIDI 36 = C2 in standard pitch; some bass VSTs display it as C1 and can't sound below ~E2 — shift up to fit the instrument's range.");
-    addAndMakeVisible(bassOctaveLabel);
-    addAndMakeVisible(bassOctaveCombo);
-
-    songFormLabel.setJustificationType(juce::Justification::centredLeft);
-    songFormLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-    songFormLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
-    for (const auto& preset : StructureSequencer::getPresets())
-        songFormCombo.addItem(preset.name, songFormCombo.getNumItems() + 1);
-    songFormCombo.setTooltip("Select a preset form (editable below). Sections advance on bar boundaries.");
-    addAndMakeVisible(songFormLabel);
-    addAndMakeVisible(songFormCombo);
-
     songSectionsLabel.setJustificationType(juce::Justification::centredLeft);
     songSectionsLabel.setFont(juce::FontOptions(13.0f, juce::Font::bold));
     songSectionsLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ade78));
@@ -370,8 +351,16 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     // Editable section list inside a viewport so the rows are always visible
     // (the previous layout called resized() before this existed, so the list
     // had 0×0 bounds — heading visible, no items).
+    // Default custom form: INTRO → VERSE → CHORUS → VERSE → CHORUS → OUTRO
+    // (single dropdown removed; the editable section list is the song form).
     sectionListEditor = std::make_unique<SectionListEditor>();
-    sectionListEditor->setForm(StructureSequencer::getPresets().front());
+    sectionListEditor->setForm(SongForm{ "Custom",
+        { SongSection{ "INTRO", 4 },
+          SongSection{ "VERSE", 8 },
+          SongSection{ "CHORUS", 8 },
+          SongSection{ "VERSE", 8 },
+          SongSection{ "CHORUS", 8 },
+          SongSection{ "OUTRO", 4 } } });
     sectionListEditor->setOnChange([this]
     {
         const auto form = sectionListEditor->getForm();
@@ -384,19 +373,6 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     songSectionsViewport.setScrollBarThickness(8);
     addAndMakeVisible(songSectionsViewport);
 
-    songFormCombo.onChange = [this]
-    {
-        const int i = songFormCombo.getSelectedItemIndex();
-        const auto& presets = StructureSequencer::getPresets();
-        if (i >= 0 && i < static_cast<int>(presets.size()))
-        {
-            sectionListEditor->setForm(presets[static_cast<size_t>(i)]);
-            audioProcessorRef.setCustomSongForm(juce::String(StructureSequencer::serializeForm(presets[static_cast<size_t>(i)])));
-            sectionListEditor->setSize(juce::jmax(1, songSectionsViewport.getMaximumVisibleWidth()),
-                                       juce::jmax(kSectionListViewH, sectionListEditor->getHeightHint()));
-        }
-    };
-
     sectionLabel.setJustificationType(juce::Justification::centredLeft);
     sectionLabel.setFont(juce::FontOptions(18.0f, juce::Font::bold));
     sectionLabel.setColour(juce::Label::textColourId, juce::Colour(0xff6a9a50));
@@ -406,7 +382,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     playButton.setClickingTogglesState(true);
     playButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff4a7a3a));
     playButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffc8d8c0));
-    playButton.setTooltip("Play mode: scripted song form. Off = follow/listen (reactive).");
+    playButton.setTooltip("Play the Sections song form. The plugin is idle (silent) until you press Play or Record riff.");
     playButton.onClick = [this]
     {
         audioProcessorRef.playActive.store(playButton.getToggleState(), std::memory_order_release);
@@ -441,15 +417,6 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
         apvts, "genre", genreCombo);
     swingAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "swing", swingSlider);
-    bassOctaveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
-        apvts, "bassTranspose", bassOctaveCombo);
-    songFormAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
-        apvts, "songForm", songFormCombo);
-    loopAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
-        apvts, "loop", loopToggle);
-
-    loopToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xff6a9a50));
-    addAndMakeVisible(loopToggle);
 
     // Generative groove lock: hold length + live status indicator.
     lockBarsLabel.setJustificationType(juce::Justification::centredLeft);
@@ -479,7 +446,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     transitionBarsSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 18);
     transitionBarsSlider.setRange(2.0, 32.0, 2.0);
     transitionBarsSlider.setDoubleClickReturnValue(true, 8.0);
-    transitionBarsSlider.setTooltip("After the riff lock expires, how many bars each transition section holds before returning to follow.");
+    transitionBarsSlider.setTooltip("After the riff lock expires, how many bars each transition section holds before returning to the locked riff.");
     transitionBarsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "transitionBars", transitionBarsSlider);
     addAndMakeVisible(transitionBarsLabel);
@@ -492,7 +459,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     transitionSectionsSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 18);
     transitionSectionsSlider.setRange(1.0, 4.0, 1.0);
     transitionSectionsSlider.setDoubleClickReturnValue(true, 2.0);
-    transitionSectionsSlider.setTooltip("How many distinct contrast sections the transition visits (B, C, …) before returning to follow.");
+    transitionSectionsSlider.setTooltip("How many distinct contrast sections the transition visits (B, C, ...) before returning to the locked riff (A).");
     transitionSectionsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "transitionSections", transitionSectionsSlider);
     addAndMakeVisible(transitionSectionsLabel);
@@ -501,14 +468,14 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     transitionStatusLabel.setJustificationType(juce::Justification::centredLeft);
     transitionStatusLabel.setFont(juce::FontOptions(13.0f, juce::Font::bold));
     transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffe8c070));
-    transitionStatusLabel.setText("Section: —", juce::dontSendNotification);
+    transitionStatusLabel.setText("Section: -", juce::dontSendNotification);
     addAndMakeVisible(transitionStatusLabel);
 
     // ── DAW-style input scope ───────────────────────────────────────────────
     scopeComponent.setOpaque(false);
     addAndMakeVisible(scopeComponent);
 
-    for (auto* l : { &bpmLabel, &stateLabel, &patternLabel, &styleLabel, &rmsLabel, &centroidLabel, &hfFluxLabel, &noiseFloorLabel })
+    for (auto* l : { &bpmLabel, &stateLabel, &patternLabel, &styleLabel })
     {
         l->setJustificationType(juce::Justification::centredLeft);
         l->setFont(juce::FontOptions(11.0f));
@@ -519,17 +486,19 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(stateLabel);
     addAndMakeVisible(patternLabel);
     addAndMakeVisible(styleLabel);
-    addAndMakeVisible(rmsLabel);
-    addAndMakeVisible(centroidLabel);
-    addAndMakeVisible(hfFluxLabel);
-    addAndMakeVisible(noiseFloorLabel);
 
-    // Restore a persisted custom form AFTER ComboBoxAttachment has seeded the
-    // preset combo (which would otherwise overwrite the list via onChange).
+    // Restore a persisted custom form (the editable section list is the form);
+    // otherwise default to the practice form INTRO → VERSE → CHORUS → VERSE →
+    // CHORUS → OUTRO so Play plays that out of the box.
     if (savedCustomForm.isNotEmpty())
     {
         sectionListEditor->setForm(StructureSequencer::parseFormString(savedCustomForm.toStdString()));
         audioProcessorRef.setCustomSongForm(savedCustomForm);
+    }
+    else
+    {
+        audioProcessorRef.setCustomSongForm(
+            "INTRO:4,VERSE:8,CHORUS:8,VERSE:8,CHORUS:8,OUTRO:4");
     }
 
     setResizable(true, false);
@@ -556,11 +525,6 @@ void AccompanimentEditor::timerCallback()
     const int si = juce::jlimit(0, 4, audioProcessorRef.getDisplayStyle());
     styleLabel.setText("Style: " + juce::String(kStyleNames[si]), juce::dontSendNotification);
 
-    rmsLabel.setText("RMS: " + juce::String(audioProcessorRef.getDisplayRms(), 4), juce::dontSendNotification);
-    centroidLabel.setText("Centroid: " + juce::String(audioProcessorRef.getDisplayCentroid(), 0) + " Hz", juce::dontSendNotification);
-    hfFluxLabel.setText("HF Flux: " + juce::String(audioProcessorRef.getDisplayHfFlux(), 4), juce::dontSendNotification);
-    noiseFloorLabel.setText("Noise floor: " + juce::String(audioProcessorRef.getDisplayNoiseFloor(), 4), juce::dontSendNotification);
-
     // Generative groove-lock / riff-capture status.
     recordRiffButton.setToggleState(audioProcessorRef.isRiffCapturing(), juce::dontSendNotification);
     forgetRiffButton.setEnabled(audioProcessorRef.hasLearnedRiff()
@@ -572,14 +536,14 @@ void AccompanimentEditor::timerCallback()
         const int bar = audioProcessorRef.getRiffCaptureBar();
         if (bar <= 0)
         {
-            recordRiffButton.setButtonText("Count-in…");
-            grooveStatusLabel.setText("Groove: COUNT-IN — play on 1", juce::dontSendNotification);
+            recordRiffButton.setButtonText("Count-in...");
+            grooveStatusLabel.setText("Groove: COUNT-IN - play on 1", juce::dontSendNotification);
         }
         else
         {
-            recordRiffButton.setButtonText("Rec " + juce::String(bar) + "/4 · " + juce::String(n));
+            recordRiffButton.setButtonText("Rec " + juce::String(bar) + "/4 - " + juce::String(n));
             grooveStatusLabel.setText("Groove: RECORDING bar " + juce::String(bar)
-                                          + "/4 — " + juce::String(n) + " hits",
+                                          + "/4 - " + juce::String(n) + " hits",
                                       juce::dontSendNotification);
         }
         grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffe8c070));
@@ -590,10 +554,10 @@ void AccompanimentEditor::timerCallback()
         const int bar = audioProcessorRef.getLiveListenBar();
         const int n = audioProcessorRef.getLiveListenNoteCount();
         if (bar <= 0)
-            grooveStatusLabel.setText("Groove: listening — play in time with drums",
+            grooveStatusLabel.setText("Groove: listening - play in time with drums",
                                       juce::dontSendNotification);
         else
-            grooveStatusLabel.setText("Groove: listening " + juce::String(bar) + "/4 · "
+            grooveStatusLabel.setText("Groove: listening " + juce::String(bar) + "/4 - "
                                           + juce::String(n) + " hits",
                                       juce::dontSendNotification);
         grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffe8c070));
@@ -608,8 +572,8 @@ void AccompanimentEditor::timerCallback()
         const int rem = audioProcessorRef.getLockBarsRemaining();
         const int tot = audioProcessorRef.getLockBarsTotal();
         if (cur > 0 && tot > 0)
-            grooveStatusLabel.setText("Groove: LOCKED — bar " + juce::String(cur) + "/"
-                                          + juce::String(tot) + " · " + juce::String(rem)
+            grooveStatusLabel.setText("Groove: LOCKED - bar " + juce::String(cur) + "/"
+                                          + juce::String(tot) + " - " + juce::String(rem)
                                           + " left before transition",
                                       juce::dontSendNotification);
         else
@@ -619,7 +583,14 @@ void AccompanimentEditor::timerCallback()
     else
     {
         recordRiffButton.setButtonText("Record riff");
-        grooveStatusLabel.setText("Groove: follow", juce::dontSendNotification);
+        // The engine only listens once armed (Play or Record riff); otherwise it
+        // is idle and silent.
+        if (audioProcessorRef.playActive.load(std::memory_order_acquire))
+            grooveStatusLabel.setText("Groove: PLAYING - Section " + audioProcessorRef.getSectionName(),
+                                      juce::dontSendNotification);
+        else
+            grooveStatusLabel.setText("Groove: idle - press Play or Record riff",
+                                      juce::dontSendNotification);
         grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffaacca0));
     }
 
@@ -633,14 +604,14 @@ void AccompanimentEditor::timerCallback()
         // Section letters: 1 → B, 2 → C, 3 → D, …
         const char letter = static_cast<char>('B' + juce::jmax(0, num - 1));
         transitionStatusLabel.setText(
-            juce::String("Section ") + letter + " · " + juce::String(secName)
-                + " · " + juce::String(rem) + "/" + juce::String(tot) + " bars",
+            juce::String("Section ") + letter + " - " + juce::String(secName)
+                + " - " + juce::String(rem) + "/" + juce::String(tot) + " bars",
             juce::dontSendNotification);
         transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffe8c070));
     }
     else
     {
-        transitionStatusLabel.setText("Section: —", juce::dontSendNotification);
+        transitionStatusLabel.setText("Section: -", juce::dontSendNotification);
         transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xff8aaa80));
     }
 
@@ -648,7 +619,8 @@ void AccompanimentEditor::timerCallback()
     std::array<float, AccompanimentProcessor::kScopeSize> scopeCopy{};
     audioProcessorRef.copyScopeSamples(scopeCopy.data(), AccompanimentProcessor::kScopeSize);
     scopeComponent.setScopeData(scopeCopy.data(), AccompanimentProcessor::kScopeSize,
-                                audioProcessorRef.getPlayheadFraction());
+                                audioProcessorRef.getPlayheadFraction(),
+                                audioProcessorRef.getScopeSamplesPerBar());
 }
 
 void AccompanimentEditor::ScopeComponent::paint(juce::Graphics& g)
@@ -661,6 +633,7 @@ void AccompanimentEditor::ScopeComponent::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0x886a9a50));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 6.0f, 1.0f);
 
+    const float width = bounds.getWidth();
     const float midY = bounds.getCentreY();
     const float halfH = bounds.getHeight() * 0.42f;
 
@@ -668,43 +641,81 @@ void AccompanimentEditor::ScopeComponent::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0x556a9a50));
     g.drawLine(bounds.getX(), midY, bounds.getRight(), midY, 1.0f);
 
-    // Waveform: draw each sample as a vertical line mirrored around the center.
-    if (count_ > 0)
+    // ── Bar-aligned beat grid: beat 1 (downbeat) sits at the LEFT edge ────────
+    // The ring is a rolling buffer of decimated input samples (newest last). The
+    // current sample sits at bar phase `playheadFraction_`; the downbeat of the
+    // current bar is `playheadFraction_ * samplesPerBar_` samples earlier. We
+    // render that bar slice so the downbeat coincides with the left edge.
+    const float ph = juce::jlimit(0.0f, 1.0f, playheadFraction_);
+    const int spb = juce::jmax(1, samplesPerBar_);
+    int elapsed = static_cast<int>(ph * static_cast<float>(spb));
+    if (elapsed < 0) elapsed = 0;
+    const int startIdx = juce::jmax(0, count_ - 1 - elapsed);
+    const int barSamples = count_ - startIdx;  // played samples in this bar so far
+
+    // Beat grid verticals + labels (1 = downbeat at the left).
+    g.setColour(juce::Colour(0x556a9a50));
+    for (int b = 1; b <= 4; ++b)
     {
-        const float step = bounds.getWidth() / static_cast<float>(count_);
-        juce::Path wave;
-        wave.startNewSubPath(bounds.getX(), midY);
+        const float frac = static_cast<float>(b - 1) / 4.0f;
+        const float x = bounds.getX() + width * frac;
+        g.drawLine(x, bounds.getY() + 2.0f, x, bounds.getBottom() - 16.0f, 1.0f);
+    }
+    g.setColour(juce::Colour(0x99c8d8c0));
+    g.setFont(juce::FontOptions(10.0f));
+    for (int b = 1; b <= 4; ++b)
+    {
+        const float frac = static_cast<float>(b - 1) / 4.0f;
+        const float x = bounds.getX() + width * frac;
+        g.drawFittedText(juce::String(b),
+                         juce::Rectangle<int>(static_cast<int>(x - 9.0f),
+                                              static_cast<int>(bounds.getBottom() - 15.0f),
+                                              18, 13),
+                         juce::Justification::centred, 1);
+    }
+
+    // Waveform: the played portion of the current bar, drawn so the downbeat is
+    // at the left and fills to the playhead (the un-played bar stays empty).
+    if (barSamples > 1)
+    {
         float maxAbs = 0.0001f;
-        for (int i = 0; i < count_; ++i)
+        for (int i = startIdx; i < count_; ++i)
             maxAbs = juce::jmax(maxAbs, std::abs(samples_[static_cast<size_t>(i)]));
         const float scale = halfH / maxAbs;
+        const float drawW = width * ph;  // played portion of the bar
 
-        for (int i = 0; i < count_; ++i)
+        juce::Path wave;
+        wave.startNewSubPath(bounds.getX(), midY);
+        for (int i = startIdx; i < count_; ++i)
         {
-            const float x = bounds.getX() + static_cast<float>(i) * step;
+            const float frac = static_cast<float>(i - startIdx)
+                             / static_cast<float>(juce::jmax(1, barSamples - 1));
+            const float x = bounds.getX() + frac * drawW;
             const float v = samples_[static_cast<size_t>(i)] * scale;
             wave.addLineSegment({ x, midY - v, x, midY }, 1.0f);
         }
         g.setColour(juce::Colour(0xff7ab860));
         g.strokePath(wave, juce::PathStrokeType(1.0f));
 
-        // Soft green fill under the positive half for a "scope glow".
+        // Soft green glow under the played waveform.
         juce::Path fill;
         fill.startNewSubPath(bounds.getX(), midY);
-        for (int i = 0; i < count_; ++i)
+        for (int i = startIdx; i < count_; ++i)
         {
-            const float x = bounds.getX() + static_cast<float>(i) * step;
+            const float frac = static_cast<float>(i - startIdx)
+                             / static_cast<float>(juce::jmax(1, barSamples - 1));
+            const float x = bounds.getX() + frac * drawW;
             const float v = samples_[static_cast<size_t>(i)] * scale;
             fill.lineTo(x, midY - v);
         }
-        fill.lineTo(bounds.getRight(), midY);
+        fill.lineTo(bounds.getX() + drawW, midY);
         fill.closeSubPath();
         g.setColour(juce::Colour(0x337ab860));
         g.fillPath(fill);
     }
 
-    // Playhead — bright vertical cursor sweeping across the bar (DAW-style).
-    const float px = bounds.getX() + bounds.getWidth() * juce::jlimit(0.0f, 1.0f, playheadFraction_);
+    // Playhead — bright vertical cursor at the current bar position.
+    const float px = bounds.getX() + width * ph;
     g.setColour(juce::Colour(0xff9ade78));
     g.drawLine(px, bounds.getY(), px, bounds.getBottom(), 2.0f);
 
@@ -776,16 +787,6 @@ void AccompanimentEditor::resized()
     swingSlider.setBounds(row);
     r.removeFromTop(8);
 
-    row = r.removeFromTop(52);
-    bassOctaveLabel.setBounds(row.removeFromLeft(140));
-    bassOctaveCombo.setBounds(row);
-    r.removeFromTop(8);
-
-    row = r.removeFromTop(52);
-    songFormLabel.setBounds(row.removeFromLeft(140));
-    songFormCombo.setBounds(row);
-    r.removeFromTop(8);
-
     songSectionsLabel.setBounds(r.removeFromTop(18));
     r.removeFromTop(2);
 
@@ -795,9 +796,6 @@ void AccompanimentEditor::resized()
         sectionListEditor->setSize(juce::jmax(1, songSectionsViewport.getMaximumVisibleWidth()),
                                    juce::jmax(listArea.getHeight(), sectionListEditor->getHeightHint()));
     r.removeFromTop(8);
-
-    row = r.removeFromTop(28);
-    loopToggle.setBounds(row.removeFromLeft(140));
 
     row = r.removeFromTop(52);
     lockBarsLabel.setBounds(row.removeFromLeft(140));
@@ -829,8 +827,4 @@ void AccompanimentEditor::resized()
     stateLabel.setBounds(r.removeFromTop(24));
     patternLabel.setBounds(r.removeFromTop(24));
     styleLabel.setBounds(r.removeFromTop(24));
-    rmsLabel.setBounds(r.removeFromTop(24));
-    centroidLabel.setBounds(r.removeFromTop(24));
-    hfFluxLabel.setBounds(r.removeFromTop(24));
-    noiseFloorLabel.setBounds(r.removeFromTop(24));
 }

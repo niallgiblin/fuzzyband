@@ -1,0 +1,312 @@
+# Release — build Metal Accompaniment for all target platforms and attach the
+# packages to a GitHub Release so the GitHub Pages site (website/) can surface
+# one-click download links.
+#
+#   * Triggered by pushing a semver tag (v0.9.30), or manually via workflow_dispatch
+#     with a `tag` input (the tag is created if it does not exist yet).
+#   * macOS job builds arm64 + x86_64, merges into a self-contained universal
+#     package (ONNX Runtime embedded), creates the GitHub Release.
+#   * Windows + Linux jobs run AFTER the macOS job created the release and upload
+#     their packages to it (no race creating the release twice).
+#
+# Artifacts (one per platform, self-contained: ONNX Runtime bundled, no build
+# machine required at runtime):
+#   Metal-Accompaniment-<ver>-macOS-Universal.zip   (VST3 + AU + Standalone)
+#   Metal-Accompaniment-<ver>-Windows-x64.zip       (VST3 + Standalone)
+#   Metal-Accompaniment-<ver>-Linux-x64.tar.gz      (VST3 + Standalone)
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.9.30). Required for manual runs.'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  ONNX_VERSION: "1.20.1"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # macOS: build both archs, merge to a universal self-contained package,
+  # create the release, upload the macOS asset.
+  # ─────────────────────────────────────────────────────────────────────────────
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release tag and version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          if [ -z "$TAG" ]; then
+            echo "No release tag provided."; exit 1
+          fi
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "VERSION=${TAG#v}"  >> "$GITHUB_ENV"
+
+      # ── ONNX Runtime (per arch; not shipped as a universal dylib) ─────────────
+      - name: Download ONNX Runtime (arm64)
+        run: |
+          mkdir -p /opt/onnx-arm64
+          curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-osx-arm64-${ONNX_VERSION}.tgz" -o /tmp/onnx-arm64.tgz
+          tar xzf /tmp/onnx-arm64.tgz -C /opt/onnx-arm64
+
+      - name: Download ONNX Runtime (x86_64)
+        run: |
+          mkdir -p /opt/onnx-x64
+          curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-osx-x86_64-${ONNX_VERSION}.tgz" -o /tmp/onnx-x64.tgz
+          tar xzf /tmp/onnx-x64.tgz -C /opt/onnx-x64
+
+      - name: Configure + build (arm64)
+        run: |
+          cmake -B build-arm64 -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DMA_BUILD_STANDALONE=ON \
+            -DMA_ENABLE_ONNX=ON \
+            -DMA_BUILD_TESTS=OFF \
+            -DONNXRUNTIME_ROOT=/opt/onnx-arm64/onnxruntime-osx-arm64-${ONNX_VERSION}
+          cmake --build build-arm64 --config Release --parallel
+
+      - name: Configure + build (x86_64)
+        run: |
+          cmake -B build-x86_64 -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DMA_BUILD_STANDALONE=ON \
+            -DMA_ENABLE_ONNX=ON \
+            -DMA_BUILD_TESTS=OFF \
+            -DONNXRUNTIME_ROOT=/opt/onnx-x64/onnxruntime-osx-x86_64-${ONNX_VERSION}
+          cmake --build build-x86_64 --config Release --parallel
+
+      # ── Merge to a self-contained universal package (lipos + embeds ONNX) ─────
+      - name: Package universal macOS build
+        run: |
+          ./scripts/release-macos-universal.sh \
+            --arm-art "build-arm64/MetalAccompaniment_artefacts/Release" \
+            --x64-art "build-x86_64/MetalAccompaniment_artefacts/Release" \
+            --onnx-lib "/opt/onnx-arm64/onnxruntime-osx-arm64-${ONNX_VERSION}/lib" \
+            --x64-onnx-lib "/opt/onnx-x64/onnxruntime-osx-x86_64-${ONNX_VERSION}/lib" \
+            --out dist/macos
+
+      - name: Verify universal binaries
+        run: |
+          # Confirm the merged plugins are genuinely fat (arm64 + x86_64).
+          for b in \
+            "dist/macos/VST3/Metal Accompaniment.vst3/Contents/MacOS/Metal Accompaniment" \
+            "dist/macos/AU/Metal Accompaniment.component/Contents/MacOS/Metal Accompaniment" \
+            "dist/macos/Standalone/Metal Accompaniment.app/Contents/MacOS/Metal Accompaniment"; do
+            echo "== $b"; file "$b" | sed 's/.*: *//'
+          done
+
+      - name: Build macOS zip (symlink-preserving)
+        run: |
+          mkdir -p "dist/install/Metal Accompaniment"
+          ditto "dist/macos/VST3/Metal Accompaniment.vst3"     "dist/install/Metal Accompaniment/Metal Accompaniment.vst3"
+          ditto "dist/macos/AU/Metal Accompaniment.component"  "dist/install/Metal Accompaniment/Metal Accompaniment.component"
+          ditto "dist/macos/Standalone/Metal Accompaniment.app" "dist/install/Metal Accompaniment/Metal Accompaniment.app"
+          ditto -c -k --keepParent \
+            "dist/install/Metal Accompaniment" \
+            "dist/Metal-Accompaniment-${VERSION}-macOS-Universal.zip"
+          ls -lh "dist/Metal-Accompaniment-${VERSION}-macOS-Universal.zip"
+
+      - name: Create release + upload macOS asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Creating/updating release: ${RELEASE_TAG}"
+          BODY_FILE="$(mktemp)"
+          cat > "$BODY_FILE" <<EOF
+          ## Metal Accompaniment v${VERSION}
+
+          Self-contained (ONNX Runtime embedded) packages for macOS, Windows and Linux.
+          See the download page for install steps. Unsigned macOS builds: right-click
+          Open (or \`xattr -dr com.apple.quarantine\`).
+
+          - macOS Universal: VST3 + AU + Standalone
+          - Windows x64: VST3 + Standalone
+          - Linux x64: VST3 + Standalone
+          EOF
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Metal Accompaniment ${VERSION}" \
+              --notes-file "$BODY_FILE"
+          fi
+          gh release upload "$RELEASE_TAG" \
+            "dist/Metal-Accompaniment-${VERSION}-macOS-Universal.zip" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          echo "macOS asset uploaded to ${RELEASE_TAG}"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Windows x64
+  # ─────────────────────────────────────────────────────────────────────────────
+  windows:
+    runs-on: windows-latest
+    needs: macos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release tag and version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") { $TAG = "${{ inputs.tag }}" }
+          else { $TAG = "${{ github.ref_name }}" }
+          if ([string]::IsNullOrEmpty($TAG)) { throw "No release tag provided." }
+          "RELEASE_TAG=$TAG"       | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VERSION=$($TAG.TrimStart('v'))" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Download ONNX Runtime (win-x64)
+        shell: pwsh
+        run: |
+          $url = "https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ONNX_VERSION }}/onnxruntime-win-x64-${{ env.ONNX_VERSION }}.zip"
+          $zip = "$env:RUNNER_TEMP\onnx.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\onnx"
+          "ONNXRUNTIME_ROOT=$env:RUNNER_TEMP\onnx\onnxruntime-win-x64-${{ env.ONNX_VERSION }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Configure + build
+        shell: pwsh
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release `
+            -DMA_BUILD_STANDALONE=ON -DMA_ENABLE_ONNX=ON -DMA_BUILD_TESTS=OFF `
+            -DONNXRUNTIME_ROOT="$env:ONNXRUNTIME_ROOT"
+          cmake --build build --config Release --parallel
+
+      - name: Stage x64 win packages with ONNX DLL
+        shell: pwsh
+        run: |
+          $dllSrc = "$env:ONNXRUNTIME_ROOT\lib\onnxruntime.dll"
+          $paths = @()
+
+          # VST3: copy the ONNX DLL beside the .vst3 module (Contents/x86_64-win/).
+          $vst = "Metal Accompaniment_artefacts/Release/VST3/Metal Accompaniment.vst3"
+          if (Test-Path $vst) {
+            Get-ChildItem -Recurse -Filter "Metal Accompaniment.vst3" $vst |
+              ForEach-Object { Copy-Item $dllSrc $_.DirectoryName -Force }
+            $paths += $vst
+          }
+
+          # Standalone: copy the ONNX DLL beside the .exe.
+          $standalone = "Metal Accompaniment_artefacts/Release/Standalone"
+          if (Test-Path $standalone) {
+            $exe = Get-ChildItem -Recurse -Filter "*.exe" $standalone | Select-Object -First 1
+            if ($exe) { Copy-Item $dllSrc $exe.DirectoryName -Force }
+            $paths += $standalone
+          }
+
+          if ($paths.Count -eq 0) { throw "No plugin output found." }
+          $out = "dist\Metal-Accompaniment-$env:VERSION-Windows-x64.zip"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path $paths -DestinationPath $out -Force
+          Write-Host "Packaged: $out"
+
+      - name: Upload Windows asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$env:RELEASE_TAG" `
+            "dist\Metal-Accompaniment-$env:VERSION-Windows-x64.zip" `
+            --repo "$env:GITHUB_REPOSITORY" --clobber
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Linux x64
+  # ─────────────────────────────────────────────────────────────────────────────
+  linux:
+    runs-on: ubuntu-latest
+    needs: macos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release tag and version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          [ -n "$TAG" ] || { echo "No release tag provided."; exit 1; }
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "VERSION=${TAG#v}"  >> "$GITHUB_ENV"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libx11-dev libxext-dev libfreetype-dev \
+            libxkbcommon-dev libgl1-mesa-dev libfontconfig1-dev
+
+      - name: Download ONNX Runtime (linux-x64)
+        run: |
+          mkdir -p /opt/onnx
+          curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-linux-x64-${ONNX_VERSION}.tgz" -o /tmp/onnx.tgz
+          tar xzf /tmp/onnx.tgz -C /opt/onnx
+          echo "ONNXRUNTIME_ROOT=/opt/onnx/onnxruntime-linux-x64-${ONNX_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Configure + build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DMA_BUILD_STANDALONE=ON \
+            -DMA_ENABLE_ONNX=ON \
+            -DMA_BUILD_TESTS=OFF \
+            -DONNXRUNTIME_ROOT="$ONNXRUNTIME_ROOT" \
+            -DCMAKE_BUILD_RPATH_USE_ORIGIN=ON \
+            -DCMAKE_INSTALL_RPATH='$ORIGIN'
+          cmake --build build --config Release --parallel
+
+      - name: Stage Linux packages with ONNX shared lib
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # Locate the real (non-symlink) ONNX shared lib.
+          ONNX_SO=""
+          for f in "$ONNXRUNTIME_ROOT"/lib/libonnxruntime.so*; do
+            [[ -e "$f" ]] || continue
+            [[ -L "$f" ]] && continue
+            ONNX_SO="$f"; break
+          done
+          [ -n "$ONNX_SO" ] || { echo "no libonnxruntime.so in $ONNXRUNTIME_ROOT/lib"; exit 1; }
+          BASENAME="$(basename "$ONNX_SO")"
+
+          VST_ROOT="Metal Accompaniment_artefacts/Release/VST3/Metal Accompaniment.vst3"
+          MOD_DIR="$(find "$VST_ROOT" -type f -name '*.vst3' -printf '%h\n' 2>/dev/null | head -1)"
+          [ -n "$MOD_DIR" ] || MOD_DIR="$VST_ROOT/Contents/x86_64-linux"
+          mkdir -p "$MOD_DIR"
+          cp -f "$ONNX_SO" "$MOD_DIR/"
+          # Create soname symlinks so ld.so resolves libonnxruntime.so.1 / libonnxruntime.so.
+          ln -sf "$BASENAME" "$MOD_DIR/libonnxruntime.so.1"
+          ln -sf "$BASENAME" "$MOD_DIR/libonnxruntime.so"
+
+          # Standalone: drop the .so beside the binary too, and include it in the tarball.
+          STANDALONE="Metal Accompaniment_artefacts/Release/Standalone"
+          TAR_PATHS=("$VST_ROOT")
+          if [ -d "$STANDALONE" ]; then
+            BIN="$(find "$STANDALONE" -type f -executable 2>/dev/null | head -1)"
+            if [ -n "$BIN" ]; then cp -f "$ONNX_SO" "$(dirname "$BIN")/"; fi
+            TAR_PATHS+=("$STANDALONE")
+          fi
+          tar -czf "dist/Metal-Accompaniment-${VERSION}-Linux-x64.tar.gz" "${TAR_PATHS[@]}"
+          ls -lh "dist/Metal-Accompaniment-${VERSION}-Linux-x64.tar.gz"
+
+      - name: Upload Linux asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            "dist/Metal-Accompaniment-${VERSION}-Linux-x64.tar.gz" \
+            --repo "$GITHUB_REPOSITORY" --clobber

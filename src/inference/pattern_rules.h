@@ -127,11 +127,11 @@ inline int diversifyPattern(int base, const FeatureVector& f, int barMod8) noexc
 
 /**
  * @brief B1: genre-aware diversification for the reactive path.
- * Rock-leaning genres (0-2: Rock, Hard Rock, Punk) route SOFT low-energy into
- * the rock-first pattern set (Rock Backbeat / Rock Half-Time) and mid-tempo
- * LOUD into Rock Shuffle / Punk D-Beat. Metal/Sludge (>= 3) keep the original
- * metal routing. Conditions are disjoint from the metal rules so existing
- * metal behaviour is preserved when the genre is metal.
+ * Rock-leaning genres (0-2: Rock, Hard Rock, Punk) route the ONNX mel
+ * selector's metal-era indices (7-21) into the rock vocabulary by structure
+ * state + energy — so a "Rock" genre in follow mode does not default to
+ * metal-extreme picks (blast / thrash) — and keep the original routing for
+ * indices 1-6. Metal/Sludge (>= 3) keep the original metal routing untouched.
  */
 inline int diversifyPatternForGenre(int base, const FeatureVector& f, int barMod8, int genreId) noexcept
 {
@@ -139,7 +139,35 @@ inline int diversifyPatternForGenre(int base, const FeatureVector& f, int barMod
         return diversifyPattern(base, f, barMod8);
 
     if (base == 0) return 0;
-    if (base >= 7) return base;
+
+    // ── Rock-leaning genres (0-2): re-home mel-selector indices 7-21 ────────
+    // The ONNX mel selector returns any of indices 0-21 (all metal-era
+    // grooves). Previously these were returned unchanged, so a "Rock" genre in
+    // follow mode defaulted to metal-extreme picks (blast / thrash). Re-home
+    // them into the rock vocabulary by structure state + energy, always
+    // respecting state compatibility so a groove never contradicts the
+    // detected energy. Metal/Sludge (genreId >= 3) is handled above and is
+    // unchanged. Base 1-6 keep the original routing (deliberately preserved).
+    if (base >= 7)
+    {
+        switch (f.state)
+        {
+            case StructureState::SILENT: return 0;
+            case StructureState::SOFT:
+                if (f.rmsEnergy < 0.04f)
+                    return (barMod8 % 2 == 0) ? 22 : 23;         // Rock Backbeat / Rock Half-Time
+                return (barMod8 % 3 == 0) ? 1 : ((barMod8 % 3 == 1) ? 22 : 26); // Verse Groove / Rock Backbeat / Rock Ballad
+            case StructureState::LOUD:
+                if (f.rmsEnergy < 0.06f && f.bpm < 140.0f)
+                    return 9;                                    // sparse breakdown (shared)
+                if (f.bpm < 130.0f && f.rmsEnergy < 0.09f)
+                    return (barMod8 % 2 == 0) ? 24 : 25;         // Rock Shuffle / Punk D-Beat
+                if (f.bpm >= 170.0f)
+                    return (barMod8 % 2 == 0) ? 25 : 24;         // fast hard-rock/punk: d-beat / shuffle
+                return (barMod8 % 2 == 0) ? 4 : 14;              // rock chorus: Chorus Mid / Chorus Open
+        }
+        return base;
+    }
 
     if (base >= 1 && base <= 3)  // SOFT
     {
@@ -320,6 +348,34 @@ inline SectionPatternPool stylePatternPool(int styleIndex) noexcept
 }
 
 /**
+ * @brief B1/G2: genre-aware playing-style → groove-family pool.
+ *
+ * Rock-leaning genres (0-2: Rock, Hard Rock, Punk) steer the style pool into
+ * the rock-first vocabulary (indices 22-27) so the perception head makes a
+ * "Rock" genre sound like rock rather than pulling it back toward metal.
+ * Metal/Sludge (>= 3) keep the original metal style pools. Membership is
+ * still filtered against the live structure state by diversifyPatternForStyle,
+ * so a style can never force a structurally-wrong groove.
+ */
+inline SectionPatternPool stylePatternPoolForGenre(int styleIndex, int genreId) noexcept
+{
+    using P = SectionPatternPool;
+
+    if (genreId >= 3)
+        return stylePatternPool(styleIndex);
+
+    switch (styleIndex)
+    {
+        case 0: return P{ 3, { 23, 22, 9 } };   // Palm mute chugs → Rock Half-Time, Rock Backbeat, Sparse Breakdown
+        case 1: return P{ 3, { 22, 4, 14 } };   // Open chord → Rock Backbeat, Chorus Mid, Chorus Open
+        case 2: return P{ 3, { 3, 24, 25 } };   // Single note runs → Verse Fast, Rock Shuffle, Punk D-Beat
+        case 3: return P{ 3, { 26, 9, 7 } };    // Sustain/drone → Rock Ballad, Sparse Breakdown, Half-Time
+        case 4: return P{ 1, { 0 } };           // Silence → Silent
+        default: return P{ 0, {} };
+    }
+}
+
+/**
  * @brief Select a fill pattern index based on transition type.
  *
  * Last-bar fills are sized to the section-end energy (loud → big/medium,
@@ -435,6 +491,34 @@ inline int diversifyPatternForStyle(int base, int styleIndex, int barMod8, Struc
     if (base == 0 || styleIndex < 0 || styleIndex > 3) return base;
 
     const SectionPatternPool pool = stylePatternPool(styleIndex);
+    if (pool.count <= 0) return base;
+
+    int compat[4];
+    int n = 0;
+    for (int i = 0; i < pool.count && n < 4; ++i)
+        if (isPatternCompatibleWithState(pool.indices[i], state))
+            compat[n++] = pool.indices[i];
+    if (n == 0) return base;
+
+    const int idx = barMod8 % n;
+    return compat[idx];
+}
+
+/**
+ * @brief B1/G2: genre-aware style steering.
+ *
+ * Same contract as diversifyPatternForStyle, but the style → groove-family
+ * pool is selected by genre (see stylePatternPoolForGenre): rock-leaning
+ * genres (0-2) steer into the rock-first vocabulary, Metal/Sludge (>= 3) keep
+ * the original metal pools. The pool is still filtered to the live structure
+ * state, rotated by bar phase, and leaves the base untouched on silence /
+ * unknown / empty pools.
+ */
+inline int diversifyPatternForStyle(int base, int styleIndex, int barMod8, StructureState state, int genreId) noexcept
+{
+    if (base == 0 || styleIndex < 0 || styleIndex > 3) return base;
+
+    const SectionPatternPool pool = stylePatternPoolForGenre(styleIndex, genreId);
     if (pool.count <= 0) return base;
 
     int compat[4];

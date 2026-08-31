@@ -679,3 +679,91 @@ TEST_CASE("PatternRules::selectFillPattern Fill Medium is reachable (was dead)",
         if (PatternRules::selectFillPattern(0, 0.8f, s) == 19) { sawBig = true; break; }
     REQUIRE(sawBig);
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// G1-now / G2: genre-aware selection & style steering
+// ══════════════════════════════════════════════════════════════════════════
+
+TEST_CASE("PatternRules::stylePatternPoolForGenre rock-leaning genres use the rock-first vocabulary", "[pattern_rules][G2]")
+{
+    // Rock (0) and Punk (2) steer to rock patterns; Metal/Sludge (>=3) keep metal.
+    const auto rockPalm = PatternRules::stylePatternPoolForGenre(0, 0);   // palm-mute chugs
+    REQUIRE(rockPalm.count == 3);
+    REQUIRE(rockPalm.indices[0] == 23);   // Rock Half-Time
+    REQUIRE(rockPalm.indices[2] == 9);    // Sparse Breakdown (shared)
+
+    const auto rockOpen = PatternRules::stylePatternPoolForGenre(1, 0);   // open chord
+    REQUIRE(rockOpen.count == 3);
+    REQUIRE(rockOpen.indices[0] == 22);   // Rock Backbeat
+
+    const auto punkSingle = PatternRules::stylePatternPoolForGenre(2, 2); // single-note runs, Punk
+    REQUIRE(punkSingle.count == 3);
+    REQUIRE(punkSingle.indices[1] == 24); // Rock Shuffle
+    REQUIRE(punkSingle.indices[2] == 25); // Punk D-Beat
+
+    const auto rockSustain = PatternRules::stylePatternPoolForGenre(3, 1); // sustain/drone, Hard Rock
+    REQUIRE(rockSustain.count == 3);
+    REQUIRE(rockSustain.indices[0] == 26); // Rock Ballad
+
+    // Metal keeps the original metal style pools.
+    const auto metalPalm = PatternRules::stylePatternPoolForGenre(0, 3);
+    REQUIRE(metalPalm.count == 3);
+    REQUIRE(metalPalm.indices[0] == 7);   // half-time (metal)
+    const auto metalOpen = PatternRules::stylePatternPoolForGenre(1, 3);
+    REQUIRE(metalOpen.indices[0] == 4);   // chorus mid (metal)
+
+    // Silence and empty styles behave like the base function.
+    REQUIRE(PatternRules::stylePatternPoolForGenre(4, 0).count == 1);
+    REQUIRE(PatternRules::stylePatternPoolForGenre(4, 0).indices[0] == 0);
+    REQUIRE(PatternRules::stylePatternPoolForGenre(9, 0).count == 0);
+}
+
+TEST_CASE("PatternRules::diversifyPatternForStyle genre-aware steers rock to rock grooves", "[pattern_rules][G2]")
+{
+    // Rock (genre 0), palm-mute chugs, SOFT: pool {23,22,9} → SOFT filter {23,22}.
+    FeatureVector soft = makeFD(StructureState::SOFT, 100.0f, 0.08f, 400.0f);
+    REQUIRE(PatternRules::diversifyPatternForStyle(1, 0, 0, soft.state, 0) == 23);
+    REQUIRE(PatternRules::diversifyPatternForStyle(1, 0, 1, soft.state, 0) == 22);
+    // Same style, Metal (genre 3): keeps the metal half-time pool.
+    REQUIRE(PatternRules::diversifyPatternForStyle(1, 0, 0, soft.state, 3) == 7);
+
+    // Rock (genre 0), open-chord, LOUD: pool {22,4,14} → LOUD filter {4,14}.
+    FeatureVector loud = makeFD(StructureState::LOUD, 120.0f, 0.2f, 600.0f);
+    REQUIRE(PatternRules::diversifyPatternForStyle(4, 1, 0, loud.state, 0) == 4);
+    REQUIRE(PatternRules::diversifyPatternForStyle(4, 1, 1, loud.state, 0) == 14);
+
+    // Silence / unknown style still pass through to base.
+    REQUIRE(PatternRules::diversifyPatternForStyle(4, 4, 0, loud.state, 0) == 4);
+    REQUIRE(PatternRules::diversifyPatternForStyle(4, 5, 0, loud.state, 0) == 4);
+}
+
+TEST_CASE("PatternRules::diversifyPatternForGenre re-homes mel indices 7-21 for rock genres", "[pattern_rules][G1]")
+{
+    // Rock (genre 0): a metal pick (8 = blast) is re-homed to rock vocabulary.
+    FeatureVector soft = makeFD(StructureState::SOFT, 110.0f, 0.03f, 500.0f);
+    REQUIRE(PatternRules::diversifyPatternForGenre(8, soft, 0, 0) == 22);  // Rock Backbeat
+    REQUIRE(PatternRules::diversifyPatternForGenre(8, soft, 1, 0) == 23);  // Rock Half-Time
+
+    // Rock, LOUD low-energy mid-tempo → shuffle / d-beat.
+    FeatureVector mid = makeFD(StructureState::LOUD, 110.0f, 0.07f, 600.0f);
+    REQUIRE(PatternRules::diversifyPatternForGenre(21, mid, 0, 0) == 24);  // Rock Shuffle
+    REQUIRE(PatternRules::diversifyPatternForGenre(21, mid, 1, 0) == 25);  // Punk D-Beat
+
+    // Rock, LOUD high-tempo → fast hard-rock/punk d-beat / shuffle.
+    FeatureVector fast = makeFD(StructureState::LOUD, 175.0f, 0.2f, 900.0f);
+    REQUIRE(PatternRules::diversifyPatternForGenre(8, fast, 0, 0) == 25);
+    REQUIRE(PatternRules::diversifyPatternForGenre(8, fast, 1, 0) == 24);
+
+    // Rock, LOUD mid-tempo high-energy → rock chorus (mid / open).
+    FeatureVector chorus = makeFD(StructureState::LOUD, 120.0f, 0.2f, 600.0f);
+    REQUIRE(PatternRules::diversifyPatternForGenre(8, chorus, 0, 0) == 4);
+    REQUIRE(PatternRules::diversifyPatternForGenre(8, chorus, 1, 0) == 14);
+
+    // SILENT always collapses to 0.
+    REQUIRE(PatternRules::diversifyPatternForGenre(8, makeF(StructureState::SILENT, 120.0f), 0, 0) == 0);
+
+    // Metal (genre 3) keeps the original metal routing (base >= 7 → itself).
+    FeatureVector metalF = makeFD(StructureState::LOUD, 175.0f, 0.2f, 900.0f);
+    REQUIRE(PatternRules::diversifyPatternForGenre(8, metalF, 0, 3)
+            == PatternRules::diversifyPattern(8, metalF, 0));
+}

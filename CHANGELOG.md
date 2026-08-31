@@ -2,7 +2,78 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
-## [0.9.26] — Follow-mode style steering, play-mode groove variety, riff-lock progress UI
+## [0.9.31] — Scope now anchored to the transport (downbeat on 1)
+
+The bar-aligned scope was showing the downbeat offset from beat 1 because its
+playhead/bar grid used the plugin's own sample counter (`hostSampleTime`) while the
+drums quantize to the DAW transport position. The playhead fraction is now computed
+from the **resolved host clock** (`patternPlayer::previewResolvedHostSample`), so the
+waveform's downbeat aligns with the audible beat 1 even when the transport isn't at
+sample 0 (or loops/seeks).
+
+## [0.9.30] — Demo polish: bar-aligned scope, cleaner UI, explicit arm, drum variety
+
+Pre-demo pass to make the plugin feel intentional when you load it, plus more drum
+variety. The engine is now **idle until you arm it** (Play or Record riff) instead of
+always listening.
+
+- **Scope is bar-aligned and shows the beat grid.** The waveform now puts the downbeat
+  at the left edge and fills to the playhead, with notches labelled 1-2-3-4 at each
+  beat (the old scroll was not anchored to the DAW clock). The ring was enlarged to
+  hold a full bar (`kScopeSize` 2048 → 16384, 8× decimation) and a new
+  `getScopeSamplesPerBar()` drives the editor's bar-window render.
+- **UI cleanup.** Removed the Bass-octave dropdown, the Song-form preset dropdown, the
+  Loop checkbox, and the RMS / Centroid / HF Flux / Noise-floor readouts. The editable
+  section list is now titled **Sections** and defaults to
+  INTRO → VERSE → CHORUS → VERSE → CHORUS → OUTRO. Fixed the "Groove: listening â€¦"
+  mojibake by replacing non-ASCII em-dashes/ellipses/middle-dots in status text with
+  ASCII equivalents (the plugin font can't render those glyphs).
+- **Explicit arm (item: "only starts listening at Record riff / Play").** The plugin is
+  silent and not learning until you press Play (plays the Sections song form) or Record
+  riff (captures and locks). Auto-lock-by-listening in idle is removed; the status line
+  shows "Groove: idle - press Play or Record riff". A recorded riff still plays its
+  `lockBars` then the transition (B) for `transitionBars` × `transitionSections` and
+  returns to the riff — a sectionizer for practicing riff changes.
+- **Drum variety (item: "a diverse pattern the ML can alter slightly").**
+  `MetalGrooveInference::selectPatternFromMel` now takes a bar-seed and draws a
+  weighted pick from the **top-3 nearest grooves** (softmax temperature) instead of the
+  fixed argmax. The best-fit groove stays dominant but a neighbouring groove can win,
+  so the drums vary bar-to-bar while staying stylistically consistent. The style head
+  (`classifyStyle`) continues to steer the groove family.
+
+Tests updated to the new idle/arm contract (existing lock tests record a riff to arm
+instead of relying on auto-lock-by-listening; a new test asserts idle does **not**
+auto-lock). Configuration notes unchanged except the removed controls.
+
+
+## [0.9.29] — Post-lock transition now truly plays the B section, then returns to the riff (A)
+
+Fixes the A5.2 post-lock transition: after a recorded riff lock expires, the plugin now
+plays a real contrast (B) section and then **firmly returns to the locked riff (A)**
+instead of only slipping a fill and dropping back to reactive follow.
+
+- **Transition section now engages.** The stale "riff fresh" check was re-engaging the
+  groove lock on the very first block after expiry whenever the guitarist had been
+  playing the riff right up to the lock end, cancelling the transition before it played
+  a single bar. The re-engage path is now suppressed while a post-lock transition is
+  active (`postLockPhase != TransitionHold`), and the "riff re-appears" cut is an **edge
+  check** (`lastRiffMatchSample > transitionStartSample`) — a match from *before* the
+  transition no longer cancels it; the B section plays until the riff genuinely comes
+  back.
+- **Returns to the riff, not follow.** When the transition sequence completes
+  (after `transitionBars` × `transitionSections`), the engine re-engages the groove lock
+  (A → B → A) instead of releasing to follow/listen. The learned riff is kept held for
+  the whole transition (`setHoldActive` stays true) so it never drifts-unlocks and always
+  re-locks cleanly.
+- **Riff re-appears mid-B → cut short back to the riff.** If the guitarist re-plays the
+  recorded riff while the B section is playing, the transition is cut immediately and the
+  riff re-locks, keeping them anchored in time.
+
+Tests updated/added in `tests/test_processor_pipeline.cpp` for the A → B → A cycle and the
+riff-reappearance cut. Configuration: `transitionBars` (default 8) and `transitionSections`
+(default 2).
+
+
 
 Implements the four "feel more alive" items from the variety audit of the rock pivot
 (see the `MUSICALITY_ROCK_PIVOT_PLAN.md` / `DATA_STRATEGY.md` A4.1/A4.3 workstreams),
