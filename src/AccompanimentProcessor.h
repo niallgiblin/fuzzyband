@@ -19,8 +19,10 @@
 #include "analysis/PhraseLearner.h"
 #include "analysis/FeatureVector.h"
 #include "inference/IInference.h"
+#include "inference/GrooveRenderer.h"
 #include "inference/pattern_rules.h"
 #include "midi/MidiPatternLibrary.h"
+#include "midi/GrooveGrid.h"
 #include "midi/PatternPlayer.h"
 #include "readerwriterqueue.h"
 #include <atomic>
@@ -70,6 +72,7 @@ public:
 
     float getDisplayBpm() const noexcept { return displayBpm.load(std::memory_order_relaxed); }
     juce::String getSectionName() const noexcept;
+    juce::String getCurrentSectionName() const noexcept;
     int getDisplayStateIndex() const noexcept { return displayStateIndex.load(std::memory_order_relaxed); }
     int getDisplayPatternIndex() const noexcept { return displayPatternIndex.load(std::memory_order_relaxed); }
 
@@ -111,9 +114,6 @@ public:
     int getRiffCaptureNoteCount() const noexcept { return riffCaptureNoteCount.load(std::memory_order_relaxed); }
     /** @brief 0 = count-in (or waiting for bar), 1–4 = recording bar. */
     int getRiffCaptureBar() const noexcept { return riffCaptureBar.load(std::memory_order_relaxed); }
-    bool isLiveGridListening() const noexcept { return liveListenActive.load(std::memory_order_relaxed); }
-    int getLiveListenBar() const noexcept { return liveListenBar.load(std::memory_order_relaxed); }
-    int getLiveListenNoteCount() const noexcept { return liveListenNotes.load(std::memory_order_relaxed); }
     bool hasLearnedRiff() const noexcept { return riffHeld.load(std::memory_order_relaxed); }
 
     // ── Post-lock transition grammar (A5.2) ──────────────────────────────────
@@ -189,11 +189,13 @@ private:
     PatternPlayer patternPlayer;
 
     std::unique_ptr<IInference> inference;
+    GrooveRenderer grooveRenderer;                  // Tier-1 conditional groove renderer (ONNX)
 
     std::string activeInferenceName = "None";
 
     moodycamel::ReaderWriterQueue<FeatureVector> featureQueue{ 4096 };
     moodycamel::ReaderWriterQueue<PatternPlayer::GrooveCommit> grooveCommitQueue{ 32 };
+    moodycamel::ReaderWriterQueue<GrooveGrid> grooveGridQueue{ 32 };
 
     // Mel spectrogram queue: audio thread → inference thread (v0.8.0)
     static constexpr int kMelQueueCapacity = 32;
@@ -232,6 +234,13 @@ private:
     bool prevPhraseLocked = false;     // phrase-lock edge detection
     bool grooveLockReleaseArmed = false;  // P0/R4: arm a transition fill at lock expiry
 
+    // Listening-bass hysteresis (audio thread). While the guitarist is audibly
+    // picking, the bass mirrors each detected attack (play-along) instead of the
+    // fixed beat 1/3 root drone. Armed on any recent attack and held for a brief
+    // grace so sparse playing does not flap back and forth to the drone. Compared
+    // against the monotonic audio-thread clock hostSampleTime; self-expiring.
+    int64_t bassListenArmedUntilSample = -1;  // -1 = not armed
+
     // ── Riff-lock hold progress (audio thread → UI) ───────────────────────────
     // While a riff lock is held (recorded take or live grid listen), the UI
     // shows "bar X of Y, N left" so the guitarist knows when the transition
@@ -246,18 +255,11 @@ private:
     std::atomic<bool> riffCaptureActive{ false };  // audio → UI
     std::atomic<int> riffCaptureNoteCount{ 0 };    // occupied 16th slots → UI
     std::atomic<int> riffCaptureBar{ 0 };          // 0=count-in, 1–4=recording bar
-    std::atomic<bool> liveListenActive{ false };   // follow-mode grid listen → UI
-    std::atomic<int> liveListenBar{ 0 };
-    std::atomic<int> liveListenNotes{ 0 };
     std::atomic<bool> riffHeld{ false };           // phraseLearner.isLocked() → UI
 
     enum class RiffCapturePhase { Idle, WaitBar, CountIn, Recording };
     RiffCapturePhase riffCapturePhase = RiffCapturePhase::Idle;
     double riffCountInStartBeat = 0.0;
-
-    enum class LiveGridPhase { Idle, WaitBar, Filling };
-    LiveGridPhase liveGridPhase = LiveGridPhase::Idle;
-    double liveGridStartBeat = 0.0;
 
     // ── Post-lock transition grammar (A5.2): audio-thread state ──────────────
     // When a groove lock expires, instead of releasing straight back to the
@@ -320,7 +322,11 @@ private:
 
     PlaybackGate playbackGate;
 
+    // Guitarist-energy dynamic (drums + bass): a slowly-smoothed multiplier driven
+    // by the live RMS, so the accompaniment swells when the guitarist digs in and
+    // relaxes when they ease off. Audio-thread state.
     float prevBlockRms = 0.0f;
+    float guitarEnergySmooth_ = 1.0f;
 
     std::atomic<double> cachedSampleRate{ 44100.0 };
     std::atomic<int> debugPreviewSamplesRemaining{ 0 };

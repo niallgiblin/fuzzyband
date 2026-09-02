@@ -39,14 +39,14 @@ public:
     /** @brief Mel-spectrogram-driven inference — the real method.
      *  @param melData 2048 floats [64 bands × 32 frames] row-major mel-dB
      *  @param excludeIndex pattern index to exclude (-1 = none)
-     *  @return pattern index [0, 21] */
+     *  @return pattern index [0, PatternEmbeddings::kNumPatterns-1] (28) */
     int selectPatternFromMel(const float* melData, int excludeIndex = -1);
 
     /** @brief Variety-aware mel selection. When @p seed >= 0 it draws from the
      *  top-K nearest grooves (weighted by similarity) so the best fit dominates
      *  but a neighbouring groove can occasionally be chosen — "a diverse pattern
      *  the ML can alter slightly". With seed < 0 it is the deterministic argmax.
-     *  @return pattern index [0, 21] */
+     *  @return pattern index [0, PatternEmbeddings::kNumPatterns-1] (28) */
     int selectPatternFromMel(const float* melData, int excludeIndex, int seed);
 
     /** @brief Style classification from mel data (free, from same inference output).

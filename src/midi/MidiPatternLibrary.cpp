@@ -780,7 +780,7 @@ MidiPattern buildRockBackbeat()
         drum(kSnare,     112, 5.0f),
         drum(kHatClosed,  74, 5.5f),
         drum(kKick,      114, 6.0f),
-        drum(kSnare,      48, 6.5f),  // ghost
+        drum(kSnare,      40, 6.5f),  // ghost
         drum(kHatClosed,  74, 6.5f),
         drum(kSnare,     112, 7.0f),
         drum(kHatClosed,  72, 7.5f),
@@ -817,7 +817,7 @@ MidiPattern buildRockHalfTime()
         drum(kKick,      110, 6.0f),
         drum(kSnare,     114, 6.0f),
         drum(kRide,       82, 6.0f),
-        drum(kSnare,      50, 7.0f),  // ghost
+        drum(kSnare,      40, 7.0f),  // ghost
     };
     p.bassEvents = {
         bass(kBassRoot, 93, 0.0f, 3.0f),

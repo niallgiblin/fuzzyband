@@ -1027,6 +1027,89 @@ TEST_CASE("Processor pipeline: bass root maps C2→36, E2→40, G2→43", "[inte
     proc.releaseResources();
 }
 
+TEST_CASE("Processor pipeline: sparse picking drives the bass instead of a fixed groove", "[integration][pipeline][bass]")
+{
+    // The bass has two Play-mode personalities. When the guitarist is picked
+    // (audible attacks), the bass mirrors those attacks ("play along"); when they
+    // hold a sustained tone the bass falls back to a fixed beat-groove. This guards
+    // that a picked figure keeps the bass attached to the guitar — leaner, attack-
+    // driven onsets — instead of piling the steady groove on top. It compares the
+    // SAME 7-bar signal rendered as (a) a sustained tone and (b) a sparse picked
+    // figure, and checks the picked figure yields fewer bass onsets than the
+    // sustained grid.
+    const double sr = 48000.0;
+    const int block = 512;
+    const int bars = 7;
+    const int barSamples = 4 * static_cast<int>(60.0 / 120.0 * sr);  // 96000 @ 120 BPM
+    const int total = barSamples * bars;
+
+    auto buildSource = [&](bool picked) {
+        // Use sr/block (≈93.75 Hz): exactly one cycle per 512-sample block, so the
+        // per-block RMS is constant and the quiet base produces no false attacks.
+        const double f = sr / block;
+        juce::AudioBuffer<float> src(2, total);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* p = src.getWritePointer(ch);
+            for (int i = 0; i < total; ++i)
+                p[i] = 0.04f * static_cast<float>(std::sin(2.0 * M_PI * f * i / sr));
+        }
+        if (picked)
+        {
+            // A short, clearly-rhythmical loud→quiet→loud pick at beat 2 of bar 0.
+            // "picked" is only used to flip the input; this is a behaviour guard,
+            // not a strict single-attack discriminator (the 100 ms RMS window
+            // smooths edges so exact attack counts are not atomic).
+            const int s = 24000;
+            const auto fill = [&](int from, int to, float amp) {
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = from; i < to && i < total; ++i)
+                        src.setSample(ch, i, amp * static_cast<float>(
+                            std::sin(2.0 * M_PI * f * i / sr)));
+            };
+            fill(s, s + 20 * block, 0.45f);
+            fill(s + 20 * block, s + 28 * block, 0.04f);
+            fill(s + 28 * block, s + 48 * block, 0.45f);
+        }
+        return src;
+    };
+
+    auto runAndCount = [&](bool picked) {
+        AccompanimentProcessor proc;
+        proc.prepareToPlay(sr, block);
+        proc.pauseBackgroundInferenceForTests();
+        proc.playActive.store(true, std::memory_order_release);
+        auto src = buildSource(picked);
+        const int totalBlocks = total / block;
+        int count = 0;
+        for (int b = 0; b < totalBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < block; ++i)
+                    buf.setSample(ch, i, src.getSample(ch, (b * block + i) % total));
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            for (const auto meta : midi)
+            {
+                const auto msg = meta.getMessage();
+                if (msg.isNoteOn() && msg.getChannel() == 2)
+                    ++count;
+            }
+        }
+        proc.releaseResources();
+        return count;
+    };
+
+    const int sustainedCount = runAndCount(false);
+    const int pickedCount = runAndCount(true);
+    INFO("sustained (grid) bass onsets = " << sustainedCount);
+    INFO("picked (mirrored) bass onsets = " << pickedCount);
+    REQUIRE(pickedCount < sustainedCount);  // the guitarist drives the bass, not the grid
+    REQUIRE(pickedCount >= 1);              // the listening mirror actually fired
+}
+
 TEST_CASE("Processor pipeline: custom song form loads and persists (Phase 2)", "[integration][pipeline][structure]")
 {
     const double sr = 48000.0;
@@ -1235,6 +1318,8 @@ TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section i
     // Per-bar signature: {(note, 16th-tick)} on the drum channel.
     constexpr int kSnare = 38;
     constexpr int kCrash = 49;
+    constexpr int kHatClosed = 42;
+    constexpr int kHatOpen = 46;
     std::vector<std::set<std::pair<int, int>>> barSigs(kTotalBars);
     int64_t blockStartSample = 0;
     for (int b = 0; b < kBlocksPerBar * kTotalBars; ++b)
@@ -1248,6 +1333,12 @@ TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section i
             const int note = msg.getNoteNumber();
             if (note == kCrash) continue;                       // transition crash
             if (note == kSnare && msg.getVelocity() < 50) continue;  // ghost snare
+            // Tier-0 openHat ornamentation varies the closed hat (42) -> open
+            // hat (46) per bar in the verse, so the hat voices are excluded from
+            // the "same groove" signature. Ride/bell stay: they distinguish
+            // patterns (e.g. Rock Backbeat vs Verse Groove) and are never
+            // ornamented in a verse section.
+            if (note == kHatClosed || note == kHatOpen) continue;
             // Round to the NEAREST 16th: the data-derived groove microtiming
             // (timingMs up to ±9 ms) plus bounded jitter (±15 ms) can pull an
             // event scheduled at a 16th boundary into the previous tick under

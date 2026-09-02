@@ -1,4 +1,4 @@
-# Metal Accompaniment — v0.9.29
+# fuzzyband (formerly Metal Accompaniment) — v0.9.29
 
 A JUCE **8** **VST3 / AU** plugin for guitarists. You play guitar into it; it listens, and it writes **drum + bass MIDI** in real time so a drum kit and a bass instrument in your DAW can play along with you.
 
@@ -13,19 +13,21 @@ Current plugin version (shown top-right in the UI): **v0.9.29**. Full history: [
 
 ## Download
 
-Newest builds for **all three platforms** are on the download page:
+The download page is a **hub** that lists **fuzzyband** and **Fairo** (Pharaoh fuzz), and
+each one's download links populate automatically when its version is tagged. Fuzzyband's
+newest builds cover all three platforms:
 
 - **macOS** (universal, Apple Silicon + Intel) — **VST3 + AU + Standalone**
 - **Windows** (x64) — **VST3 + Standalone**
 - **Linux** (x64) — **VST3 + Standalone**
 
-Each download is **self-contained** (the ONNX model and runtime are bundled), so there's
-nothing else to install.
+Each fuzzyband download is **self-contained** (the ONNX model and runtime are bundled), so
+there's nothing else to install.
 
 > **Non-tech users:** grab the package for your OS below and follow the install note.
 > **Developers:** skip the download and build from source (see [Build](#build-developers)).
 
-[**Download Metal Accompaniment →**](https://niallgiblin.github.io/fuzzyband/)
+[**Download fuzzyband + Fairo →**](https://niallgiblin.github.io/fuzzyband/)
 
 For the macOS Gatekeeper "unverified" notice, see the installation notes in the
 [`docs/RELEASING.md`](docs/RELEASING.md) — right-click **Open**, or
@@ -43,7 +45,7 @@ This is an **audio effect that produces MIDI**, not a standalone band. You need 
 |------|--------|
 | **macOS** | Primary target. VST3 + AU. |
 | **A DAW with MIDI routing** | Reaper, Ableton Live, Logic Pro, or similar. The host must expose project tempo and a playhead. |
-| **Metal Accompaniment v0.9.29** | VST3: `~/Library/Audio/Plug-Ins/VST3/`. AU: `~/Library/Audio/Plug-Ins/Components/` (after install). |
+| **fuzzyband v0.9.29** | VST3: `~/Library/Audio/Plug-Ins/VST3/`. AU: `~/Library/Audio/Plug-Ins/Components/` (after install). |
 | **CPU / buffer** | Designed for M-series at **256-sample** buffers. Smaller buffers (128) are fine if the session stays xrun-free. |
 
 Windows/Linux VST3 builds exist in CMake, but day-to-day development and the AU path are macOS.
@@ -82,18 +84,18 @@ You can use hardware drum/bass modules instead of VSTs as long as they receive M
 ### Signal flow
 
 ```
-Guitar (DI) ──► Metal Accompaniment ──► guitar audio out (dry pass-through)
+Guitar (DI) ──► fuzzyband ──► guitar audio out (dry pass-through)
                          │
                          └── MIDI out ──► drum track  (ch 10)
                                        └► bass track  (ch 2)
 ```
 
-Insert **Metal Accompaniment** on the **guitar audio track**, **before** amp/cab/distortion. The analyser is trained on **dry DI**. Distortion upstream will confuse energy, style, and pitch.
+Insert **fuzzyband** on the **guitar audio track**, **before** amp/cab/distortion. The analyser is trained on **dry DI**. Distortion upstream will confuse energy, style, and pitch.
 
 Typical insert order on the guitar track:
 
 1. Guitar input (DI)
-2. **Metal Accompaniment**
+2. **fuzzyband**
 3. Amp / cab / IR / FX
 
 The plugin passes guitar through (`outputGain` scales that audio only — not MIDI velocity).
@@ -113,7 +115,7 @@ Change the DAW tempo → the accompaniment changes with it on the next blocks. L
 
 The plugin **produces MIDI** and **does not accept MIDI**. Your DAW must route that output to instruments:
 
-1. **Guitar track** — audio in, Metal Accompaniment inserted, audio out to your amp sim / master as usual.
+1. **Guitar track** — audio in, fuzzyband inserted, audio out to your amp sim / master as usual.
 2. **Drum track** — a GM drum instrument. Receive MIDI **from the guitar track**, **channel 10 only**.
 3. **Bass track** — a bass instrument. Receive MIDI **from the guitar track**, **channel 2 only**.
 
@@ -121,8 +123,8 @@ If drums and bass share one MIDI cable/bus, filter by channel on each instrument
 
 **Reaper (typical):**
 
-1. Scan plugins; search **Metal** or **Niall**. Category: **Tools**.
-2. Guitar track: input = your interface instrument channel; insert Metal Accompaniment (before amp).
+1. Scan plugins; search **fuzzyband** or **Niall**. Category: **Tools**.
+2. Guitar track: input = your interface instrument channel; insert fuzzyband (before amp).
 3. Drum track: VSTi; route MIDI from the guitar track; MIDI filter **channel 10**.
 4. Bass track: bass VSTi; same MIDI source; filter **channel 2**.
 5. Set **project BPM**, arm the guitar track, **press play**, play in time.
@@ -218,7 +220,7 @@ cmake -B build-onnx -DCMAKE_BUILD_TYPE=Release -DMA_ENABLE_ONNX=ON \
   -DONNXRUNTIME_ROOT=/opt/homebrew/opt/onnxruntime
 cmake --build build-onnx --parallel
 
-cp -R "build-onnx/MetalAccompaniment_artefacts/Release/VST3/Metal Accompaniment.vst3" \
+cp -R "build-onnx/MetalAccompaniment_artefacts/Release/VST3/fuzzyband.vst3" \
   ~/Library/Audio/Plug-Ins/VST3/
 ```
 
@@ -243,3 +245,16 @@ Training the mel-CNN and exporting `assets/metal_groove.onnx` is documented unde
 | [`docs/DATA_STRATEGY.md`](docs/DATA_STRATEGY.md) | Data / model improvement |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | Cut a release; how the download site populates itself |
 | [`.planning/ROADMAP.md`](.planning/ROADMAP.md) | Milestone tracking |
+
+
+
+cd /Users/ng/Desktop/fuzzyband
+cmake --build build-onnx --target MetalAccompaniment -- -j8
+
+# VST3
+rm -rf ~/Library/Audio/Plug-Ins/VST3/fuzzyband.vst3
+cp -R build-onnx/MetalAccompaniment_artefacts/Release/VST3/fuzzyband.vst3 ~/Library/Audio/Plug-Ins/VST3/
+
+# AU (macOS)
+rm -rf ~/Library/Audio/Plug-Ins/Components/fuzzyband.component
+cp -R build-onnx/MetalAccompaniment_artefacts/Release/AU/fuzzyband.component ~/Library/Audio/Plug-Ins/Components/

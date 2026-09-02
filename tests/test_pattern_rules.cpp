@@ -92,6 +92,32 @@ TEST_CASE("PatternRules::rulePatternForState maps states to indices", "[pattern_
     REQUIRE(PatternRules::rulePatternForState(makeF(StructureState::LOUD, 170.0f)) == 5);
 }
 
+TEST_CASE("PatternRules::refineByRhythm steers a dense chug toward a denser groove", "[pattern_rules][rhythm]")
+{
+    // Dense picking (>=1.8 attacks/beat, 8ths+) → denser groove, state-compatible.
+    FeatureVector dense = makeF(StructureState::LOUD, 120.0f);
+    dense.onsetDensityPerBeat = 2.5f;
+    REQUIRE(PatternRules::refineByRhythm(4, dense) == 10);  // LOUD+8ths → thrash
+
+    FeatureVector denseSoft = makeF(StructureState::SOFT, 120.0f);
+    denseSoft.onsetDensityPerBeat = 2.5f;
+    REQUIRE(PatternRules::refineByRhythm(1, denseSoft) == 3);  // SOFT+8ths → verse fast
+
+    // Mid / sparse rhythm leaves the base untouched (a LOUD sustained tone has few
+    // attacks but is NOT "sparse playing", so density must not soften it).
+    FeatureVector mid = makeF(StructureState::LOUD, 120.0f);
+    mid.onsetDensityPerBeat = 1.0f;
+    REQUIRE(PatternRules::refineByRhythm(4, mid) == 4);
+    FeatureVector sparse = makeF(StructureState::LOUD, 120.0f);
+    sparse.onsetDensityPerBeat = 0.4f;
+    REQUIRE(PatternRules::refineByRhythm(4, sparse) == 4);
+
+    // Silence stays silent.
+    FeatureVector silent = makeF(StructureState::SILENT, 120.0f);
+    silent.onsetDensityPerBeat = 4.0f;
+    REQUIRE(PatternRules::refineByRhythm(0, silent) == 0);
+}
+
 TEST_CASE("PatternRules::isPatternCompatibleWithState expanded for new indices", "[pattern_rules]")
 {
     // SOFT: indices 1-3, 7, 20

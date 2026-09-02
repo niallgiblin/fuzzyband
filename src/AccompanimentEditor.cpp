@@ -10,7 +10,6 @@ namespace
 {
 
 constexpr int kSectionRowH = 32;
-constexpr int kSectionListViewH = 280;
 
 /** One row: drag handle + section type + bar count + remove. */
 class SectionRow final : public juce::Component
@@ -20,8 +19,8 @@ public:
     {
         grip.setText("::", juce::dontSendNotification);
         grip.setJustificationType(juce::Justification::centred);
-        grip.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-        grip.setColour(juce::Label::textColourId, juce::Colour(0xff7ab860));
+        grip.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+        grip.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::moss));
         grip.setTooltip("Drag to reorder");
         grip.setInterceptsMouseClicks(false, false);
 
@@ -44,6 +43,7 @@ public:
         barsSlider.setTooltip("Bars in this section");
 
         removeButton.setButtonText("x");
+        removeButton.setComponentID("sect-remove");
         removeButton.setTooltip("Remove section");
 
         addAndMakeVisible(grip);
@@ -165,7 +165,9 @@ public:
 
     int getHeightHint() const noexcept
     {
-        return juce::jmax(1, rows.size()) * kSectionRowH + 36;
+        // rows + small gap + the 'Add section' button, which now sits directly
+        // beneath the last row (so it scrolls with a long arrangement).
+        return juce::jmax(1, rows.size()) * kSectionRowH + 4 + 28;
     }
 
     void resized() override
@@ -237,10 +239,10 @@ private:
     void layoutRows()
     {
         auto r = getLocalBounds();
-        addButton.setBounds(r.removeFromBottom(28));
-        r.removeFromBottom(4);
         for (auto* row : rows)
             row->setBounds(r.removeFromTop(kSectionRowH));
+        r.removeFromTop(4);
+        addButton.setBounds(r.removeFromTop(28));
     }
 
     void wireRow(SectionRow* row)
@@ -287,6 +289,16 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
 {
     setLookAndFeel(&lookAndFeel);
 
+    // Install the bundled OFL typefaces (warm humanist Alegreya Sans for UI,
+    // IBM Plex Mono for the numeric/status readouts). Must happen before any
+    // label font is applied so the helpers below have a typeface to build on.
+    lookAndFeel.installFonts(
+        juce::Typeface::createSystemTypefaceFor(BinaryData::AlegreyaSansRegular_ttf, BinaryData::AlegreyaSansRegular_ttfSize),
+        juce::Typeface::createSystemTypefaceFor(BinaryData::AlegreyaSansMedium_ttf, BinaryData::AlegreyaSansMedium_ttfSize),
+        juce::Typeface::createSystemTypefaceFor(BinaryData::AlegreyaSansBold_ttf, BinaryData::AlegreyaSansBold_ttfSize),
+        juce::Typeface::createSystemTypefaceFor(BinaryData::IBMPlexMonoRegular_ttf, BinaryData::IBMPlexMonoRegular_ttfSize),
+        juce::Typeface::createSystemTypefaceFor(BinaryData::IBMPlexMonoMedium_ttf, BinaryData::IBMPlexMonoMedium_ttfSize));
+
     backgroundImage = juce::ImageCache::getFromMemory(
         BinaryData::forest_png, BinaryData::forest_pngSize);
 
@@ -295,26 +307,26 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
 
     titleLabel.setText("fuzzyband", juce::dontSendNotification);
     titleLabel.setJustificationType(juce::Justification::centredLeft);
-    titleLabel.setFont(juce::FontOptions(22.0f, juce::Font::bold));
-    titleLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
+    titleLabel.setFont(lookAndFeel.displayFont(24.0f));
+    titleLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::moss));
     addAndMakeVisible(titleLabel);
 
     versionLabel.setText(juce::String("v") + ProjectInfo::versionString, juce::dontSendNotification);
     versionLabel.setJustificationType(juce::Justification::centredRight);
-    versionLabel.setFont(juce::FontOptions(12.0f));
-    versionLabel.setColour(juce::Label::textColourId, juce::Colour(0xff8aaa80));
+    versionLabel.setFont(lookAndFeel.monoFont(11.0f));
+    versionLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkMuted));
     versionLabel.setTooltip("Plugin version (CMake project VERSION). Rebuild after bumping it in CMakeLists.txt.");
     addAndMakeVisible(versionLabel);
 
-    userPolicyHeading.setText("Controls", juce::dontSendNotification);
-    userPolicyHeading.setFont(juce::FontOptions(11.0f));
-    userPolicyHeading.setColour(juce::Label::textColourId, juce::Colour(0xff8aaa80));
+    userPolicyHeading.setText("CONTROLS", juce::dontSendNotification);
+    userPolicyHeading.setFont(lookAndFeel.labelFont(11.0f));
+    userPolicyHeading.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkMuted));
     userPolicyHeading.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(userPolicyHeading);
 
     genreLabel.setJustificationType(juce::Justification::centredLeft);
-    genreLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-    genreLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
+    genreLabel.setFont(lookAndFeel.labelFont(12.0f));
+    genreLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::ink));
     for (int i = 0; i < Groove::presetCount(); ++i)
         genreCombo.addItem(Groove::presetFor(i).name, genreCombo.getNumItems() + 1);
     genreCombo.setTooltip("Genre preset: groove feel, velocity profile, section dynamics (B1). Rock is the default; metal remains a preset.");
@@ -333,8 +345,8 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(genreCombo);
 
     swingLabel.setJustificationType(juce::Justification::centredLeft);
-    swingLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-    swingLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
+    swingLabel.setFont(lookAndFeel.labelFont(12.0f));
+    swingLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::ink));
     swingSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     swingSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 18);
     swingSlider.setRange(0.0, 1.0, 0.01);
@@ -344,8 +356,8 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(swingSlider);
 
     songSectionsLabel.setJustificationType(juce::Justification::centredLeft);
-    songSectionsLabel.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-    songSectionsLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ade78));
+    songSectionsLabel.setFont(lookAndFeel.labelFont(13.0f));
+    songSectionsLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::moss));
     addAndMakeVisible(songSectionsLabel);
 
     // Editable section list inside a viewport so the rows are always visible
@@ -366,22 +378,18 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
         const auto form = sectionListEditor->getForm();
         audioProcessorRef.setCustomSongForm(juce::String(StructureSequencer::serializeForm(form)));
         sectionListEditor->setSize(juce::jmax(1, songSectionsViewport.getMaximumVisibleWidth()),
-                                   juce::jmax(kSectionListViewH, sectionListEditor->getHeightHint()));
+                                   juce::jmax(1, juce::jmax(songSectionsViewport.getHeight(),
+                                                            sectionListEditor->getHeightHint())));
     });
     songSectionsViewport.setViewedComponent(sectionListEditor.get(), false);
     songSectionsViewport.setScrollBarsShown(true, false);
     songSectionsViewport.setScrollBarThickness(8);
     addAndMakeVisible(songSectionsViewport);
 
-    sectionLabel.setJustificationType(juce::Justification::centredLeft);
-    sectionLabel.setFont(juce::FontOptions(18.0f, juce::Font::bold));
-    sectionLabel.setColour(juce::Label::textColourId, juce::Colour(0xff6a9a50));
-    addAndMakeVisible(sectionLabel);
-
     playButton.setComponentID("play");
     playButton.setClickingTogglesState(true);
     playButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff4a7a3a));
-    playButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffc8d8c0));
+    playButton.setColour(juce::TextButton::textColourOnId, juce::Colour(FuzzybandPalette::inkWarm));
     playButton.setTooltip("Play the Sections song form. The plugin is idle (silent) until you press Play or Record riff.");
     playButton.onClick = [this]
     {
@@ -420,8 +428,8 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
 
     // Generative groove lock: hold length + live status indicator.
     lockBarsLabel.setJustificationType(juce::Justification::centredLeft);
-    lockBarsLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-    lockBarsLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
+    lockBarsLabel.setFont(lookAndFeel.labelFont(12.0f));
+    lockBarsLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::ink));
     lockBarsSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     lockBarsSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 18);
     lockBarsSlider.setRange(4.0, 64.0, 4.0);
@@ -433,15 +441,15 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(lockBarsSlider);
 
     grooveStatusLabel.setJustificationType(juce::Justification::centredLeft);
-    grooveStatusLabel.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-    grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffaacca0));
+    grooveStatusLabel.setFont(lookAndFeel.labelFont(13.0f));
+    grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkMuted));
     grooveStatusLabel.setText("Groove: follow", juce::dontSendNotification);
     addAndMakeVisible(grooveStatusLabel);
 
     // ── A5.2: post-lock transition grammar controls ─────────────────────────
     transitionBarsLabel.setJustificationType(juce::Justification::centredLeft);
-    transitionBarsLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-    transitionBarsLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
+    transitionBarsLabel.setFont(lookAndFeel.labelFont(12.0f));
+    transitionBarsLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::ink));
     transitionBarsSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     transitionBarsSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 18);
     transitionBarsSlider.setRange(2.0, 32.0, 2.0);
@@ -453,8 +461,8 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(transitionBarsSlider);
 
     transitionSectionsLabel.setJustificationType(juce::Justification::centredLeft);
-    transitionSectionsLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-    transitionSectionsLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc8d8c0));
+    transitionSectionsLabel.setFont(lookAndFeel.labelFont(12.0f));
+    transitionSectionsLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::ink));
     transitionSectionsSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     transitionSectionsSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 18);
     transitionSectionsSlider.setRange(1.0, 4.0, 1.0);
@@ -466,8 +474,8 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(transitionSectionsSlider);
 
     transitionStatusLabel.setJustificationType(juce::Justification::centredLeft);
-    transitionStatusLabel.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-    transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffe8c070));
+    transitionStatusLabel.setFont(lookAndFeel.labelFont(13.0f));
+    transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::amber));
     transitionStatusLabel.setText("Section: -", juce::dontSendNotification);
     addAndMakeVisible(transitionStatusLabel);
 
@@ -478,8 +486,8 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     for (auto* l : { &bpmLabel, &stateLabel, &patternLabel, &styleLabel })
     {
         l->setJustificationType(juce::Justification::centredLeft);
-        l->setFont(juce::FontOptions(11.0f));
-        l->setColour(juce::Label::textColourId, juce::Colour(0xffaacca0));
+        l->setFont(lookAndFeel.monoFont(11.0f));
+        l->setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkWarm));
     }
 
     addAndMakeVisible(bpmLabel);
@@ -503,7 +511,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
 
     setResizable(true, false);
     setResizeLimits(520, 900, 720, 1800);
-    setSize(520, 1280);
+    setSize(520, 1040);
     startTimerHz(20);
 }
 
@@ -514,7 +522,6 @@ AccompanimentEditor::~AccompanimentEditor()
 
 void AccompanimentEditor::timerCallback()
 {
-    sectionLabel.setText(audioProcessorRef.getSectionName(), juce::dontSendNotification);
     playButton.setToggleState(audioProcessorRef.playActive.load(std::memory_order_acquire), juce::dontSendNotification);
     const float bpm = audioProcessorRef.getDisplayBpm();
     bpmLabel.setText("BPM: " + juce::String(bpm, 1), juce::dontSendNotification);
@@ -546,28 +553,19 @@ void AccompanimentEditor::timerCallback()
                                           + "/4 - " + juce::String(n) + " hits",
                                       juce::dontSendNotification);
         }
-        grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffe8c070));
+        grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::amber));
     }
-    else if (audioProcessorRef.isLiveGridListening())
+    else if (audioProcessorRef.isTransitionSectionActive())
     {
         recordRiffButton.setButtonText("Record riff");
-        const int bar = audioProcessorRef.getLiveListenBar();
-        const int n = audioProcessorRef.getLiveListenNoteCount();
-        if (bar <= 0)
-            grooveStatusLabel.setText("Groove: listening - play in time with drums",
-                                      juce::dontSendNotification);
-        else
-            grooveStatusLabel.setText("Groove: listening " + juce::String(bar) + "/4 - "
-                                          + juce::String(n) + " hits",
-                                      juce::dontSendNotification);
-        grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffe8c070));
+        grooveStatusLabel.setText("Groove: transition", juce::dontSendNotification);
+        grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::amber));
     }
     else if (audioProcessorRef.isGrooveLocked() || audioProcessorRef.hasLearnedRiff())
     {
         recordRiffButton.setButtonText("Record riff");
-        // While a riff lock is held (recorded take or live grid listen), show
-        // how far through the hold we are and how many bars remain before the
-        // transition fires.
+        // While a riff lock is held (a recorded take), show how far through the
+        // hold we are and how many bars remain before the transition fires.
         const int cur = audioProcessorRef.getLockBarCurrent();
         const int rem = audioProcessorRef.getLockBarsRemaining();
         const int tot = audioProcessorRef.getLockBarsTotal();
@@ -586,12 +584,11 @@ void AccompanimentEditor::timerCallback()
         // The engine only listens once armed (Play or Record riff); otherwise it
         // is idle and silent.
         if (audioProcessorRef.playActive.load(std::memory_order_acquire))
-            grooveStatusLabel.setText("Groove: PLAYING - Section " + audioProcessorRef.getSectionName(),
-                                      juce::dontSendNotification);
+            grooveStatusLabel.setText("Groove: PLAYING", juce::dontSendNotification);
         else
             grooveStatusLabel.setText("Groove: idle - press Play or Record riff",
                                       juce::dontSendNotification);
-        grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffaacca0));
+        grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkMuted));
     }
 
     // ── A5.2: live post-lock transition status ───────────────────────────────
@@ -604,15 +601,21 @@ void AccompanimentEditor::timerCallback()
         // Section letters: 1 → B, 2 → C, 3 → D, …
         const char letter = static_cast<char>('B' + juce::jmax(0, num - 1));
         transitionStatusLabel.setText(
-            juce::String("Section ") + letter + " - " + juce::String(secName)
+            juce::String("Transition: ") + letter + " - " + juce::String(secName)
                 + " - " + juce::String(rem) + "/" + juce::String(tot) + " bars",
             juce::dontSendNotification);
-        transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffe8c070));
+        transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::amber));
+    }
+    else if (audioProcessorRef.playActive.load(std::memory_order_acquire))
+    {
+        transitionStatusLabel.setText("Section: " + audioProcessorRef.getCurrentSectionName(),
+                                      juce::dontSendNotification);
+        transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::moss));
     }
     else
     {
         transitionStatusLabel.setText("Section: -", juce::dontSendNotification);
-        transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xff8aaa80));
+        transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkMuted));
     }
 
     // ── DAW-style scope: copy ring + playhead, repaint ───────────────────────
@@ -762,6 +765,8 @@ void AccompanimentEditor::paint(juce::Graphics& g)
 void AccompanimentEditor::resized()
 {
     auto r = getLocalBounds().reduced(12);
+
+    // ── Title row (fixed) ────────────────────────────────────────────────────
     auto titleRow = r.removeFromTop(28);
     playButton.setBounds(titleRow.removeFromRight(100));
     titleRow.removeFromRight(6);
@@ -774,57 +779,80 @@ void AccompanimentEditor::resized()
     r.removeFromTop(8);
 
     const int userTop = r.getY();
-    userPolicyHeading.setBounds(r.removeFromTop(20));
-    r.removeFromTop(8);
 
-    auto row = r.removeFromTop(52);
+    // ── Adaptive vertical layout ─────────────────────────────────────────────
+    // Fixed heights for the rows/headings and the diagnostics. The editable
+    // sections list is the flexible element: it grows to absorb extra vertical
+    // space so the controls spread to fill the window instead of leaving a
+    // large empty band at the bottom. Inter-group gaps stay modest and even.
+    constexpr int rowH     = 52;    // label+control row
+    constexpr int headH    = 20;    // panel heading
+    constexpr int sectionH = 18;    // "SECTIONS" heading
+    constexpr int scopeH   = 110;   // waveform scope
+    constexpr int diagH    = 24;    // status/readout line
+    constexpr int gap      = 12;    // breathing room between control groups
+    constexpr int diagGap  = 14;    // panel → diagnostics
+    constexpr int listMin  = 170;   // sections list never collapses below this
+    constexpr int nGaps    = 7;     // gaps inside the panel
+
+    const int panelFixed = headH + 5 * rowH + sectionH;                 // heading, 5 rows, sections head
+    const int diagFixed  = diagGap + 2 * diagH + scopeH + 4 * diagH;    // status x2, scope, 4 readouts
+    const int other      = panelFixed + nGaps * gap + diagFixed;        // everything except the list
+    const int availH     = r.getHeight();
+
+    // Give the list everything left over, with a small margin so the last
+    // readout isn't flush against the window edge; clamp so the list never
+    // collapses and never pushes the other rows off the bottom.
+    const int sectionsH = juce::jmax(listMin, availH - other - 6);
+
+    userPolicyHeading.setBounds(r.removeFromTop(headH));
+    r.removeFromTop(gap);
+
+    auto row = r.removeFromTop(rowH);
     genreLabel.setBounds(row.removeFromLeft(140));
     genreCombo.setBounds(row);
-    r.removeFromTop(8);
+    r.removeFromTop(gap);
 
-    row = r.removeFromTop(52);
+    row = r.removeFromTop(rowH);
     swingLabel.setBounds(row.removeFromLeft(140));
     swingSlider.setBounds(row);
-    r.removeFromTop(8);
+    r.removeFromTop(gap);
 
-    songSectionsLabel.setBounds(r.removeFromTop(18));
+    songSectionsLabel.setBounds(r.removeFromTop(sectionH));
     r.removeFromTop(2);
 
-    auto listArea = r.removeFromTop(kSectionListViewH);
+    auto listArea = r.removeFromTop(sectionsH);
     songSectionsViewport.setBounds(listArea);
     if (sectionListEditor)
         sectionListEditor->setSize(juce::jmax(1, songSectionsViewport.getMaximumVisibleWidth()),
                                    juce::jmax(listArea.getHeight(), sectionListEditor->getHeightHint()));
-    r.removeFromTop(8);
+    r.removeFromTop(gap);
 
-    row = r.removeFromTop(52);
+    row = r.removeFromTop(rowH);
     lockBarsLabel.setBounds(row.removeFromLeft(140));
     lockBarsSlider.setBounds(row);
-    r.removeFromTop(8);
+    r.removeFromTop(gap);
 
-    row = r.removeFromTop(52);
+    row = r.removeFromTop(rowH);
     transitionBarsLabel.setBounds(row.removeFromLeft(140));
     transitionBarsSlider.setBounds(row);
-    r.removeFromTop(8);
+    r.removeFromTop(gap);
 
-    row = r.removeFromTop(52);
+    row = r.removeFromTop(rowH);
     transitionSectionsLabel.setBounds(row.removeFromLeft(140));
     transitionSectionsSlider.setBounds(row);
-    r.removeFromTop(8);
 
     const int userBottom = r.getY();
     userPolicyArea = juce::Rectangle<int>(12, userTop, getWidth() - 24, juce::jmax(1, userBottom - userTop));
 
-    r.removeFromTop(16);
+    r.removeFromTop(diagGap);
 
-    sectionLabel.setBounds(r.removeFromTop(28));
+    grooveStatusLabel.setBounds(r.removeFromTop(diagH));
+    transitionStatusLabel.setBounds(r.removeFromTop(diagH));
+    scopeComponent.setBounds(r.removeFromTop(scopeH));
     r.removeFromTop(4);
-    grooveStatusLabel.setBounds(r.removeFromTop(24));
-    transitionStatusLabel.setBounds(r.removeFromTop(24));
-    scopeComponent.setBounds(r.removeFromTop(110));
-    r.removeFromTop(8);
-    bpmLabel.setBounds(r.removeFromTop(24));
-    stateLabel.setBounds(r.removeFromTop(24));
-    patternLabel.setBounds(r.removeFromTop(24));
-    styleLabel.setBounds(r.removeFromTop(24));
+    bpmLabel.setBounds(r.removeFromTop(diagH));
+    stateLabel.setBounds(r.removeFromTop(diagH));
+    patternLabel.setBounds(r.removeFromTop(diagH));
+    styleLabel.setBounds(r.removeFromTop(diagH));
 }

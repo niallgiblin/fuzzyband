@@ -1,4 +1,4 @@
-# Release — build Metal Accompaniment for all target platforms and attach the
+# Release — build fuzzyband for all target platforms and attach the
 # packages to a GitHub Release so the GitHub Pages site (website/) can surface
 # one-click download links.
 #
@@ -11,9 +11,9 @@
 #
 # Artifacts (one per platform, self-contained: ONNX Runtime bundled, no build
 # machine required at runtime):
-#   Metal-Accompaniment-<ver>-macOS-Universal.zip   (VST3 + AU + Standalone)
-#   Metal-Accompaniment-<ver>-Windows-x64.zip       (VST3 + Standalone)
-#   Metal-Accompaniment-<ver>-Linux-x64.tar.gz      (VST3 + Standalone)
+#   fuzzyband-<ver>-macOS-Universal.zip   (VST3 + AU + Standalone)
+#   fuzzyband-<ver>-Windows-x64.zip       (VST3 + Standalone)
+#   fuzzyband-<ver>-Linux-x64.tar.gz      (VST3 + Standalone)
 
 name: Release
 
@@ -107,22 +107,22 @@ jobs:
         run: |
           # Confirm the merged plugins are genuinely fat (arm64 + x86_64).
           for b in \
-            "dist/macos/VST3/Metal Accompaniment.vst3/Contents/MacOS/Metal Accompaniment" \
-            "dist/macos/AU/Metal Accompaniment.component/Contents/MacOS/Metal Accompaniment" \
-            "dist/macos/Standalone/Metal Accompaniment.app/Contents/MacOS/Metal Accompaniment"; do
+            "dist/macos/VST3/fuzzyband.vst3/Contents/MacOS/fuzzyband" \
+            "dist/macos/AU/fuzzyband.component/Contents/MacOS/fuzzyband" \
+            "dist/macos/Standalone/fuzzyband.app/Contents/MacOS/fuzzyband"; do
             echo "== $b"; file "$b" | sed 's/.*: *//'
           done
 
       - name: Build macOS zip (symlink-preserving)
         run: |
-          mkdir -p "dist/install/Metal Accompaniment"
-          ditto "dist/macos/VST3/Metal Accompaniment.vst3"     "dist/install/Metal Accompaniment/Metal Accompaniment.vst3"
-          ditto "dist/macos/AU/Metal Accompaniment.component"  "dist/install/Metal Accompaniment/Metal Accompaniment.component"
-          ditto "dist/macos/Standalone/Metal Accompaniment.app" "dist/install/Metal Accompaniment/Metal Accompaniment.app"
+          mkdir -p "dist/install/fuzzyband"
+          ditto "dist/macos/VST3/fuzzyband.vst3"     "dist/install/fuzzyband/fuzzyband.vst3"
+          ditto "dist/macos/AU/fuzzyband.component"  "dist/install/fuzzyband/fuzzyband.component"
+          ditto "dist/macos/Standalone/fuzzyband.app" "dist/install/fuzzyband/fuzzyband.app"
           ditto -c -k --keepParent \
-            "dist/install/Metal Accompaniment" \
-            "dist/Metal-Accompaniment-${VERSION}-macOS-Universal.zip"
-          ls -lh "dist/Metal-Accompaniment-${VERSION}-macOS-Universal.zip"
+            "dist/install/fuzzyband" \
+            "dist/fuzzyband-${VERSION}-macOS-Universal.zip"
+          ls -lh "dist/fuzzyband-${VERSION}-macOS-Universal.zip"
 
       - name: Create release + upload macOS asset
         env:
@@ -131,7 +131,7 @@ jobs:
           echo "Creating/updating release: ${RELEASE_TAG}"
           BODY_FILE="$(mktemp)"
           cat > "$BODY_FILE" <<EOF
-          ## Metal Accompaniment v${VERSION}
+          ## fuzzyband v${VERSION}
 
           Self-contained (ONNX Runtime embedded) packages for macOS, Windows and Linux.
           See the download page for install steps. Unsigned macOS builds: right-click
@@ -144,11 +144,11 @@ jobs:
           if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "Metal Accompaniment ${VERSION}" \
+              --title "fuzzyband ${VERSION}" \
               --notes-file "$BODY_FILE"
           fi
           gh release upload "$RELEASE_TAG" \
-            "dist/Metal-Accompaniment-${VERSION}-macOS-Universal.zip" \
+            "dist/fuzzyband-${VERSION}-macOS-Universal.zip" \
             --repo "$GITHUB_REPOSITORY" --clobber
           echo "macOS asset uploaded to ${RELEASE_TAG}"
 
@@ -194,15 +194,15 @@ jobs:
           $paths = @()
 
           # VST3: copy the ONNX DLL beside the .vst3 module (Contents/x86_64-win/).
-          $vst = "Metal Accompaniment_artefacts/Release/VST3/Metal Accompaniment.vst3"
+          $vst = "MetalAccompaniment_artefacts/Release/VST3/fuzzyband.vst3"
           if (Test-Path $vst) {
-            Get-ChildItem -Recurse -Filter "Metal Accompaniment.vst3" $vst |
+            Get-ChildItem -Recurse -Filter "fuzzyband.vst3" $vst |
               ForEach-Object { Copy-Item $dllSrc $_.DirectoryName -Force }
             $paths += $vst
           }
 
           # Standalone: copy the ONNX DLL beside the .exe.
-          $standalone = "Metal Accompaniment_artefacts/Release/Standalone"
+          $standalone = "MetalAccompaniment_artefacts/Release/Standalone"
           if (Test-Path $standalone) {
             $exe = Get-ChildItem -Recurse -Filter "*.exe" $standalone | Select-Object -First 1
             if ($exe) { Copy-Item $dllSrc $exe.DirectoryName -Force }
@@ -210,7 +210,7 @@ jobs:
           }
 
           if ($paths.Count -eq 0) { throw "No plugin output found." }
-          $out = "dist\Metal-Accompaniment-$env:VERSION-Windows-x64.zip"
+          $out = "dist\fuzzyband-$env:VERSION-Windows-x64.zip"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Compress-Archive -Path $paths -DestinationPath $out -Force
           Write-Host "Packaged: $out"
@@ -221,7 +221,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "$env:RELEASE_TAG" `
-            "dist\Metal-Accompaniment-$env:VERSION-Windows-x64.zip" `
+            "dist\fuzzyband-$env:VERSION-Windows-x64.zip" `
             --repo "$env:GITHUB_REPOSITORY" --clobber
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -283,7 +283,7 @@ jobs:
           [ -n "$ONNX_SO" ] || { echo "no libonnxruntime.so in $ONNXRUNTIME_ROOT/lib"; exit 1; }
           BASENAME="$(basename "$ONNX_SO")"
 
-          VST_ROOT="Metal Accompaniment_artefacts/Release/VST3/Metal Accompaniment.vst3"
+          VST_ROOT="MetalAccompaniment_artefacts/Release/VST3/fuzzyband.vst3"
           MOD_DIR="$(find "$VST_ROOT" -type f -name '*.vst3' -printf '%h\n' 2>/dev/null | head -1)"
           [ -n "$MOD_DIR" ] || MOD_DIR="$VST_ROOT/Contents/x86_64-linux"
           mkdir -p "$MOD_DIR"
@@ -293,20 +293,20 @@ jobs:
           ln -sf "$BASENAME" "$MOD_DIR/libonnxruntime.so"
 
           # Standalone: drop the .so beside the binary too, and include it in the tarball.
-          STANDALONE="Metal Accompaniment_artefacts/Release/Standalone"
+          STANDALONE="MetalAccompaniment_artefacts/Release/Standalone"
           TAR_PATHS=("$VST_ROOT")
           if [ -d "$STANDALONE" ]; then
             BIN="$(find "$STANDALONE" -type f -executable 2>/dev/null | head -1)"
             if [ -n "$BIN" ]; then cp -f "$ONNX_SO" "$(dirname "$BIN")/"; fi
             TAR_PATHS+=("$STANDALONE")
           fi
-          tar -czf "dist/Metal-Accompaniment-${VERSION}-Linux-x64.tar.gz" "${TAR_PATHS[@]}"
-          ls -lh "dist/Metal-Accompaniment-${VERSION}-Linux-x64.tar.gz"
+          tar -czf "dist/fuzzyband-${VERSION}-Linux-x64.tar.gz" "${TAR_PATHS[@]}"
+          ls -lh "dist/fuzzyband-${VERSION}-Linux-x64.tar.gz"
 
       - name: Upload Linux asset
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "$RELEASE_TAG" \
-            "dist/Metal-Accompaniment-${VERSION}-Linux-x64.tar.gz" \
+            "dist/fuzzyband-${VERSION}-Linux-x64.tar.gz" \
             --repo "$GITHUB_REPOSITORY" --clobber

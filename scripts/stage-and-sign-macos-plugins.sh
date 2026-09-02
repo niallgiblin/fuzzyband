@@ -13,14 +13,14 @@ STAGE="$(mktemp -d "${TMPDIR:-/tmp}/metal-accompaniment-sign.XXXXXX")"
 cleanup() { rm -rf "$STAGE"; }
 trap cleanup EXIT
 
-cp -R "$ART/VST3/Metal Accompaniment.vst3" "$STAGE/"
-cp -R "$ART/AU/Metal Accompaniment.component" "$STAGE/"
+cp -R "$ART/VST3/fuzzyband.vst3" "$STAGE/"
+cp -R "$ART/AU/fuzzyband.component" "$STAGE/"
 
-"$REPO_ROOT/scripts/macos-adhoc-sign-plugin-bundle.sh" "$STAGE/Metal Accompaniment.vst3"
-"$REPO_ROOT/scripts/macos-adhoc-sign-plugin-bundle.sh" "$STAGE/Metal Accompaniment.component"
+"$REPO_ROOT/scripts/macos-adhoc-sign-plugin-bundle.sh" "$STAGE/fuzzyband.vst3"
+"$REPO_ROOT/scripts/macos-adhoc-sign-plugin-bundle.sh" "$STAGE/fuzzyband.component"
 
 mkdir -p "$DEST"
-rm -rf "$DEST/Metal Accompaniment.vst3" "$DEST/Metal Accompaniment.component"
-cp -R "$STAGE/Metal Accompaniment.vst3" "$STAGE/Metal Accompaniment.component" "$DEST/"
+rm -rf "$DEST/fuzzyband.vst3" "$DEST/fuzzyband.component"
+cp -R "$STAGE/fuzzyband.vst3" "$STAGE/fuzzyband.component" "$DEST/"
 
 echo "Signed plug-ins copied to: $DEST"

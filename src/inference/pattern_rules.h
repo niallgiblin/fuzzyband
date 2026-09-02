@@ -191,6 +191,37 @@ inline int diversifyPatternForGenre(int base, const FeatureVector& f, int barMod
 }
 
 /**
+ * @brief R1 (rhythm-driven selection): correct a base groove toward the density
+ * the guitarist is actually playing. The timbre/energy selector picks a "family"
+ * but cannot see that the player is chugging 16ths vs holding half-notes. Only
+ * the unambiguous DENSE case steers: >=1.8 attacks/beat (8th-note chugging or
+ * faster) → a state-compatible denser groove. Sparse/sparse-ish rhythm is left
+ * to the energy/BPM rules (a LOUD sustained note has few attacks but is not
+ * "sparse playing", so density alone must not soften it). Deterministic, stateless, RT-safe.
+ */
+inline int refineByRhythm(int base, const FeatureVector& f) noexcept
+{
+    if (base == 0)
+        return 0;
+    const float density = std::clamp(f.onsetDensityPerBeat, 0.0f, 8.0f);
+    if (density < 1.8f)
+        return base;   // only clearly-dense picking steers; mid/sparse left to rules
+    switch (f.state)
+    {
+        case StructureState::LOUD:
+            if (isPatternCompatibleWithState(10, f.state)) return 10;  // thrash
+            if (isPatternCompatibleWithState(8, f.state)) return 8;    // blast
+            break;
+        case StructureState::SOFT:
+            if (isPatternCompatibleWithState(3, f.state)) return 3;    // verse fast
+            if (isPatternCompatibleWithState(7, f.state)) return 7;    // half-time
+            break;
+        default: break;
+    }
+    return base;
+}
+
+/**
  * @brief D-23-04 single-shot exclusion: if result == excludeIndex, scan forward modulo-kPatternCount
  * for the next state-compatible pattern. Pass excludeIndex == -1 to disable.
  * When no compatible candidate exists, returns fallbackPattern (rule/state default).

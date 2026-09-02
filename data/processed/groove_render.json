@@ -1,0 +1,9 @@
+{
+  "source": "Groove MIDI Dataset (GMD) v1.0.0, CC-BY 4.0",
+  "generator": "training/build_groove_render_dataset.py",
+  "num_windows": 20851,
+  "num_files": 491,
+  "voices": 10,
+  "steps": 16,
+  "condition_dim": 18
+}

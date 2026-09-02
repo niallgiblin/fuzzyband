@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.9.33)
+project(MetalAccompaniment VERSION 0.9.44)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +14,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(MA_BUILD_TESTS       "Build unit tests"                  ON)
 option(MA_BUILD_STANDALONE  "Build standalone app target"       ON)
 option(MA_ENABLE_ONNX       "Enable ONNX Runtime (v0.6.0 default: ON)"     ON)
+option(MA_BUNDLE_GROOVE_RENDERER "Bundle groove_renderer.onnx (Tier-1 learned groove renderer)" ON)
 
 # ─────────────────────────────────────────────────────────────────
 # JUCE — fetch if not found locally
@@ -82,12 +83,23 @@ endif()
 
 set(BINARY_DATA_SOURCES
     "${CMAKE_SOURCE_DIR}/assets/forest.png"
+    "${CMAKE_SOURCE_DIR}/assets/fonts/AlegreyaSans-Regular.ttf"
+    "${CMAKE_SOURCE_DIR}/assets/fonts/AlegreyaSans-Medium.ttf"
+    "${CMAKE_SOURCE_DIR}/assets/fonts/AlegreyaSans-Bold.ttf"
+    "${CMAKE_SOURCE_DIR}/assets/fonts/IBMPlexMono-Regular.ttf"
+    "${CMAKE_SOURCE_DIR}/assets/fonts/IBMPlexMono-Medium.ttf"
 )
 
 if(MA_ENABLE_ONNX)
     list(APPEND BINARY_DATA_SOURCES
         "${CMAKE_SOURCE_DIR}/assets/metal_groove.onnx"
         "${CMAKE_SOURCE_DIR}/assets/style_cnn.onnx"
+    )
+endif()
+
+if(MA_BUNDLE_GROOVE_RENDERER)
+    list(APPEND BINARY_DATA_SOURCES
+        "${CMAKE_SOURCE_DIR}/assets/groove_renderer.onnx"
     )
 endif()
 
@@ -110,11 +122,11 @@ endif()
 juce_add_plugin(MetalAccompaniment
     VERSION                     ${PROJECT_VERSION}
     COMPANY_NAME                "Niall Giblin"
-    BUNDLE_ID                   com.ng.MetalAccompaniment
+    BUNDLE_ID                   com.ng.fuzzyband
     PLUGIN_MANUFACTURER_CODE    "NGAC"
     PLUGIN_CODE                 "MtAc"
     FORMATS                     ${PLUGIN_FORMATS}
-    PRODUCT_NAME                "Metal Accompaniment"
+    PRODUCT_NAME                "fuzzyband"
     IS_SYNTH                    FALSE
     NEEDS_MIDI_INPUT            FALSE
     NEEDS_MIDI_OUTPUT           TRUE
@@ -150,6 +162,7 @@ target_sources(MetalAccompaniment PRIVATE
     # Inference
     src/inference/RuleBasedInference.cpp
     src/inference/MetalGrooveInference.cpp
+    src/inference/GrooveRenderer.cpp
 
     # MIDI
     src/midi/MidiPatternLibrary.cpp
@@ -178,6 +191,7 @@ target_compile_definitions(MetalAccompaniment PUBLIC
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     $<$<BOOL:${MA_ENABLE_ONNX}>:MA_ENABLE_ONNX=1>
+    $<$<BOOL:${MA_BUNDLE_GROOVE_RENDERER}>:MA_BUNDLE_GROOVE_RENDERER=1>
     MA_PLUGIN_VERSION="${PROJECT_VERSION}"
 )
 
@@ -269,6 +283,7 @@ if(MA_BUILD_TESTS)
         tests/test_golden_signal.cpp
         tests/test_structure_sequencer.cpp
         tests/test_feature_capture.cpp
+        tests/test_groove_renderer.cpp
 
         # Plugin sources compiled into the test executable
         src/capture/FeatureCapture.cpp
@@ -282,6 +297,7 @@ if(MA_BUILD_TESTS)
         src/analysis/StablePitchTracker.cpp
         src/analysis/PhraseLearner.cpp
         src/inference/RuleBasedInference.cpp
+        src/inference/GrooveRenderer.cpp
         src/midi/MidiPatternLibrary.cpp
         src/midi/PatternPlayer.cpp
     )
@@ -321,6 +337,10 @@ if(MA_BUILD_TESTS)
         target_link_libraries(MetalAccompanimentTests PRIVATE "${ONNX_LIB}")
         if(BINARY_DATA_SOURCES)
             target_link_libraries(MetalAccompanimentTests PRIVATE MetalAccompanimentData)
+        endif()
+        if(MA_BUNDLE_GROOVE_RENDERER)
+            target_sources(MetalAccompanimentTests PRIVATE tests/test_groove_renderer_onnx.cpp)
+            target_compile_definitions(MetalAccompanimentTests PRIVATE MA_BUNDLE_GROOVE_RENDERER=1)
         endif()
         add_test(
             NAME onnx_latency_benchmark
@@ -380,7 +400,8 @@ if(MA_BUILD_TESTS)
     # silently stops being built (see docs/DATA_STRATEGY.md Phase 2). Tests that
     # are only built under a feature flag (e.g. ONNX-gated) are exempted below.
     set(MA_CONDITIONAL_TEST_FILES
-        test_onnx_latency_benchmark.cpp   # only linked when MA_ENABLE_ONNX=ON
+        test_onnx_latency_benchmark.cpp      # only linked when MA_ENABLE_ONNX=ON
+        test_groove_renderer_onnx.cpp        # only linked when MA_BUNDLE_GROOVE_RENDERER=ON
     )
 
     file(GLOB MA_ALL_TEST_FILES CONFIGURE_DEPENDS

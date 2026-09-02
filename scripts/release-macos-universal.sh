@@ -35,9 +35,9 @@
 # builds are emitted (e.g. AU is skipped if a build was produced without it).
 #
 # Produced layout under --out:
-#   out/VST3/Metal Accompaniment.vst3
-#   out/AU/Metal Accompaniment.component
-#   out/Standalone/Metal Accompaniment.app
+#   out/VST3/fuzzyband.vst3
+#   out/AU/fuzzyband.component
+#   out/Standalone/fuzzyband.app
 #
 set -euo pipefail
 
@@ -100,7 +100,7 @@ SONAME="$(basename "$ARM_SRC")"          # e.g. libonnxruntime.1.20.1.dylib
 echo "release-macos-universal: ONNX soname = $SONAME"
 
 # The product name inside every JUCE bundle binary (matches PRODUCT_NAME in CMakeLists).
-PRODUCT="Metal Accompaniment"
+PRODUCT="fuzzyband"
 declare -A FORMATS=(
   [VST3]="${PRODUCT}.vst3"
   [AU]="${PRODUCT}.component"

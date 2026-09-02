@@ -36,4 +36,13 @@ struct FeatureVector
 
     /** S03: Sub-bass energy ratio (30–120 Hz / total). High for palm-mute chugs, low for clean arpeggios. */
     float subBassRatio = 0.0f;
+
+    /** R1 (rhythm-driven selection): guitar attacks per beat over a recent bar
+     *  (~0.5 half-notes, ~1 quarters, ~2 8ths, ~4 16ths). Drives groove-density
+     *  refinement so the kit tracks how hard/dense the guitarist is picking. */
+    float onsetDensityPerBeat = 1.0f;
+
+    /** R1: mean inter-onset interval in beats over a recent bar (0 if <2 attacks).
+     *  Complementary to onsetDensityPerBeat for slow/large-spaced figures. */
+    float onsetIoiBeats = 0.0f;
 };

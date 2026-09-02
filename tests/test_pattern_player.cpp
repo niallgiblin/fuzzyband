@@ -53,6 +53,25 @@ juce::MidiBuffer renderQueuedFill(PatternPlayer::TransitionFillKind kind, int pa
     return midi;
 }
 
+bool patternHasNote(const MidiPatternLibrary& lib, int patternIndex, int note)
+{
+    const auto& p = lib.getPattern(patternIndex);
+    for (const auto& ev : p.drumEvents)
+        if (ev.note == note)
+            return true;
+    return false;
+}
+
+std::set<int> patternCellsForNote(const MidiPatternLibrary& lib, int patternIndex, int note)
+{
+    std::set<int> cells;
+    const auto& p = lib.getPattern(patternIndex);
+    for (const auto& ev : p.drumEvents)
+        if (ev.note == note)
+            cells.insert(Groove::grid16Of(ev.beatOffset));
+    return cells;
+}
+
 } // namespace
 
 TEST_CASE("PatternPlayer emits MIDI for non-silent pattern", "[midi]")
@@ -502,6 +521,98 @@ TEST_CASE("frozen transport: internal beat clock keeps patterns musical (no mach
         REQUIRE(kv.second == 0);
 }
 
+TEST_CASE("A1.2: live-mirror bass snaps to the section's chord tones", "[midi][A1]")
+{
+    // The listening bass follows the guitarist's rhythm but resolves each note to
+    // the current section's chord tones around the live root, so it belongs to the
+    // section (A1.2). Render snapBassToSectionHarmony directly.
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.snapBpm(120.0f);
+    player.setBassParams(40, 2);  // E2 live root (pc 4)
+
+    player.setSection(Groove::SongSectionId::Verse);
+    // Verse palette {root, fourth}: root stays root; a B (pc 11) snaps to the fourth (A).
+    REQUIRE(player.snapBassToSectionHarmony(40) == 40);  // E → root
+    REQUIRE(player.snapBassToSectionHarmony(59) == 45);  // B → A (fourth)
+
+    player.setSection(Groove::SongSectionId::Chorus);
+    // Chorus palette {root, fourth, fifth}: the same B snaps to the fifth (B).
+    REQUIRE(player.snapBassToSectionHarmony(59) == 47);  // B → B (fifth)
+    REQUIRE(player.snapBassToSectionHarmony(43) == 45);  // G# → A (fourth)
+
+    player.setSection(Groove::SongSectionId::Breakdown);
+    // Breakdown is root-only: every note collapses to the root.
+    REQUIRE(player.snapBassToSectionHarmony(59) == 40);
+    REQUIRE(player.snapBassToSectionHarmony(43) == 40);
+}
+
+TEST_CASE("A1.2: armed bass lead-in fires a pickup on the bar's last beat", "[midi][A1]")
+{
+    // Section hand-off: the processor arms a lead-in on the last bar of a section;
+    // the player emits a bass pickup on the "and" of the last beat, then disarms.
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.snapBpm(120.0f);
+    player.setPatternIndex(1);  // Verse Groove — has authored bass
+    player.setStructureSilent(false);
+    player.setSection(Groove::SongSectionId::Verse);
+    player.setBassParams(40, 2);  // E2 root → pickup is root − 5 = 35 (B1)
+    player.armBassLeadIn();
+
+    // One bar = 96000 samples at 120 BPM. pickupBeat = 3.5 → offset 84000.
+    juce::MidiBuffer midi;
+    player.process(midi, 96000, 0);
+
+    bool sawPickup = false;
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOn() && msg.getChannel() == 2
+            && msg.getNoteNumber() == 35 && msg.getTimeStamp() == 84000)
+            sawPickup = true;
+    }
+    REQUIRE(sawPickup);
+}
+
+TEST_CASE("A1.2: bass lead-in re-arms and fires on each successive bar", "[midi][A1]")
+{
+    // A section's last bar repeats for every section, so the pickup must re-fire
+    // on each new last bar (not be a one-shot forever after the first).
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.snapBpm(120.0f);
+    player.setPatternIndex(1);
+    player.setStructureSilent(false);
+    player.setSection(Groove::SongSectionId::Verse);
+    player.setBassParams(40, 2);
+
+    auto pickupThisBar = [&](int64_t barBase) -> bool
+    {
+        player.armBassLeadIn();
+        juce::MidiBuffer midi;
+        player.process(midi, 96000, barBase);
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn() && msg.getChannel() == 2
+                && msg.getNoteNumber() == 35
+                && msg.getTimeStamp() == 84000)
+                return true;
+        }
+        return false;
+    };
+
+    REQUIRE(pickupThisBar(0));          // bar 0 (samples 0..96000) → pickup at 84000
+    REQUIRE(pickupThisBar(96000));      // bar 1 (samples 96000..192000) → pickup at 84000
+}
+
 // ── Musicality pivot: swing (A2.3) ───────────────────────────────────────────
 
 TEST_CASE("A2.3: swing delays off-8th events", "[midi][A2]")
@@ -577,6 +688,43 @@ TEST_CASE("A3.1: chorus renders louder than verse for the same pattern", "[midi]
     REQUIRE(chorusMax > verseMax + 5);
 }
 
+TEST_CASE("A3.1: guitarist-energy dynamic scales the kit loudness", "[midi][A3]")
+{
+    // setGuitarEnergy feeds a multiplier into sectionVelMul, so a hotter signal
+    // must render a louder kit. Fixed seed keeps the humanisation deterministic.
+    auto sumDrumVel = [](float energy) -> int
+    {
+        MidiPatternLibrary lib;
+        PatternPlayer player;
+        player.setPatternLibrary(&lib);
+        player.prepare(48000.0, 512);
+        player.setRandomSeed(5);
+        player.snapBpm(120.0f);
+        player.setSection(Groove::SongSectionId::Chorus);
+        player.setGenrePreset(0);
+        player.setPatternIndex(1);
+        player.setStructureSilent(false);
+        player.setGuitarEnergy(energy);
+
+        juce::MidiBuffer midi;
+        player.process(midi, 96000, 0);
+
+        int sum = 0;
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn() && msg.getChannel() == 10)
+                sum += static_cast<int>(msg.getVelocity());
+        }
+        return sum;
+    };
+
+    const int quiet = sumDrumVel(0.75f);  // clamped lower bound
+    const int loud  = sumDrumVel(1.30f);  // clamped upper bound
+    REQUIRE(quiet > 0);
+    REQUIRE(loud > quiet + 4);
+}
+
 TEST_CASE("PatternPlayer click track: kick on 1, side-stick on 2/3/4, no pattern drums", "[midi][click]")
 {
     MidiPatternLibrary lib;
@@ -616,4 +764,193 @@ TEST_CASE("PatternPlayer click track: kick on 1, side-stick on 2/3/4, no pattern
     REQUIRE(sticks == 3);
     REQUIRE(snares == 0);
     REQUIRE(hats == 0);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Tier-0 ornamentation (computeOrnamentation) — determinism + safety invariants
+// ══════════════════════════════════════════════════════════════════════════
+
+TEST_CASE("Tier-0 ornamentation: Silent pattern never ornaments", "[midi][ornament]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+
+    const Groove::SongSectionId sections[] = {
+        Groove::SongSectionId::Verse,     Groove::SongSectionId::Chorus,
+        Groove::SongSectionId::Breakdown, Groove::SongSectionId::Solo,
+        Groove::SongSectionId::Intro,     Groove::SongSectionId::Outro,
+    };
+    for (const auto section : sections)
+    {
+        player.setSection(section);
+        for (int64_t bar = 0; bar < 200; ++bar)
+        {
+            const auto o = player.computeOrnamentation(bar, 0);
+            REQUIRE(!o.openHat);
+            REQUIRE(!o.rideSwitch);
+            REQUIRE(!o.extraGhost);
+            REQUIRE(!o.dropKick);
+            REQUIRE(!o.microFill);
+        }
+    }
+}
+
+TEST_CASE("Tier-0 ornamentation is deterministic per (bar, pattern)", "[midi][ornament]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.setSection(Groove::SongSectionId::Verse);
+
+    for (int64_t bar = 0; bar < 500; ++bar)
+    {
+        const auto a = player.computeOrnamentation(bar, 1);
+        const auto b = player.computeOrnamentation(bar, 1);
+        REQUIRE(a.openHat == b.openHat);
+        REQUIRE(a.openHatCell == b.openHatCell);
+        REQUIRE(a.rideSwitch == b.rideSwitch);
+        REQUIRE(a.extraGhost == b.extraGhost);
+        REQUIRE(a.extraGhostCell == b.extraGhostCell);
+        REQUIRE(a.dropKick == b.dropKick);
+        REQUIRE(a.dropKickCell == b.dropKickCell);
+        REQUIRE(a.microFill == b.microFill);
+    }
+}
+
+TEST_CASE("Tier-0 ornamentation never fires on a voice the pattern lacks", "[midi][ornament]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+
+    // Pattern 4 (Chorus Mid) has open hats + ride bell but NO closed hat (42).
+    REQUIRE(!patternHasNote(lib, 4, 42));
+    // Pattern 1 (Verse Groove) has closed hats + ride bell.
+    REQUIRE(patternHasNote(lib, 1, 42));
+    REQUIRE(patternHasNote(lib, 1, 53));
+    // Pattern 22 (Rock Backbeat) has closed hats and no ride/bell.
+    REQUIRE(patternHasNote(lib, 22, 42));
+    REQUIRE(!patternHasNote(lib, 22, 51));
+    REQUIRE(!patternHasNote(lib, 22, 53));
+
+    const std::set<int> closedHatCells1 = patternCellsForNote(lib, 1, 42);
+    REQUIRE(!closedHatCells1.empty());
+
+    for (int64_t bar = 0; bar < 5000; ++bar)
+    {
+        // No closed hat -> openHat and rideSwitch are impossible.
+        player.setSection(Groove::SongSectionId::Verse);
+        auto o = player.computeOrnamentation(bar, 4);
+        REQUIRE(!o.openHat);
+        REQUIRE(!o.rideSwitch);
+
+        // Pattern 1 has a ride bell, so rideSwitch must be gated off; openHat
+        // (when it fires) must land on a cell that really has a closed hat.
+        o = player.computeOrnamentation(bar, 1);
+        REQUIRE(!o.rideSwitch);
+        if (o.openHat)
+            REQUIRE(closedHatCells1.count(o.openHatCell) == 1);
+
+        // Pattern 22 has no ride/bell, so rideSwitch may fire in chorus/solo.
+        player.setSection(Groove::SongSectionId::Chorus);
+        o = player.computeOrnamentation(bar, 22);
+        REQUIRE(!(o.rideSwitch && (patternHasNote(lib, 22, 51) || patternHasNote(lib, 22, 53))));
+    }
+}
+
+TEST_CASE("Tier-0 ornamentation respects section and phrase gating", "[midi][ornament]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+
+    for (int64_t bar = 0; bar < 3000; ++bar)
+    {
+        player.setSection(Groove::SongSectionId::Verse);
+        auto o = player.computeOrnamentation(bar, 1);
+        REQUIRE(!o.rideSwitch);   // ride switch is chorus/solo only
+        REQUIRE(!o.dropKick);     // drop kick is breakdown/outro only
+        if (bar % 4 != 3) REQUIRE(!o.microFill);
+
+        player.setSection(Groove::SongSectionId::Chorus);
+        o = player.computeOrnamentation(bar, 1);
+        REQUIRE(!o.extraGhost);   // ghosts are verse/breakdown only
+        REQUIRE(!o.dropKick);
+
+        player.setSection(Groove::SongSectionId::Solo);
+        o = player.computeOrnamentation(bar, 1);
+        REQUIRE(!o.extraGhost);
+        REQUIRE(!o.dropKick);
+
+        player.setSection(Groove::SongSectionId::Breakdown);
+        o = player.computeOrnamentation(bar, 1);
+        REQUIRE(!o.rideSwitch);
+    }
+}
+
+TEST_CASE("Tier-0 dropKick never removes the downbeat or beat-3", "[midi][ornament]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.setSection(Groove::SongSectionId::Breakdown);
+
+    // Pattern 25 (Punk D-Beat) has off-8th kicks at grid16 cells {2, 6, 10, 14},
+    // so the ornament has eligible non-downbeat/beat-3 cells to drop.
+    bool fired = false;
+    for (int64_t bar = 0; bar < 20000; ++bar)
+    {
+        const auto o = player.computeOrnamentation(bar, 25);
+        if (o.dropKick)
+        {
+            fired = true;
+            REQUIRE(o.dropKickCell != 0);
+            REQUIRE(o.dropKickCell != 8);
+        }
+    }
+    REQUIRE(fired);  // 12% of 20000 bars — vanishingly unlikely to never fire
+}
+
+TEST_CASE("Tier-0 microFill only on phrase-end bars and never on fill patterns", "[midi][ornament]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.setSection(Groove::SongSectionId::Verse);
+
+    for (int64_t bar = 0; bar < 100; ++bar)
+    {
+        const auto o = player.computeOrnamentation(bar, 1);
+        if (bar % 4 != 3)
+            REQUIRE(!o.microFill);
+    }
+
+    // Fill patterns 17/18/19 never micro-fill, even on phrase-end bars.
+    for (const int p : { 17, 18, 19 })
+        for (int64_t bar = 3; bar < 1000; bar += 4)
+            REQUIRE(!player.computeOrnamentation(bar, p).microFill);
+}
+
+TEST_CASE("Tier-0 ornamentation activates across bars (not a static no-op)", "[midi][ornament]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.setSection(Groove::SongSectionId::Verse);
+
+    bool anyOpenHat = false, anyGhost = false, anyMicroFill = false;
+    for (int64_t bar = 1; bar < 4000; ++bar)
+    {
+        const auto o = player.computeOrnamentation(bar, 1);
+        anyOpenHat  |= o.openHat;
+        anyGhost    |= o.extraGhost;
+        anyMicroFill |= o.microFill;
+    }
+
+    // Verse + pattern 1: openHat 8%, extraGhost 15%, microFill 12% (phrase-end
+    // bars). All should fire at least once across 4000 bars.
+    REQUIRE(anyOpenHat);
+    REQUIRE(anyGhost);
+    REQUIRE(anyMicroFill);
 }

@@ -172,6 +172,44 @@ public:
         return count;
     }
 
+    /** @brief Guitar attacks per beat over a recent window (R1 rhythm feature).
+     *  ~0.5 = half-notes, ~1 = quarters, ~2 = 8ths, ~4 = 16ths. 0 if no window. */
+    float getOnsetDensityPerBeat(int64_t now, int64_t windowSamples, double samplesPerBeat) const noexcept
+    {
+        if (windowSamples <= 0 || samplesPerBeat <= 0.0)
+            return 0.0f;
+        const int n = countRecentAttacks(now, windowSamples);
+        const double beats = static_cast<double>(windowSamples) / samplesPerBeat;
+        return (beats > 0.0) ? static_cast<float>(static_cast<double>(n) / beats) : 0.0f;
+    }
+
+    /** @brief Mean inter-onset interval in samples over a recent window (R1).
+     *  0 if fewer than 2 attacks in the window. */
+    float getMeanIoiSamples(int64_t now, int64_t windowSamples) const noexcept
+    {
+        if (windowSamples <= 0 || attackCount_ < 2)
+            return 0.0f;
+        const int64_t cutoff = now - windowSamples;
+        int k = 0;
+        int64_t sum = 0;
+        int64_t prev = -1;
+        const int n = std::min(attackCount_, kMaxAttacks);
+        for (int i = 0; i < n; ++i)
+        {
+            const int idx = (attackWrite_ - 1 - i + kMaxAttacks) % kMaxAttacks;
+            const int64_t s = attacks_[static_cast<size_t>(idx)].sample;
+            if (s < cutoff)
+                break;  // ring is chronological (newest first)
+            if (prev >= 0)
+            {
+                sum += (prev - s);
+                ++k;
+            }
+            prev = s;
+        }
+        return (k > 0) ? static_cast<float>(static_cast<double>(sum) / k) : 0.0f;
+    }
+
     /** Number of attacks detected so far. */
     int getAttackCount() const noexcept { return attackCount_; }
 

@@ -1,4 +1,4 @@
-/* Metal Accompaniment — download page
+/* fuzzyband — download page (multi-plugin hub)
    Dark, readable, no external fonts or (CDN) dependencies. */
 
 :root {
@@ -223,8 +223,42 @@ pre code { background: none; border: none; padding: 0; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Multi-plugin hub */
+.products { display: flex; flex-direction: column; gap: 26px; }
+.product {
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  border-radius: var(--radius);
+  padding: 22px;
+}
+.product-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.product-head h3 { margin: 0; font-size: 24px; }
+.product-tag { margin: 0 0 6px; }
+.panel-sub {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 16px 0 0;
+  background: #101318;
+  overflow: hidden;
+}
+.panel-sub summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  font-weight: 700;
+  color: var(--text);
+  list-style: none;
+}
+.panel-sub summary::-webkit-details-marker { display: none; }
+.panel-sub summary::before { content: "▸ "; color: var(--accent); }
+.panel-sub[open] summary::before { content: "▾ "; }
+.panel-sub pre { margin: 0; border: none; border-top: 1px solid var(--line); border-radius: 0; }
+.panel-sub > p.muted { padding: 4px 14px 8px; }
+.panel-sub .hist { padding: 0 14px 12px; }
+.panel-sub .hist li:last-child { border-bottom: none; }
+
 @media (max-width: 720px) {
   .hero { grid-template-columns: 1fr; }
   .hist li { grid-template-columns: 1fr auto; }
   .hist-ver { font-size: 15px; }
+  .product-head h3 { font-size: 20px; }
 }

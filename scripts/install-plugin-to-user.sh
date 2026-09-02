@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copy freshly built Metal Accompaniment VST3 (and AU on macOS) into the user
+# Copy freshly built fuzzyband VST3 (and AU on macOS) into the user
 # plug-in folders Reaper scans by default. Removes the destination bundle first
 # so you never keep a half-updated .vst3/.component.
 set -euo pipefail
@@ -16,8 +16,8 @@ Usage: install-plugin-to-user.sh [--build DIR] [--config Release|Debug|auto]
   --config      Release or Debug; default auto picks the newest built VST3
 
 Copies:
-  VST3 → ~/Library/Audio/Plug-Ins/VST3/Metal Accompaniment.vst3
-  AU   → ~/Library/Audio/Plug-Ins/Components/Metal Accompaniment.component (if built)
+  VST3 → ~/Library/Audio/Plug-Ins/VST3/fuzzyband.vst3
+  AU   → ~/Library/Audio/Plug-Ins/Components/fuzzyband.component (if built)
 
 Then in Reaper: re-scan VST (or restart Reaper). Same install path → usually no
 full cache clear needed after the first time.
@@ -47,8 +47,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 ART="${BUILD_DIR}/MetalAccompaniment_artefacts"
-VST3_NAME="Metal Accompaniment.vst3"
-AU_NAME="Metal Accompaniment.component"
+VST3_NAME="fuzzyband.vst3"
+AU_NAME="fuzzyband.component"
 
 bundle_main_mtime() {
   local bundle="$1"
@@ -103,7 +103,7 @@ DEST_VST3="${HOME}/Library/Audio/Plug-Ins/VST3"
 DEST_VST3_BUNDLE="${DEST_VST3}/${VST3_NAME}"
 
 # macOS Gatekeeper: copied bundles are often quarantined and/or unsigned, which
-# shows as “Metal Accompaniment is damaged” → Trash. Strip xattrs + ad-hoc sign.
+# shows as “fuzzyband is damaged” → Trash. Strip xattrs + ad-hoc sign.
 # ONNX builds embed libonnxruntime.dylib — it must be re-signed before the bundle
 # (see scripts/macos-adhoc-sign-plugin-bundle.sh).
 macos_prepare_bundle() {

@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Metal Accompaniment — Download</title>
+  <title>fuzzyband — free guitar plugins</title>
   <meta name="description"
-        content="Metal Accompaniment: a free AI metal drum + bass MIDI accompaniment plugin (VST3, AU and Standalone) for guitarists. Download the latest build." />
+        content="fuzzyband: free, open-source guitar plugins by Niall Giblin — fuzzyband (AI metal drum + bass MIDI accompaniment) and Fairo (Pharaoh fuzz). Download the latest builds for macOS, Windows and Linux." />
   <link rel="stylesheet" href="assets/styles.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎸</text></svg>" />
 </head>
@@ -15,127 +15,95 @@
       <div class="brand">
         <span class="brand-mark">⌁</span>
         <div>
-          <h1>Metal Accompaniment</h1>
-          <p class="tagline">Free AI metal drum + bass MIDI accompaniment for guitarists</p>
+          <h1>fuzzyband</h1>
+          <p class="tagline">free, open-source guitar plugins by Niall Giblin</p>
         </div>
       </div>
       <nav class="nav">
-        <a href="#download">Download</a>
+        <a href="#downloads">Downloads</a>
         <a href="#build">Build from source</a>
         <a href="#safety">Safety</a>
-        <a href="#versions">Versions</a>
+        <a href="#about">About</a>
       </nav>
     </div>
   </header>
 
   <main class="wrap">
-    <!-- Latest release hero -->
-    <section id="download" class="hero">
+    <!-- Intro -->
+    <section class="hero">
       <div class="hero-copy">
-        <h2>Play guitar. Hear a metal band play with you.</h2>
+        <h2>Play guitar. Get treated properly.</h2>
         <p>
-          Metal Accompaniment listens to your guitar in real time and writes
-          <strong>drum and bass MIDI</strong> so a kit and a bass VST in your DAW play
-          along with you — locked to your project tempo. No tempo tapping, no manual
-          pattern selection. <em>Free and open source.</em>
+          <strong>fuzzyband</strong> is a small family of free, open-source guitar plugins:
+          a musical AI accompaniment that writes drum &amp; bass MIDI as you play, and a
+          fuzz pedal model that traces a real analog circuit. Everything is built straight
+          from the public source — no accounts, no restrictions.
         </p>
         <ol class="quickstart">
-          <li>Pick your platform below and download.</li>
-          <li>Put the plugin into your DAW's plugin folder.</li>
-          <li>Insert it on your guitar track, route its MIDI to a drum (ch 10) and a bass (ch 2).</li>
+          <li>Pick a plugin below and download it for your OS.</li>
+          <li>Put it into your DAW's plugin folder.</li>
+          <li>Insert it and play. (Route its MIDI out to a drum / bass instrument where relevant.)</li>
         </ol>
       </div>
+    </section>
 
-      <div id="latest" class="latest" aria-live="polite">
-        <div class="latest-pending" id="latest-pending">
-          <span class="spinner"></span> Loading the latest release…
-        </div>
-        <div class="latest-error" id="latest-error" hidden>
-          Couldn't load the latest release. Please refresh, or grab it from
-          <a href="https://github.com/niallgiblin/fuzzyband/releases" target="_blank" rel="noopener">the Releases page</a>.
-        </div>
-        <div id="latest-load"></div>
+    <!-- Each product section is rendered here from its repo's Releases API -->
+    <section id="downloads">
+      <div id="products" class="products" aria-live="polite">
+        <p class="latest-pending"><span class="spinner"></span> Loading plugin downloads…</p>
       </div>
     </section>
 
-    <!-- Download cards -->
-    <section class="platforms" id="platforms">
-      <h3>Download</h3>
-      <p class="muted">Each package is self-contained — the AI model and runtime are bundled, so you don't need to install anything else.</p>
-      <div class="grid" id="grid">
-        <!-- filled by app.js -->
-      </div>
-    </section>
-
-    <!-- Build from source -->
-    <section id="build" class="panel">
-      <h3>Build it yourself</h3>
-      <p class="muted">
-        Prefer to build from source, or your OS isn't covered? Clone the repo and build
-        with CMake. You'll need <strong>CMake 3.22+</strong>, a C++20 compiler, Git and
-        ONNX Runtime. Full instructions live in the <a href="https://github.com/niallgiblin/fuzzyband#readme" target="_blank" rel="noopener">repository README</a>.
-      </p>
-      <pre><code>git clone https://github.com/niallgiblin/fuzzyband.git
-cd fuzzyband
-
-# macOS (ONNX runtime via Homebrew)
-cmake -B build -DCMAKE_BUILD_TYPE=Release \
-  -DMA_ENABLE_ONNX=ON \
-  -DONNXRUNTIME_ROOT=/opt/homebrew/opt/onnxruntime
-cmake --build build --parallel
-
-# The plugin is written to build/MetalAccompaniment_artefacts/Release/{VST3,AU,Standalone}</code></pre>
-      <p class="muted">
-        Configure with <code>-DMA_ENABLE_ONNX=OFF</code> for a rule-based-only build that
-        needs no ONNX Runtime (still fully functional, but without the trained model path).
-      </p>
-    </section>
-
-    <!-- Safety -->
+    <!-- Safety (applies to every unsigned macOS build) -->
     <section id="safety" class="panel">
       <h3>Safe to download?</h3>
-      <p class="muted">Yes. Everything ships from this repository's GitHub Releases — the same place the source lives. On every release the project is built fresh, and the <a href="https://github.com/niallgiblin/fuzzyband/actions" target="_blank" rel="noopener">CI runs the tests</a>.</p>
+      <p class="muted">Yes. Everything on this page ships from the project's GitHub Releases — the same place the source lives. Every release is built fresh and the CI runs the tests on it.</p>
 
       <h4>macOS Gatekeeper note (unsigned builds)</h4>
       <p class="muted">
-        macOS builds are <strong>unsigned</strong> (there's no paid Apple Developer certificate),
-        so Gatekeeper will warn the first time you open the plugin. To allow it:
+        macOS builds are <strong>unsigned</strong> (no paid Apple Developer certificate is
+        involved), so Gatekeeper may warn the first time you open a plugin. To allow it:
       </p>
       <ul class="muted">
-        <li>
-          <strong>Right-click → Open</strong> on the app/bundle instead of double-clicking,
-          then choose <em>Open</em> in the dialog, <em>or</em>
-        </li>
-        <li>
-          clear the quarantine flag once on the downloaded file:
-          <code>xattr -dr com.apple.quarantine /path/to/Metal Accompaniment.vst3</code>
-        </li>
+        <li><strong>Right-click → Open</strong> on the downloaded bundle instead of double-clicking, then choose <em>Open</em>, <em>or</em></li>
+        <li>clear the quarantine flag once on the downloaded file, e.g. <code>xattr -dr com.apple.quarantine /path/to/fuzzyband.vst3</code></li>
       </ul>
       <p class="muted">
-        Check the packaging: the extensionless <code>Metal Accompaniment</code> file inside
-        <span class="mono">Contents/MacOS/</span> should reference
-        <span class="mono">@rpath/libonnxruntime…</span> (self-contained, not your
-        homebrew path). See <a href="https://github.com/niallgiblin/fuzzyband/blob/main/docs/RELEASING.md" target="_blank" rel="noopener">RELEASING.md</a>.
+        Check packaging: the extensionless <code>fuzzyband</code> / <code>Fairo</code> file
+        inside <span class="mono">Contents/MacOS/</span> should be a self-contained binary
+        (for fuzzyband it references <span class="mono">@rpath/libonnxruntime…</span>).
+        See <a href="https://github.com/niallgiblin/fuzzyband/blob/main/docs/RELEASING.md" target="_blank" rel="noopener">RELEASING.md</a>.
       </p>
     </section>
 
-    <!-- Version history -->
-    <section id="versions" class="panel">
-      <h3>Version history</h3>
-      <div id="history" class="muted">
-        <p class="latest-pending"><span class="spinner"></span> Loading releases…</p>
-      </div>
+    <!-- About / build -->
+    <section id="build" class="panel">
+      <h3>Build from source</h3>
+      <p class="muted">
+        Every plugin also builds from source — clone the repo, configure with CMake, build.
+        The exact command for each plugin is in its download section above. You'll need
+        <strong>CMake 3.22+</strong>, a C++20 compiler, Git, and (for fuzzyband) ONNX Runtime.
+      </p>
+    </section>
+
+    <section id="about" class="panel">
+      <h3>About</h3>
+      <ul class="muted">
+        <li><strong>fuzzyband</strong> — listens to your guitar and writes drum + bass MIDI in real time, locked to the host tempo.</li>
+        <li><strong>Fairo</strong> — Pharaoh-style fuzz: switchable clipping, coupled Tone/High stack, solved per-sample.</li>
+      </ul>
+      <p class="muted">Both are built with <a href="https://juce.com" target="_blank" rel="noopener">JUCE 8</a> and released for macOS (VST3 + AU + Standalone), Windows (VST3 + Standalone) and Linux (VST3 + Standalone).</p>
     </section>
   </main>
 
   <footer class="colophon">
     <div class="wrap">
       <p>
-        <strong>Metal Accompaniment</strong> — free &amp; open source.
-        <a href="https://github.com/niallgiblin/fuzzyband" target="_blank" rel="noopener">Source</a> ·
-        <a href="https://github.com/niallgiblin/fuzzyband/releases" target="_blank" rel="noopener">Releases</a>
+        <strong>fuzzyband</strong> — free &amp; open source.
+        <a href="https://github.com/niallgiblin/fuzzyband" target="_blank" rel="noopener">fuzzyband source</a> ·
+        <a href="https://github.com/niallgiblin/fairo" target="_blank" rel="noopener">Fairo source</a>
       </p>
-      <p class="muted">Built by Niall Giblin. When a new version is tagged, this page populates the download links automatically.</p>
+      <p class="muted">Built by Niall Giblin. When a new version of either plugin is tagged, its download links here populate automatically.</p>
     </div>
   </footer>
 

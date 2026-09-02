@@ -124,6 +124,22 @@ def main() -> int:
     for i, name in enumerate(STYLE_LABELS):
         print(f"    {name:12s}: {cm[i].tolist()}")
 
+    # ── Dead-class quality gate (§5.1): a perception class with ZERO recall on
+    # the held-out take is unlearnable from the current corpus (likely only 2
+    # takes of that style exist). Fail loudly so the fix is recording another
+    # take, not shipping a model that silently never plays that articulation.
+    dead = []
+    for i, name in enumerate(STYLE_LABELS):
+        row_total = int(cm[i].sum())
+        if row_total > 0 and cm[i][i] == 0:
+            dead.append(name)
+    if dead:
+        print(f"\n✗ DEAD (zero-recall) perception class(es) on the held-out set: "
+              f"{', '.join(dead)}", file=sys.stderr)
+        print("  The style model cannot recognize this articulation. Record more takes "
+              "of it and re-run before shipping (DATA_STRATEGY.md §5.1).", file=sys.stderr)
+        return 2
+
     args.pt_out.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"state_dict": best_state, "val_acc": acc, "val_macro_f1": f1,
                 "confusion": cm.tolist()}, args.pt_out)

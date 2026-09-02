@@ -13,6 +13,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "MidiPatternLibrary.h"
 #include "GrooveTemplate.h"
+#include "GrooveGrid.h"
 #include <atomic>
 
 /**
@@ -43,6 +44,31 @@ public:
         int patternIndex = 0;
         TransitionFillKind fillKind = TransitionFillKind::None;
     };
+
+    /**
+     * @brief Per-bar score-level ornaments (Tier-0): subtle, deterministic
+     *        mutations of *which* authored hits sound in a bar. All fields are
+     *        empty/no-op by default; computed by @ref computeOrnamentation.
+     */
+    struct BarOrnamentation
+    {
+        bool openHat = false;       // replace ONE closed-hat cell with an open hat
+        int  openHatCell = -1;      // grid16 cell to open
+        bool rideSwitch = false;    // closed hats -> ride (bell on the downbeat)
+        bool extraGhost = false;    // one extra off-16th ghost snare
+        int  extraGhostCell = -1;
+        bool dropKick = false;      // omit one non-downbeat/beat-3 kick
+        int  dropKickCell = -1;
+        bool microFill = false;     // tom pickup at the end of a 4-bar phrase
+    };
+
+    /**
+     * @brief Deterministic per-bar ornamentation (Tier-0). A pure function of the
+     *  bar number + pattern, so a bar straddling two blocks, a DAW seek, or a loop
+     *  back always produces the same ornaments. Reads only the pattern's const
+     *  events — no allocation, audio-thread safe.
+     */
+    BarOrnamentation computeOrnamentation(int64_t barNumber, int patternIndex) const noexcept;
 
     void setPatternLibrary(const MidiPatternLibrary* lib) { library = lib; }
 
@@ -82,6 +108,18 @@ public:
         @p notesPerBar controls density: 1=whole, 2=half, 4=quarter notes */
     void setBassParams(int rootMidi, int notesPerBar) noexcept;
 
+    /** @brief Arm a short bass pickup on the next bar boundary (section hand-off).
+        The player emits a brief approach-to-tonic note as a block crosses the last
+        beat of the bar, then clears the arm. Audio thread safe. */
+    void armBassLeadIn() noexcept { bassLeadInArmed = true; }
+
+    /**
+     * @brief Fold a note into the current section's harmony around the live root
+     *        (A1.2): snap its pitch class to the nearest chord tone and apply the
+     *        bass transpose. Returns a note inside the bass register. Audio thread.
+     */
+    int snapBassToSectionHarmony(int rawNote) const noexcept;
+
     /** @brief Enable/disable phrase-learned bass mode. When enabled, beat-aligned bass is suppressed. */
     void setPhraseLearnerActive(bool active) noexcept { phraseLearnerActive_ = active; }
 
@@ -108,8 +146,24 @@ public:
     /** @brief Current section; drives velocity contrast (A3.1) and bass harmony (A1.2). Audio thread. */
     void setSection(Groove::SongSectionId s) noexcept { sectionId = s; }
 
+    /**
+     * @brief Guitarist-energy multiplier for the accompaniment (drums + bass).
+     *        Lets the kit swell with the guitarist's picking and relax when they
+     *        ease off. Clamped to [0.75, 1.35]. Audio thread.
+     */
+    void setGuitarEnergy(float e) noexcept { guitarEnergy = juce::jlimit(0.75f, 1.35f, e); }
+    float getGuitarEnergy() const noexcept { return guitarEnergy; }
+
     /** @brief Select the genre preset: groove template, section velocities, ghost density (B1). Audio thread. */
     void setGenrePreset(int presetId) noexcept;
+
+    /**
+     * @brief Tier-1: hand a rendered groove grid (from GrooveRenderer) to the
+     *  player. When a valid grid matches the active pattern, emitDrumEventsForRange
+     *  uses its per-step velocity/offset instead of the fixed Groove::Template.
+     *  A non-matching/invalid grid is ignored (template fallback). Audio thread.
+     */
+    void setGrooveGrid(const GrooveGrid& grid) noexcept { grooveGrid = grid; }
 
     /** @brief Seed the humanisation RNG deterministically (tests; A2.4 seed stability). */
     void setRandomSeed(juce::int64 seed) noexcept { rng.setSeed(seed); }
@@ -125,6 +179,7 @@ private:
                                 double beatStart,
                                 double beatEnd,
                                 const MidiPattern& pattern,
+                                const BarOrnamentation& orn,
                                 int sampleOffsetBase);
 
     /** @brief Emit off-16th ghost snare notes (A3.2) at cells not occupied by authored snares. */
@@ -133,7 +188,15 @@ private:
                         double beatStart,
                         double beatEnd,
                         const bool occupied[16],
+                        const BarOrnamentation& orn,
                         int sampleOffsetBase);
+
+    /** @brief Tier-0 micro-fill: a two-note tom pickup into the next downbeat. */
+    void emitMicroFill(juce::MidiBuffer& midi,
+                       int numSamples,
+                       double beatStart,
+                       double beatEnd,
+                       int sampleOffsetBase) noexcept;
 
     /** @brief Route bass for a range: authored pattern bass, else harmonic fallback. */
     void emitBassRange(juce::MidiBuffer& midi,
@@ -175,6 +238,9 @@ private:
 
     /** @brief Semitone interval for the harmonic bass on a beat within a bar. */
     int harmonyDegree(int beatInBar, int bar) const noexcept;
+
+    /** @brief Note-gate multiplier for the current section (legato vs staccato). */
+    float sectionBassGate() const noexcept;
 
     void emitTransitionFill(juce::MidiBuffer& midi,
                             int numSamples,
@@ -232,6 +298,10 @@ private:
     int bassNoteOffMidi = 40;       // note whose note-off is pending (monophonic bass)
     int64_t bassNoteOffSample = -1;  // scheduled note-off sample position
 
+    // Section hand-off: a short bass pickup armed by the processor on a section's
+    // last bar. The player emits it once as a block crosses the bar's last beat.
+    bool bassLeadInArmed = false;
+
     bool phraseLearnerActive_ = false;  // When true, beat-aligned bass is suppressed
 
     // Pending note from PhraseLearner (set by triggerLearnedBassNote, consumed in process)
@@ -247,11 +317,13 @@ private:
 
     // ── Musicality pivot state (Workstream A / B1) ────────────────────────────
     Groove::Template grooveTemplate;            // velocity hierarchy + microtiming
+    GrooveGrid grooveGrid;                      // Tier-1 rendered groove (else template)
     Groove::GenrePreset preset;                 // active genre preset (copy)
     Groove::SongSectionId sectionId = Groove::SongSectionId::Verse;
     float swing = 0.0f;                         // 0..1 (A2.3)
     float sectionVelMul = 1.0f;                 // preset section multiplier (A3.1)
     float ghostDensity = 0.0f;                  // 0..1 (A3.2)
+    float guitarEnergy = 1.0f;                  // guitarist-energy dynamic (drums + bass)
 
     static constexpr int kDrumChannel = 10;
     static constexpr int kCrashNote = 49;

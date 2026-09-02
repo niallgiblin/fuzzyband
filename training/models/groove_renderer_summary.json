@@ -1,0 +1,10 @@
+{
+  "num_windows": 20851,
+  "num_params": 354880,
+  "val_velocity_mae": 0.5115,
+  "val_offset_mae_16th": 0.1897,
+  "val_velocity_tv": 0.1368,
+  "val_ghost_mean_vel": 0.7775,
+  "val_sampled_velocity_std": 0.3686,
+  "gates_passed": false
+}
