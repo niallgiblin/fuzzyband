@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <string>
 
 #include "analysis/StructureSequencer.h"
 
@@ -56,4 +57,26 @@ TEST_CASE("StructureSequencer: loadForm resets to the first section", "[structur
     REQUIRE(std::string(seq.getCurrentSectionName()) == "VERSE");
     REQUIRE(seq.getBarsInSection() == 4);
     REQUIRE_FALSE(seq.isComplete());
+}
+
+TEST_CASE("StructureSequencer: non-looping form completes and stops advancing", "[structure][sequencer]")
+{
+    StructureSequencer seq;
+    seq.setLooping(false);
+    SongForm form;
+    form.sections = { { "INTRO", 1 }, { "OUTRO", 1 } };
+    seq.loadForm(form);
+
+    // 1 bar at 120 BPM / 48 kHz = 96000 samples.
+    seq.advance(96000, 120.0f, 48000.0);
+    REQUIRE(std::string(seq.getCurrentSectionName()) == "OUTRO");
+    REQUIRE_FALSE(seq.isComplete());
+
+    seq.advance(96000, 120.0f, 48000.0);
+    REQUIRE(seq.isComplete());
+    const int barsAtComplete = seq.getGlobalBarCount();
+
+    seq.advance(96000, 120.0f, 48000.0);
+    REQUIRE(seq.isComplete());
+    REQUIRE(seq.getGlobalBarCount() == barsAtComplete);
 }

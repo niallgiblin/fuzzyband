@@ -264,11 +264,12 @@ private:
     double riffCountInStartBeat = 0.0;
 
     // ── Post-lock transition grammar (A5.2): audio-thread state ──────────────
-    // When a groove lock expires, instead of releasing straight back to the
-    // listener, the engine holds a *contrast* section (pickNextSectionAfterLock)
-    // for `transitionBars` bars, then re-engages the riff (A → B → A). The
-    // section number counts B, C, … so the UI can show which transition we are
-    // in.
+    // When a groove lock expires, the engine holds a *contrast* section
+    // (pickNextSectionAfterLock) for `transitionBars` bars, then ALWAYS
+    // re-engages the riff (A). `transitionSections` is how many distinct
+    // contrasts to visit across successive lock cycles — A → B → A → C → A
+    // when set to 2 — not a chain of B → C without returning to A. The
+    // section number counts B, C, … so the UI can show which contrast we are in.
     enum class PostLockPhase { Idle, TransitionHold };
     PostLockPhase postLockPhase = PostLockPhase::Idle;
     int64_t transitionEndSample = -1;       // hostSampleTime when the hold ends

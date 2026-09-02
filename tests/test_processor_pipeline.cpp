@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -713,6 +714,78 @@ TEST_CASE("Processor pipeline: post-lock transition section engages, holds, then
     proc.releaseResources();
 }
 
+TEST_CASE("Processor pipeline: two transition sections return to the riff between contrasts (A-B-A-C-A)", "[integration][pipeline][transition]")
+{
+    // TRANSITION SECTIONS = 2 means A → B → A → C → A, not A → B → C → A.
+    // Each contrast holds, then the locked riff re-engages before the next
+    // contrast. C must differ from B.
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);  // 4-bar lock (8s)
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(2.0f));  // 2 bars (4s)
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(2.0f));
+
+    auto feed = [&](float amp, double freq, int numBlocks, int& blockIdx) {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(blockIdx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++blockIdx;
+        }
+    };
+
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);
+    REQUIRE(proc.isGrooveLocked());
+
+    // Lock expires → B (must NOT skip A on the way to a second contrast).
+    feed(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    REQUIRE_FALSE(proc.isGrooveLocked());
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE(proc.getTransitionSectionNumber() == 1);
+    const std::string sectionB = proc.getTransitionSectionName();
+    REQUIRE_FALSE(sectionB.empty());
+
+    // B finishes → back to A (locked riff), not straight into C.
+    feed(0.05, 400.0, static_cast<int>(5.0 * sr / block), blockIdx);
+    REQUIRE_FALSE(proc.isTransitionSectionActive());
+    REQUIRE(proc.isGrooveLocked());
+
+    // Next lock expiry → C, a different contrast from B.
+    feed(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    REQUIRE_FALSE(proc.isGrooveLocked());
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE(proc.getTransitionSectionNumber() == 2);
+    const std::string sectionC = proc.getTransitionSectionName();
+    REQUIRE(sectionC != sectionB);
+
+    // C finishes → back to A again.
+    feed(0.05, 400.0, static_cast<int>(5.0 * sr / block), blockIdx);
+    REQUIRE_FALSE(proc.isTransitionSectionActive());
+    REQUIRE(proc.isGrooveLocked());
+
+    proc.releaseResources();
+}
+
 TEST_CASE("Processor pipeline: transition countdown updates live", "[integration][pipeline][transition]")
 {
     const double sr = 48000.0;
@@ -1386,6 +1459,45 @@ TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section i
     REQUIRE(barSigs[12] != barSigs[11]);
     REQUIRE(barSigs[16] != barSigs[15]);
 
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: play mode stops when the song form completes", "[integration][pipeline][play]")
+{
+    // Play walks the Sections list once and returns to idle. It must not wrap
+    // back to INTRO. A second Play press restarts from the first section.
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    proc.setCustomSongForm("INTRO:2,OUTRO:2");
+    proc.playActive.store(true, std::memory_order_release);
+
+    auto quiet = makeSineBuffer(block, 110.0, sr, 0.0005f);
+    // 4-bar form at 120 BPM = 8s; feed 10s so we are past the end.
+    const int n = static_cast<int>(10.0 * sr / block);
+    for (int i = 0; i < n; ++i)
+    {
+        juce::MidiBuffer midi;
+        proc.processBlock(quiet, midi);
+        proc.flushBackgroundInferenceForTests();
+    }
+
+    REQUIRE_FALSE(proc.playActive.load(std::memory_order_acquire));
+    REQUIRE(proc.getCurrentSectionName() == "Complete");
+
+    proc.playActive.store(true, std::memory_order_release);
+    {
+        juce::MidiBuffer midi;
+        proc.processBlock(quiet, midi);
+        proc.flushBackgroundInferenceForTests();
+    }
+    REQUIRE(proc.playActive.load(std::memory_order_acquire));
+    REQUIRE(proc.getCurrentSectionName() == "INTRO");
+
+    proc.playActive.store(false, std::memory_order_release);
     proc.releaseResources();
 }
 

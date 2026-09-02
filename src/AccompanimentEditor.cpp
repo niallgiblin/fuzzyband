@@ -390,7 +390,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     playButton.setClickingTogglesState(true);
     playButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff4a7a3a));
     playButton.setColour(juce::TextButton::textColourOnId, juce::Colour(FuzzybandPalette::inkWarm));
-    playButton.setTooltip("Play the Sections song form. The plugin is idle (silent) until you press Play or Record riff.");
+    playButton.setTooltip("Play the Sections song form once, then stop. The plugin is idle (silent) until you press Play or Record riff.");
     playButton.onClick = [this]
     {
         audioProcessorRef.playActive.store(playButton.getToggleState(), std::memory_order_release);
@@ -467,7 +467,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     transitionSectionsSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 18);
     transitionSectionsSlider.setRange(1.0, 4.0, 1.0);
     transitionSectionsSlider.setDoubleClickReturnValue(true, 2.0);
-    transitionSectionsSlider.setTooltip("How many distinct contrast sections the transition visits (B, C, ...) before returning to the locked riff (A).");
+    transitionSectionsSlider.setTooltip("How many distinct contrast sections to visit. Each one returns to the locked riff (A) before the next: 2 = A-B-A-C-A, not A-B-C-A.");
     transitionSectionsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "transitionSections", transitionSectionsSlider);
     addAndMakeVisible(transitionSectionsLabel);

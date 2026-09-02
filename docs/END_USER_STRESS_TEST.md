@@ -1,7 +1,7 @@
 # Fuzzyband — End-User Stress Test
 
 **Plugin:** Metal Accompaniment / Fuzzyband
-**Written against:** v0.9.45 (`CMakeLists.txt` version string, top-right of the UI)
+**Written against:** v0.9.48 (`CMakeLists.txt` version string, top-right of the UI)
 **Purpose:** Play through every user-facing mode, style, genre, section, and drum pattern. Tick what you hear. Record the session. Hand the recording + this filled log to an agent to double-check.
 
 If a pattern or style **never appears** after you follow the trigger recipe, that is a product bug or a coverage gap — log it as **MISS**, do not skip it.
@@ -13,7 +13,7 @@ If a pattern or style **never appears** after you follow the trigger recipe, tha
 1. Print or keep this file open next to the DAW.
 2. Confirm the UI version matches the header above. If it does not, stop — you are testing the wrong binary.
 3. Do **Setup** once (~5 min).
-4. Run the **Speed run** (Stations A–H). At 120 BPM with shortened lock/transition sliders this is ~25–35 minutes of playing.
+4. Run the **Speed run** (Stations A–H). At 120 BPM with shortened lock/transition sliders this is ~45–60 minutes of playing, because there are **13 genres**. A half-hour pass is Station A–B + Metal/Rock Play + style hunt only (Section 10).
 5. Fill every `Result` / `Heard` / `Pattern #` box as you go. Use the Pattern Atlas (Section 4) as an ear-training cheat sheet — the UI shows **index numbers**, not names.
 6. Anything that fails, flickers, or never appears goes in the **Miss / bug log** (Section 8).
 7. Record the session as described in Section 2 and paste the **Agent review prompt** (Section 9) with the files.
@@ -65,11 +65,11 @@ Set these **before** Station A so lock/transition cycles are short enough to fin
 
 | Control | Speed-run | Why |
 |---|---|---|
-| Genre | start **Metal**, then sweep all five | Pools differ Rock-family vs Metal-family |
+| Genre | start **Metal**, then sweep all **13** | Pools differ Rock-family vs Metal-family; each preset also changes velocity, ghosts, swing default, and BPM range |
 | Swing | 0.00 | Isolate groove; Station G turns it up |
 | LOCK (BARS) | **4** | Minimum. Default 16 is too slow for a full sweep |
 | TRANSITION (BARS) | **4** | Minimum is 2; 4 bars is enough to hear a section |
-| TRANSITION SECTIONS | **2** | A → B → C → back to A |
+| TRANSITION SECTIONS | **2** | A → B → **A** → C → A (each contrast returns to the riff; **not** A-B-C-A) |
 | Sections list | see 1.4 | Default form is missing BREAKDOWN and SOLO |
 
 Restore LOCK=16 after the test if that is how you normally play.
@@ -89,7 +89,7 @@ SOLO:8
 OUTRO:4
 ```
 
-That is 40 bars. At 120 BPM ≈ 1:20 per Play pass. You will run this once per genre (5 passes).
+That is 40 bars. At 120 BPM ≈ 1:20 per Play pass. Play **stops after OUTRO** — it does not loop. You will run this once per genre (13 passes) in the full test.
 
 ### 1.5 Session header (fill before you play)
 
@@ -123,7 +123,7 @@ Record **all four** of these if you can. Two is the minimum (UI + drums).
 Also keep this markdown with your ticks filled in. Filename suggestion:
 
 ```
-fuzzyband-uat-YYYYMMDD-v0.9.45/
+fuzzyband-uat-YYYYMMDD-v0.9.48/
   ui.mov
   guitar.wav
   drums.wav
@@ -203,29 +203,48 @@ The engine is **idle and silent** until you arm it.
 | Mode | How you arm | What the drums do | What the bass does |
 |---|---|---|---|
 | **Idle** | Load plugin, or press Forget after a take | Silence. Pattern 0. Style → Silence | Nothing |
-| **Play** | PLAY button | Walks the Sections list. Pool rotation every 2 bars (4 for INTRO/BREAKDOWN/OUTRO). Last bar of each section = fill 17/18/19. Crash into the next section | Follows your live root, in the **section’s harmony** (not a recorded riff). Pickup into section changes |
+| **Play** | PLAY button | Walks the Sections list **once**. Pool rotation every 2 bars (4 for INTRO/BREAKDOWN/OUTRO). Last bar of each section = fill 17/18/19. Crash into the next section. **Stops and returns to idle after the last section** — it does not wrap to INTRO | Follows your live root, in the **section’s harmony** (not a recorded riff). Pickup into section changes |
 | **Record riff** | Record riff | 1 bar click count-in, then 4 bars of click while you play, then **LOCK** that take for LOCK bars. Drums freeze on the captured groove | Note-for-note learned riff for the whole lock. Root does **not** chase mid-lock |
-| **Post-lock transition** | Automatic after lock expires | Contrast section B (then C… up to TRANSITION SECTIONS). Crash + build-up fill on entry. Status `Transition: B - CHORUS - n/N bars` | Leaves the riff; follows you / new section harmony. Returning to the recorded riff **cuts** the transition and re-locks |
+| **Post-lock transition** | Automatic after lock expires | One contrast section (B, then later C…) for TRANSITION BARS. Crash + build-up fill on entry. Status `Transition: B - CHORUS - n/N bars`. **Then back to A.** With TRANSITION SECTIONS = 2 the cycle is **A-B-A-C-A**, not A-B-C-A | Leaves the riff; follows you / new section harmony. Returning to the recorded riff **cuts** that contrast and re-locks |
 
 Play and Record riff fight: starting Play **cancels** a capture. Do not overlap them.
 
-### 5.2 Genres (dropdown)
+### 5.2 Genres (dropdown — 13 presets)
 
-| id | Genre | Pattern vocabulary | Feel |
-|---|---|---|---|
-| 0 | Rock | Rock-first pools (22–26 in verse/chorus/outro) | Looser ghosts, more swing room |
-| 1 | Hard Rock | Same rock-family pools as Rock | Slightly hotter velocities, default swing 0.10 |
-| 2 | Punk | Same rock-family pools | Tight, D-beat/shuffle in chorus, min BPM 80 |
-| 3 | Metal | Metal pools (blast 21 in chorus, no 22–27 in Play) | Tighter to the grid, fewer ghosts |
-| 4 | Sludge | Same metal pools as Metal | Half-time bias, slower ceiling (max 220), darker dynamics |
+Two **families** share pattern pools. Every preset still has its own velocity, ghost density, swing default, half-time bias, and BPM clamp — so you must hear all 13, not just one Metal and one Rock.
 
-**Rock / Hard Rock / Punk share pools. Metal / Sludge share pools.** You still must run all five — velocity, ghosts, and swing defaults differ, and a Metal chorus must be able to produce Blast (21) while a Rock chorus must be able to produce Shuffle (24) and D-Beat (25).
+**Metal family** (metal/shared pools: 1–21 in Play; no 22–27 in Play)
+
+| id | Genre | Groove slot | Ghosts | BPM range | Suggested host | What you are listening for vs Metal |
+|---|---|---|---|---|---|---|
+| 3 | Metal | Metal | 0.10 | 40–300 | 120 | Reference: chorus can produce **21 Blast**; tight grid |
+| 4 | Sludge | Sludge | 0.05 | 40–220 | 70 | Lazier, fewer ghosts, half-time bias, do not exceed 220 |
+| 5 | Thrash Metal | Metal | 0.20 | 90–300 | 180 | Hotter, busier, min 90 — do not sit at 70 |
+| 6 | Death Metal | Metal | 0.25 | 80–300 | 180 | Even hotter velocities, dense |
+| 7 | Black Metal | Metal | 0.30 | 100–300 | 180 | Fast floor (min 100), more ornaments than Metal |
+| 8 | Doom Metal | Sludge | 0.08 | 40–160 | 60 | Slow ceiling **160** — must not run away at 200 |
+| 9 | Djent | Metal | 0.15 | 60–240 | 140 | Slight default swing 0.05, precise, max 240 |
+
+**Rock family** (rock-first pools: 22–26 in verse/chorus/outro)
+
+| id | Genre | Groove slot | Ghosts | BPM range | Suggested host | What you are listening for vs Rock |
+|---|---|---|---|---|---|---|
+| 0 | Rock | Rock | 0.35 | 40–300 | 120 | Reference: verse **22/23**, chorus **24 Shuffle / 25 D-Beat**, outro **26** |
+| 1 | Hard Rock | Hard Rock | 0.30 | 40–300 | 120 | Hotter backbeats; preset swing 0.10 (confirm the **Swing slider** is the live control) |
+| 2 | Punk | Punk | 0.15 | 80–300 | 180 | Tight, near-grid, min 80, D-beat/shuffle in chorus |
+| 10 | Classic Rock | Rock | 0.30 | 60–200 | 100 | Looser, swing 0.10, max 200 |
+| 11 | Alternative | Rock | 0.35 | 60–220 | 120 | Slight swing 0.05, same pools as Rock |
+| 12 | Grunge | Rock | 0.25 | 50–200 | 90 | Heavier half-time bias, max 200 |
+
+The 22-class ONNX model still has **five feel slots** (Rock / Hard Rock / Punk / Metal / Sludge). Broader presets map onto the closest slot — Thrash/Death/Black/Djent → Metal slot, Doom → Sludge slot, Classic/Alternative/Grunge → Rock slot. You are still testing the **preset** (velocity, ghosts, BPM clamp), not a new model class.
+
+**Metal-family Play must be able to produce Blast (21). Rock-family Play must be able to produce Shuffle (24) and D-Beat (25).** Confirm that on the family representatives (Metal, Rock); subgenres use the same pools so the feel check is the extra work.
 
 ### 5.3 Play-mode section → pattern pools (guaranteed if you wait)
 
 Phrasing: VERSE / CHORUS / SOLO hold a groove **2 bars** then pick a different pool member. INTRO / BREAKDOWN / OUTRO hold **4 bars**. Consecutive phrases must not repeat the same index.
 
-**Metal / Sludge (genre ≥ 3)**
+**Metal family** (Metal, Sludge, Thrash, Death, Black, Doom, Djent)
 
 | Section | Pool (indices) | Names |
 |---|---|---|
@@ -236,7 +255,7 @@ Phrasing: VERSE / CHORUS / SOLO hold a groove **2 bars** then pick a different p
 | SOLO | 4, 14 | Chorus Mid, Chorus Open |
 | OUTRO | 16 | Outro Decay |
 
-**Rock / Hard Rock / Punk (genre 0–2)**
+**Rock family** (Rock, Hard Rock, Punk, Classic Rock, Alternative, Grunge)
 
 | Section | Pool (indices) | Names |
 |---|---|---|
@@ -253,7 +272,7 @@ Last bar of **every** section: fill **17 / 18 / 19** chosen by how loud you are 
 
 Style must show the label **while you are playing that articulation**. After it is stable, follow/transition selection is steered into this pool (filtered to SOFT vs LOUD so a style cannot force a structurally wrong groove).
 
-**Metal / Sludge**
+**Metal family**
 
 | Style | Play this | Pool |
 |---|---|---|
@@ -263,7 +282,7 @@ Style must show the label **while you are playing that articulation**. After it 
 | Sustain | Held notes / drones | 6 Breakdown, 9 Sparse, 7 Half-Time |
 | Silence | Stop | 0 Silent |
 
-**Rock / Hard Rock / Punk**
+**Rock family**
 
 | Style | Play this | Pool |
 |---|---|---|
@@ -299,7 +318,7 @@ These are not pattern indices you select; they layer on top.
 | Transition crash (49) | Section change in Play; lock → transition; transition → next section; return to riff |
 | Build-up fill | Entry into a post-lock contrast section |
 | Micro-fill (two tom pickups) | End of a 4-bar phrase, not on a fill pattern |
-| Ghost notes | Genre ghost density: Rock 0.35, Hard Rock 0.30, Punk 0.15, Metal 0.10, Sludge 0.05 |
+| Ghost notes | Genre ghost density: Rock 0.35, Alternative 0.35, Hard Rock / Classic Rock 0.30, Black 0.30, Death / Grunge 0.25, Thrash 0.20, Punk / Djent 0.15, Metal 0.10, Doom 0.08, Sludge 0.05 |
 | Swing | Swing knob; Rock Shuffle (24) shows it most |
 | Guitar-energy swell | Hit harder → drums/bass a bit louder (not a pattern change) |
 | Click track | Only during Record riff count-in + 4-bar take |
@@ -341,19 +360,20 @@ C |--0-0-0-0-0-0-0-0-|--0-0-0-0-0-0-0-0-|
 **A2. Arm via Play, then stop**
 
 - Press PLAY. Drums must start on (or within one bar of) beat 1, with a crash into INTRO.
-- Press PLAY again to stop. Must return to idle/silence (form may also stop when it completes).
+- Press PLAY again to stop, **or let the form finish** — it must return to idle/silence after OUTRO (no wrap to INTRO).
 
 | Check | Expected | Result | Notes |
 |---|---|---|---|
 | Status | `Groove: PLAYING` then back to idle | ☐ | |
 | Section | `Section: INTRO` on start | ☐ | |
 | Entry | Crash / fill into first groove, not a random pickup mid-bar | ☐ | |
+| Completes | If you let the form run, it stops after the last section — no wrap | ☐ | |
 
 ---
 
 ### Station B — Record riff, lock, bass freeze, transition, return (8–10 min)
 
-Stay at **120 BPM**. LOCK=4, TRANSITION BARS=4, TRANSITION SECTIONS=2. Genre **Metal** first.
+Stay at **120 BPM**. LOCK=4, TRANSITION BARS=4, TRANSITION SECTIONS=2. Genre **Metal** first. Two transition sections means **A-B-A-C-A** (return to the riff after every contrast), not A-B-C-A.
 
 **B1. Count-in + capture**
 
@@ -404,7 +424,7 @@ C |--8-10--------------|----------------|
 | Style | May flip to Single Note — drums still frozen | ☐ | |
 | Bass | Still the locked riff, not the solo notes | ☐ | |
 
-**B3. Lock expires → transition B, then C**
+**B3. Lock expires → B, back to A, then C, back to A**
 
 When the lock hits 0, you should hear a **crash + build-up fill**, status `Groove: transition` and `Transition: B - <SECTION> - 4/4 bars`. Section name must **not** be the same family as the locked groove (verse-like lock should not transition into VERSE).
 
@@ -419,26 +439,30 @@ C |--0-------0-------|--3-------3-------|
   |  1       3          1       3
 ```
 
-Then when it rolls to section C, **stop playing the lock riff** (play something else) so you do not cut the transition short.
+**Do not play Lock Riff A during B.** After 4 bars of B the drums must **crash back into the locked riff (A)** — `Groove: LOCKED` again. They must **not** go straight into C.
+
+Stay off the lock riff during that second A as well (or you will just extend the lock). When that lock expires, C should start (`Transition: C - <other section>`), a **different** contrast from B. After 4 bars of C, crash back to A again.
+
+The full shape with TRANSITION SECTIONS = 2 is **A-B-A-C-A**. If you hear A-B-C-A (C immediately after B, no riff in between), that is a **fail**.
 
 | Check | Expected | Result | Section name | Pattern #s heard | Notes |
 |---|---|---|---|---|---|
 | Entry | Crash + fill, not a splice | ☐ | | | |
 | B is a contrast | Not the riff’s own family | ☐ | | | |
-| Bass | Leaves the recorded riff; follows live chords / new harmony | ☐ | | | |
-| C appears | After 4 bars of B, new contrast, another crash | ☐ | | | |
-| Consecutive grooves | B’s pattern index changes every 2–4 bars, no immediate repeat | ☐ | | | |
+| Bass during B | Leaves the recorded riff; follows live chords / new harmony | ☐ | | | |
+| Return to A after B | After 4 bars of B, `LOCKED` again, riff drums+bass back | ☐ | | | |
+| C appears after the second A | New contrast, **not** the same name as B, another crash | ☐ | | | |
+| Return to A after C | Locked riff again | ☐ | | | |
+| Consecutive grooves in a contrast | Pattern index changes every 2–4 bars, no immediate repeat | ☐ | | | |
 
-**B4. Return to A, and cut-on-riff**
+**B4. Cut-on-riff**
 
-After C finishes, drums must **crash back into the locked riff** (`Groove: LOCKED` again).
-
-Then: expire the next lock, and **as soon as B starts**, play Lock Riff A again. Transition must **cut short** and re-lock.
+Expire the next lock, and **as soon as B (or C) starts**, play Lock Riff A again. That contrast must **cut short** and re-lock. The other contrast in the pair should still be reachable on a later expiry (you already heard both in B3).
 
 | Check | Expected | Result | Notes |
 |---|---|---|---|
-| Natural return | A after B+C, crash in | ☐ | |
-| Cut on riff | Playing A during B re-locks immediately | ☐ | |
+| Natural A-B-A-C-A | Heard in B3 | ☐ | |
+| Cut on riff | Playing A during B or C re-locks immediately | ☐ | |
 
 **B5. Forget**
 
@@ -450,11 +474,15 @@ Press **Forget**. Must go idle, drums die, Record riff re-enabled.
 
 ---
 
-### Station C — Play mode: every section × every genre (12–15 min)
+### Station C — Play mode: every section × every genre (~20–30 min)
 
 This is the **guaranteed** pattern sweep. Host tempo **120** unless a row says otherwise. Sections list from 1.4. Swing 0.
 
-For each genre: press PLAY, play the matching tab through the whole form, write every Pattern index you see, stop (or let it loop once). Then next genre.
+For **Metal** and **Rock**: press PLAY, play the matching tab through the whole form, write every Pattern index you see, and **let it stop by itself after OUTRO**. Then next genre.
+
+For the **other 11 genres**: play the same form once at the suggested tempo, confirm the family pools, the feel notes in 5.2, and that Play **stops** after OUTRO. You do not have to fill every index cell again, but you do have to hear the pass.
+
+**Play louder in CHORUS / SOLO** (open chords) and **quieter / tighter in VERSE** so State can go LOUD vs SOFT even though Play ignores State for pattern choice — you still want the Style and State readouts honest, and last-bar fill size follows RMS.
 
 **Play louder in CHORUS / SOLO** (open chords) and **quieter / tighter in VERSE** so State can go LOUD vs SOFT even though Play ignores State for pattern choice — you still want the Style and State readouts honest, and last-bar fill size follows RMS.
 
@@ -527,6 +555,8 @@ Chorus **must** be able to produce **21 Chorus Blast** within 8 bars (pool rotat
 
 Breakdown **must** rotate through 6, 15, **and** 9 (4-bar hold, 8-bar section = 2 phrases — you may need **two Play passes** or lengthen BREAKDOWN to 12 to hear all three). If a pool member never appears after two passes, MISS.
 
+After OUTRO, Play **must stop** (idle, silence). A second INTRO without pressing PLAY is a fail. A second Play press is allowed if you need another pass for 21 / 9.
+
 #### C-Sludge (genre Sludge) — same tabs, play **slower and heavier**
 
 Set host tempo **70**. Same form. Pools are the metal pools; feel should be lazier, fewer ghosts, less chorus lift.
@@ -537,6 +567,7 @@ Set host tempo **70**. Same form. Pools are the metal pools; feel should be lazi
 | Pools | Same indices as Metal table | ☐ | |
 | Feel vs Metal | Darker, less busy ornaments | ☐ | |
 | Kit still in time | No rushing at 70 | ☐ | |
+| Stops after OUTRO | Idle, not a second INTRO | ☐ | |
 
 #### C-Rock (genre Rock) — host **120**, same form, rock tabs if you want more “bar band”
 
@@ -562,7 +593,7 @@ G |--0-0-0-0-0-0-0-0-|--8-8-8-8-7-7-7-7-|
 | SOLO | 4, 14, 24 | | | ☐ |
 | OUTRO | 16, 26 | | | ☐ |
 
-Rock chorus **must** be able to show **24 Shuffle** and **25 D-Beat**. Rock verse **must** show **22** and **23**. Outro **must** be able to show **26 Ballad** (2 members × 4-bar hold = 8 bars needed — bump OUTRO to 8 if 26 never appears in 4).
+Rock chorus **must** be able to show **24 Shuffle** and **25 D-Beat**. Rock verse **must** show **22** and **23**. Outro **must** be able to show **26 Ballad** (2 members × 4-bar hold = 8 bars needed — bump OUTRO to 8 if 26 never appears in 4). After OUTRO, Play **must stop**.
 
 #### C-Hard Rock (genre Hard Rock)
 
@@ -573,6 +604,7 @@ Same pools as Rock. You are listening for **hotter velocities** and a hint of de
 | Pools | Same as Rock table | ☐ | |
 | Vs Rock | Louder backbeats / slightly different hat lilt | ☐ | |
 | Swing slider | Still 0 unless you moved it | ☐ | |
+| Stops after OUTRO | Idle, not a second INTRO | ☐ | |
 
 #### C-Punk (genre Punk) — host **180**, downstrokes
 
@@ -591,6 +623,85 @@ G |--0-0-0-0-0-0-0-0-|--0-0-0-0-0-0-0-0-|
 | Chorus | 25 D-Beat and/or 24 Shuffle appear | ☐ | |
 | Kit | Tight, near-grid, fewer ghosts than Rock | ☐ | |
 | Min BPM | Punk preset min is 80 — at 180 this is N/A; do not drop below 80 in this genre | ☐ | |
+| Stops after OUTRO | Idle, not a second INTRO | ☐ | |
+
+#### C-Thrash Metal — host **180**, metal pools, aggressive downstrokes
+
+Same metal tabs as C-Metal, faster. Do not sit below 90.
+
+| Check | Expected | Result | Notes |
+|---|---|---|---|
+| BPM | UI ≈ 180 | ☐ | |
+| Pools | Same indices as Metal table | ☐ | |
+| Feel vs Metal | Hotter, busier, more ghosts (0.20 vs 0.10) | ☐ | |
+| Stops after OUTRO | Idle | ☐ | |
+
+#### C-Death Metal — host **180**
+
+| Check | Expected | Result | Notes |
+|---|---|---|---|
+| BPM | UI ≈ 180 | ☐ | |
+| Pools | Metal table | ☐ | |
+| Feel vs Metal | Even hotter velocities, denser | ☐ | |
+| Stops after OUTRO | Idle | ☐ | |
+
+#### C-Black Metal — host **180** (do not drop below 100)
+
+| Check | Expected | Result | Notes |
+|---|---|---|---|
+| BPM | UI ≈ 180 | ☐ | |
+| Pools | Metal table | ☐ | |
+| Feel vs Metal | Fast floor, more ornaments (ghosts 0.30) | ☐ | |
+| Stops after OUTRO | Idle | ☐ | |
+
+#### C-Doom Metal — host **60** (ceiling 160 — a fail if it runs away at 200)
+
+Same slow heavy tabs as Sludge.
+
+| Check | Expected | Result | Notes |
+|---|---|---|---|
+| BPM | UI ≈ 60 | ☐ | |
+| Pools | Metal table | ☐ | |
+| Feel vs Sludge | Similar dark/half-time, even slower ceiling | ☐ | |
+| Stops after OUTRO | Idle | ☐ | |
+
+#### C-Djent — host **140**
+
+Palm-mute C chug, tight. Slight preset swing 0.05.
+
+| Check | Expected | Result | Notes |
+|---|---|---|---|
+| BPM | UI ≈ 140 | ☐ | |
+| Pools | Metal table | ☐ | |
+| Feel vs Metal | Precise, a hint of lilt, max 240 | ☐ | |
+| Swing slider | Still 0 unless you moved it | ☐ | |
+| Stops after OUTRO | Idle | ☐ | |
+
+#### C-Classic Rock — host **100**, rock tabs
+
+| Check | Expected | Result | Notes |
+|---|---|---|---|
+| BPM | UI ≈ 100 | ☐ | |
+| Pools | Same as Rock table | ☐ | |
+| Feel vs Rock | Looser, preset swing 0.10, max 200 | ☐ | |
+| Stops after OUTRO | Idle | ☐ | |
+
+#### C-Alternative — host **120**, rock tabs
+
+| Check | Expected | Result | Notes |
+|---|---|---|---|
+| Pools | Same as Rock table | ☐ | |
+| Feel vs Rock | Similar ghosts, slight swing 0.05 | ☐ | |
+| Stops after OUTRO | Idle | ☐ | |
+
+#### C-Grunge — host **90**, heavier rock tabs
+
+| Check | Expected | Result | Notes |
+|---|---|---|---|
+| BPM | UI ≈ 90 | ☐ | |
+| Pools | Same as Rock table | ☐ | |
+| Feel vs Rock | Heavier half-time bias, fewer ghosts (0.25), max 200 | ☐ | |
+| Stops after OUTRO | Idle | ☐ | |
 
 #### C — Play-mode cross-checks (all genres)
 
@@ -604,7 +715,7 @@ G |--0-0-0-0-0-0-0-0-|--0-0-0-0-0-0-0-0-|
 | Bass not the recorded riff | Play-mode bass is harmonic, not Station B’s riff | ☐ | |
 | Bass lead-in | Last bar of a section, bass anticipates the next | ☐ | |
 | Custom form | Adding/removing a section in the list changes what Play does on the next start | ☐ | |
-| Loop | Form returns to INTRO after OUTRO (loop defaults on internally even if the checkbox was removed from UI) | ☐ | |
+| Stops after OUTRO | Form does **not** wrap to INTRO. Groove → idle, drums die. Next PLAY restarts from INTRO | ☐ | |
 | Stop mid-form | PLAY off → silence, next PLAY restarts from INTRO | ☐ | |
 
 **Custom-form poke (30 s):** set Sections to `BREAKDOWN:4` only, PLAY, confirm you land in breakdown pools immediately. Then restore the full test form.
@@ -615,7 +726,7 @@ G |--0-0-0-0-0-0-0-0-|--0-0-0-0-0-0-0-0-|
 
 Goal: trigger Style labels **and** the patterns that Play mode cannot guarantee (5, 7, 8, 10, 13, 20, 27).
 
-Method: Genre **Metal**, LOCK=4. Record a 4-bar palm-mute C chug (same as B1). Let it lock. **When transition B starts, do not play the lock riff** (so it does not cut). Play the style tabs below for 4 bars each. Watch **Style:** and **Pattern:**.
+Method: Genre **Metal**, LOCK=4, **TRANSITION BARS=8** (the hunt needs more than 4 bars per contrast). Record a 4-bar palm-mute C chug (same as B1). Let it lock. **When transition B starts, do not play the lock riff** (so it does not cut). Play the style tabs below. Remember B returns to A after TRANSITION BARS — if A comes back, wait for the next lock expiry (C) or Forget and recapture. Do **not** expect B to chain straight into C.
 
 Then Forget, switch Genre **Rock**, repeat the capture, hunt 22–27 / 24 / 25 / 26 / 27 during the Rock transition.
 
@@ -891,6 +1002,14 @@ Copy indices from Stations C–D. A blank row at the end of the session is a **M
 | Genre: Punk | ☐ | |
 | Genre: Metal | ☐ | |
 | Genre: Sludge | ☐ | |
+| Genre: Thrash Metal | ☐ | |
+| Genre: Death Metal | ☐ | |
+| Genre: Black Metal | ☐ | |
+| Genre: Doom Metal | ☐ | |
+| Genre: Djent | ☐ | |
+| Genre: Classic Rock | ☐ | |
+| Genre: Alternative | ☐ | |
+| Genre: Grunge | ☐ | |
 | Section: INTRO | ☐ | |
 | Section: VERSE | ☐ | |
 | Section: CHORUS | ☐ | |
@@ -902,11 +1021,13 @@ Copy indices from Stations C–D. A blank row at the end of the session is a **M
 | Groove lock freeze | ☐ | |
 | Bass frozen in lock | ☐ | |
 | Transition B contrast | ☐ | |
-| Transition C second contrast | ☐ | |
-| Return to A | ☐ | |
+| Return to A after B | ☐ | |
+| Transition C second contrast (after A, not after B) | ☐ | |
+| Return to A after C | ☐ | |
 | Cut transition by replaying riff | ☐ | |
 | Forget → idle | ☐ | |
 | Play form walk | ☐ | |
+| Play stops after last section | ☐ | |
 | Last-bar fill | ☐ | |
 | Section-change crash | ☐ | |
 | Swing knob | ☐ | |
@@ -953,12 +1074,13 @@ Read docs/END_USER_STRESS_TEST.md (filled) plus the recordings:
 - drums.wav  GM kit from MIDI ch 10
 - bass.wav   bass from MIDI ch 2
 
-Contract (v0.9.45):
+Contract (v0.9.48):
 - Idle until Play or Record riff. Idle + guitar must be silent MIDI.
 - MIDI drums ch 10, bass ch 2. GM: 36 kick, 38 snare, 42/46 hats, 51/53 ride, 49 crash, 52 china, 55 splash, 48/45/41 toms. Record click: 36 on 1, 37 on 2/3/4.
 - Pattern UI is an integer 0–27. Names are in Section 4 of the test doc.
-- Play mode uses section pools (Metal vs Rock-family) and last-bar fills 17/18/19. It does NOT use the style head for pattern choice.
-- Record riff: 1-bar count-in, 4-bar capture, lock for lockBars. Bass is note-for-note frozen. Drums frozen. After lock: contrast transition B then C, crash in, bass leaves the riff. Replaying the riff cuts the transition. Then return to A.
+- **13 genres** in two families. Metal family: Metal, Sludge, Thrash, Death, Black, Doom, Djent. Rock family: Rock, Hard Rock, Punk, Classic Rock, Alternative, Grunge. Play-mode pools are per family; feel (velocity, ghosts, swing, BPM clamp) is per preset.
+- Play mode uses section pools (Metal-family vs Rock-family) and last-bar fills 17/18/19. It does NOT use the style head for pattern choice. **Play walks the Sections list once and stops after the last section.** It must not wrap to INTRO.
+- Record riff: 1-bar count-in, 4-bar capture, lock for lockBars. Bass is note-for-note frozen. Drums frozen. After lock: contrast B for transitionBars, **then back to A**, then (if TRANSITION SECTIONS ≥ 2) contrast C, **then back to A**. Shape is **A-B-A-C-A**, not A-B-C-A. Replaying the riff cuts the current contrast. Crash in; bass leaves the riff during B/C.
 - Style head: Palm Mute / Open Chord / Single Note / Sustain / Silence. Must match articulation.
 - State: SILENT / SOFT / LOUD with hysteresis (SOFT→LOUD fast, LOUD→SOFT ~2s).
 - Tempo is host tempo.
@@ -979,18 +1101,18 @@ Do not excuse a missing pattern because it is hard. If the trigger recipe was fo
 
 ## 10. Speed-run clock
 
-If you only have half an hour:
+If you only have half an hour, skip the 11 subgenre Play passes (do Metal + Rock full forms, 20-second feel checks on the rest):
 
 | Min | Station | Skip if needed |
 |---|---|---|
-| 0–2 | A idle + one Play arm | — |
-| 2–10 | B one Metal lock/transition/forget | Skip B2 solo |
-| 10–22 | C Metal + Rock full forms (add BREAKDOWN+SOLO) | Do Sludge/Hard Rock/Punk as 20-second spot checks |
-| 22–28 | D style five-pack + 180 BPM blast bait + 6/8 bait | — |
+| 0–2 | A idle + one Play arm (confirm it **stops** after a 4-bar custom form if you are short on time) | — |
+| 2–12 | B Metal lock → B → A → C → A → forget | Skip B2 solo |
+| 12–22 | C Metal + Rock full forms (add BREAKDOWN+SOLO). Confirm Play **stops** after OUTRO | Subgenres as 20-second feel checks |
+| 22–28 | D style five-pack + 180 BPM blast bait + 6/8 bait (TRANSITION BARS=8) | — |
 | 28–32 | E tempo jumps, F three roots (C/E/G), G swing + one Fill Big | — |
-| 32–33 | H Forget / genre swap / stuck notes | — |
+| 32–35 | H Forget / genre swap (Metal → Thrash → Rock → Grunge) / stuck notes | — |
 
-Then fill Section 7 honestly. Empty boxes are data, not failure of the test.
+Full session (all 13 Play passes) is ~45–60 min. Then fill Section 7 honestly. Empty boxes are data, not failure of the test.
 
 ---
 

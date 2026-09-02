@@ -116,7 +116,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::crea
     layout.add(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID{ "loop", 1 },
         "Loop song form",
-        true));
+        false));
 
     // Generative groove lock: how many bars the auto-lock holds after the last
     // moment the riff was being played (returning to the riff extends it).
@@ -125,8 +125,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::crea
         "Groove lock (bars)",
         4, 64, 16));
 
-    // Post-lock transition grammar (A5.2): how long each transition section
-    // holds, and how many distinct sections to visit before returning to the riff.
+    // Post-lock transition grammar (A5.2): how long each contrast section
+    // holds, and how many distinct contrasts to visit. Each contrast returns
+    // to the locked riff (A) before the next one: 2 → A-B-A-C-A.
     layout.add(std::make_unique<juce::AudioParameterInt>(
         juce::ParameterID{ "transitionBars", 1 },
         "Transition (bars)",
@@ -617,7 +618,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
     }
     {
-        static bool lastLoopValue = true;
+        static bool lastLoopValue = false;
         if (auto* rawLoop = apvts.getRawParameterValue("loop"))
         {
             const bool newLoop = rawLoop->load() > 0.5f;
@@ -694,15 +695,29 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     }
     patternPlayer.setBassSemitoneOffset(bassTranspose);
 
-    const bool playOn = playActive.load(std::memory_order_acquire);
+    const bool playRequested = playActive.load(std::memory_order_acquire);
+    const bool playStartEdge = playRequested && !wasPlayOn;
+    if (playStartEdge)
+    {
+        // Each Play press starts the form from the top and plays it once.
+        // The loop checkbox was removed from the UI; wrapping back to INTRO
+        // after OUTRO is a bug, not a feature.
+        structureSequencer.setLooping(false);
+    }
+    bool playOn = playRequested;
     if (playOn && structureSequencer.isComplete())
+    {
         playActive.store(false, std::memory_order_release);
+        playOn = false;
+    }
 
     int effectivePatternIdx = patternIdx;
     if (playOn)
     {
         structureSequencer.advance(numSamples, bpmForPlayer, sr);
-        if (!structureSequencer.isComplete())
+        if (structureSequencer.isComplete())
+            playActive.store(false, std::memory_order_release);
+        else
         {
             const auto* secName = structureSequencer.getCurrentSectionName();
             auto pool = PatternRules::sectionPatternPoolForGenre(secName, genreId);
@@ -908,6 +923,20 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 blockPeak = a;
         }
 
+        auto resetTransitionCycle = [this]() noexcept
+        {
+            postLockPhase = PostLockPhase::Idle;
+            transitionSectionActive.store(false, std::memory_order_release);
+            transitionSectionNumberLocal = 0;
+            transitionSectionNumber.store(0, std::memory_order_release);
+            transitionSectionNameStr = "VERSE";
+            transitionSectionName.store("VERSE", std::memory_order_release);
+            transitionStartSample = -1;
+            transitionEndSample = -1;
+            transitionBarsRemaining.store(0, std::memory_order_relaxed);
+            transitionBarsTotal.store(0, std::memory_order_relaxed);
+        };
+
         auto abortRiffCapture = [this]() noexcept
         {
             phraseLearner.cancelUserCapture();
@@ -945,6 +974,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         if (riffForget.exchange(false, std::memory_order_acq_rel))
         {
             abortRiffCapture();
+            resetTransitionCycle();
             phraseLearner.reset();
             grooveLockActive = false;
             grooveLockEndSample = -1;
@@ -957,6 +987,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
         if (riffCaptureStart.exchange(false, std::memory_order_acq_rel))
         {
+            resetTransitionCycle();
             phraseLearner.beginGridCapture();
             riffCaptureActive.store(true, std::memory_order_release);
             riffCaptureNoteCount.store(0, std::memory_order_relaxed);
@@ -1078,6 +1109,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             grooveLockActive = false;
             grooveLockEndSample = -1;
             grooveLockReleaseArmed = false;
+            if (playStartEdge)
+                resetTransitionCycle();
             if (capturingHeld)
             {
                 phraseLearner.cancelUserCapture();
@@ -1143,10 +1176,11 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
 
         // ── P0/R4 + A5.2: on lock expiry, engage a post-lock TRANSITION SECTION
-        // instead of releasing straight back to the listener. The transition
-        // grammar (PatternRules::pickNextSectionAfterLock) picks a *contrast*
-        // section (never the riff's own feel, never the last one played) and
-        // holds it for `transitionBars` bars before returning to the riff (A).
+        // instead of releasing straight back to the listener. The grammar picks
+        // a *contrast* section (never the riff's own feel, never the last one
+        // played) and holds it for `transitionBars` bars, then ALWAYS returns
+        // to the riff (A). `transitionSections` is how many distinct contrasts
+        // to visit across successive lock cycles: 2 → A-B-A-C-A, not A-B-C-A.
         // If the riff re-appears mid-transition, we cut back to it immediately.
         if (grooveLockReleaseArmed)
         {
@@ -1167,6 +1201,12 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                                         static_cast<int>(std::lround(rawGenre->load())));
 
             const int lockedPat = latestPatternIndex.load(std::memory_order_acquire);
+            int maxSections = 2;
+            if (auto* raw = apvts.getRawParameterValue("transitionSections"))
+                maxSections = juce::jlimit(1, 4, static_cast<int>(std::lround(raw->load())));
+            if (transitionSectionNumberLocal >= maxSections)
+                transitionSectionNumberLocal = 0;
+
             const auto ts = PatternRules::pickNextSectionAfterLock(
                 lockedPat, genreIdT, transitionSectionNameStr);
 
@@ -1177,7 +1217,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             lastTransitionSlot = -1;
             cachedTransitionPick = -1;
             transitionSectionName.store(ts.name, std::memory_order_release);
-            transitionSectionNumberLocal = 0;  // each fresh transition starts at §B
             ++transitionSectionNumberLocal;
             transitionSectionNumber.store(transitionSectionNumberLocal, std::memory_order_release);
             transitionBarsTotalLocal = transitionBars;
@@ -1224,66 +1263,13 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             }
             else if (hostSampleTime >= transitionEndSample)
             {
-                // Hold finished. Continue to the next contrast section (up to
-                // `transitionSections` total), then return to the riff (A).
-                int maxSections = 2;
-                if (auto* raw = apvts.getRawParameterValue("transitionSections"))
-                    maxSections = juce::jlimit(1, 4, static_cast<int>(std::lround(raw->load())));
-
-                if (transitionSectionNumberLocal < maxSections)
-                {
-                    int genreIdT2 = 0;
-                    if (auto* rawGenre = apvts.getRawParameterValue("genre"))
-                        genreIdT2 = juce::jlimit(0, Groove::presetCount() - 1,
-                                                 static_cast<int>(std::lround(rawGenre->load())));
-                    const int lockedPat2 = latestPatternIndex.load(std::memory_order_acquire);
-                    const auto ts2 = PatternRules::pickNextSectionAfterLock(
-                        lockedPat2, genreIdT2, transitionSectionNameStr);
-
-                    const int transitionBars2 = [this]() -> int
-                    {
-                        if (auto* raw = apvts.getRawParameterValue("transitionBars"))
-                            return juce::jlimit(2, 32, static_cast<int>(std::lround(raw->load())));
-                        return 8;
-                    }();
-                    const int64_t samplesPerBarT2 =
-                        static_cast<int64_t>(4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
-
-                    transitionPool = ts2.pool;
-                    transitionSectionNameStr = ts2.name;
-                    lastPlayedPoolPattern = -1;  // fresh rotation for the next hold section
-                    lastTransitionSlot = -1;
-                    cachedTransitionPick = -1;
-                    transitionSectionName.store(ts2.name, std::memory_order_release);
-                    ++transitionSectionNumberLocal;
-                    transitionSectionNumber.store(transitionSectionNumberLocal, std::memory_order_release);
-                    transitionBarsTotalLocal = transitionBars2;
-                    transitionBarsTotal.store(transitionBars2, std::memory_order_release);
-                    transitionBarsRemaining.store(transitionBars2, std::memory_order_release);
-                    transitionStartSample = hostSampleTime;
-                    transitionEndSample = hostSampleTime + static_cast<int64_t>(transitionBars2) * samplesPerBarT2;
-
-                    // Release the riff again for the next contrast section.
-                    phraseLearner.releaseForTransition();
-
-                    patternPlayer.armTransitionCrash();
-                    PatternPlayer::GrooveCommit next{};
-                    next.patternIndex = (ts2.pool.count > 0) ? ts2.pool.indices[0] : lockedPat2;
-                    next.fillKind = PatternPlayer::TransitionFillKind::BuildUp;
-                    patternPlayer.queueGrooveCommit(next);
-                }
-                else
-                {
-                    // Transition sequence complete — firmly return to the locked
-                    // riff (A): re-engage the groove lock so the cycle continues
-                    // (A → B → A), instead of dropping straight to follow/listen.
-                    // The riff was kept held in the learner, so it re-locks
-                    // seamlessly and the drums resume the frozen riff groove.
-                    postLockPhase = PostLockPhase::Idle;
-                    transitionSectionActive.store(false, std::memory_order_release);
-                    engageGrooveLockFromRiff();
-                    patternPlayer.armTransitionCrash();
-                }
+                // This contrast finished. Always return to the locked riff (A).
+                // The next lock expiry will pick a different contrast (C, D, …)
+                // until `transitionSections` have been visited, then wrap.
+                postLockPhase = PostLockPhase::Idle;
+                transitionSectionActive.store(false, std::memory_order_release);
+                engageGrooveLockFromRiff();
+                patternPlayer.armTransitionCrash();
             }
             else
             {

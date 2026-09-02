@@ -70,7 +70,7 @@ public:
      *
      * When enough samples accumulate for a bar boundary, advances barsElapsed.
      * When barsElapsed reaches the section's bar count, advances to the next section.
-     * When the form ends, loops back to the first section.
+     * When the form ends, stops (default) or loops back to the first section.
      *
      * @param numSamples samples processed in this block
      * @param bpm current BPM
@@ -121,7 +121,7 @@ private:
     int globalBarCount = 0;
     double barAccumulator = 0.0;
     double samplesPerBar = 0.0;
-    bool looping = true;
+    bool looping = false;
     bool complete = false;
 
     SongForm currentForm;

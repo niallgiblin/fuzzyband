@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.48] — Record-mode A-B-A-C-A; Play stops at the end of the form
+
+Two behaviour bugs in the armed modes:
+
+- **Post-lock transitions return to the riff after every contrast.** `TRANSITION SECTIONS = 2` now means A → B → A → C → A (each contrast holds, then the locked riff re-engages before the next contrast). Previously the engine chained B straight into C (A-B-C-A). Playing the riff during B or C still cuts that contrast short and re-locks. Forget / Record / Play reset the contrast cycle.
+- **Play mode plays the Sections list once and stops.** After OUTRO the engine returns to idle (silent) instead of wrapping back to INTRO. Pressing Play again restarts from the first section. The hidden loop parameter now defaults off.
+
 ## [0.9.45] — Bass follows the transition; stays in key in Play mode
 
 The riff-lock bass was stuck on the recorded riff: after a Record-riff lock expired
