@@ -344,6 +344,22 @@ bool PhraseLearner::commitGridCapture() noexcept
     return true;
 }
 
+void PhraseLearner::releaseForTransition() noexcept
+{
+    holdActive_ = false;
+    if (state_ == State::Locked)
+    {
+        // Stop autonomous riff looping and revert to live-follow (Learning). Keep
+        // the learned pattern + length so isFollowingRiff / justMatchedRiff still
+        // recognise the riff (post-lock transition cut-short), and so it re-locks
+        // promptly when the guitarist returns to it.
+        state_ = State::Learning;
+        locked_ = false;
+        following_ = false;
+        justMatched_ = false;
+    }
+}
+
 PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, float pitchMidi,
                                                 float pitchConf, float bpm, int numSamples,
                                                 int stablePitchClassOffset) noexcept
@@ -409,9 +425,12 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
         // within a quarter beat of ANY note-to-note interval (cycled). Matching
         // any interval is robust for uniform chugs, whose bar-aligned pattern
         // under-samples the bar. Computed here (before the state machine) so the
-        // live mirror below can distinguish a riff note from a solo lick.
+        // live mirror below can distinguish a riff note from a solo lick. Works
+        // whenever a pattern is known — including after releaseForTransition,
+        // where the learner is back in Learning but the riff is still recognised
+        // so a post-lock transition can be cut short when it re-appears.
         bool matched = false;
-        if (state_ == State::Locked && attackCount_ >= 2 && patternLen_ >= 2)
+        if (patternLen_ >= 2 && attackCount_ >= 2)
         {
             const int prevIdx = (attackWrite_ - 2 + kMaxAttacks) % kMaxAttacks;
             const int curIdx = (attackWrite_ - 1 + kMaxAttacks) % kMaxAttacks;

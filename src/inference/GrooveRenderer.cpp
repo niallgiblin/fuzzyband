@@ -1,4 +1,5 @@
 #include "GrooveRenderer.h"
+#include "midi/GrooveTemplate.h"
 
 #include <algorithm>
 #include <cmath>
@@ -70,7 +71,10 @@ void GrooveRenderer::buildCondition(const FeatureVector& f, int genreId, int64_t
     // (f.rmsEnergy / f.spectralCentroid / f.onsetDensityPerBeat / styleIndex /
     //  f.state are intentionally ignored here.)
 
-    const int genre = std::clamp(genreId, 0, 4);                         // genre one-hot (12..16)
+    // Genre one-hot (12..16). The model was trained on the five original feel
+    // slots (Rock/Hard Rock/Punk/Metal/Sludge), so a broader genre (e.g. Thrash,
+    // Doom, Grunge) maps onto its closest slot rather than widening the input.
+    const int genre = std::clamp(Groove::presetFor(genreId).grooveSlot, 0, 4);
     out[12 + genre] = 1.0f;
 
     const int64_t phase = ((barNumber % 4) + 4) % 4;                     // bar phase 0..3 -> [0, 0.75]

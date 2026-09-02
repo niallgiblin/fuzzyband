@@ -487,8 +487,12 @@ TEST_CASE("Processor pipeline: bass octave +12 shifts the bass up an octave", "[
 TEST_CASE("Processor pipeline: genre mapping reaches later presets (Sludge)", "[integration][pipeline]")
 {
     // Regression: round(normalized) collapsed multi-choice combos, so Punk/Metal/
-    // Sludge were unreachable. Sludge (index 4) must route SOFT low-energy to the
-    // metal half-time (7), not the rock set (22/23).
+    // Sludge were unreachable. Sludge (metal family) must route SOFT low-energy
+    // into the metal/shared vocabulary (patterns 1-21), never the rock set
+    // (22-27). Select Sludge by index (the choice value is normalised by list
+    // length, so a hardcoded 1.0f now means the last genre, Grunge, not Sludge).
+    // Style steering is now live, so the exact pattern may rotate within the
+    // metal pool — the invariant is "metal, not rock".
     const double sr = 48000.0;
     const int block = 512;
     AccompanimentProcessor proc;
@@ -496,7 +500,15 @@ TEST_CASE("Processor pipeline: genre mapping reaches later presets (Sludge)", "[
     proc.pauseBackgroundInferenceForTests();
 
     if (auto* genreParam = proc.getApvts().getParameter("genre"))
-        genreParam->setValueNotifyingHost(1.0f);  // normalized 1.0 → choice index 4 (Sludge)
+    {
+        // Select Sludge by NAME: the choice value is normalised by list length,
+        // so a hardcoded 1.0f now means the last genre (Grunge), not Sludge.
+        int sludgeIndex = 0;
+        for (int i = 0; i < Groove::presetCount(); ++i)
+            if (juce::String(Groove::presetFor(i).name) == "Sludge") { sludgeIndex = i; break; }
+        const int denom = juce::jmax(1, Groove::presetCount() - 1);
+        genreParam->setValueNotifyingHost(static_cast<float>(sludgeIndex) / static_cast<float>(denom));
+    }
 
     const int n = static_cast<int>(3.0 * sr);
     for (int start = 0; start + block <= n; start += block)
@@ -514,8 +526,9 @@ TEST_CASE("Processor pipeline: genre mapping reaches later presets (Sludge)", "[
     }
 
     const int pat = proc.getDisplayPatternIndex();
-    // Sludge → metal routing: SOFT low-energy → 7 (Half-Time).
-    REQUIRE(pat == 7);
+    // Sludge → metal routing: SOFT low-energy stays in the metal/shared set.
+    REQUIRE(pat >= 1);
+    REQUIRE(pat < 22);
     proc.releaseResources();
 }
 
@@ -1373,5 +1386,151 @@ TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section i
     REQUIRE(barSigs[12] != barSigs[11]);
     REQUIRE(barSigs[16] != barSigs[15]);
 
+    proc.releaseResources();
+}
+
+// ── Post-lock transition bass: the bass must LEAVE the old riff ───────────────
+TEST_CASE("Processor pipeline: bass leaves the locked riff during a post-lock transition", "[integration][pipeline][transition][lock]")
+{
+    // After a Record-riff lock expires into a contrast section, the bass must move
+    // WITH the drums to the new section (play its harmony), not keep looping the
+    // recorded riff. Regression: the learner stayed Locked and autonomously
+    // looped the riff, so the bass emitted only the frozen riff note (C2=36) over
+    // the transition drums.
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);  // 4-bar lock
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(4.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
+
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);  // C2 riff → lock
+    REQUIRE(proc.isGrooveLocked());
+
+    // Feed sustained tone past the hold → transition engages and holds (a tone
+    // has no attacks, so the riff does NOT re-appear and cut it short).
+    auto feedTone = [&](float amp, double freq, int numBlocks, int& idx) {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(idx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++idx;
+        }
+    };
+    feedTone(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+
+    // While the guitarist plays a sustained tone (different pitch to the frozen
+    // C2 riff), the bass plays the NEW section's harmony — it must NOT keep
+    // emitting the frozen riff note 36.
+    std::set<int> bassNotes;
+    bool anyBass = false;
+    for (int b = 0; b < static_cast<int>(4.0 * sr / block); ++b)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* p = buf.getWritePointer(ch);
+            const double t = static_cast<double>(blockIdx) * block / sr;
+            for (int i = 0; i < block; ++i)
+            {
+                const double tt = t + static_cast<double>(i) / sr;
+                p[i] = static_cast<float>(0.05 * std::sin(2.0 * M_PI * 400.0 * tt));
+            }
+        }
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn() && msg.getChannel() == 2)
+            {
+                bassNotes.insert(msg.getNoteNumber());
+                anyBass = true;
+            }
+        }
+        ++blockIdx;
+    }
+    REQUIRE(anyBass);                      // the section bass still sounds
+    REQUIRE(bassNotes.count(36) == 0);     // but NOT the frozen riff note C2
+
+    proc.releaseResources();
+}
+
+// ── Play-mode bass: reflects the guitarist's root in the song's key ───────────
+TEST_CASE("Processor pipeline: play-mode bass follows the guitarist's root", "[integration][pipeline][play][bass]")
+{
+    // In Play mode the bass must stay anchored to the guitarist's root (so it
+    // sounds in-key and follows the guitar), even when the learned riff is held.
+    // Regression: when the learner locks a riff, the bass played the riff's notes
+    // note-for-note, which could pull it out of the song's key.
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    proc.setCustomSongForm("VERSE:8");
+    proc.playActive.store(true, std::memory_order_release);
+
+    int blockIdx = 0;
+    constexpr int cycle = 24;
+    std::set<int> bassNotes;
+    bool anyBass = false;
+    const int totalBlocks = static_cast<int>(8.0 * 96000.0 / block);
+    for (int b = 0; b < totalBlocks; ++b)
+    {
+        const int pos = blockIdx % cycle;
+        const bool loud = (pos >= cycle - 4);
+        juce::AudioBuffer<float> buf(2, block);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* p = buf.getWritePointer(ch);
+            const double t = static_cast<double>(blockIdx) * block / sr;
+            for (int i = 0; i < block; ++i)
+            {
+                const double tt = t + static_cast<double>(i) / sr;
+                p[i] = static_cast<float>((loud ? 0.5 : 0.08) * std::sin(2.0 * M_PI * 65.406 * tt));
+            }
+        }
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn() && msg.getChannel() == 2)
+            {
+                bassNotes.insert(msg.getNoteNumber());
+                anyBass = true;
+            }
+        }
+        ++blockIdx;
+    }
+
+    // Bass present and anchored on the guitarist's C2 root (36), in the song's key.
+    REQUIRE(anyBass);
+    REQUIRE(bassNotes.count(36) > 0);
+
+    proc.playActive.store(false, std::memory_order_release);
     proc.releaseResources();
 }

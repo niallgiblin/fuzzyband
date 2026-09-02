@@ -11,6 +11,7 @@
 
 #include "analysis/FeatureVector.h"
 #include "midi/MidiPatternLibrary.h"
+#include "midi/GrooveTemplate.h"
 #include "inference/PatternPriors.h"
 #include <algorithm>
 #include <cstring>
@@ -127,27 +128,27 @@ inline int diversifyPattern(int base, const FeatureVector& f, int barMod8) noexc
 
 /**
  * @brief B1: genre-aware diversification for the reactive path.
- * Rock-leaning genres (0-2: Rock, Hard Rock, Punk) route the ONNX mel
- * selector's metal-era indices (7-21) into the rock vocabulary by structure
- * state + energy — so a "Rock" genre in follow mode does not default to
- * metal-extreme picks (blast / thrash) — and keep the original routing for
- * indices 1-6. Metal/Sludge (>= 3) keep the original metal routing untouched.
+ * Rock-leaning genres (Rock, Hard Rock, Punk, Classic Rock, Alternative, Grunge)
+ * route the ONNX mel selector's metal-era indices (7-21) into the rock
+ * vocabulary by structure state + energy — so a "Rock" genre in follow mode does
+ * not default to metal-extreme picks (blast / thrash) — and keep the original
+ * routing for indices 1-6. Metal-family genres keep the original metal routing.
  */
 inline int diversifyPatternForGenre(int base, const FeatureVector& f, int barMod8, int genreId) noexcept
 {
-    if (genreId >= 3)
+    if (Groove::isMetalFamily(genreId))
         return diversifyPattern(base, f, barMod8);
 
     if (base == 0) return 0;
 
-    // ── Rock-leaning genres (0-2): re-home mel-selector indices 7-21 ────────
+    // ── Rock-leaning genres: re-home mel-selector indices 7-21 ──────────────
     // The ONNX mel selector returns any of indices 0-21 (all metal-era
     // grooves). Previously these were returned unchanged, so a "Rock" genre in
     // follow mode defaulted to metal-extreme picks (blast / thrash). Re-home
     // them into the rock vocabulary by structure state + energy, always
     // respecting state compatibility so a groove never contradicts the
-    // detected energy. Metal/Sludge (genreId >= 3) is handled above and is
-    // unchanged. Base 1-6 keep the original routing (deliberately preserved).
+    // detected energy. Metal-family genres are handled above and are unchanged.
+    // Base 1-6 keep the original routing (deliberately preserved).
     if (base >= 7)
     {
         switch (f.state)
@@ -285,8 +286,8 @@ inline SectionPatternPool sectionPatternPool(const char* sectionName) noexcept
 
 /**
  * @brief B1: genre-aware section → pattern pool mapping for play (song-form) mode.
- * Rock-leaning genres (0-2) prefer the rock-first pattern set; Metal/Sludge
- * (>= 3) keep the original metal pools.
+ * Rock-leaning genres prefer the rock-first pattern set; Metal-family genres
+ * keep the original metal pools.
  */
 inline SectionPatternPool sectionPatternPoolForGenre(const char* sectionName, int genreId) noexcept
 {
@@ -295,7 +296,7 @@ inline SectionPatternPool sectionPatternPoolForGenre(const char* sectionName, in
     if (!sectionName)
         return P{ 0, {} };
 
-    if (genreId >= 3)
+    if (Groove::isMetalFamily(genreId))
         return sectionPatternPool(sectionName);
 
     if (std::strcmp(sectionName, "INTRO") == 0)
@@ -381,18 +382,18 @@ inline SectionPatternPool stylePatternPool(int styleIndex) noexcept
 /**
  * @brief B1/G2: genre-aware playing-style → groove-family pool.
  *
- * Rock-leaning genres (0-2: Rock, Hard Rock, Punk) steer the style pool into
- * the rock-first vocabulary (indices 22-27) so the perception head makes a
- * "Rock" genre sound like rock rather than pulling it back toward metal.
- * Metal/Sludge (>= 3) keep the original metal style pools. Membership is
- * still filtered against the live structure state by diversifyPatternForStyle,
- * so a style can never force a structurally-wrong groove.
+ * Rock-leaning genres steer the style pool into the rock-first vocabulary
+ * (indices 22-27) so the perception head makes a "Rock" genre sound like rock
+ * rather than pulling it back toward metal. Metal-family genres keep the
+ * original metal style pools. Membership is still filtered against the live
+ * structure state by diversifyPatternForStyle, so a style can never force a
+ * structurally-wrong groove.
  */
 inline SectionPatternPool stylePatternPoolForGenre(int styleIndex, int genreId) noexcept
 {
     using P = SectionPatternPool;
 
-    if (genreId >= 3)
+    if (Groove::isMetalFamily(genreId))
         return stylePatternPool(styleIndex);
 
     switch (styleIndex)

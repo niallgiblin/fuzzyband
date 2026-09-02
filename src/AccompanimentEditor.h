@@ -167,6 +167,91 @@ public:
         label.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
     }
 
+    // ── Popup menu (ComboBox dropdown): clean, no big checkmark ─────────────
+    // LookAndFeel_V4 draws a large tick glyph next to the selected item. For the
+    // genre menu we want a sleeker marker: a slim moss accent bar on the left
+    // edge of the selected row plus a soft fill, and a full fill on the row under
+    // the cursor. No icon gutter, so the text sits close to the edge.
+    juce::Font getPopupMenuFont() override
+    {
+        if (tfAlegreyaMedium_) return juce::Font(juce::FontOptions(tfAlegreyaMedium_).withHeight(13.0f));
+        return LookAndFeel_V4::getPopupMenuFont();
+    }
+
+    void drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<int>& area,
+                           const bool isSeparator, const bool isActive, const bool isHighlighted,
+                           const bool isTicked, const bool /*hasSubMenu*/,
+                           const juce::String& text, const juce::String& /*shortcutKeyText*/,
+                           const juce::Drawable* icon, const juce::Colour* const textColourToUse) override
+    {
+        if (isSeparator)
+        {
+            g.setColour(findColour(juce::PopupMenu::textColourId).withAlpha(0.2f));
+            g.fillRect(area.getX() + 8, area.getCentreY(), juce::jmax(1, area.getWidth() - 16), 1);
+            return;
+        }
+
+        const bool selected = isTicked || isActive;
+        const juce::Colour textColour = (textColourToUse != nullptr)
+            ? *textColourToUse : findColour(juce::PopupMenu::textColourId);
+
+        // Row background: hover wins; a selected (but not hovered) row gets a
+        // soft fill so the current genre stays legible in the list.
+        if (isHighlighted)
+            g.setColour(findColour(juce::PopupMenu::highlightedBackgroundColourId));
+        else if (selected)
+            g.setColour(findColour(juce::PopupMenu::highlightedBackgroundColourId).withAlpha(0.45f));
+        else
+            g.setColour(juce::Colours::transparentBlack);
+        if (isHighlighted || selected)
+            g.fillRect(area);
+
+        // Selected marker: a slim moss accent bar on the left edge (no tick).
+        if (selected)
+        {
+            g.setColour(juce::Colour(FuzzybandPalette::moss));
+            g.fillRoundedRectangle((float)area.getX() + 3.0f, (float)area.getY() + 5.0f,
+                                   3.0f, (float)area.getHeight() - 10.0f, 1.5f);
+        }
+
+        g.setFont(getPopupMenuFont());
+        g.setColour(isHighlighted
+            ? findColour(juce::PopupMenu::highlightedTextColourId)
+            : textColour.withMultipliedAlpha(selected ? 1.0f : 0.85f));
+
+        auto textArea = area.reduced(13, 0);
+        if (icon != nullptr)
+        {
+            auto iconArea = textArea.removeFromLeft(area.getHeight() - 4).toFloat();
+            icon->drawWithin(g, iconArea,
+                             juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize,
+                             1.0f);
+            textArea.removeFromLeft(6);
+        }
+        g.drawFittedText(text, textArea, juce::Justification::centredLeft, 1);
+    }
+
+    void getIdealPopupMenuItemSize(const juce::String& text, const bool isSeparator,
+                                   int standardMenuItemHeight, int& idealWidth, int& idealHeight) override
+    {
+        if (isSeparator)
+        {
+            idealWidth = 50;
+            idealHeight = standardMenuItemHeight > 0 ? standardMenuItemHeight / 8 : 8;
+            return;
+        }
+        const auto font = getPopupMenuFont();
+        idealHeight = juce::roundToInt(font.getHeight() * 1.7f);
+
+        // Measure the label with TextLayout (Font::getStringWidth() is deprecated
+        // in JUCE 8). The extra height covers the accent bar + horizontal padding.
+        juce::AttributedString astr(text);
+        astr.setFont(font);
+        juce::TextLayout layout;
+        layout.createLayout(astr, 10000.0f);
+        idealWidth = juce::roundToInt(layout.getWidth()) + idealHeight;
+    }
+
     void drawButtonBackground(juce::Graphics& g, juce::Button& button,
                               const juce::Colour&, bool isHighlighted, bool isDown) override
     {

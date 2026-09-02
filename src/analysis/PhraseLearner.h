@@ -137,6 +137,15 @@ public:
      */
     void setHoldActive(bool active) noexcept { holdActive_ = active; }
 
+    /**
+     * @brief Release the groove-lock hold for a post-lock transition and stop
+     *        the autonomous riff loop, so the bass leaves the old riff and
+     *        follows the guitarist / the new section. The learned pattern is
+     *        kept so the riff can still be recognised (isFollowingRiff /
+     *        justMatchedRiff) and re-locked when it genuinely re-appears.
+     */
+    void releaseForTransition() noexcept;
+
     /** @brief Whether the most recent attack landed on the learned riff's grid. */
     bool isFollowingRiff() const noexcept { return following_; }
 

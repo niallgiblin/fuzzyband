@@ -158,6 +158,19 @@ inline const Template& templateFor(int templateId) noexcept
 }
 
 /**
+ * @brief Routing family for a genre: which pattern vocabulary it draws from.
+ * Rock-leaning genres (Rock, Punk, Classic Rock, …) route into the rock-first
+ * pattern set; Metal-family genres (Metal, Sludge, Thrash, Death, …) keep the
+ * original metal routing. Replaces the old index-threshold (`genreId >= 3`)
+ * so the genre list can grow without silently re-categorising new entries.
+ */
+enum class GenreFamily
+{
+    Rock,
+    Metal
+};
+
+/**
  * @brief Genre preset dimension (B1): what a genre selects for rendering.
  * Pattern pool choice lives in PatternRules::sectionPatternPoolForGenre /
  * diversifyPatternForGenre; this struct covers velocity profile, swing default,
@@ -167,6 +180,8 @@ struct GenrePreset
 {
     const char* name = "Rock";
     int templateId = 0;           // 0 rock, 1 metal, 2 punk
+    GenreFamily family = GenreFamily::Rock;  // routing family (rock-leaning vs metal)
+    int grooveSlot = 0;           // groove-renderer feel slot 0..4 this genre uses
     float defaultSwing = 0.0f;    // swing/shuffle ratio 0..1 (A2.3)
     float halfTimeBias = 0.15f;   // 0..1 — reserved for A4.2 generated grooves
     float velocityScale = 1.0f;   // overall drum velocity gain
@@ -200,29 +215,53 @@ struct GenrePreset
     }
 };
 
-/** @brief Built-in presets: rock-first default, metal retained as a preset. */
+/**
+ * @brief Built-in presets: rock-first default, metal retained, plus broader rock
+ * and metal subgenres. New genres are appended AFTER the original five so the
+ * original indices (and their PatternPriors rows / persisted session values)
+ * stay stable. `family` routes each genre into the rock or metal vocabulary;
+ * `grooveSlot` maps it onto one of the five groove-renderer feel slots.
+ */
 inline const GenrePreset* presets() noexcept
 {
     static const GenrePreset kPresets[] = {
-        //              name         tmpl swing half  velScale ghost min max verse  chorus brkdn  intro  outro  solo   def
-        { "Rock",       0, 0.00f, 0.15f, 1.00f, 0.35f, 40, 300, 0.92f, 1.06f, 0.98f, 0.88f, 0.80f, 1.06f, 1.00f },
-        { "Hard Rock",  1, 0.10f, 0.25f, 1.03f, 0.30f, 40, 300, 0.94f, 1.08f, 0.96f, 0.90f, 0.82f, 1.08f, 1.00f },
-        { "Punk",       2, 0.00f, 0.10f, 1.05f, 0.15f, 80, 300, 0.98f, 1.06f, 1.00f, 0.92f, 0.88f, 1.04f, 1.00f },
-        { "Metal",      1, 0.00f, 0.30f, 1.00f, 0.10f, 40, 300, 0.95f, 1.05f, 1.00f, 0.90f, 0.85f, 1.05f, 1.00f },
-        { "Sludge",     1, 0.00f, 0.70f, 0.95f, 0.05f, 40, 220, 0.98f, 1.02f, 1.02f, 0.92f, 0.86f, 1.02f, 1.00f },
+        // name            tmpl family              slot swing  half  vel   ghost min  max  verse chorus brkdn intro outro solo  def
+        { "Rock",          0, GenreFamily::Rock,    0, 0.00f, 0.15f, 1.00f, 0.35f, 40, 300, 0.92f, 1.06f, 0.98f, 0.88f, 0.80f, 1.06f, 1.00f },
+        { "Hard Rock",     1, GenreFamily::Rock,    1, 0.10f, 0.25f, 1.03f, 0.30f, 40, 300, 0.94f, 1.08f, 0.96f, 0.90f, 0.82f, 1.08f, 1.00f },
+        { "Punk",          2, GenreFamily::Rock,    2, 0.00f, 0.10f, 1.05f, 0.15f, 80, 300, 0.98f, 1.06f, 1.00f, 0.92f, 0.88f, 1.04f, 1.00f },
+        { "Metal",         1, GenreFamily::Metal,   3, 0.00f, 0.30f, 1.00f, 0.10f, 40, 300, 0.95f, 1.05f, 1.00f, 0.90f, 0.85f, 1.05f, 1.00f },
+        { "Sludge",        1, GenreFamily::Metal,   4, 0.00f, 0.70f, 0.95f, 0.05f, 40, 220, 0.98f, 1.02f, 1.02f, 0.92f, 0.86f, 1.02f, 1.00f },
+        // ── Metal subgenres ──────────────────────────────────────────────────
+        { "Thrash Metal",  1, GenreFamily::Metal,   3, 0.00f, 0.15f, 1.05f, 0.20f, 90, 300, 0.98f, 1.12f, 1.00f, 0.92f, 0.88f, 1.10f, 1.00f },
+        { "Death Metal",   1, GenreFamily::Metal,   3, 0.00f, 0.10f, 1.08f, 0.25f, 80, 300, 0.98f, 1.12f, 1.02f, 0.90f, 0.85f, 1.12f, 1.00f },
+        { "Black Metal",   1, GenreFamily::Metal,   3, 0.00f, 0.05f, 1.05f, 0.30f, 100, 300, 1.00f, 1.08f, 1.00f, 0.92f, 0.88f, 1.08f, 1.00f },
+        { "Doom Metal",    1, GenreFamily::Metal,   4, 0.00f, 0.60f, 0.92f, 0.08f, 40, 160, 0.96f, 1.02f, 1.02f, 0.90f, 0.84f, 1.02f, 1.00f },
+        { "Djent",         1, GenreFamily::Metal,   3, 0.05f, 0.25f, 1.00f, 0.15f, 60, 240, 0.97f, 1.08f, 0.99f, 0.91f, 0.87f, 1.08f, 1.00f },
+        // ── Broader rock ─────────────────────────────────────────────────────
+        { "Classic Rock",  0, GenreFamily::Rock,    0, 0.10f, 0.10f, 1.00f, 0.30f, 60, 200, 0.90f, 1.05f, 0.96f, 0.86f, 0.78f, 1.05f, 1.00f },
+        { "Alternative",   0, GenreFamily::Rock,    0, 0.05f, 0.15f, 1.00f, 0.35f, 60, 220, 0.92f, 1.06f, 0.97f, 0.88f, 0.80f, 1.06f, 1.00f },
+        { "Grunge",        0, GenreFamily::Rock,    0, 0.08f, 0.30f, 0.97f, 0.25f, 50, 200, 0.94f, 1.06f, 1.00f, 0.90f, 0.82f, 1.06f, 1.00f },
     };
     return kPresets;
 }
 
+inline constexpr int kPresetCount = 13;
+
 inline int presetCount() noexcept
 {
-    return 5;
+    return kPresetCount;
 }
 
 inline const GenrePreset& presetFor(int id) noexcept
 {
     const int i = (id < 0) ? 0 : (id >= presetCount() ? presetCount() - 1 : id);
     return presets()[i];
+}
+
+/** @brief True when @p genreId routes into the metal (not rock-leaning) vocabulary. */
+inline bool isMetalFamily(int genreId) noexcept
+{
+    return presetFor(genreId).family == GenreFamily::Metal;
 }
 
 } // namespace Groove

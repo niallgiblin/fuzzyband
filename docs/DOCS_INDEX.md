@@ -18,6 +18,7 @@ These docs are for learning the project from the inside out. They explain what e
 
 ## Existing Specialist Docs
 
+- [End-user stress test](END_USER_STRESS_TEST.md): guitar-tab playthrough that tries to trigger every pattern, style, genre, section, and mode; includes a sighting log and an agent-review prompt.
 - [Plugin guide](PLUGIN_GUIDE.md): practical behavior guide, but some older sections may describe behavior that has since been refactored.
 - [Plugin hosting](PLUGIN_HOSTING.md): DAW insert-order and routing guidance.
 - [Feature capture](FEATURE_CAPTURE.md): runtime capture workflow and JSONL schema.

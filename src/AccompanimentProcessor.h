@@ -174,6 +174,8 @@ private:
 
     void inferenceLoop();
     void drainFeatureQueueAndRunInference();
+    /** @brief Smooth a raw style classification into the committed style used downstream. */
+    void updateCommittedStyle(int rawStyle) noexcept;
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -297,11 +299,16 @@ private:
     int cachedTransitionPick = -1;  // the post-lock rotation's pick
 
     // ── Style steering (perception layer): inference-thread state ────────────
-    // The style head (classifyStyle) steers follow-mode selection only after a
-    // style has been stable for kStyleStableWindows consecutive windows; the
-    // 2-bar commit hold does the rest of the smoothing.
-    int lastStyleIndex = 4;         // 4 = silence
-    int styleStabilityCount = 0;    // consecutive windows of the same style
+    // classifyStyle() returns a raw argmax once per mel window (~2 Hz: one 512 ms
+    // audio window). The raw value is noisy, so we commit a style only after
+    // kStyleStableWindows consecutive agreeing windows, then hold it for
+    // kStyleHoldWindows windows before allowing a change. The *committed* style
+    // drives steering, the groove-renderer condition and the display — never the
+    // raw value — so a phrase doesn't flip back and forth between articulations.
+    int styleRaw = 4;            // last raw classification (4 = silence)
+    int styleAgreeCount = 0;     // consecutive windows agreeing with styleRaw
+    int committedStyle = 4;      // smoothed style actually used downstream
+    int styleHoldRemaining = 0;  // hold countdown after a commit
 
     // ── Display scope (audio thread → UI) ────────────────────────────────────
     std::array<float, kScopeSize> scopeSamples{};      // rolling decimated input

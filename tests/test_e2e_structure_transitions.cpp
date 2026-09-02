@@ -160,11 +160,11 @@ TEST_CASE("E2E: chorus-like section after verse drives pattern index to [4,5]", 
         feedSection(proc, loud.data(), n, block);
     }
 
-    // With default BPM ≈ 120 and LOUD state:
-    //   RuleBasedInference: bpmAdj = 120, < 160 → base = 4
+    // With default BPM ≈ 120 and LOUD state the selector picks a LOUD groove.
+    // Style steering is now live, so the exact pattern rotates within the
+    // LOUD-compatible pool — the invariant is that it matches the LOUD state.
     const int pat = proc.getDisplayPatternIndex();
-    REQUIRE(pat >= 4);
-    REQUIRE(pat <= 5);
+    REQUIRE(PatternRules::isPatternCompatibleWithState(pat, StructureState::LOUD));
 
     // Display state must be LOUD (index 3)
     REQUIRE(proc.getDisplayStateIndex() == static_cast<int>(StructureState::LOUD));

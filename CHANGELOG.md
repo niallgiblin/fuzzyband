@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.45] — Bass follows the transition; stays in key in Play mode
+
+The riff-lock bass was stuck on the recorded riff: after a Record-riff lock expired
+into the post-lock contrast section, the drums rotated to the new groove but the bass
+kept looping the old riff over it. And in Play mode the learned riff was played
+note-for-note, which could pull the bass out of the song's harmony.
+
+- **Transition guitar freedom.** `PhraseLearner::releaseForTransition()` drops the
+  groove-lock hold and stops the autonomous riff loop when the post-lock transition
+  engages, so the bass leaves the old riff and plays the new section's harmony (or
+  live-mirrors your new lines). The learned pattern is retained so the riff is still
+  recognised and the transition is cut short / the riff re-locks when you genuinely
+  return to it. `setHoldActive` now only holds the riff during a real groove lock.
+- **In-key bass everywhere else.** The riff is now played note-for-note only while the
+  groove is genuinely locked (drums frozen on the riff). During a post-lock transition
+  and in Play mode the bass snaps to the current section's harmony, keeping it musical
+  and anchored to your root instead of following a stale riff out of key.
+
+The bass root is still driven by your live pitch; the riff's rhythm is mirrored while
+the notes stay inside the section's harmony.
+
 ## [0.9.31] — Scope now anchored to the transport (downbeat on 1)
 
 The bar-aligned scope was showing the downbeat offset from beat 1 because its

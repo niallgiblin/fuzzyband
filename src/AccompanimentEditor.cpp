@@ -329,7 +329,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     genreLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::ink));
     for (int i = 0; i < Groove::presetCount(); ++i)
         genreCombo.addItem(Groove::presetFor(i).name, genreCombo.getNumItems() + 1);
-    genreCombo.setTooltip("Genre preset: groove feel, velocity profile, section dynamics (B1). Rock is the default; metal remains a preset.");
+    genreCombo.setTooltip("Genre preset: groove feel, velocity profile, section dynamics (B1). Rock is the default; metal and rock subgenres are presets.");
     genreCombo.onChange = [this]
     {
         // Applying a genre also applies its default swing to the swing knob.

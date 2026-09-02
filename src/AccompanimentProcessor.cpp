@@ -24,9 +24,15 @@ std::unique_ptr<IInference> makeInference()
     return std::make_unique<RuleBasedInference>();
 }
 
-/** @brief Consecutive same-style windows required before style steering engages
- *  (~150 ms at the ~50 Hz drain). The 2-bar commit hold does the real smoothing. */
+// ── Style smoothing (perception layer) ──────────────────────────────────────
+// classifyStyle() runs once per mel window (~2 Hz: one 512 ms audio window), so
+// "windows" here are ~0.5 s apart, NOT the ~50 Hz inference drain. Raw argmax is
+// noisy, so we commit a style only after kStyleStableWindows consecutive agreeing
+// windows, then hold it for kStyleHoldWindows windows before allowing a change.
+// Together that is ~1.5 s to lock on and ~2 s minimum hold — long enough that a
+// single phrase doesn't flip back and forth, short enough to track a real change.
 constexpr int kStyleStableWindows = 3;
+constexpr int kStyleHoldWindows   = 4;
 
 PatternPlayer::TransitionFillKind chooseTransitionFillKind(StructureState from,
                                                            StructureState to,
@@ -276,7 +282,6 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
 
         int idx = 0;
         bool usedMelPath = false;
-        int styleNow = 4;  // perception class; 4 = silence (no steering)
 #if defined(MA_ENABLE_ONNX)
         {
             MelWindow latestMel{};
@@ -301,8 +306,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
                     const int melSeed = (spbSeed > 0.0)
                         ? static_cast<int>(latest.sampleTimestamp / spbSeed) : 0;
                     idx = groove->selectPatternFromMel(latestMel.data.data(), excludeParam, melSeed);
-                    styleNow = groove->classifyStyle(latestMel.data.data());
-                    displayStyle.store(styleNow, std::memory_order_relaxed);
+                    updateCommittedStyle(groove->classifyStyle(latestMel.data.data()));
                     usedMelPath = true;
                 }
             }
@@ -359,32 +363,18 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
                                    static_cast<int>(std::lround(rawGenre->load())));
         const int diversifiedIdx = PatternRules::diversifyPatternForGenre(idx, latest, barMod8, genreId);
 
-        // Style steering (perception-layer wiring, A4.1): when the style head
-        // has classified a *stable* non-silence articulation, route the groove
-        // family through the style pool so how you play (chug → half-time/
-        // breakdown, open chord → chorus, single-note → fast, sustain → sparse)
-        // drives selection. Stability gate: kStyleStableWindows consecutive
-        // windows of the same class; the 2-bar commit hold below does the rest
-        // of the smoothing, so steering only biases the next eligible commit.
+        // Style steering (perception-layer wiring, A4.1): route the groove family
+        // through the style pool for the *committed* (smoothed) articulation, so
+        // how you play (chug → half-time/breakdown, open chord → chorus,
+        // single-note → fast, sustain → sparse) drives selection. The committed
+        // style is already hysteresis-gated by updateCommittedStyle(), so it holds
+        // one articulation for a phrase instead of flip-flopping; the 2-bar commit
+        // hold below does the rest of the smoothing, so steering only biases the
+        // next eligible commit. Silence (4) steers nothing.
         int finalIdx = diversifiedIdx;
-        if (styleNow >= 0 && styleNow <= 3)
-        {
-            if (styleNow == lastStyleIndex)
-                ++styleStabilityCount;
-            else
-            {
-                lastStyleIndex = styleNow;
-                styleStabilityCount = 1;
-            }
-            if (styleStabilityCount >= kStyleStableWindows)
-                finalIdx = PatternRules::diversifyPatternForStyle(
-                    diversifiedIdx, styleNow, barMod8, latest.state, genreId);
-        }
-        else
-        {
-            lastStyleIndex = 4;
-            styleStabilityCount = 0;
-        }
+        if (committedStyle >= 0 && committedStyle <= 3)
+            finalIdx = PatternRules::diversifyPatternForStyle(
+                diversifiedIdx, committedStyle, barMod8, latest.state, genreId);
 
         if (drumHoldExpired || excludeParam >= 0 || transitionEvent || autoChangeReady)
         {
@@ -418,12 +408,45 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             ScoreGrid score{};
             GrooveRenderer::buildScoreGrid(patternLibrary.getPattern(renderPat), score);
             float cond[GrooveGridUtil::kCondDim]{};
-            GrooveRenderer::buildCondition(latest, genreId, barNumber, styleNow, cond);
+            GrooveRenderer::buildCondition(latest, genreId, barNumber, committedStyle, cond);
             GrooveGrid grid = grooveRenderer.render(score, cond, barNumber, renderPat);
             if (grid.valid)
                 grooveGridQueue.try_enqueue(grid);
         }
     }
+}
+
+void AccompanimentProcessor::updateCommittedStyle(int rawStyle) noexcept
+{
+    // Raw argmax is called once per ~512 ms mel window, so `styleAgreeCount` is
+    // in windows (~0.5 s each), not drain iterations.
+    if (rawStyle == styleRaw)
+        ++styleAgreeCount;
+    else
+    {
+        styleRaw = rawStyle;
+        styleAgreeCount = 1;
+    }
+
+    if (styleHoldRemaining > 0)
+        --styleHoldRemaining;
+
+    // Single notes (class 2) are transient articulations, so they commit and
+    // release faster than held styles (chug / chord / sustain) — a lead line
+    // should register without being averaged away, but still hold long enough
+    // not to flicker between adjacent windows.
+    const int confirmWindows = (rawStyle == 2) ? 2 : kStyleStableWindows;
+    const int holdWindows    = (rawStyle == 2) ? 2 : kStyleHoldWindows;
+
+    if (styleAgreeCount >= confirmWindows
+        && rawStyle != committedStyle
+        && styleHoldRemaining == 0)
+    {
+        committedStyle = rawStyle;
+        styleHoldRemaining = holdWindows;
+    }
+
+    displayStyle.store(committedStyle, std::memory_order_relaxed);
 }
 
 void AccompanimentProcessor::inferenceLoop()
@@ -1094,16 +1117,11 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
         grooveLocked.store(grooveLockActive, std::memory_order_release);
         // Keep the learned riff looping whenever the groove is locked (drums
-        // frozen on the riff). During a post-lock transition the riff is held
-        // ONLY while the guitarist is clearly still playing it — once they move
-        // to a new (unheard) section the hold drops so the learner drifts-unlocks
-        // and the bass follows the guitarist's live picking, then re-learns the
-        // new part, instead of looping the recorded riff over material they are
-        // not playing.
-        const bool clearlyStillRiffing = postLockPhase == PostLockPhase::TransitionHold
-            && (phraseLearner.isFollowingRiff()                            // last attack matched the riff grid
-                || (hostSampleTime - lastRiffMatchSample) < 2 * samplesPerBar);  // riff heard within the last 2 bars
-        phraseLearner.setHoldActive(grooveLockActive || clearlyStillRiffing);
+        // frozen on the riff). During a post-lock transition the riff is NOT
+        // held: the learner is released (releaseForTransition) so the bass
+        // leaves the old riff and follows the guitarist / the new section,
+        // instead of looping the recorded riff over the transition drums.
+        phraseLearner.setHoldActive(grooveLockActive);
 
         // ── Riff-lock hold progress (UI): bar done / bars remaining ───────────
         // While locked, publish the 1-based current bar and the bars left before
@@ -1168,6 +1186,12 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             transitionStartSample = hostSampleTime;
             transitionEndSample = hostSampleTime + static_cast<int64_t>(transitionBars) * samplesPerBarT;
             transitionSectionActive.store(true, std::memory_order_release);
+
+            // Release the riff: the bass must move WITH the drums to the new
+            // section (not keep looping the recorded riff). The learner keeps the
+            // pattern so it still recognises the riff (and can cut the transition
+            // short / re-lock when the guitarist genuinely returns to it).
+            phraseLearner.releaseForTransition();
 
             // Musical entrance: crash + a build-up fill into the section's most
             // popular pool pattern (bar-quantized by PatternPlayer).
@@ -1238,6 +1262,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     transitionBarsRemaining.store(transitionBars2, std::memory_order_release);
                     transitionStartSample = hostSampleTime;
                     transitionEndSample = hostSampleTime + static_cast<int64_t>(transitionBars2) * samplesPerBarT2;
+
+                    // Release the riff again for the next contrast section.
+                    phraseLearner.releaseForTransition();
 
                     patternPlayer.armTransitionCrash();
                     PatternPlayer::GrooveCommit next{};
@@ -1315,11 +1342,16 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
         // Listening bass: mirror each detected attack, resolved to the current
         // section's harmony (live mirror) or played note-for-note (locked riff R1).
+        // Note-for-note applies ONLY while the groove is genuinely locked (drums
+        // frozen on the riff). During a post-lock transition the groove has moved
+        // on, so the bass snaps to the new section's harmony instead of sticking
+        // to the old riff; in Play mode it stays anchored to the song's key.
         if (bassNote.trigger && !riffCaptureActive.load(std::memory_order_acquire)
             && !phraseLearner.isGridCapturing())
         {
             const int durationSamples = static_cast<int>((60.0 / bpmForPlayer) * 0.4 * sr);
-            const int note = phraseLocked
+            const bool riffHolds = phraseLocked && grooveLockActive;
+            const int note = riffHolds
                 ? (bassNote.midiNote + bassTranspose)                        // locked riff, note-for-note
                 : patternPlayer.snapBassToSectionHarmony(bassNote.midiNote); // live mirror → section harmony
             patternPlayer.triggerLearnedBassNote(note, bassNote.velocity, 0, durationSamples);
