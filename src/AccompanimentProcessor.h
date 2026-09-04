@@ -108,12 +108,8 @@ public:
     void requestRiffCaptureStart() noexcept { riffCaptureStart.store(true, std::memory_order_release); }
     /** @brief Follow-mode: commit the captured riff and start the lock (message thread). */
     void requestRiffCaptureStop() noexcept { riffCaptureStop.store(true, std::memory_order_release); }
-    /** @brief Clear the learned/recorded riff and return to follow (message thread). */
+    /** @brief Clear the learned/recorded riff and return to idle (message thread). */
     void requestRiffForget() noexcept { riffForget.store(true, std::memory_order_release); }
-    /** @brief Stop the record-riff mini-structure loop and return to idle/silent
-     *  (message thread). Same outcome as Forget: the engine is disarmed and
-     *  silent until Play or Record riff is pressed again. */
-    void requestRiffStop() noexcept { riffStop.store(true, std::memory_order_release); }
     bool isRiffCapturing() const noexcept { return riffCaptureActive.load(std::memory_order_relaxed); }
     int getRiffCaptureNoteCount() const noexcept { return riffCaptureNoteCount.load(std::memory_order_relaxed); }
     /** @brief 0 = count-in (or waiting for bar), 1–4 = recording bar. */
@@ -276,7 +272,6 @@ private:
     std::atomic<bool> riffCaptureStart{ false };   // message → audio: begin capture
     std::atomic<bool> riffCaptureStop{ false };    // message → audio: commit/cancel capture
     std::atomic<bool> riffForget{ false };         // message → audio: wipe learned riff
-    std::atomic<bool> riffStop{ false };           // message → audio: end the riff-loop, go idle
     std::atomic<bool> riffCaptureActive{ false };  // audio → UI
     std::atomic<int> riffCaptureNoteCount{ 0 };    // occupied 16th slots → UI
     std::atomic<int> riffCaptureBar{ 0 };          // 0=count-in, 1–4=recording bar

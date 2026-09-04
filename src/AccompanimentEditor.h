@@ -473,7 +473,6 @@ private:
     juce::TextButton playButton{ "PLAY" };
     juce::TextButton recordRiffButton{ "Record riff" };
     juce::TextButton forgetRiffButton{ "Forget" };
-    juce::TextButton stopButton{ "Stop" };
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> genreAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> swingAttachment;

@@ -1005,13 +1005,11 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         };
 
         const bool forgetNow = riffForget.exchange(false, std::memory_order_acq_rel);
-        const bool stopNow = riffStop.exchange(false, std::memory_order_acq_rel);
         // Play-once: when the Sections form finishes, drop back to idle. Do not
         // keep a riff learned during the song, and do not fall into generative
         // auto-lock / follow-mode accompaniment. The next Play or Record arms
-        // the engine again. Stop (the record-riff mini-structure's end control)
-        // behaves identically: the loop is cancelled and the engine goes silent.
-        if (forgetNow || stopNow || playEndedThisBlock)
+        // the engine again. Forget cancels the riff loop the same way.
+        if (forgetNow || playEndedThisBlock)
         {
             abortRiffCapture();
             resetTransitionCycle();
@@ -1214,7 +1212,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // transition) so the engine never re-listens and re-locks onto a NEW riff;
         // only A-B-A-C-A alternates. The bass still leaves the riff during the
         // transition (see the bass routing below) so it moves with the drums, but
-        // the learner never unlocks and relocks. Changing A requires Stop + Record.
+        // the learner never unlocks and relocks. Changing A requires Forget + Record.
         phraseLearner.setHoldActive(grooveLockActive || riffLoopActive);
 
         // ── Riff-lock hold progress (UI): bar done / bars remaining ───────────

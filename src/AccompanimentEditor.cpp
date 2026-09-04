@@ -412,23 +412,13 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     };
     addAndMakeVisible(recordRiffButton);
 
-    forgetRiffButton.setTooltip("Clear the recorded or auto-learned riff and return to follow.");
+    forgetRiffButton.setTooltip("Clear the recorded riff and go silent. Record again to capture a new take.");
     forgetRiffButton.onClick = [this]
     {
         audioProcessorRef.requestRiffForget();
         recordRiffButton.setToggleState(false, juce::dontSendNotification);
     };
     addAndMakeVisible(forgetRiffButton);
-
-    // Stop: end the record-riff mini-structure loop (A-B-A-C-A) and return to
-    // idle/silent. Same outcome as Forget — the next Play or Record riff re-arms.
-    stopButton.setTooltip("Stop the record-riff loop and go silent. Change the riff by pressing Record riff again.");
-    stopButton.onClick = [this]
-    {
-        audioProcessorRef.requestRiffStop();
-        recordRiffButton.setToggleState(false, juce::dontSendNotification);
-    };
-    addAndMakeVisible(stopButton);
 
     auto& apvts = audioProcessorRef.getApvts();
     genreAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
@@ -556,7 +546,6 @@ void AccompanimentEditor::timerCallback()
         || audioProcessorRef.isGrooveLocked()
         || audioProcessorRef.isTransitionSectionActive();
     forgetRiffButton.setEnabled(riffLoopArmed);
-    stopButton.setEnabled(riffLoopArmed);
     if (audioProcessorRef.isRiffCapturing())
     {
         const int n = audioProcessorRef.getRiffCaptureNoteCount();
@@ -842,8 +831,6 @@ void AccompanimentEditor::resized()
     playButton.setBounds(titleRow.removeFromRight(92));
     titleRow.removeFromRight(6);
     recordRiffButton.setBounds(titleRow.removeFromRight(100));
-    titleRow.removeFromRight(6);
-    stopButton.setBounds(titleRow.removeFromRight(56));
     titleRow.removeFromRight(6);
     forgetRiffButton.setBounds(titleRow.removeFromRight(56));
     titleRow.removeFromRight(6);

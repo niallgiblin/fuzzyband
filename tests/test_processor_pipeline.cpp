@@ -1776,77 +1776,7 @@ TEST_CASE("Processor pipeline: play-mode bass follows the guitarist's root", "[i
     proc.releaseResources();
 }
 
-// ── Riff-loop determinism: Stop control + unified section-progress ─────────────
-
-TEST_CASE("Processor pipeline: Stop ends the riff-loop and returns to idle/silent", "[integration][pipeline][transition][lock][stop]")
-{
-    // The record-riff mini-structure loops A-B-A-C-A forever until the user
-    // presses Stop (or Forget). Stop must cancel the loop AND return the engine
-    // to a disarmed, silent idle — no groove lock, no transition, no learned riff.
-    const double sr = 48000.0;
-    const int block = 512;
-    AccompanimentProcessor proc;
-    proc.prepareToPlay(sr, block);
-    proc.pauseBackgroundInferenceForTests();
-
-    if (auto* p = proc.getApvts().getParameter("lockBars"))
-        p->setValueNotifyingHost(0.0f);  // 4-bar lock (8s)
-    if (auto* p = proc.getApvts().getParameter("transitionBars"))
-        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(4.0f));
-    if (auto* p = proc.getApvts().getParameter("transitionSections"))
-        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
-
-    auto feedTone = [&](float amp, double freq, int numBlocks, int& blockIdx) {
-        for (int b = 0; b < numBlocks; ++b)
-        {
-            juce::AudioBuffer<float> buf(2, block);
-            for (int ch = 0; ch < 2; ++ch)
-            {
-                float* p = buf.getWritePointer(ch);
-                const double t = static_cast<double>(blockIdx) * block / sr;
-                for (int i = 0; i < block; ++i)
-                {
-                    const double tt = t + static_cast<double>(i) / sr;
-                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
-                }
-            }
-            juce::MidiBuffer midi;
-            proc.processBlock(buf, midi);
-            proc.flushBackgroundInferenceForTests();
-            ++blockIdx;
-        }
-    };
-
-    int blockIdx = 0;
-    recordChugRiff(proc, sr, block, 65.406, blockIdx);   // C2 riff → lock
-    REQUIRE(proc.isGrooveLocked());
-    REQUIRE(proc.hasLearnedRiff());
-
-    // Feed past the 4-bar hold → transition engages (loop is mid-A-B).
-    feedTone(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
-    REQUIRE(proc.isTransitionSectionActive());
-
-    // Press Stop → the loop is cancelled on the next block, engine goes idle.
-    proc.requestRiffStop();
-    feedTone(0.05, 400.0, static_cast<int>(0.5 * sr / block), blockIdx);
-    REQUIRE_FALSE(proc.isGrooveLocked());
-    REQUIRE_FALSE(proc.isTransitionSectionActive());
-    REQUIRE_FALSE(proc.hasLearnedRiff());       // riff wiped, like Forget
-    REQUIRE_FALSE(proc.isRiffCapturing());
-    REQUIRE(proc.playActive.load(std::memory_order_acquire) == false);
-    REQUIRE(proc.getSectionPhase() == 0);        // Idle
-
-    // It stays idle/silent (does not re-arm or re-lock) while audio continues.
-    feedTone(0.05, 400.0, static_cast<int>(4.0 * sr / block), blockIdx);
-    REQUIRE_FALSE(proc.isGrooveLocked());
-    REQUIRE_FALSE(proc.isTransitionSectionActive());
-    REQUIRE_FALSE(proc.hasLearnedRiff());
-    REQUIRE(proc.getSectionPhase() == 0);
-
-    proc.releaseResources();
-}
-
-TEST_CASE("Processor pipeline: section-progress accessors track Play, Lock, and Transition", "[integration][pipeline][section-progress][stop]")
+TEST_CASE("Processor pipeline: section-progress accessors track Play, Lock, and Transition", "[integration][pipeline][section-progress]")
 {
     const double sr = 48000.0;
     const int block = 512;
@@ -1929,7 +1859,7 @@ TEST_CASE("Processor pipeline: deterministic riff loop never re-locks onto a NEW
 {
     // The mini-structure is scripted on the recorded riff (A). While it loops,
     // the engine must not re-lock onto a differently-pitched riff the guitarist
-    // plays in a transition — only A-B-A-C-A alternates. Change A via Stop+Record.
+    // plays in a transition — only A-B-A-C-A alternates. Change A via Forget + Record.
     const double sr = 48000.0;
     const int block = 512;
     AccompanimentProcessor proc;

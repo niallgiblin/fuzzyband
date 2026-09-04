@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.51] — Drop duplicate Stop; ASCII section status
+
+- **Stop button removed.** It did the same thing as Forget (wipe the riff, go idle)
+  and did not pause or resume. Forget is the one control that ends a take.
+- **Section status separators** use ASCII hyphens so the UI no longer shows `Â·`.
+
 ## [0.9.50] — Deterministic record-riff loop; unified section countdown; Stop
 
 The record-riff mini-structure is now a *scripted* loop, like Play mode, and the
