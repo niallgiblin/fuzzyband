@@ -786,6 +786,90 @@ TEST_CASE("Processor pipeline: two transition sections return to the riff betwee
     proc.releaseResources();
 }
 
+TEST_CASE("Processor pipeline: bass returns to the recorded riff after the transition (record mode)", "[integration][pipeline][transition][bass]")
+{
+    // Regression: in record mode the bass is note-for-note ONLY while the groove
+    // is locked on the recorded riff. After a transition (B) finishes, the bass
+    // must come back to the recorded riff (note 36 for the C2 chug) — not stay on
+    // the transition's section-harmony line and not go silent.
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);  // 4-bar lock (8s)
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(2.0f));  // 2 bars (4s)
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
+
+    // Feed a quiet non-riff signal, counting bass note-ons (ch 2) and the notes seen.
+    auto feedCount = [&](float amp, double freq, int numBlocks, int& blockIdx,
+                         int& bassOns, std::set<int>& notes) {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(blockIdx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            for (const auto meta : midi)
+            {
+                const auto msg = meta.getMessage();
+                if (msg.isNoteOn() && msg.getChannel() == 2)
+                {
+                    ++bassOns;
+                    notes.insert(msg.getNoteNumber());
+                }
+            }
+            ++blockIdx;
+        }
+    };
+
+    // Phase 1: record a C2 riff (deterministic lock).
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);
+    REQUIRE(proc.isGrooveLocked());
+
+    // Phase 2: while locked (A), the bass mirrors the recorded C2 riff (note 36).
+    int aOns = 0;
+    std::set<int> aNotes;
+    feedCount(0.05, 400.0, static_cast<int>(1.0 * sr / block), blockIdx, aOns, aNotes);
+    REQUIRE(aOns > 0);
+    REQUIRE(aNotes.count(36) > 0);
+
+    // Phase 3: expire the lock and play the transition through to its end.
+    int tOns = 0;
+    std::set<int> tNotes;
+    feedCount(0.05, 400.0, static_cast<int>(7.0 * sr / block), blockIdx, tOns, tNotes);
+    REQUIRE_FALSE(proc.isGrooveLocked());
+    if (proc.isTransitionSectionActive())
+        feedCount(0.05, 400.0, static_cast<int>(5.0 * sr / block), blockIdx, tOns, tNotes);
+    REQUIRE_FALSE(proc.isTransitionSectionActive());
+
+    // Phase 4: the bass must return to the recorded riff (note 36) — not stay on
+    // the transition's harmony note and not drop out.
+    REQUIRE(proc.isGrooveLocked());
+    int backOns = 0;
+    std::set<int> backNotes;
+    feedCount(0.05, 400.0, static_cast<int>(1.0 * sr / block), blockIdx, backOns, backNotes);
+    REQUIRE(backOns > 0);
+    REQUIRE(backNotes.count(36) > 0);
+
+    proc.releaseResources();
+}
+
 TEST_CASE("Processor pipeline: transition countdown updates live", "[integration][pipeline][transition]")
 {
     const double sr = 48000.0;
@@ -843,13 +927,12 @@ TEST_CASE("Processor pipeline: transition countdown updates live", "[integration
     proc.releaseResources();
 }
 
-TEST_CASE("Processor pipeline: riff re-appearing mid-transition cuts it short and re-locks", "[integration][pipeline][transition][lock]")
+TEST_CASE("Processor pipeline: riff replay mid-transition does NOT cut it short (deterministic loop)", "[integration][pipeline][transition][lock]")
 {
-    // A5.2 regression: if the guitarist keeps playing the recorded riff right
-    // up to the lock expiry, the transition must still ENGAGE (not be skipped)
-    // and then be cut short as soon as the riff genuinely re-appears mid-B,
-    // re-locking the riff (A) immediately. Before the fix the stale "riff fresh"
-    // check cancelled the transition on the very first block after expiry.
+    // Riff-loop determinism (A5.2 rework): once a riff is recorded, the loop is
+    // scripted — A-B-A-C-A. Replaying the recorded riff during a transition must
+    // NOT cut that contrast short (the old behaviour re-locked immediately);
+    // each transition always plays its full `transitionBars`, then returns to A.
     const double sr = 48000.0;
     const int block = 512;
     AccompanimentProcessor proc;
@@ -857,10 +940,9 @@ TEST_CASE("Processor pipeline: riff re-appearing mid-transition cuts it short an
     proc.pauseBackgroundInferenceForTests();
 
     if (auto* p = proc.getApvts().getParameter("lockBars"))
-        p->setValueNotifyingHost(0.0f);  // 4-bar lock hold (8s) for a short test
-    // Long transition (16 bars) so the cut fires well before it would complete.
+        p->setValueNotifyingHost(0.0f);  // 4-bar lock hold (8s)
     if (auto* p = proc.getApvts().getParameter("transitionBars"))
-        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(16.0f));
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(6.0f));  // 6 bars (12s)
     if (auto* p = proc.getApvts().getParameter("transitionSections"))
         p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
 
@@ -919,12 +1001,20 @@ TEST_CASE("Processor pipeline: riff re-appearing mid-transition cuts it short an
     feedTone(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
     REQUIRE_FALSE(proc.isGrooveLocked());
     REQUIRE(proc.isTransitionSectionActive());
+    const int barsTotal = proc.getTransitionBarsTotal();
 
-    // Phase 3: the riff re-appears (feed the chug again) → the transition is cut
-    // short and the groove re-locks, returning firmly to the riff (A).
-    feedChug(static_cast<int>(1.0 * sr / block), blockIdx);
+    // Phase 3: the riff re-appears mid-transition. Determinism: the contrast is
+    // NOT cut short — it keeps playing (transition stays active) even though the
+    // recorded riff is matched, until its full `transitionBars` elapse.
+    feedChug(static_cast<int>(3.0 * sr / block), blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+
+    // Phase 4: feed through the remaining transition → it completes and firmly
+    // returns to the locked riff (A).
+    feedTone(0.05, 400.0, static_cast<int>(14.0 * sr / block), blockIdx);
     REQUIRE_FALSE(proc.isTransitionSectionActive());
     REQUIRE(proc.isGrooveLocked());
+    REQUIRE(proc.getTransitionBarsTotal() == barsTotal);
 
     proc.releaseResources();
 }
@@ -1465,7 +1555,8 @@ TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section i
 TEST_CASE("Processor pipeline: play mode stops when the song form completes", "[integration][pipeline][play]")
 {
     // Play walks the Sections list once and returns to idle. It must not wrap
-    // back to INTRO. A second Play press restarts from the first section.
+    // back to INTRO, and it must not fall into generative listen/auto-lock
+    // accompaniment if the guitarist keeps playing after OUTRO.
     const double sr = 48000.0;
     const int block = 512;
     AccompanimentProcessor proc;
@@ -1475,23 +1566,61 @@ TEST_CASE("Processor pipeline: play mode stops when the song form completes", "[
     proc.setCustomSongForm("INTRO:2,OUTRO:2");
     proc.playActive.store(true, std::memory_order_release);
 
-    auto quiet = makeSineBuffer(block, 110.0, sr, 0.0005f);
+    auto feedChug = [&](int numBlocks)
+    {
+        int noteOns = 0;
+        for (int i = 0; i < numBlocks; ++i)
+        {
+            // Pulsed low-E so the phrase learner sees attacks during the song
+            // (the old bug: that leftover lock re-armed follow mode at OUTRO).
+            constexpr int cycle = 24;
+            const int pos = i % cycle;
+            const bool loud = (pos >= cycle - 4);
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(i) * block / sr;
+                for (int s = 0; s < block; ++s)
+                {
+                    const double tt = t + static_cast<double>(s) / sr;
+                    p[s] = static_cast<float>((loud ? 0.5 : 0.08)
+                                              * std::sin(2.0 * M_PI * 82.41 * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            for (const auto meta : midi)
+                if (meta.getMessage().isNoteOn())
+                    ++noteOns;
+        }
+        return noteOns;
+    };
+
     // 4-bar form at 120 BPM = 8s; feed 10s so we are past the end.
     const int n = static_cast<int>(10.0 * sr / block);
-    for (int i = 0; i < n; ++i)
-    {
-        juce::MidiBuffer midi;
-        proc.processBlock(quiet, midi);
-        proc.flushBackgroundInferenceForTests();
-    }
+    (void)feedChug(n);
 
     REQUIRE_FALSE(proc.playActive.load(std::memory_order_acquire));
+    REQUIRE(proc.getCurrentSectionName() == "Complete");
+    REQUIRE_FALSE(proc.isGrooveLocked());
+    REQUIRE_FALSE(proc.hasLearnedRiff());
+
+    // Keep "playing" after the form — must stay idle (no drums/bass note-ons,
+    // no auto-lock). All-notes-off on the first silent block is not a note-on.
+    const int after = feedChug(static_cast<int>(4.0 * sr / block));
+    REQUIRE(after == 0);
+    REQUIRE_FALSE(proc.playActive.load(std::memory_order_acquire));
+    REQUIRE_FALSE(proc.isGrooveLocked());
     REQUIRE(proc.getCurrentSectionName() == "Complete");
 
     proc.playActive.store(true, std::memory_order_release);
     {
+        juce::AudioBuffer<float> buf(2, block);
+        buf.clear();
         juce::MidiBuffer midi;
-        proc.processBlock(quiet, midi);
+        proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
     }
     REQUIRE(proc.playActive.load(std::memory_order_acquire));
@@ -1644,5 +1773,244 @@ TEST_CASE("Processor pipeline: play-mode bass follows the guitarist's root", "[i
     REQUIRE(bassNotes.count(36) > 0);
 
     proc.playActive.store(false, std::memory_order_release);
+    proc.releaseResources();
+}
+
+// ── Riff-loop determinism: Stop control + unified section-progress ─────────────
+
+TEST_CASE("Processor pipeline: Stop ends the riff-loop and returns to idle/silent", "[integration][pipeline][transition][lock][stop]")
+{
+    // The record-riff mini-structure loops A-B-A-C-A forever until the user
+    // presses Stop (or Forget). Stop must cancel the loop AND return the engine
+    // to a disarmed, silent idle — no groove lock, no transition, no learned riff.
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);  // 4-bar lock (8s)
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(4.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
+
+    auto feedTone = [&](float amp, double freq, int numBlocks, int& blockIdx) {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(blockIdx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++blockIdx;
+        }
+    };
+
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);   // C2 riff → lock
+    REQUIRE(proc.isGrooveLocked());
+    REQUIRE(proc.hasLearnedRiff());
+
+    // Feed past the 4-bar hold → transition engages (loop is mid-A-B).
+    feedTone(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+
+    // Press Stop → the loop is cancelled on the next block, engine goes idle.
+    proc.requestRiffStop();
+    feedTone(0.05, 400.0, static_cast<int>(0.5 * sr / block), blockIdx);
+    REQUIRE_FALSE(proc.isGrooveLocked());
+    REQUIRE_FALSE(proc.isTransitionSectionActive());
+    REQUIRE_FALSE(proc.hasLearnedRiff());       // riff wiped, like Forget
+    REQUIRE_FALSE(proc.isRiffCapturing());
+    REQUIRE(proc.playActive.load(std::memory_order_acquire) == false);
+    REQUIRE(proc.getSectionPhase() == 0);        // Idle
+
+    // It stays idle/silent (does not re-arm or re-lock) while audio continues.
+    feedTone(0.05, 400.0, static_cast<int>(4.0 * sr / block), blockIdx);
+    REQUIRE_FALSE(proc.isGrooveLocked());
+    REQUIRE_FALSE(proc.isTransitionSectionActive());
+    REQUIRE_FALSE(proc.hasLearnedRiff());
+    REQUIRE(proc.getSectionPhase() == 0);
+
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: section-progress accessors track Play, Lock, and Transition", "[integration][pipeline][section-progress][stop]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    auto feedTone = [&](float amp, double freq, int numBlocks, int& blockIdx) {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(blockIdx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++blockIdx;
+        }
+    };
+
+    int blockIdx = 0;
+
+    // ── Riff lock (A) phase (fresh state). ─────────────────────────────────
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);  // 4-bar lock
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(4.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
+
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);
+    REQUIRE(proc.isGrooveLocked());
+    REQUIRE(proc.getSectionPhase() == 2);        // Lock
+    REQUIRE(proc.getSectionBarsTotal() == 4);
+    REQUIRE(proc.getSectionBar() >= 1);
+    REQUIRE(proc.getSectionBar() <= 4);
+    REQUIRE(proc.getSectionBarsRemaining() == proc.getSectionBarsTotal() - proc.getSectionBar());
+    REQUIRE(proc.getSectionProgress() > 0.0f);
+
+    // ── Post-lock transition (B) phase. ─────────────────────────────────────
+    feedTone(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE(proc.getSectionPhase() == 3);        // Transition
+    REQUIRE(proc.getSectionBarsTotal() == 4);
+    REQUIRE(proc.getSectionBar() >= 1);
+    REQUIRE(proc.getSectionBar() <= 4);
+    REQUIRE(proc.getSectionBarsRemaining() == proc.getSectionBarsTotal() - proc.getSectionBar());
+    REQUIRE(proc.getSectionProgress() > 0.0f);
+
+    // ── Forget → the loop is cancelled, engine idle. ────────────────────────
+    proc.requestRiffForget();
+    feedTone(0.05, 400.0, static_cast<int>(0.5 * sr / block), blockIdx);
+    REQUIRE(proc.getSectionPhase() == 0);        // Idle
+
+    // ── Play mode: the section countdown reports the song form's bar progress. ──
+    proc.setCustomSongForm("VERSE:8");
+    proc.playActive.store(true, std::memory_order_release);
+    feedTone(0.05, 110.0, static_cast<int>(0.5 * sr / block), blockIdx);
+    REQUIRE(proc.getSectionPhase() == 1);        // Play
+    REQUIRE(proc.getSectionBarsTotal() == 8);
+    REQUIRE(proc.getSectionBar() >= 1);
+    REQUIRE(proc.getSectionBar() <= 8);
+    REQUIRE(proc.getSectionBarsRemaining() == proc.getSectionBarsTotal() - proc.getSectionBar());
+    REQUIRE(proc.getSectionProgress() > 0.0f);
+    REQUIRE(proc.getSectionProgress() <= 1.0f);
+    proc.playActive.store(false, std::memory_order_release);
+
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: deterministic riff loop never re-locks onto a NEW riff", "[integration][pipeline][transition][lock]")
+{
+    // The mini-structure is scripted on the recorded riff (A). While it loops,
+    // the engine must not re-lock onto a differently-pitched riff the guitarist
+    // plays in a transition — only A-B-A-C-A alternates. Change A via Stop+Record.
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);  // 4-bar lock
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(6.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(2.0f));
+
+    // Chug cycle at a chosen freq (recorded riff = C2 65.406; new riff = G2 98 Hz).
+    auto feedChugFreq = [&](double freq, int numBlocks, int& blockIdx) {
+        constexpr int cycle = 24;
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            const int pos = blockIdx % cycle;
+            const bool loud = (pos >= cycle - 4);
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(blockIdx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>((loud ? 0.5 : 0.08) * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++blockIdx;
+        }
+    };
+    auto feedTone = [&](float amp, double freq, int numBlocks, int& blockIdx) {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(blockIdx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++blockIdx;
+        }
+    };
+
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);   // lock A
+    REQUIRE(proc.isGrooveLocked());
+    REQUIRE(proc.getSectionPhase() == 2);
+
+    // Past the 4-bar hold → transition B engages.
+    feedTone(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE(proc.getSectionPhase() == 3);
+
+    // During B, the guitarist plays a NEW repeated riff (G2, 98 Hz). Determinism:
+    // the engine does NOT re-lock onto it, and the transition is NOT cut.
+    feedChugFreq(98.0, static_cast<int>(3.0 * sr / block), blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE_FALSE(proc.isGrooveLocked());
+
+    // Through the remaining transition → it finishes and returns to the SAME
+    // recorded riff (A). It never replaced A with the new G2 riff.
+    feedTone(0.05, 400.0, static_cast<int>(14.0 * sr / block), blockIdx);
+    REQUIRE_FALSE(proc.isTransitionSectionActive());
+    REQUIRE(proc.isGrooveLocked());
+    REQUIRE(proc.hasLearnedRiff());
+    REQUIRE(proc.getSectionPhase() == 2);
+
     proc.releaseResources();
 }

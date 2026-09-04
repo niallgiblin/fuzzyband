@@ -138,6 +138,20 @@ public:
     void setHoldActive(bool active) noexcept { holdActive_ = active; }
 
     /**
+     * @brief Rewind the learned riff to bar 1 beat 1 (phase 0) so a re-locked
+     *        groove re-enters on the downbeat instead of mid-riff.
+     *        No-op when not locked. Audio-thread safe.
+     */
+    void rewindRiffToDownbeat() noexcept
+    {
+        if (locked_)
+        {
+            playbackPhase_ = 0.0;
+            playbackStep_ = 0;
+        }
+    }
+
+    /**
      * @brief Release the groove-lock hold for a post-lock transition and stop
      *        the autonomous riff loop, so the bass leaves the old riff and
      *        follows the guitarist / the new section. The learned pattern is

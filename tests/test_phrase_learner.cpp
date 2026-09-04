@@ -506,6 +506,39 @@ TEST_CASE("PhraseLearner: grid capture with rests still loops at 4 bars", "[phra
     REQUIRE(learner.getPatternNote(0) == 40);
 }
 
+TEST_CASE("PhraseLearner: rewindRiffToDownbeat resets a held riff to bar 1", "[phrase][bass][lock]")
+{
+    // The riff-loop determinism change keeps a recorded riff held (looping
+    // silently) through a transition, so its internal phase keeps advancing. On
+    // re-engage we must rewind it to bar 1 beat 1 so the bass comes back in on
+    // the downbeat with the re-locked drums, not mid-riff.
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    learner.beginGridCapture();
+    for (int slot = 0; slot < PhraseLearner::kGridSlots; ++slot)
+    {
+        const double t0 = static_cast<double>(slot) * 0.25;
+        learner.stampGridRange(t0, t0 + 0.24, 0.2f, 36);
+    }
+    REQUIRE(learner.commitGridCapture());
+    REQUIRE(learner.isLocked());
+    REQUIRE(learner.getPlaybackPhase() == 0.0);
+
+    // Advance the loop clock ~2 beats (1s at 120 BPM) so the phase is mid-riff.
+    (void)learner.process(48000, 0.0f, 36.0f, 0.0f, 120.0f, 48000, 0);
+    REQUIRE(learner.getPlaybackPhase() > 1.0);
+
+    // Rewind to the downbeat.
+    learner.rewindRiffToDownbeat();
+    REQUIRE(learner.getPlaybackPhase() == 0.0);
+
+    // No-op when not locked — no crash, phase stays valid.
+    PhraseLearner idle;
+    idle.prepare(kSr);
+    idle.rewindRiffToDownbeat();
+    REQUIRE_FALSE(idle.isLocked());
+}
+
 TEST_CASE("PhraseLearner: empty grid capture fails closed", "[phrase][bass][capture][grid]")
 {
     PhraseLearner learner;

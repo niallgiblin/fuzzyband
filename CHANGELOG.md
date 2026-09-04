@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.50] — Deterministic record-riff loop; unified section countdown; Stop
+
+The record-riff mini-structure is now a *scripted* loop, like Play mode, and the
+UI shows how much of a section is left in every armed phase.
+
+- **The record-riff loop is fully deterministic (A-B-A-C-A) and never "listens".**
+  Once you record riff A, the engine loops `lockBars` of A → `transitionBars` of a
+  contrast B → A → a different contrast C → A → … forever on the SAME recorded
+  riff. Replaying the riff mid-transition no longer cuts that contrast short, and
+  the engine no longer re-listens and re-locks onto a NEW riff while the loop is
+  running. The learned riff is held through each transition (the bass still moves
+  with the drums to the contrast section's harmony in Play-mode style), so the
+  loop is predictable. To change A, press **Stop** (or Forget) then Record riff
+  again.
+- **Stop control.** A new Stop button ends the record-riff loop and returns the
+  engine to idle/silent (same outcome as Forget). It is enabled whenever a riff
+  loop is armed.
+- **Unified section countdown + progress bar** across Play, riff lock (A), and
+  transition (B/C): the status line reads e.g. `Section: VERSE · bar 3/8 ·
+  5 left`, and a bar-segment progress bar shows how far through the section you
+  are, so a change is easy to anticipate. The countdown is driven from the audio
+  thread via new `getSectionPhase/Bar/BarsTotal/BarsRemaining/Progress` accessors.
+- **Deterministic bass during the transition.** While the mini-structure plays a
+  contrast section, the bass is a scripted beat-grid/section-harmony line (like
+  Play mode) instead of a live mirror of the guitarist, so the loop does not
+  "respond" to new playing.
+
 ## [0.9.48] — Record-mode A-B-A-C-A; Play stops at the end of the form
 
 Two behaviour bugs in the armed modes:

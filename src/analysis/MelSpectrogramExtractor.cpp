@@ -124,12 +124,11 @@ bool MelSpectrogramExtractor::process(const float* audio, float* melOut) noexcep
 
     for (int start = 0; start + kFftSize <= audioLen; start += kHopSize)
     {
-        // Hann-window the input
+        // JUCE real-only FFT: first half is time-domain samples, second half is
+        // scratch. Output is interleaved complex (re, im) for bin 0 .. N/2.
         for (int i = 0; i < kFftSize; ++i)
-        {
-            fftScratch[static_cast<size_t>(i * 2)]     = audio[start + i] * window[static_cast<size_t>(i)];
-            fftScratch[static_cast<size_t>(i * 2 + 1)] = 0.0f;
-        }
+            fftScratch[static_cast<size_t>(i)] = audio[start + i] * window[static_cast<size_t>(i)];
+        std::fill(fftScratch.begin() + kFftSize, fftScratch.end(), 0.0f);
 
         fft->performRealOnlyForwardTransform(fftScratch.data(), true);
 

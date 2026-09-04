@@ -110,6 +110,10 @@ public:
     void requestRiffCaptureStop() noexcept { riffCaptureStop.store(true, std::memory_order_release); }
     /** @brief Clear the learned/recorded riff and return to follow (message thread). */
     void requestRiffForget() noexcept { riffForget.store(true, std::memory_order_release); }
+    /** @brief Stop the record-riff mini-structure loop and return to idle/silent
+     *  (message thread). Same outcome as Forget: the engine is disarmed and
+     *  silent until Play or Record riff is pressed again. */
+    void requestRiffStop() noexcept { riffStop.store(true, std::memory_order_release); }
     bool isRiffCapturing() const noexcept { return riffCaptureActive.load(std::memory_order_relaxed); }
     int getRiffCaptureNoteCount() const noexcept { return riffCaptureNoteCount.load(std::memory_order_relaxed); }
     /** @brief 0 = count-in (or waiting for bar), 1–4 = recording bar. */
@@ -131,6 +135,23 @@ public:
     int getTransitionBarsTotal() const noexcept { return transitionBarsTotal.load(std::memory_order_relaxed); }
     /** @brief How many distinct transition sections have been visited since the lock released (1 = B, 2 = C, …). */
     int getTransitionSectionNumber() const noexcept { return transitionSectionNumber.load(std::memory_order_relaxed); }
+
+    // ── Unified section-progress display (audio thread → UI) ──────────────────
+    // One consistent bar countdown across every armed phase — Play (song form),
+    // riff lock (A), and post-lock transition (B/C) — so the guitarist can always
+    // anticipate a change. Phase 0=idle, 1=Play, 2=Riff lock (A), 3=Transition (B/C).
+    enum class SectionPhase { Idle = 0, Play = 1, Lock = 2, Transition = 3 };
+
+    /** @brief Current armed section phase (0=idle, 1=Play, 2=Lock, 3=Transition). */
+    int getSectionPhase() const noexcept { return sectionPhase.load(std::memory_order_relaxed); }
+    /** @brief 1-based current bar within the active section (0 when idle). */
+    int getSectionBar() const noexcept { return sectionBar.load(std::memory_order_relaxed); }
+    /** @brief Total bars in the active section (0 when idle). */
+    int getSectionBarsTotal() const noexcept { return sectionBarsTotal.load(std::memory_order_relaxed); }
+    /** @brief Bars remaining before the active section changes (≥0). */
+    int getSectionBarsRemaining() const noexcept { return sectionBarsRemaining.load(std::memory_order_relaxed); }
+    /** @brief Fraction of the active section elapsed, [0,1] (0 when idle). */
+    float getSectionProgress() const noexcept { return sectionProgress.load(std::memory_order_relaxed); }
 
     // ── Display scope: rolling input waveform + playhead (DAW-style) ─────────
     // Ring of decimated input samples. Sized to hold at least a full bar at the
@@ -213,7 +234,7 @@ private:
     std::atomic<float> displayBpm{ 120.0f };
     std::atomic<int> displayStateIndex{ 0 };
     std::atomic<int> displayPatternIndex{ 0 };
-    std::atomic<int> displayStyle{ 4 };  // 0=palm_mute,1=open_chord,2=single_note,3=sustain,4=silence
+    std::atomic<int> displayStyle{ -1 };  // -1=not classified yet; 0=palm_mute..4=silence
     std::atomic<float> displayRms{ 0.0f };
     std::atomic<float> displayCentroid{ 0.0f };
     std::atomic<float> displayHfFlux{ 0.0f };
@@ -230,6 +251,7 @@ private:
     // state machine; the inference thread and UI read grooveLocked.
     std::atomic<bool> grooveLocked{ false };
     bool grooveLockActive = false;     // audio-thread lock state
+    bool riffLoopActive = false;       // record-riff mini-structure running (scripted A-B-A-C-A)
     int64_t grooveLockEndSample = -1;  // hold ends here (hostSampleTime frame)
     int64_t grooveLockStartSample = -1; // hold began here (hostSampleTime frame)
     int64_t lastRiffMatchSample = std::numeric_limits<int64_t>::min() / 2;  // last riff-grid attack
@@ -254,6 +276,7 @@ private:
     std::atomic<bool> riffCaptureStart{ false };   // message → audio: begin capture
     std::atomic<bool> riffCaptureStop{ false };    // message → audio: commit/cancel capture
     std::atomic<bool> riffForget{ false };         // message → audio: wipe learned riff
+    std::atomic<bool> riffStop{ false };           // message → audio: end the riff-loop, go idle
     std::atomic<bool> riffCaptureActive{ false };  // audio → UI
     std::atomic<int> riffCaptureNoteCount{ 0 };    // occupied 16th slots → UI
     std::atomic<int> riffCaptureBar{ 0 };          // 0=count-in, 1–4=recording bar
@@ -284,6 +307,13 @@ private:
     std::atomic<int> transitionBarsTotal{ 0 };
     std::atomic<int> transitionSectionNumber{ 0 };
 
+    // ── Unified section-progress display (audio thread → UI) ──────────────────
+    std::atomic<int> sectionPhase{ 0 };          // 0=idle,1=Play,2=Lock,3=Transition
+    std::atomic<int> sectionBar{ 0 };            // 1-based current bar
+    std::atomic<int> sectionBarsTotal{ 0 };
+    std::atomic<int> sectionBarsRemaining{ 0 };
+    std::atomic<float> sectionProgress{ 0.0f };  // elapsed fraction [0,1]
+
     // ── Pool phrasing & seeded rotation (variety): audio-thread state ────────
     // Each section instance seeds its pool rotation from the global bar count
     // at entry, holds each groove for barsPerGrooveForSection bars, and never
@@ -308,7 +338,7 @@ private:
     // raw value — so a phrase doesn't flip back and forth between articulations.
     int styleRaw = 4;            // last raw classification (4 = silence)
     int styleAgreeCount = 0;     // consecutive windows agreeing with styleRaw
-    int committedStyle = 4;      // smoothed style actually used downstream
+    int committedStyle = -1;     // smoothed style actually used downstream; -1 = none yet
     int styleHoldRemaining = 0;  // hold countdown after a commit
 
     // ── Display scope (audio thread → UI) ────────────────────────────────────

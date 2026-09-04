@@ -410,7 +410,32 @@ private:
     juce::Slider transitionBarsSlider;
     juce::Label transitionSectionsLabel{ {}, "TRANSITION SECTIONS" };
     juce::Slider transitionSectionsSlider;
-    juce::Label transitionStatusLabel;  // live "Section B · CHORUS · 5/8 bars"
+    juce::Label transitionStatusLabel;  // live "Section: VERSE - bar 3/8 - 5 left"
+
+    // Bar-segment progress for the active section (Play / riff lock / transition).
+    class SectionProgressComponent final : public juce::Component
+    {
+    public:
+        SectionProgressComponent() = default;
+
+        /** @brief Called from the editor timer with the latest phase progress. */
+        void setProgress(int bar, int total, int remaining, float /*fraction*/) noexcept
+        {
+            bar_ = bar;
+            total_ = juce::jmax(0, total);
+            remaining_ = juce::jmax(0, remaining);
+            repaint();
+        }
+
+        void paint(juce::Graphics&) override;
+
+    private:
+        int bar_ = 0;
+        int total_ = 0;
+        int remaining_ = 0;
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SectionProgressComponent)
+    };
+    SectionProgressComponent sectionProgressComponent;
 
     // DAW-style input scope: live waveform + playhead.
     class ScopeComponent final : public juce::Component
@@ -448,6 +473,7 @@ private:
     juce::TextButton playButton{ "PLAY" };
     juce::TextButton recordRiffButton{ "Record riff" };
     juce::TextButton forgetRiffButton{ "Forget" };
+    juce::TextButton stopButton{ "Stop" };
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> genreAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> swingAttachment;

@@ -420,6 +420,16 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     };
     addAndMakeVisible(forgetRiffButton);
 
+    // Stop: end the record-riff mini-structure loop (A-B-A-C-A) and return to
+    // idle/silent. Same outcome as Forget — the next Play or Record riff re-arms.
+    stopButton.setTooltip("Stop the record-riff loop and go silent. Change the riff by pressing Record riff again.");
+    stopButton.onClick = [this]
+    {
+        audioProcessorRef.requestRiffStop();
+        recordRiffButton.setToggleState(false, juce::dontSendNotification);
+    };
+    addAndMakeVisible(stopButton);
+
     auto& apvts = audioProcessorRef.getApvts();
     genreAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         apvts, "genre", genreCombo);
@@ -483,6 +493,10 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     scopeComponent.setOpaque(false);
     addAndMakeVisible(scopeComponent);
 
+    // ── Section-bar progress (Play / riff lock / transition) ────────────────
+    sectionProgressComponent.setOpaque(false);
+    addAndMakeVisible(sectionProgressComponent);
+
     for (auto* l : { &bpmLabel, &stateLabel, &patternLabel, &styleLabel })
     {
         l->setJustificationType(juce::Justification::centredLeft);
@@ -529,14 +543,20 @@ void AccompanimentEditor::timerCallback()
     patternLabel.setText("Pattern: " + juce::String(audioProcessorRef.getDisplayPatternIndex()), juce::dontSendNotification);
 
     static const char* kStyleNames[] = {"Palm Mute", "Open Chord", "Single Note", "Sustain", "Silence"};
-    const int si = juce::jlimit(0, 4, audioProcessorRef.getDisplayStyle());
-    styleLabel.setText("Style: " + juce::String(kStyleNames[si]), juce::dontSendNotification);
+    const int si = audioProcessorRef.getDisplayStyle();
+    if (si >= 0 && si <= 4)
+        styleLabel.setText("Style: " + juce::String(kStyleNames[si]), juce::dontSendNotification);
+    else
+        styleLabel.setText("Style: -", juce::dontSendNotification);
 
     // Generative groove-lock / riff-capture status.
     recordRiffButton.setToggleState(audioProcessorRef.isRiffCapturing(), juce::dontSendNotification);
-    forgetRiffButton.setEnabled(audioProcessorRef.hasLearnedRiff()
-                                || audioProcessorRef.isRiffCapturing()
-                                || audioProcessorRef.isGrooveLocked());
+    const bool riffLoopArmed = audioProcessorRef.hasLearnedRiff()
+        || audioProcessorRef.isRiffCapturing()
+        || audioProcessorRef.isGrooveLocked()
+        || audioProcessorRef.isTransitionSectionActive();
+    forgetRiffButton.setEnabled(riffLoopArmed);
+    stopButton.setEnabled(riffLoopArmed);
     if (audioProcessorRef.isRiffCapturing())
     {
         const int n = audioProcessorRef.getRiffCaptureNoteCount();
@@ -564,18 +584,8 @@ void AccompanimentEditor::timerCallback()
     else if (audioProcessorRef.isGrooveLocked() || audioProcessorRef.hasLearnedRiff())
     {
         recordRiffButton.setButtonText("Record riff");
-        // While a riff lock is held (a recorded take), show how far through the
-        // hold we are and how many bars remain before the transition fires.
-        const int cur = audioProcessorRef.getLockBarCurrent();
-        const int rem = audioProcessorRef.getLockBarsRemaining();
-        const int tot = audioProcessorRef.getLockBarsTotal();
-        if (cur > 0 && tot > 0)
-            grooveStatusLabel.setText("Groove: LOCKED - bar " + juce::String(cur) + "/"
-                                          + juce::String(tot) + " - " + juce::String(rem)
-                                          + " left before transition",
-                                      juce::dontSendNotification);
-        else
-            grooveStatusLabel.setText("Groove: LOCKED (riff)", juce::dontSendNotification);
+        // The bar countdown lives in the unified section display below.
+        grooveStatusLabel.setText("Groove: LOCKED (riff A)", juce::dontSendNotification);
         grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ade78));
     }
     else
@@ -591,32 +601,54 @@ void AccompanimentEditor::timerCallback()
         grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkMuted));
     }
 
-    // ── A5.2: live post-lock transition status ───────────────────────────────
-    if (audioProcessorRef.isTransitionSectionActive())
+    // ── Unified section countdown + progress (Play / riff lock / transition) ──
+    // One consistent "SECTION - bar X/Y - N left" read so the guitarist always
+    // knows when to anticipate a change, with a bar-segment progress bar under it.
+    const int phase = audioProcessorRef.getSectionPhase();
+    const int bar = audioProcessorRef.getSectionBar();
+    const int tot = audioProcessorRef.getSectionBarsTotal();
+    const int rem = audioProcessorRef.getSectionBarsRemaining();
+    const float frac = audioProcessorRef.getSectionProgress();
+
+    juce::String sectionText;
+    juce::Colour sectionColour;
+    if (phase == static_cast<int>(AccompanimentProcessor::SectionPhase::Play))
+    {
+        const juce::String sec = audioProcessorRef.getCurrentSectionName();
+        sectionText = (bar > 0 && tot > 0)
+            ? sec + " - bar " + juce::String(bar) + "/" + juce::String(tot)
+                + " - " + juce::String(rem) + " left"
+            : sec;
+        sectionColour = juce::Colour(FuzzybandPalette::moss);
+    }
+    else if (phase == static_cast<int>(AccompanimentProcessor::SectionPhase::Transition))
     {
         const char* secName = audioProcessorRef.getTransitionSectionName();
-        const int rem = audioProcessorRef.getTransitionBarsRemaining();
-        const int tot = audioProcessorRef.getTransitionBarsTotal();
         const int num = audioProcessorRef.getTransitionSectionNumber();
-        // Section letters: 1 → B, 2 → C, 3 → D, …
         const char letter = static_cast<char>('B' + juce::jmax(0, num - 1));
-        transitionStatusLabel.setText(
-            juce::String("Transition: ") + letter + " - " + juce::String(secName)
-                + " - " + juce::String(rem) + "/" + juce::String(tot) + " bars",
-            juce::dontSendNotification);
-        transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::amber));
+        sectionText = (bar > 0 && tot > 0)
+            ? juce::String("Transition ") + letter + " - " + juce::String(secName)
+                + " - bar " + juce::String(bar) + "/" + juce::String(tot)
+                + " - " + juce::String(rem) + " left"
+            : juce::String("Transition ") + letter + " - " + juce::String(secName);
+        sectionColour = juce::Colour(FuzzybandPalette::amber);
     }
-    else if (audioProcessorRef.playActive.load(std::memory_order_acquire))
+    else if (phase == static_cast<int>(AccompanimentProcessor::SectionPhase::Lock))
     {
-        transitionStatusLabel.setText("Section: " + audioProcessorRef.getCurrentSectionName(),
-                                      juce::dontSendNotification);
-        transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::moss));
+        sectionText = (bar > 0 && tot > 0)
+            ? juce::String("Riff A - bar ") + juce::String(bar) + "/"
+                + juce::String(tot) + " - " + juce::String(rem) + " left"
+            : juce::String("Riff A");
+        sectionColour = juce::Colour(0xff9ade78);
     }
     else
     {
-        transitionStatusLabel.setText("Section: -", juce::dontSendNotification);
-        transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkMuted));
+        sectionText = "-";
+        sectionColour = juce::Colour(FuzzybandPalette::inkMuted);
     }
+    transitionStatusLabel.setText("Section: " + sectionText, juce::dontSendNotification);
+    transitionStatusLabel.setColour(juce::Label::textColourId, sectionColour);
+    sectionProgressComponent.setProgress(bar, tot, rem, frac);
 
     // ── DAW-style scope: copy ring + playhead, repaint ───────────────────────
     std::array<float, AccompanimentProcessor::kScopeSize> scopeCopy{};
@@ -730,6 +762,45 @@ void AccompanimentEditor::ScopeComponent::paint(juce::Graphics& g)
     g.fillPath(cap);
 }
 
+void AccompanimentEditor::SectionProgressComponent::paint(juce::Graphics& g)
+{
+    const auto bounds = getLocalBounds().toFloat();
+
+    // Panel background — dark frosted panel matching the theme.
+    g.setColour(juce::Colour(0xd0081208));
+    g.fillRoundedRectangle(bounds, 5.0f);
+    g.setColour(juce::Colour(0x886a9a50));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 5.0f, 1.0f);
+
+    if (total_ <= 0)
+        return;
+
+    const float pad = 6.0f;
+    const float barTop = bounds.getY() + 5.0f;
+    const float barH = bounds.getHeight() - 10.0f;
+    const float trackW = bounds.getWidth() - pad * 2.0f;
+
+    // Bar-segment track: `total_` segments, each a thin rounded cell. Completed
+    // bars fill; the current bar is highlighted (bright); future bars are dim.
+    const float segGap = 3.0f;
+    const float segW = (trackW - segGap * static_cast<float>(total_ - 1))
+                     / static_cast<float>(total_);
+    for (int i = 0; i < total_; ++i)
+    {
+        const float x = bounds.getX() + pad + static_cast<float>(i) * (segW + segGap);
+        const juce::Rectangle<float> cell(x, barTop, segW, barH);
+        const bool done = (i + 1) < bar_;       // fully elapsed bars
+        const bool current = (i + 1) == bar_;   // the bar we are in
+        if (done)
+            g.setColour(juce::Colour(0xff8cc46a));          // moss (completed)
+        else if (current)
+            g.setColour(juce::Colour(0xffe0b06a));          // amber (now)
+        else
+            g.setColour(juce::Colour(0x553a6030));          // dim (ahead)
+        g.fillRoundedRectangle(cell, 2.0f);
+    }
+}
+
 void AccompanimentEditor::paint(juce::Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
@@ -768,13 +839,15 @@ void AccompanimentEditor::resized()
 
     // ── Title row (fixed) ────────────────────────────────────────────────────
     auto titleRow = r.removeFromTop(28);
-    playButton.setBounds(titleRow.removeFromRight(100));
+    playButton.setBounds(titleRow.removeFromRight(92));
     titleRow.removeFromRight(6);
-    recordRiffButton.setBounds(titleRow.removeFromRight(108));
+    recordRiffButton.setBounds(titleRow.removeFromRight(100));
     titleRow.removeFromRight(6);
-    forgetRiffButton.setBounds(titleRow.removeFromRight(64));
+    stopButton.setBounds(titleRow.removeFromRight(56));
     titleRow.removeFromRight(6);
-    versionLabel.setBounds(titleRow.removeFromRight(72));
+    forgetRiffButton.setBounds(titleRow.removeFromRight(56));
+    titleRow.removeFromRight(6);
+    versionLabel.setBounds(titleRow.removeFromRight(64));
     titleLabel.setBounds(titleRow);
     r.removeFromTop(8);
 
@@ -790,13 +863,14 @@ void AccompanimentEditor::resized()
     constexpr int sectionH = 18;    // "SECTIONS" heading
     constexpr int scopeH   = 110;   // waveform scope
     constexpr int diagH    = 24;    // status/readout line
+    constexpr int progH    = 18;    // section bar-segment progress
     constexpr int gap      = 12;    // breathing room between control groups
     constexpr int diagGap  = 14;    // panel → diagnostics
     constexpr int listMin  = 170;   // sections list never collapses below this
     constexpr int nGaps    = 7;     // gaps inside the panel
 
     const int panelFixed = headH + 5 * rowH + sectionH;                 // heading, 5 rows, sections head
-    const int diagFixed  = diagGap + 2 * diagH + scopeH + 4 * diagH;    // status x2, scope, 4 readouts
+    const int diagFixed  = diagGap + 2 * diagH + progH + scopeH + 4 * diagH;  // status x2, progress, scope, readouts
     const int other      = panelFixed + nGaps * gap + diagFixed;        // everything except the list
     const int availH     = r.getHeight();
 
@@ -849,6 +923,7 @@ void AccompanimentEditor::resized()
 
     grooveStatusLabel.setBounds(r.removeFromTop(diagH));
     transitionStatusLabel.setBounds(r.removeFromTop(diagH));
+    sectionProgressComponent.setBounds(r.removeFromTop(progH));
     scopeComponent.setBounds(r.removeFromTop(scopeH));
     r.removeFromTop(4);
     bpmLabel.setBounds(r.removeFromTop(diagH));
