@@ -2,7 +2,13 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
-## [0.9.51] — Drop duplicate Stop; ASCII section status
+## [0.9.53] — ASCII Style placeholder on first paint
+
+- **Style readout** shows `Style: -` from the first editor frame (before the
+  timer, and while style is still unclassified). The old Unicode dash rendered
+  as `â€`.
+
+## [0.9.52] — Drop duplicate Stop; ASCII section status
 
 - **Stop button removed.** It did the same thing as Forget (wipe the riff, go idle)
   and did not pause or resume. Forget is the one control that ends a take.

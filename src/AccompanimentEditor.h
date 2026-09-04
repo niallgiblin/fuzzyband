@@ -482,10 +482,10 @@ private:
 
     juce::Rectangle<int> userPolicyArea;
 
-    juce::Label bpmLabel;
-    juce::Label stateLabel;
-    juce::Label patternLabel;
-    juce::Label styleLabel;
+    juce::Label bpmLabel{ {}, "BPM: -" };
+    juce::Label stateLabel{ {}, "State: -" };
+    juce::Label patternLabel{ {}, "Pattern: -" };
+    juce::Label styleLabel{ {}, "Style: -" };
 
     FuzzybandLookAndFeel lookAndFeel;
 

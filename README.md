@@ -249,7 +249,8 @@ Training the mel-CNN and exporting `assets/metal_groove.onnx` is documented unde
 
 
 cd /Users/ng/Desktop/fuzzyband
-cmake --build build-onnx --target MetalAccompaniment -- -j8
+# MetalAccompaniment only compiles objects. VST3/AU are separate link targets.
+cmake --build build-onnx --target MetalAccompaniment_VST3 MetalAccompaniment_AU -- -j8
 
 # VST3
 rm -rf ~/Library/Audio/Plug-Ins/VST3/fuzzyband.vst3

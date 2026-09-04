@@ -499,6 +499,14 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(patternLabel);
     addAndMakeVisible(styleLabel);
 
+    // ASCII placeholders until the first timer tick (and if style is still
+    // unclassified). Do not use Unicode dashes — juce::String(const char*)
+    // treats them as Latin-1 and the UI shows "Style: â€".
+    bpmLabel.setText("BPM: -", juce::dontSendNotification);
+    stateLabel.setText("State: -", juce::dontSendNotification);
+    patternLabel.setText("Pattern: -", juce::dontSendNotification);
+    styleLabel.setText("Style: -", juce::dontSendNotification);
+
     // Restore a persisted custom form (the editable section list is the form);
     // otherwise default to the practice form INTRO → VERSE → CHORUS → VERSE →
     // CHORUS → OUTRO so Play plays that out of the box.
@@ -516,6 +524,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     setResizable(true, false);
     setResizeLimits(520, 900, 720, 1800);
     setSize(520, 1040);
+    timerCallback();
     startTimerHz(20);
 }
 
