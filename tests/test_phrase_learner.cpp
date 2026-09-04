@@ -318,6 +318,26 @@ TEST_CASE("PhraseLearner: silence resets learning state", "[phrase][bass]")
     REQUIRE(learner.getPatternLength() == 0);
 }
 
+TEST_CASE("PhraseLearner: hold keeps the locked riff through silence (no reset)", "[phrase][bass][lock]")
+{
+    // Regression: the silence reset used to wipe a LOCKED riff during a breath,
+    // so the bass fell back to live-mirroring the solo — "LOCKED RIFF DOESN'T
+    // PERSIST". With the groove lock holding, ~2 s of quiet must NOT reset the
+    // learner; the frozen riff keeps looping.
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    (void)feedUntilLocked(learner, 36.0f);
+    REQUIRE(learner.isLocked());
+    learner.setHoldActive(true);
+
+    // 210 blocks of silence (> kSilenceResetBlocks = 200) — held, so no reset.
+    for (int i = 0; i < 210; ++i)
+        learner.process(static_cast<int64_t>(i) * kBlock, 0.0001f, 40.0f, 0.0f, kBpm, kBlock);
+
+    REQUIRE(learner.isLocked());               // held → survives the silence
+    REQUIRE(learner.getPatternLength() >= 2);  // pattern intact
+}
+
 TEST_CASE("PhraseLearner: hold suppresses drift-unlock (bass keeps the riff)", "[phrase][bass][lock]")
 {
     PhraseLearner learner;

@@ -457,8 +457,8 @@ If you flub, press **Forget**, then Record again. Capture auto-locks when bar 4 
 | Recording         | Button `Rec n/4 - N` with N climbing                                                                             | pass   |           |       |
 | Lock              | `Groove: LOCKED - bar 1/4 - 3 left…`                                                                             | pass   |           |       |
 | Drums during lock | **Frozen** — same groove all 4 bars, does not chase your dynamics                                                | pass   |           |       |
-| Bass during lock  | Loops the captured rhythm **and pitches** (C then Eb then C). Changing chord mid-lock must **not** yank the bass | ☐      |           |       |
-| Style during take | Palm Mute                                                                                                        | ☐      |           |       |
+| Bass during lock  | Loops the captured rhythm **and pitches** (C then Eb then C). Changing chord mid-lock must **not** yank the bass | pass   |           |       |
+| Style during take | Palm Mute                                                                                                        | pass   |           |       |
 
 
 **B2. Mid-lock freedom (drums stay, bass stays)**
@@ -475,11 +475,11 @@ C |--8-10--------------|----------------|
 ```
 
 
-| Check | Expected                                     | Result | Notes |
-| ----- | -------------------------------------------- | ------ | ----- |
-| Drums | Unchanged for the rest of the lock           | ☐      |       |
-| Style | May flip to Single Note — drums still frozen | ☐      |       |
-| Bass  | Still the locked riff, not the solo notes    | ☐      |       |
+| Check | Expected                                     | Result                                                                        | Notes                                                                                      |
+| ----- | -------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Drums | Unchanged for the rest of the lock           | pass                                                                          | The 'LOCK' refers to the first time the riff gets accompanied? then this works as expected |
+| Style | May flip to Single Note — drums still frozen | Did not flip at all even when I changed style. Works outside record riff fine |                                                                                            |
+| Bass  | Still the locked riff, not the solo notes    | FAIL. LOCKED RIFF DOESN'T PERSIST                                             |                                                                                            |
 
 
 **B3. Lock expires → B, back to A, then C, back to A**

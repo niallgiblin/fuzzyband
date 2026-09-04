@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.54] — Locked riff persists through silence
+
+- **Fix (stress test B2): the locked riff no longer drops on a breath.** The
+  phrase learner's silence reset (a ~2 s quiet window) used to wipe the frozen
+  riff mid-lock, so the bass fell back to live-mirroring the guitarist's solo
+  instead of looping the recorded riff. The reset is now suppressed while the
+  groove lock is holding the riff (`holdActive_`), so the recorded riff keeps
+  looping through pauses until the lock releases. Follow/listen mode still
+  resets on silence as before.
+
 ## [0.9.53] — ASCII Style placeholder on first paint
 
 - **Style readout** shows `Style: -` from the first editor frame (before the

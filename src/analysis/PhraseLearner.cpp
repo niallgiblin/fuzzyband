@@ -370,8 +370,11 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
     result.velocity = 0.58f;
 
     // Silence detection — disabled during user capture so gaps between riff
-    // notes do not wipe the take.
-    if (rms < 0.003f && !userCapturing_)
+    // notes do not wipe the take, and disabled while the groove lock is holding
+    // the learned riff so a breath/pause mid-lock never drops the frozen riff
+    // (the "locked riff doesn't persist" bug). Outside a hold, ~2 s of quiet
+    // still resets the learner back to follow mode.
+    if (rms < 0.003f && !userCapturing_ && !holdActive_)
     {
         ++silentBlockCount_;
         if (silentBlockCount_ > kSilenceResetBlocks)
