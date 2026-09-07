@@ -140,7 +140,7 @@ repo already enforces via `training/scripts/dataset_split.py` (referenced in
 
 **Step 2 — (optional, for full conditioning) synth render → audio features.**
 The repo already synthesizes MIDI→audio for mel-CNN training
-(`data/raw_synth_backup`, `build_dadagp_articulation.py`, and the
+(`build_dadagp_articulation.py` and the
 `X_groove.npy` builder). Render each GMD take through the same synth, run the
 existing `MelSpectrogramExtractor`, then:
 - `style` ← `style_cnn.onnx` `style_logits` argmax,

@@ -17,22 +17,12 @@ Rule-path fallback is **retained** after default ONNX enablement. `OnnxInference
 
 ## Default build
 
-`MA_ENABLE_ONNX` is now **ON** by default (Phase 36 Plan 02 retrain + Plan 04 completion). Centroid proxy fixed, model retrained (macro-F1 0.6391), promoted to `assets/accompaniment_model.onnx` (2026-06-02). All six readiness criteria PASS.
-
-Build with ONNX:
-
-```bash
-cmake -B build-onnx -DCMAKE_BUILD_TYPE=Release \
-  -DONNXRUNTIME_ROOT="$ONNXRUNTIME_ROOT" \
-  -DMA_BUILD_TESTS=ON -DMA_BUILD_STANDALONE=OFF
-```
-
-To build without ONNX (rule-based only), override the default:
+`MA_ENABLE_ONNX` is **ON** by default. Configure the single local tree `build/`:
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
-  -DMA_ENABLE_ONNX=OFF \
-  -DMA_BUILD_TESTS=ON -DMA_BUILD_STANDALONE=OFF
+  -DONNXRUNTIME_ROOT="$ONNXRUNTIME_ROOT"
+cmake --build build --config Release --parallel
 ```
 
 ## Re-verify commands
@@ -51,12 +41,9 @@ python3 scripts/validate_onnx_contract.py \
   --structure assets/structure_model.onnx \
   --bass assets/bass_model.onnx
 
-# Latency (requires MA_ENABLE_ONNX=ON build)
-cmake -B build-onnx -DCMAKE_BUILD_TYPE=Release \
-  -DMA_ENABLE_ONNX=ON -DONNXRUNTIME_ROOT="$ONNXRUNTIME_ROOT" \
-  -DMA_BUILD_TESTS=ON -DMA_BUILD_STANDALONE=OFF
-cmake --build build-onnx --target MetalAccompanimentTests --parallel
-ctest --test-dir build-onnx -L onnx --output-on-failure
+# Latency
+cmake --build build --target MetalAccompanimentTests --parallel
+ctest --test-dir build -L onnx --output-on-failure
 ```
 
 ## Centroid proxy (Plan 36-02)

@@ -258,6 +258,5 @@ DadaGP is not bundled (accept its terms / request access first).
 ## References
 
 - `docs/TOKENIZATION.md` — field names and event types
-- `docs/DATASET_AUDIT.md` — dataset go/no-go and shortlist
 - `docs/ONNX_IO.md` — pattern selector **X** / **Y** export contract
 - `docs/BASS_ONNX_IO.md` — generative bass **X_bass** / **Y_bass** export contract

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.9.54)
+project(MetalAccompaniment VERSION 0.9.56)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -57,9 +57,9 @@ if(MA_BUILD_TESTS)
 endif()
 
 # ─────────────────────────────────────────────────────────────────
-# ONNX Runtime (Phase 2, opt-in)
-# Set ONNXRUNTIME_ROOT to your downloaded ONNX Runtime directory.
-# e.g. cmake -DMA_ENABLE_ONNX=ON -DONNXRUNTIME_ROOT=/opt/onnxruntime ..
+# ONNX Runtime (required; MA_ENABLE_ONNX defaults ON)
+# Set ONNXRUNTIME_ROOT to your ONNX Runtime directory.
+# e.g. cmake -B build -DONNXRUNTIME_ROOT=/opt/homebrew/opt/onnxruntime
 # ─────────────────────────────────────────────────────────────────
 
 if(MA_ENABLE_ONNX)

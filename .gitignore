@@ -1,13 +1,9 @@
-# Build
+# Build (canonical local tree is `build/`; never commit CMake output)
 build/
-build-onnx/
-build-tsan/
-build-phase10/
+build-*/
 cmake-build-*/
 out/
 compile_commands.json
-# CMake-built Catch2 binary (do not commit; rebuild with `cmake --build build-release --target MetalAccompanimentTests`)
-build-release/MetalAccompanimentTests
 
 # IDE
 .idea/
@@ -86,8 +82,9 @@ coverage/
 tmp/
 training/data/lakh/
 
-# Processed ML datasets (regenerate locally; X.npy exceeds GitHub 100MB limit)
+# Processed ML datasets (regenerate locally; tensors exceed GitHub 100MB limit)
 data/processed/*.npy
+data/processed/*.npz
 
 # DAW peak files + duplicate root-level sample wavs (canonical copies live under data/raw/)
 peaks/

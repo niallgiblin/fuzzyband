@@ -2,30 +2,26 @@
 
 JUCE 8 VST3/AU plugin (macOS primary). Stack details: `CLAUDE.md` and `ARCHITECTURE.md`.
 
+There is **one** local CMake tree: `build/`. ONNX Runtime, tests, and the standalone app are all on.
+
 ## Prerequisites (macOS)
 
 - CMake **3.22+**
 - Xcode Command Line Tools (or full Xcode)
 - Git
+- ONNX Runtime (`brew install onnxruntime`, or a release archive)
 
 ## Configure and build (matches CI)
 
-ONNX Runtime is the production inference path, so `MA_ENABLE_ONNX` defaults to **ON**
-and a configure requires `ONNXRUNTIME_ROOT` (see [ONNX Runtime](#onnx-runtime-optional)
-below for how to obtain it). From the repository root:
+`MA_ENABLE_ONNX` defaults to **ON**, so configure needs `ONNXRUNTIME_ROOT`. From the repository root:
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DMA_BUILD_STANDALONE=ON \
-  -DONNXRUNTIME_ROOT=/path/to/onnxruntime-osx-arm64-1.20.1
+cmake -B build -DCMAKE_BUILD_TYPE=Release \
+  -DONNXRUNTIME_ROOT=/opt/homebrew/opt/onnxruntime
 cmake --build build --config Release --parallel
 ```
 
-To build the rule-based path only (no ONNX Runtime download required), disable it explicitly:
-
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DMA_BUILD_STANDALONE=ON -DMA_ENABLE_ONNX=OFF
-cmake --build build --config Release --parallel
-```
+Install into the user plug-in folders with `./scripts/install-plugin-to-user.sh --build build --config Release`.
 
 ## Tests
 
@@ -49,41 +45,19 @@ On the audio thread, **`FeatureVector::policyIntensity`** is set from the **`int
 |--------------|---------|--------|
 | `MA_BUILD_TESTS` | ON | Unit tests (`MetalAccompanimentTests`) |
 | `MA_BUILD_STANDALONE` | ON | Standalone app target |
-| `MA_ENABLE_ONNX` | ON | ONNX Runtime (production inference path) — requires `ONNXRUNTIME_ROOT`; see [`docs/ONNX_READINESS.md`](docs/ONNX_READINESS.md) |
-| `ONNXRUNTIME_ROOT` | — | Required when `MA_ENABLE_ONNX=ON` (path to ONNX Runtime root with `include/` and `lib/`) |
+| `MA_ENABLE_ONNX` | ON | ONNX Runtime (production inference path) — requires `ONNXRUNTIME_ROOT` |
+| `MA_BUNDLE_GROOVE_RENDERER` | ON | Bundles `assets/groove_renderer.onnx` |
+| `ONNXRUNTIME_ROOT` | — | Path to ONNX Runtime root with `include/` and `lib/` |
 
-### ONNX Runtime (optional)
+### ONNX Runtime
 
-1. Download a **macOS** ONNX Runtime archive from [onnxruntime releases](https://github.com/microsoft/onnxruntime/releases) (CPU, matching your architecture).
-2. Extract and set `ONNXRUNTIME_ROOT` to the folder that contains `include/onnxruntime_cxx_api.h` and `lib/libonnxruntime.dylib`.
-3. The bundled models are `assets/accompaniment_model.onnx` (pattern selector), `assets/structure_model.onnx` (structure classifier), and `assets/bass_model.onnx` (generative bass). Regenerate with:
-   ```bash
-   training/.venv/bin/python scripts/build_minimal_pattern_onnx.py
-   training/.venv/bin/python scripts/build_minimal_structure_onnx.py
-   training/.venv/bin/python scripts/build_minimal_bass_onnx.py
-   ```
-   JUCE `BinaryData` exposes `accompaniment_model_onnx` / `structure_model_onnx` / `bass_model_onnx` (plus `*Size` length symbols) when `MA_ENABLE_ONNX=ON`.
-4. Configure and build:
+1. Install via Homebrew (`brew install onnxruntime`) or download a **macOS** CPU archive from [onnxruntime releases](https://github.com/microsoft/onnxruntime/releases).
+2. Set `ONNXRUNTIME_ROOT` to the folder that contains `include/onnxruntime_cxx_api.h` and `lib/libonnxruntime.dylib` (Homebrew: `/opt/homebrew/opt/onnxruntime`).
+3. Production models bundled via JUCE BinaryData: `assets/metal_groove.onnx`, `assets/style_cnn.onnx`, and `assets/groove_renderer.onnx`.
 
-```bash
-cmake -B build-onnx -DCMAKE_BUILD_TYPE=Release \
-  -DMA_ENABLE_ONNX=ON \
-  -DONNXRUNTIME_ROOT=/path/to/onnxruntime-osx-arm64-1.20.1
-cmake --build build-onnx --parallel
-```
+If `tryLoadModel()` fails at runtime, the processor falls back to `RuleBasedInference`.
 
-If `tryLoadModel()` fails at runtime, the processor falls back to `RuleBasedInference` (same as `MA_ENABLE_ONNX=OFF`).
-
-Before running **`scripts/build_minimal_*.py`**, training scripts, or export helpers, set up the **locked** Python environment described in **`training/README.md`** (venv + `pip install -r training/requirements.txt`). **`training/requirements.txt`** is the **single source of truth** for pinned prep/training Python dependencies.
-
-**Generative bass:** When the bass ONNX bundle is present, the inference thread performs an extra `Run` per drained feature (same cadence as other inference heads). If the bass ONNX fails to load or confidence gating rejects the proposal, playback uses **library pattern bass only** — see the **Generative bass** subsection in the **[README](README.md)** for performance and fallback behavior.
-
-Example with tests off:
-
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DMA_BUILD_TESTS=OFF
-cmake --build build --config Release --parallel
-```
+Before running training scripts or export helpers, set up the **locked** Python environment in **`training/README.md`** (venv + `pip install -r training/requirements.txt`).
 
 ## API documentation (optional)
 
@@ -97,19 +71,15 @@ HTML output is written to `docs/doxygen/html/` (ignored by git). You can also ru
 
 ## Linux (unsupported / best-effort)
 
-Not regularly validated on Linux. The quickest path is the rule-based build (no ONNX
-Runtime required):
+Not regularly validated on Linux. Use the same ONNX-on `build/` path as macOS: download a Linux ONNX Runtime archive and pass `ONNXRUNTIME_ROOT` (`lib/libonnxruntime.so`). Expect to install distro packages for ALSA, X11, and OpenGL as required by JUCE.
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DMA_BUILD_STANDALONE=ON -DMA_ENABLE_ONNX=OFF
+cmake -B build -DCMAKE_BUILD_TYPE=Release \
+  -DONNXRUNTIME_ROOT=/path/to/onnxruntime
 cmake --build build --config Release --parallel
 ctest --test-dir build --output-on-failure --config Release
 ```
 
-Expect to install distro packages for ALSA, X11, and OpenGL as required by JUCE. To build the
-production ONNX path, download a Linux ONNX Runtime archive and pass `ONNXRUNTIME_ROOT` (the
-`lib/libonnxruntime.so` variant).
-
 ## Windows
 
-Not part of the primary contributor workflow; see project roadmap for later milestones.
+Not part of the primary contributor workflow; the release workflow builds Windows x64 VST3 + Standalone.

@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.56] — Drums stay playing through a ringing note
+
+- **Fix (stress test follow mode): drums no longer drop out mid-note.** The
+  structure tagger's adaptive noise floor crept upward whenever RMS was below
+  0.06, so a held/decaying note dragged the floor up until it was classified
+  SILENT → pattern 0 → drums stopped. The tagger now takes a `noteRinging` flag
+  (a note was attacked within the last ~4 s): while a note is ringing it is not
+  declared SILENT and the floor does not creep up, so the drums keep playing
+  through a sustained note and only pause on genuine silence.
+
+## [0.9.55] — Style keeps classifying during lock/transition
+
+- **Fix (stress test B2 / Station D): the Style readout froze after the lock
+  riff.** The groove-lock early-return in the inference loop skipped the style
+  head (`classifyStyle` → `updateCommittedStyle`) along with pattern selection,
+  so the label stayed on the articulation captured at lock time and never
+  tracked later changes. Style classification now runs on every drain *before*
+  the lock/transition gate; only pattern selection is frozen.
+
 ## [0.9.54] — Locked riff persists through silence
 
 - **Fix (stress test B2): the locked riff no longer drops on a breath.** The

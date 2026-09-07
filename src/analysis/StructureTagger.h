@@ -28,8 +28,12 @@ class StructureTagger
 public:
     void prepare(double sampleRate);
 
-    /** @brief Advance state from latest RMS, centroid, HF flux, and peak RMS for this block. */
-    StructureState update(float rms, float centroid, float highFreqFlux, int numSamples, float peakRms = 0.0f);
+    /** @brief Advance state from latest RMS, centroid, HF flux, peak RMS, and a
+     *         note-ringing flag for this block. When @p noteRinging is true a note
+     *         was attacked recently and is still ringing out, so the block is not
+     *         treated as silence even if RMS is low — the drums keep playing
+     *         through a held/sustained note instead of dropping out mid-note. */
+    StructureState update(float rms, float centroid, float highFreqFlux, int numSamples, float peakRms = 0.0f, bool noteRinging = false);
 
     /** @brief Set sub-bass ratio for next update() call. High = palm-mute chug, low = clean arpeggio. */
     void setSubBassRatio(float ratio) { subBassRatio = ratio; }
@@ -40,7 +44,7 @@ public:
     float getNoiseFloorRms() const noexcept { return noiseFloorRms; }
 
 private:
-    StructureState computeDesiredState(float rms, float centroid, float peakRms, float silentFloor) const;
+    StructureState computeDesiredState(float rms, float centroid, float peakRms, float silentFloor, bool noteRinging) const;
     double holdRequiredForTransition(StructureState from, StructureState to) const noexcept;
 
     double sampleRate = 44100.0;

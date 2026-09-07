@@ -10,9 +10,12 @@ void StructureTagger::prepare(double newSampleRate)
     noiseFloorRms = kNoiseFloorInit;
 }
 
-StructureState StructureTagger::computeDesiredState(float rms, float /*centroid*/, float peakRms, float silentFloor) const
+StructureState StructureTagger::computeDesiredState(float rms, float /*centroid*/, float peakRms, float silentFloor, bool noteRinging) const
 {
-    if (rms < silentFloor)
+    // A note was attacked recently and is still ringing — never call it silence,
+    // even if its RMS has decayed below the silent floor (otherwise the drums
+    // drop out mid-note). Falls through to the SOFT/LOUD energy decision.
+    if (rms < silentFloor && !noteRinging)
         return StructureState::SILENT;
 
     // LOUD: palm-muted riffing or full-chord playing
@@ -57,7 +60,7 @@ double StructureTagger::holdRequiredForTransition(StructureState from, Structure
     return 0.0;
 }
 
-StructureState StructureTagger::update(float rms, float centroid, float /*highFreqFlux*/, int numSamples, float peakRms)
+StructureState StructureTagger::update(float rms, float centroid, float /*highFreqFlux*/, int numSamples, float peakRms, bool noteRinging)
 {
     const double blockSec = static_cast<double>(numSamples) / sampleRate;
 
@@ -69,7 +72,7 @@ StructureState StructureTagger::update(float rms, float centroid, float /*highFr
     // never misread as silence.
     if (rms < noiseFloorRms)
         noiseFloorRms = rms;
-    else if (rms < kSilentFloorCeiling)
+    else if (rms < kSilentFloorCeiling && !noteRinging)
         noiseFloorRms += kNoiseFloorRelease * (rms - noiseFloorRms);
     if (noiseFloorRms < 0.0f)
         noiseFloorRms = 0.0f;
@@ -78,7 +81,7 @@ StructureState StructureTagger::update(float rms, float centroid, float /*highFr
         std::min(noiseFloorRms * kSilentMargin, kSilentFloorCeiling));
     const float silentFloorWithPeak = std::max(silentFloor, peakRms * kSilentPeakRatio);
 
-    const StructureState desired = computeDesiredState(rms, centroid, peakRms, silentFloorWithPeak);
+    const StructureState desired = computeDesiredState(rms, centroid, peakRms, silentFloorWithPeak, noteRinging);
 
     if (desired == currentState)
     {

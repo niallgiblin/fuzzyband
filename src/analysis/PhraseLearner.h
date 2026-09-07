@@ -172,7 +172,10 @@ public:
      */
     bool hasRecentAttack(int64_t now, int64_t windowSamples) const noexcept
     {
-        return (now - lastAttackSample_) < windowSamples;
+        // `attackCount_ > 0` guards the pre-first-attack state: lastAttackSample_
+        // defaults to 0, so without it the very first few seconds would read as
+        // "recently attacked" even though nothing has been picked yet.
+        return attackCount_ > 0 && (now - lastAttackSample_) < windowSamples;
     }
 
     /**

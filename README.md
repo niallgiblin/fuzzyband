@@ -213,22 +213,20 @@ Live readouts: **BPM** (host tempo), **State**, **Pattern**, **Style**, **RMS**,
 
 ## Build (developers)
 
-Requirements: **CMake 3.22+**, C++20, **Git**, **ONNX Runtime** (`brew install onnxruntime`).
+Requirements: **CMake 3.22+**, C++20, **Git**, **ONNX Runtime** (`brew install onnxruntime`). There is one local tree: `build/`, with ONNX, tests, and standalone all on.
 
 ```bash
-cmake -B build-onnx -DCMAKE_BUILD_TYPE=Release -DMA_ENABLE_ONNX=ON \
+cmake -B build -DCMAKE_BUILD_TYPE=Release \
   -DONNXRUNTIME_ROOT=/opt/homebrew/opt/onnxruntime
-cmake --build build-onnx --parallel
+cmake --build build --parallel
 
-cp -R "build-onnx/MetalAccompaniment_artefacts/Release/VST3/fuzzyband.vst3" \
-  ~/Library/Audio/Plug-Ins/VST3/
+./scripts/install-plugin-to-user.sh --build build --config Release
 ```
 
-Artifacts: VST3 and AU under `build-onnx/MetalAccompaniment_artefacts/Release/`.
+Artifacts: VST3, AU, and Standalone under `build/MetalAccompaniment_artefacts/Release/`.
 
 ```bash
-build-onnx/MetalAccompanimentTests
-build-onnx/MetalAccompanimentIntegrationTests
+ctest --test-dir build --output-on-failure --config Release
 ```
 
 Training the mel-CNN and exporting `assets/metal_groove.onnx` is documented under `training/` and [`docs/DATA_STRATEGY.md`](docs/DATA_STRATEGY.md).
@@ -244,18 +242,4 @@ Training the mel-CNN and exporting `assets/metal_groove.onnx` is documented unde
 | [`docs/ONNX_IO.md`](docs/ONNX_IO.md) | ONNX tensor contracts |
 | [`docs/DATA_STRATEGY.md`](docs/DATA_STRATEGY.md) | Data / model improvement |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | Cut a release; how the download site populates itself |
-| [`.planning/ROADMAP.md`](.planning/ROADMAP.md) | Milestone tracking |
-
-
-
-cd /Users/ng/Desktop/fuzzyband
-# MetalAccompaniment only compiles objects. VST3/AU are separate link targets.
-cmake --build build-onnx --target MetalAccompaniment_VST3 MetalAccompaniment_AU -- -j8
-
-# VST3
-rm -rf ~/Library/Audio/Plug-Ins/VST3/fuzzyband.vst3
-cp -R build-onnx/MetalAccompaniment_artefacts/Release/VST3/fuzzyband.vst3 ~/Library/Audio/Plug-Ins/VST3/
-
-# AU (macOS)
-rm -rf ~/Library/Audio/Plug-Ins/Components/fuzzyband.component
-cp -R build-onnx/MetalAccompaniment_artefacts/Release/AU/fuzzyband.component ~/Library/Audio/Plug-Ins/Components/
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Source build and tests |

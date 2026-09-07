@@ -40,8 +40,7 @@ Output validation (vs the old tones):
 - **median 46% of energy above 3 kHz** (was ~0%) — real hats/cymbals/snare crack;
 - silence class kept near-silent (peak ~-51 dB), drums normalized to ~0 dBFS.
 
-The kit is already swapped into `data/raw/pattern_*`; the original synthetic takes are
-backed up under `data/raw_synth_backup/` (also recoverable with `git checkout -- data/raw`).
+The kit is already swapped into `data/raw/pattern_*`.
 
 ## Option A — render in a DAW (alternative, if you want a specific kit)
 

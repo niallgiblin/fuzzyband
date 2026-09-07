@@ -38,9 +38,7 @@ gitignored and regenerated locally.** Never commit `*.npy` — regenerate them.
   (`assets/metal_groove.onnx`). Indices 0-21 are the metal set, 22-27 the rock set.
 - **Provenance:** **project-generated** by `training/scripts/render_pattern_kit.py`
   (a procedural GM drum-kit render of the hand-authored `MidiPatternLibrary` patterns —
-  drums ch 10, mono 44.1 kHz / 24-bit, 3 takes each). The original takes, added with the
-  initial prototype, were *low-frequency synthesized tones* (~0% energy above 3 kHz) and
-  have been replaced; the old set is backed up at `data/raw_synth_backup/`. Groove
+  drums ch 10, mono 44.1 kHz / 24-bit, 3 takes each). Groove
   *definitions* are hand-authored C++; only feel/priors come from GMD/Lakh (below).
 - **License:** project-owned.
 

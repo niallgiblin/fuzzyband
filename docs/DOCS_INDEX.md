@@ -10,12 +10,6 @@ These docs are for learning the project from the inside out. They explain what e
 2. [Runtime Architecture](RUNTIME_ARCHITECTURE.md)  
    Use this when you want to understand how audio, MIDI, inference, UI, and capture threads connect.
 
-3. [C++ / JUCE / Audio Best Practices Audit](CPP_JUCE_AUDIO_BEST_PRACTICES_AUDIT.md)  
-   The quality and safety review: allocations, real-time thread rules, atomics, locking, ONNX, state save/restore, and user-experience risks.
-
-4. [Modularity and Bloat Review](MODULARITY_AND_BLOAT_REVIEW.md)  
-   A maintainability review of what is clean, what is getting too large, and what can be trimmed or modularized.
-
 ## Existing Specialist Docs
 
 - [End-user stress test](END_USER_STRESS_TEST.md): guitar-tab playthrough that tries to trigger every pattern, style, genre, section, and mode; includes a sighting log and an agent-review prompt.

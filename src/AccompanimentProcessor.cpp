@@ -266,6 +266,32 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
     {
         const double sr = cachedSampleRate.load(std::memory_order_acquire);
 
+        // ── Style classification (always-on) ────────────────────────────────
+        // classifyStyle() must keep running while the groove is locked or a
+        // transition is playing, otherwise the UI style readout freezes on the
+        // articulation captured at lock time and never tracks subsequent
+        // changes. Only PATTERN SELECTION is frozen by the lock below; the
+        // style perception head updates every drain.
+        MelWindow latestMel{};
+        bool gotMel = false;
+#if defined(MA_ENABLE_ONNX)
+        {
+            while (true)
+            {
+                MelWindow tmp{};
+                if (!melQueue.try_dequeue(tmp)) break;
+                latestMel = tmp;
+                gotMel = true;
+            }
+
+            if (gotMel)
+            {
+                if (auto* groove = dynamic_cast<MetalGrooveInference*>(inference.get()))
+                    updateCommittedStyle(groove->classifyStyle(latestMel.data.data()));
+            }
+        }
+#endif
+
         // Generative groove lock: while the riff is locked, the drum pattern is
         // frozen — no selection, no commits. Queues still drain upstream (stale
         // features are dropped), so nothing blocks or accumulates unbounded.
@@ -290,32 +316,19 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         int idx = 0;
         bool usedMelPath = false;
 #if defined(MA_ENABLE_ONNX)
+        if (gotMel)
         {
-            MelWindow latestMel{};
-            bool gotMel = false;
-            while (true)
+            if (auto* groove = dynamic_cast<MetalGrooveInference*>(inference.get()))
             {
-                MelWindow tmp{};
-                if (!melQueue.try_dequeue(tmp)) break;
-                latestMel = tmp;
-                gotMel = true;
-            }
-
-            if (gotMel)
-            {
-                if (auto* groove = dynamic_cast<MetalGrooveInference*>(inference.get()))
-                {
-                    // Seed variety by the current bar number so the preferred
-                    // groove stays dominant but the drums vary bar-to-bar (the
-                    // ML "alters slightly" the best fit).
-                    const double bpmSafe = latest.bpm > 0.0f ? latest.bpm : 120.0f;
-                    const double spbSeed = 4.0 * 60.0 / bpmSafe * sr;
-                    const int melSeed = (spbSeed > 0.0)
-                        ? static_cast<int>(latest.sampleTimestamp / spbSeed) : 0;
-                    idx = groove->selectPatternFromMel(latestMel.data.data(), excludeParam, melSeed);
-                    updateCommittedStyle(groove->classifyStyle(latestMel.data.data()));
-                    usedMelPath = true;
-                }
+                // Seed variety by the current bar number so the preferred
+                // groove stays dominant but the drums vary bar-to-bar (the
+                // ML "alters slightly" the best fit).
+                const double bpmSafe = latest.bpm > 0.0f ? latest.bpm : 120.0f;
+                const double spbSeed = 4.0 * 60.0 / bpmSafe * sr;
+                const int melSeed = (spbSeed > 0.0)
+                    ? static_cast<int>(latest.sampleTimestamp / spbSeed) : 0;
+                idx = groove->selectPatternFromMel(latestMel.data.data(), excludeParam, melSeed);
+                usedMelPath = true;
             }
         }
 #endif
@@ -581,7 +594,14 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const float hfFlux = energyAnalyser.getHighFreqFlux();
     const float subBassRatio = energyAnalyser.getSubBassRatio();
     structureTagger.setSubBassRatio(subBassRatio);
-    const StructureState st = structureTagger.update(rms, centroid, hfFlux, numSamples, energyAnalyser.getPeakRms());
+    // A note is "ringing" if the guitarist picked within the last ~4 s — the note
+    // is still sounding even though its RMS has decayed. Pass this so the
+    // structure tagger does not declare SILENT (and drop the drums) mid-note.
+    const int64_t noteHoldSamples = static_cast<int64_t>(
+        4.0 * cachedSampleRate.load(std::memory_order_relaxed));
+    const bool noteRinging = phraseLearner.hasRecentAttack(hostSampleTime, noteHoldSamples);
+    const StructureState st = structureTagger.update(
+        rms, centroid, hfFlux, numSamples, energyAnalyser.getPeakRms(), noteRinging);
 
     const bool digitalSilence = (rms < 1.0e-6f);
     const double sr = cachedSampleRate.load(std::memory_order_relaxed);

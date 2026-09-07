@@ -42,7 +42,7 @@ Confirmed from source, `src/midi/PatternPlayer.cpp` `process()`:
 3. **No dynamic contrast.** Verse patterns sit at ~108–115 velocity and chorus at ~118–125 (`MidiPatternLibrary.cpp`) — a near-inaudible 10–15 difference. Real rock has verse backbeat ~95–105 and chorus ~115–125, plus cymbal changes (closed hats → open/ride/crash). Contrast is what makes a song "breathe."
 4. **Pattern library is hard-coded and metal-only.** 22 patterns, all 4/4, GM kit, mostly one-bar loops, oriented to thrash/death idioms (blast, thrash, double-kick). Missing the rock vocabulary (shuffle/swing, 6/8, punk d-beat, half-time-in-loud, ballad). Fills (17–19) are selectable patterns, not contextual "3 bars groove + 1 bar fill" phrasing.
 5. **Selection, not generation.** `IInference` maps features → one index. The output can only ever be one of 22 canned loops; it cannot *make* a groove.
-6. **Rule-oracle circularity.** Training labels = `PatternRules::rulePatternForState()`. The ML model learns to imitate rules it can never exceed (`docs/SLUDGE_METAL_DOMAIN_AUDIT.md §4.4`). On live audio the model is additionally broken by a normalization mismatch (centroid std clamped to `1e-8`).
+6. **Rule-oracle circularity.** Training labels = `PatternRules::rulePatternForState()`. The ML model learns to imitate rules it can never exceed. On live audio the model is additionally broken by a normalization mismatch (centroid std clamped to `1e-8`).
 
 ### 1.3 Why datasets alone won't fix it
 
@@ -138,7 +138,7 @@ Keep the current plugin identity intact: preserve the name/bundle (`com.ng.Metal
 
 ### C1. Adopt E-GMD (Expanded Groove MIDI) — biggest drum-quality win
 
-- **What:** 444 h audio / ~43 h drums with **aligned drum MIDI**, human + synthesized performances. Your own `docs/DATASET_AUDIT.md` deferred it; for a *rock* drum model it is now the right primary source.
+- **What:** 444 h audio / ~43 h drums with **aligned drum MIDI**, human + synthesized performances. For a *rock* drum model it is now the right primary source.
 - **Use:** learn velocity hierarchy + microtiming statistics (feed A2), and train a drum "groove encoder" rather than the proxy-feature classifier.
 - **License:** verify on [E-GMD](https://magenta.withgoogle.com/datasets/e-gmd) / [Zenodo](https://zenodo.org/records/4300943). GMD itself is CC-BY 4.0.
 
@@ -204,11 +204,11 @@ Keep the current plugin identity intact: preserve the name/bundle (`com.ng.Metal
 ## 8. Risks & open questions
 
 1. **Dead-code cleanup scope:** `bass_model.onnx` and the old proxy pipeline (`build_dataset.py`, `train_gmd.py`) may be superseded by C5. Decide whether to retire or integrate before P2, to avoid two competing ML paths.
-2. **License diligence is on you:** this memo is a solo-dev gate, not counsel (same caveat as `docs/DATASET_AUDIT.md`).
+2. **License diligence is on you:** this memo is a solo-dev gate, not counsel.
 3. **Rebrand timing:** a bundle-ID/name change forces DAW re-scan and saved-session implications; coordinate with a minor version bump.
 4. **Parameterized-groove scope (A4.2):** largest single build; de-risk by prototyping one "generated" groove in a spike before committing the whole library to the new representation.
 5. **Human-label effort (C5):** 30–60 min of annotated playing is a real time cost but is the only way to break the rule-oracle circularity; it compounds in value across all future models.
 
 ---
 
-*Prepared from direct source review of `src/midi/MidiPatternLibrary.{h,cpp}`, `src/midi/PatternPlayer.{h,cpp}`, `src/inference/pattern_rules.h`, `src/AccompanimentProcessor.cpp`, `src/analysis/*`, and `docs/SLUDGE_METAL_DOMAIN_AUDIT.md` / `docs/DATASET_AUDIT.md`.*
+*Prepared from direct source review of `src/midi/MidiPatternLibrary.{h,cpp}`, `src/midi/PatternPlayer.{h,cpp}`, `src/inference/pattern_rules.h`, `src/AccompanimentProcessor.cpp`, and `src/analysis/*`.*

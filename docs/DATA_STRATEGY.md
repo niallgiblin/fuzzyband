@@ -1,7 +1,7 @@
 # Data Improvement Strategy — Metal Accompaniment
 
 **Status:** Planning memo (major plan). Supersedes the data-strategy portions of
-`docs/MUSICALITY_ROCK_PIVOT_PLAN.md` §5 (C1–C6) and `docs/HANDOFF_PLAN.md` §3.
+`docs/MUSICALITY_ROCK_PIVOT_PLAN.md` §5 (C1–C6).
 **Snapshot:** v0.9.14 (`CMakeLists.txt:4`).
 **Production model decision (confirmed):** the **22-class mel-CNN** (`assets/metal_groove.onnx`)
 is the single production inference path. The legacy scalar/oracle model
@@ -67,7 +67,7 @@ real-time engine, and build/repo hygiene).
 | 3 | **Broken validation / dead classes** — legacy val had 4/7 classes with zero examples; mel-CNN marks *everything* `split:"train"` (`build_mel_groove_dataset.py:216`), so reported ~0.96 F1 is train-on-train. | High | Phase 3.1 |
 | 4 | **Two parallel ML stacks** — mel-CNN (prod) + legacy scalar (fallback), plus orphaned `train_bass.py`/`train_structure.py`, unused `groove_embedding` output, randomly-initialized style head. | High (maintenance) | Phase 1 |
 | 5 | **Tiny corpus + unused captures** — ~60 WAVs / 302 MB feed 22 classes (2–3 clips/class, heavy augmentation ⇒ overfit); 13k+ `FeatureCapture` frames exist but are **evaluation-only**. | High (generalization) | Phase 3.3–3.5 + Phase 5 |
-| 6 | **Committed build artifacts** — `.gitignore` lists `build-onnx/` but 31 files are tracked, incl. a ~13 MB test binary and a standalone `.app`. | Medium | Phase 0.1 |
+| 6 | **Committed build artifacts** — extra CMake trees (`build-onnx/`, `build-release/`, …) had been tracked, including test binaries and a standalone `.app`. | Medium | resolved: single `build/` tree, `build*/` gitignored |
 | 7 | **Test integrity gaps** — `test_feature_capture.cpp` and `test_structure_shadow_integration.cpp` unregistered (latter has a broken `test/` vs `tests/` fixture path + missing WAV); golden fixtures untracked in git. | Medium (recurring) | Phase 0.2 + Phase 2.2–2.3 |
 | 8 | **Build-flag inconsistency** — `MA_ENABLE_ONNX` defaults **ON** (`CMakeLists.txt:16`) but CI (`ci.yml:35`) and `CONTRIBUTING.md:42` assume **OFF**. | Medium | Phase 0.3 |
 | 9 | **Doc drift** — version truth is 0.9.14; README says 0.9.7, HANDOFF 0.9.13, CLAUDE/AGENTS 0.3.1; ARCHITECTURE references removed `OnsetDetector`. | Low | Phase 0.4 |
@@ -80,9 +80,7 @@ real-time engine, and build/repo hygiene).
 Cheap, mechanical, high-leverage. Do first so all later work lands on a clean,
 reproducible base with quiet diffs.
 
-1. **Untrack committed build artifacts** (#6): `git rm -r --cached build-onnx/`. Files
-   remain on disk (still gitignored); they just leave the index. Kills artifact noise
-   in every diff.
+1. **Untrack committed build artifacts** (#6): keep a single local tree `build/`; do not commit CMake output (`build/` and `build-*/` are gitignored).
 2. **Commit the golden fixtures** (#7): `tests/fixtures/*.wav` + `tests/fixtures/README.md`
    provenance, so CI/clones can actually run the golden-signal tests.
 3. **Resolve the ONNX build-flag inconsistency** (#8): keep `MA_ENABLE_ONNX=ON`

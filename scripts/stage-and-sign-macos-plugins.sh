@@ -6,7 +6,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ART="${ART:-"$REPO_ROOT/build-onnx/MetalAccompaniment_artefacts/Release"}"
+ART="${ART:-"$REPO_ROOT/build/MetalAccompaniment_artefacts/Release"}"
 DEST="${1:?Usage: ART=/path/to/Release $0 /path/to/output-dir}"
 
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/metal-accompaniment-sign.XXXXXX")"

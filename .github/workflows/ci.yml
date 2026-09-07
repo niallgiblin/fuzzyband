@@ -63,6 +63,9 @@ jobs:
       - name: Run E2E tests
         run: ctest --test-dir build --output-on-failure --config Release -L e2e
 
+      - name: Run ONNX tests
+        run: ctest --test-dir build --output-on-failure --config Release -L onnx
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -93,17 +96,6 @@ jobs:
           python3 scripts/validate_onnx_contract.py --bass assets/bass_model.onnx
           python3 scripts/validate_onnx_contract.py --pattern assets/accompaniment_model.onnx
           echo "ONNX contract validation passed"
-
-      - name: ONNX-enabled build smoke (Phase 22)
-        run: |
-          cmake -B build-onnx -DCMAKE_BUILD_TYPE=Release \
-            -DMA_ENABLE_ONNX=ON \
-            -DONNXRUNTIME_ROOT="$ONNXRUNTIME_ROOT" \
-            -DMA_BUILD_TESTS=ON \
-            -DMA_BUILD_STANDALONE=OFF
-          cmake --build build-onnx --config Release --parallel
-          ctest --test-dir build-onnx --output-on-failure -L onnx
-          echo "ONNX-enabled build smoke passed"
 
       - name: Prep MIDI smoke (Phase 9)
         run: |

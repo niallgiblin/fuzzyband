@@ -64,7 +64,7 @@ The plugin ships **three trained ML models** in `assets/`:
 | `assets/bass_model.onnx` | `X_bass [1,7] → Y_bass float [1,32]` | `BassNet` — generates a 16-step piano-roll (pitch offset + velocity per sixteenth note, relative to detected guitar root). |
 | `assets/structure_model.onnx` | `X_struct [1,12,7] → Y_struct float [1,3]` | Structure classifier from 12-frame history of audio features. More nuanced than simple RMS threshold. |
 
-These models are only active when the plugin is built with `-DMA_ENABLE_ONNX=ON` and `ONNXRUNTIME_ROOT` points at an ONNX Runtime installation. **The default CMake build has `MA_ENABLE_ONNX=OFF`**, so unless you explicitly built with ONNX enabled, you are running the rule-based fallback.
+These models are only active when the plugin is built with ONNX Runtime (`MA_ENABLE_ONNX` defaults **ON**). `ONNXRUNTIME_ROOT` must point at an ONNX Runtime installation. If model load fails at runtime, the processor falls back to the rule-based path.
 
 To check which mode is active at runtime, look at `activeInferenceName` in the processor — the editor logs this value.
 
@@ -289,14 +289,15 @@ When the structure state transitions SOFT→LOUD or LOUD→SOFT, emit a crash cy
 ## Building and testing
 
 ```bash
-# Configure (from repo root)
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+# Configure (from repo root) — one tree, all features on
+cmake -B build -DCMAKE_BUILD_TYPE=Release \
+  -DONNXRUNTIME_ROOT=/opt/homebrew/opt/onnxruntime
 
 # Build
-cmake --build build --config Release
+cmake --build build --config Release --parallel
 
 # Run tests
-build/MetalAccompanimentTests/MetalAccompanimentTests
+ctest --test-dir build --output-on-failure --config Release
 
 # After any change, bump the patch version in CMakeLists.txt line 4 first
 # so you can confirm the correct build loaded in the DAW
