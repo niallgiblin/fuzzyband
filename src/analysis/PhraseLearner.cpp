@@ -453,10 +453,11 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
         following_ = matched;
         justMatched_ = matched;
 
-        // Live riff mirror: follow each attack while Learning (pre-lock).
+        // Live riff mirror: follow each attack while Learning (pre-lock), and
+        // also while Locked if mirrorWhileHeld_ is set (post-lock transition —
+        // the bass follows the new chords while the riff is retained for A).
         // Active capture is silent accompaniment — no bass until commit.
-        // Once Locked, the learned pattern alone drives the bass.
-        if (state_ != State::Locked && !userCapturing_ && !gridCapturing_)
+        if ((state_ != State::Locked || mirrorWhileHeld_) && !userCapturing_ && !gridCapturing_)
         {
             result.trigger = true;
             result.midiNote = attackBassNote;
@@ -510,8 +511,11 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
                 playbackStep_ = 0;  // Reset to first note
             }
 
-            // Check if we should trigger the next note
-            if (playbackStep_ < patternLen_)
+            // Check if we should trigger the next note. Suppressed while
+            // mirrorWhileHeld_ (post-lock transition): the phase still advances
+            // so the riff stays held for re-engagement, but the live mirror above
+            // drives the bass instead of the frozen pattern.
+            if (!mirrorWhileHeld_ && playbackStep_ < patternLen_)
             {
                 const double noteOffset = pattern_[playbackStep_].beatOffset;
 

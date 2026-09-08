@@ -138,6 +138,14 @@ public:
     void setHoldActive(bool active) noexcept { holdActive_ = active; }
 
     /**
+     * @brief While true, a held (Locked) learner mirrors the guitarist's live
+     *        attacks instead of playing back the frozen pattern. Used during a
+     *        post-lock transition so the bass follows the new chords while the
+     *        learned riff is still retained (held) for the A re-engagement.
+     */
+    void setMirrorWhileHeld(bool active) noexcept { mirrorWhileHeld_ = active; }
+
+    /**
      * @brief Rewind the learned riff to bar 1 beat 1 (phase 0) so a re-locked
      *        groove re-enters on the downbeat instead of mid-riff.
      *        No-op when not locked. Audio-thread safe.
@@ -298,6 +306,7 @@ private:
     std::array<GridSlot, kGridSlots> gridSlots_{};
     int gridOccupied_ = 0;
     bool holdActive_ = false;       // Suppresses drift-unlock (bass keeps the riff)
+    bool mirrorWhileHeld_ = false;  // Mirror live attacks even while Locked (post-lock transition)
     bool following_ = false;        // Last attack matched the learned riff's grid
     bool justMatched_ = false;      // Edge: matched on the current block
 

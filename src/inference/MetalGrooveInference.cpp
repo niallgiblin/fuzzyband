@@ -326,7 +326,7 @@ int MetalGrooveInference::selectPatternFromMel(const float* melData, int exclude
         // drums vary bar-to-bar while staying stylistically consistent (the ML
         // "alters slightly"). Temperature scales how tightly we stick to the best.
         constexpr int K = 3;
-        constexpr float kTemp = 9.0f;   // higher = stick closer to the best fit
+        constexpr float kTemp = 14.0f;  // higher = stick closer to the best fit
         std::array<int, K> topIdx{};
         std::array<float, K> topSim{};
         std::array<float, K> weight{};

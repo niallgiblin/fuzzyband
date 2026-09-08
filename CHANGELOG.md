@@ -2,6 +2,48 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.60] — One transition section stays one contrast
+
+- **Record riff with TRANSITION SECTIONS = 1 no longer walks CHORUS then SOLO.**
+  Each contrast slot (B, C, …) is pinned to the groove chosen on first visit, so
+  1 is a stable A-B-A-B and 2 is A-B-A-C-A with the same B when it wraps.
+- **Status line is letter-only.** `Section: Transition - bar 1/8 - 7 left` when
+  there is one contrast; `Section: Transition B - …` when there are several.
+  Play-mode names (CHORUS, SOLO) no longer appear on the Record-riff transition.
+
+## [0.9.59] — Bass mirrors the riff; Play count-in; transition bass follows
+
+- **Bass now mirrors the guitarist's pitch class directly** (no section-harmony
+  snap) and is **quantized to the nearest 16th**, so it lands on the grid with
+  the drums instead of ~one RMS-window behind the pick.
+- **Play mode has a 1-bar click count-in** (kick on 1, stick on 2/3/4) before
+  the form starts, mirroring Record-riff. Pressing PLAY off mid-count cancels it.
+- **Transition sections no longer drop the bass into a detached beat-grid.**
+  `PhraseLearner::setMirrorWhileHeld` keeps the learned riff held (for the A
+  return) while the bass follows the guitarist's live attacks through B/C, with
+  the beat-grid section line as the fallback when you stop picking.
+- **Record-riff A re-entry is decisive**: on the transition→A block the stale
+  mid-riff note is replaced by the downbeat note at full velocity (0.75) instead
+  of a quiet one-block gap.
+
+## [0.9.58] — Easier LOUD detection
+
+- **LOUD now triggers at a lower energy** (`kLoudRmsFloor` 0.30 → 0.20,
+  `kLoudRms` 0.60 → 0.45, `kLoudPeakRatio` 0.50 → 0.40) so moderate strumming
+  reaches LOUD instead of hanging in SOFT — no more playing "really hard" just
+  to lift out of verse energy.
+
+## [0.9.57] — Sticky drum groove (style still steers, changes less often)
+
+- **Follow-mode drums hold a groove for a full 4-bar phrase** (was 2 bars) and
+  only switch at phrase boundaries (or on a Next-pattern rejection), instead of
+  re-listening and re-picking every bar. Removed the two jumpy change triggers —
+  the RMS-delta `transitionEvent` and the 4-bar `autoChangeReady` timer.
+- **Style/articulation steering is kept**, but now applies at phrase boundaries:
+  chug/open/single/sustain still re-route the groove family, just without the
+  bar-by-bar churn. The groove-variety softmax is tightened (`kTemp` 9 → 14) so
+  the best-fit groove stays dominant while still varying.
+
 ## [0.9.56] — Drums stay playing through a ringing note
 
 - **Fix (stress test follow mode): drums no longer drop out mid-note.** The

@@ -612,19 +612,33 @@ inline float sectionPoolPopularity(const char* sectionName, int genreId) noexcep
  *
  * The locked riff's pattern maps to a *family* (VERSE/CHORUS/BREAKDOWN/…). The
  * next section must be a **contrast** — never the same family as the riff, and
- * not the section that was just played (so A→B→A→C cycles don't repeat B).
+ * not any already-assigned contrast slot (so A→B→A→C keeps B and C distinct).
  * Among candidates, the most data-derived popular pool for the genre wins
  * (Lakh priors, C2). Deterministic, no allocation, audio-thread safe.
  *
  * @param lockedPatternIndex the pattern that was frozen by the lock
  * @param genreId            genre preset id (for priors + genre pools)
- * @param avoidSection       section to avoid ("", or a section name to skip)
+ * @param avoidSections      names already used by earlier contrast slots
+ * @param avoidCount         number of entries in @p avoidSections
  * @return the chosen TransitionSection (name + ordered pool)
  */
 inline TransitionSection pickNextSectionAfterLock(int lockedPatternIndex, int genreId,
-                                                  const char* avoidSection) noexcept
+                                                  const char* const* avoidSections, int avoidCount) noexcept
 {
     const char* family = sectionFamilyOfPattern(lockedPatternIndex, genreId);
+
+    auto isAvoided = [avoidSections, avoidCount](const char* name) noexcept -> bool
+    {
+        if (name == nullptr || avoidSections == nullptr)
+            return false;
+        for (int i = 0; i < avoidCount; ++i)
+        {
+            const char* a = avoidSections[i];
+            if (a != nullptr && a[0] != '\0' && std::strcmp(name, a) == 0)
+                return true;
+        }
+        return false;
+    };
 
     // Contrast ladder: families ordered by musical energy, skipping the riff's
     // own family. We score candidates by Lakh popularity and pick the winner.
@@ -636,9 +650,8 @@ inline TransitionSection pickNextSectionAfterLock(int lockedPatternIndex, int ge
     {
         if (std::strcmp(name, family) == 0)
             continue;                       // never repeat the riff's own feel
-        if (avoidSection != nullptr && avoidSection[0] != '\0'
-            && std::strcmp(name, avoidSection) == 0)
-            continue;                       // never immediately repeat the last section
+        if (isAvoided(name))
+            continue;                       // never reuse an earlier contrast slot
 
         const float score = sectionPoolPopularity(name, genreId);
         if (score > bestScore)
@@ -667,6 +680,14 @@ inline TransitionSection pickNextSectionAfterLock(int lockedPatternIndex, int ge
     ts.name = best;
     ts.pool = orderedSectionPatternPoolForGenre(best, genreId);
     return ts;
+}
+
+inline TransitionSection pickNextSectionAfterLock(int lockedPatternIndex, int genreId,
+                                                  const char* avoidSection) noexcept
+{
+    const char* avoids[1] { avoidSection };
+    const int n = (avoidSection != nullptr && avoidSection[0] != '\0') ? 1 : 0;
+    return pickNextSectionAfterLock(lockedPatternIndex, genreId, avoids, n);
 }
 
 } // namespace PatternRules

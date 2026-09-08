@@ -286,8 +286,10 @@ private:
     // (pickNextSectionAfterLock) for `transitionBars` bars, then ALWAYS
     // re-engages the riff (A). `transitionSections` is how many distinct
     // contrasts to visit across successive lock cycles — A → B → A → C → A
-    // when set to 2 — not a chain of B → C without returning to A. The
-    // section number counts B, C, … so the UI can show which contrast we are in.
+    // when set to 2 — not a chain of B → C without returning to A. Each
+    // slot (B, C, …) is pinned to one groove family so 1 = A-B-A-B (same B),
+    // not a new CHORUS/SOLO every time. The section number counts B, C, … so
+    // the UI can show which contrast we are in.
     enum class PostLockPhase { Idle, TransitionHold };
     PostLockPhase postLockPhase = PostLockPhase::Idle;
     int64_t transitionEndSample = -1;       // hostSampleTime when the hold ends
@@ -295,6 +297,9 @@ private:
     PatternRules::SectionPatternPool transitionPool{};  // patterns to rotate during hold
     const char* transitionSectionNameStr = "VERSE";
     int transitionSectionNumberLocal = 0;   // audio-thread section counter
+    static constexpr int kMaxTransitionSlots = 4;
+    const char* transitionSlotNames[kMaxTransitionSlots] {};  // pinned family per B/C/D/E
+    bool transitionSlotPinned[kMaxTransitionSlots] {};
     int transitionBarsTotalLocal = 0;       // hold length in bars (from APVTS)
     std::atomic<bool> transitionSectionActive{ false };
     std::atomic<const char*> transitionSectionName{ "VERSE" };
@@ -317,6 +322,11 @@ private:
     int lastSectionIndex = -1;      // section we last seeded for
     int sectionEntryBar = 0;        // global bar count at current section entry
     bool wasPlayOn = false;         // play-start edge detection (re-seed)
+    // Play-mode count-in: 1 bar of click (kick 1, stick 2/3/4) before the form
+    // starts, mirroring the Record-riff count-in.
+    bool playCountInActive = false;
+    bool playCountInWaitingBar = false;
+    double playCountInStartBeat = 0.0;
     int lastSeenBarsElapsed = -1;   // loop/restart edge detection (re-seed on wrap)
     int lastPlayedPoolPattern = -1; // immediate-repeat exclusion (play + post-lock)
     int lastRotationSlot = -1;      // phrase slot the rotation was last computed for

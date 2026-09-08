@@ -467,7 +467,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     transitionSectionsSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 18);
     transitionSectionsSlider.setRange(1.0, 4.0, 1.0);
     transitionSectionsSlider.setDoubleClickReturnValue(true, 2.0);
-    transitionSectionsSlider.setTooltip("How many distinct contrast sections to visit. Each one returns to the locked riff (A) before the next: 2 = A-B-A-C-A, not A-B-C-A.");
+    transitionSectionsSlider.setTooltip("How many distinct contrast sections to visit. Each returns to the locked riff (A) first, and each slot keeps the same groove every cycle: 1 = A-B-A-B, 2 = A-B-A-C-A.");
     transitionSectionsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "transitionSections", transitionSectionsSlider);
     addAndMakeVisible(transitionSectionsLabel);
@@ -621,14 +621,20 @@ void AccompanimentEditor::timerCallback()
     }
     else if (phase == static_cast<int>(AccompanimentProcessor::SectionPhase::Transition))
     {
-        const char* secName = audioProcessorRef.getTransitionSectionName();
         const int num = audioProcessorRef.getTransitionSectionNumber();
-        const char letter = static_cast<char>('B' + juce::jmax(0, num - 1));
+        int maxSections = 2;
+        if (auto* raw = audioProcessorRef.getApvts().getRawParameterValue("transitionSections"))
+            maxSections = juce::jlimit(1, 4, juce::roundToInt(raw->load()));
+        juce::String tag = "Transition";
+        if (maxSections > 1)
+        {
+            const char letter = static_cast<char>('B' + juce::jmax(0, num - 1));
+            tag += juce::String(" ") + letter;
+        }
         sectionText = (bar > 0 && tot > 0)
-            ? juce::String("Transition ") + letter + " - " + juce::String(secName)
-                + " - bar " + juce::String(bar) + "/" + juce::String(tot)
+            ? tag + " - bar " + juce::String(bar) + "/" + juce::String(tot)
                 + " - " + juce::String(rem) + " left"
-            : juce::String("Transition ") + letter + " - " + juce::String(secName);
+            : tag;
         sectionColour = juce::Colour(FuzzybandPalette::amber);
     }
     else if (phase == static_cast<int>(AccompanimentProcessor::SectionPhase::Lock))

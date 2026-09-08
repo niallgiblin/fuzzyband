@@ -36,11 +36,7 @@ Every riff is 1–4 bars. Loop it. Do not write a song. The point is to poke the
 
 ---
 
-
-
 ## 1. Setup (do this once)
-
-
 
 ### 1.1 DAW graph (required)
 
@@ -57,30 +53,24 @@ Guitar DI ──► Fuzzyband (this plugin) ──► (optional) dry monitor / m
 - Click during Record riff: kick 36 on beat 1, sidestick 37 on 2/3/4. If your kit has no 37, you will still hear the 1.
 - Plugin **Output Gain** only scales the guitar passthrough, not MIDI. Set drums/bass levels on those tracks.
 
-
-
 ### 1.2 Transport
 
 - Start the **DAW transport**. Tempo comes from the host playhead. If the host has no tempo, the plugin falls back to its internal BPM parameter (default 120).
 - Buffer: 256 samples if you can. This is the production target.
 - Confirm the UI **BPM:** readout matches the DAW tempo (±1).
 
-
-
 ### 1.3 Test sliders (speed-run values)
 
 Set these **before** Station A so lock/transition cycles are short enough to finish:
 
-
-| Control             | Speed-run                              | Why                                                                                                               |
-| ------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Genre               | start **Metal**, then sweep all **13** | Pools differ Rock-family vs Metal-family; each preset also changes velocity, ghosts, swing default, and BPM range |
-| Swing               | 0.00                                   | Isolate groove; Station G turns it up                                                                             |
-| LOCK (BARS)         | **4**                                  | Minimum. Default 16 is too slow for a full sweep                                                                  |
-| TRANSITION (BARS)   | **4**                                  | Minimum is 2; 4 bars is enough to hear a section                                                                  |
-| TRANSITION SECTIONS | **2**                                  | A → B → **A** → C → A (each contrast returns to the riff; **not** A-B-C-A)                                        |
-| Sections list       | see 1.4                                | Default form is missing BREAKDOWN and SOLO                                                                        |
-
+| Control             | Speed-run                                         | Why                                                                                                               |
+| ------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Genre               | start**Metal**, then sweep all **13** | Pools differ Rock-family vs Metal-family; each preset also changes velocity, ghosts, swing default, and BPM range |
+| Swing               | 0.00                                              | Isolate groove; Station G turns it up                                                                             |
+| LOCK (BARS)         | **4**                                       | Minimum. Default 16 is too slow for a full sweep                                                                  |
+| TRANSITION (BARS)   | **4**                                       | Minimum is 2; 4 bars is enough to hear a section                                                                  |
+| TRANSITION SECTIONS | **2**                                       | A → B →**A** → C → A (each contrast returns to the riff; **not** A-B-C-A)                         |
+| Sections list       | see 1.4                                           | Default form is missing BREAKDOWN and SOLO                                                                        |
 
 Restore LOCK=16 after the test if that is how you normally play.
 
@@ -119,12 +109,9 @@ Idle status on load must read: `Groove: idle - press Play or Record riff`. If dr
 
 ---
 
-
-
 ## 2. Recording for yourself and for an agent
 
 Record **all four** of these if you can. Two is the minimum (UI + drums).
-
 
 | Stem         | What                                   | Why the agent needs it                                       |
 | ------------ | -------------------------------------- | ------------------------------------------------------------ |
@@ -132,7 +119,6 @@ Record **all four** of these if you can. Two is the minimum (UI + drums).
 | B. Guitar DI | The audio Fuzzyband actually heard     | Confirms what you played vs what the engine classified       |
 | C. Drums     | MIDI ch 10 rendered, or the kit audio  | Pattern identity, fills, crashes, click                      |
 | D. Bass      | MIDI ch 2 rendered, or the bass audio  | Root tracking, lock vs live-mirror, transition harmony       |
-
 
 Also keep this markdown with your ticks filled in. Filename suggestion:
 
@@ -149,27 +135,21 @@ Talk while you play: “Station C, Metal, entering BREAKDOWN.” The agent can s
 
 ---
 
-
-
 ## 3. UI legend — what to watch every bar
 
-
-| Readout         | Values you will see                                                                       | Meaning                                                                      |
-| --------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **BPM**         | 40–300                                                                                    | Host tempo. Must track DAW tempo changes within a bar or two                 |
-| **State**       | SILENT / SOFT / LOUD                                                                      | Energy machine. Hold times: SOFT→LOUD ~0.4 s, LOUD→SOFT ~2 s, to SILENT ~1 s |
-| **Style**       | Palm Mute / Open Chord / Single Note / Sustain / Silence                                  | Perception head. Must match what you are physically doing                    |
-| **Pattern**     | integer **0–27**                                                                          | Index into the atlas below. Write the number, then look up the name          |
-| **Groove:**     | `idle` / `COUNT-IN` / `RECORDING bar n/4` / `LOCKED - bar n/N` / `transition` / `PLAYING` | Arming + lock + song-form                                                    |
-| **Transition:** | `B/C/D - SECTION - bars left` or `Section: INTRO/…` in Play                               | Contrast section after a riff lock, or current Play section                  |
-| **Scope**       | bar-aligned waveform, notches 1-2-3-4, downbeat at left                                   | Must line up with audible beat 1                                             |
-
+| Readout               | Values you will see                                                                                   | Meaning                                                                        |
+| --------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **BPM**         | 40–300                                                                                               | Host tempo. Must track DAW tempo changes within a bar or two                   |
+| **State**       | SILENT / SOFT / LOUD                                                                                  | Energy machine. Hold times: SOFT→LOUD ~0.4 s, LOUD→SOFT ~2 s, to SILENT ~1 s |
+| **Style**       | Palm Mute / Open Chord / Single Note / Sustain / Silence                                              | Perception head. Must match what you are physically doing                      |
+| **Pattern**     | integer**0–27**                                                                                | Index into the atlas below. Write the number, then look up the name            |
+| **Groove:**     | `idle` / `COUNT-IN` / `RECORDING bar n/4` / `LOCKED - bar n/N` / `transition` / `PLAYING` | Arming + lock + song-form                                                      |
+| **Transition:** | `Transition - bar X/Y - N left` (SECTIONS=1) or `Transition B/C - bar X/Y - N left` (SECTIONS>1); Play shows `Section: INTRO/…` | Contrast after a riff lock, or current Play section. No CHORUS/SOLO suffix in Record riff |
+| **Scope**       | bar-aligned waveform, notches 1-2-3-4, downbeat at left                                               | Must line up with audible beat 1                                               |
 
 **Pattern index is the ground truth for “did this groove fire.”** Memorise nothing — use Section 4.
 
 ---
-
-
 
 ## 4. Pattern atlas (ear training)
 
@@ -177,44 +157,40 @@ When Pattern shows `N`, this is what the kit should be doing. Tick `Heard` the f
 
 GM map: **K**=kick 36  **S**=snare 38  **h**=closed hat  **H**=open hat  **R**=ride  **B**=ride bell  **C**=crash  **X**=china  **T**=toms.
 
-
-| #   | Name               | Length | What you should hear                                                     | Heard |
-| --- | ------------------ | ------ | ------------------------------------------------------------------------ | ----- |
-| 0   | Silent             | 1      | Nothing. No kick, no bass                                                | ☐     |
-| 1   | Verse Groove       | 2      | Backbeat S on 2/4, closed hats, ride-bell accent on beat 3 of bar 1      | ☐     |
-| 2   | Verse Half-Time    | 1      | Snare on **beat 3 only**, sparse kicks, ride on 4                        | ☐     |
-| 3   | Verse Fast         | 1      | Double-kick 16ths, S on 2/4, closed-hat timekeeping                      | ☐     |
-| 4   | Chorus Mid         | 2      | **Crash on 1**, open hats, ride bell bar 2. Bigger than verse            | ☐     |
-| 5   | Chorus Fast        | 1      | China on 1, constant double-kick, open hats, S on 2/4                    | ☐     |
-| 6   | Breakdown          | 2      | Sparse, china, clustered ghost snares, crushing kicks                    | ☐     |
-| 7   | Half-Time          | 1      | Straight half-time: K on 1, S on 2 **and** 4 (not the sludge snare-on-3) | ☐     |
-| 8   | Blast Beat         | 1      | Kick/snare **alternating 16ths**, ride quarters, crash on 1              | ☐     |
-| 9   | Sparse Breakdown   | 2      | Almost nothing: china+kick on 1, then kick+snare on beat 3 of bar 2      | ☐     |
-| 10  | Thrash             | 1      | Double-kick on 1 and 3, S on 2/4, driving closed hats                    | ☐     |
-| 11  | Intro Build        | 4      | Bar 1 splash+ride taps → kicks enter → ghosts → tom fill into crash      | ☐     |
-| 12  | Intro Full         | 2      | Full groove + crash, tom fill into crash at end of bar 2                 | ☐     |
-| 13  | Pre-Chorus Rise    | 2      | Floor-tom + ride tension, tom build into crash                           | ☐     |
-| 14  | Chorus Open Groove | 2      | Big crash + open hats + ride bell, china on bar 2                        | ☐     |
-| 15  | Breakdown Full     | 2      | Heavier 6: more ghost snares, china, crash at the end                    | ☐     |
-| 16  | Outro Decay        | 4      | Groove simplifies each bar, final crash on bar 4                         | ☐     |
-| 17  | Fill Short         | 1      | Normal groove beats 1–3, **tom burst on beat 4** into crash              | ☐     |
-| 18  | Fill Medium        | 1      | Groove 1–2, **toms from beat 3**                                         | ☐     |
-| 19  | Fill Big           | 1      | **Full-bar tom roll** + crash. Loudest fill                              | ☐     |
-| 20  | Verse Ghost        | 1      | Closed-hat 16ths with **ghost snares** on the e’s and a’s                | ☐     |
-| 21  | Chorus Blast       | 1      | Double-kick + snare blast, ride bell, crashes                            | ☐     |
-| 22  | Rock Backbeat      | 1      | Classic rock: K 1/3, S 2/4, closed-hat 8ths                              | ☐     |
-| 23  | Rock Half-Time     | 1      | Snare on 3, sparse kicks, ride in bar 2 feel                             | ☐     |
-| 24  | Rock Shuffle       | 1      | Shuffle/triplet 8ths (Swing knob exaggerates this)                       | ☐     |
-| 25  | Punk D-Beat        | 1      | Straight 8th kicks, S on 2/4, ride quarters. D-beat motorik              | ☐     |
-| 26  | Rock Ballad        | 2      | Soft ride + backbeats, bar 2 goes half-time                              | ☐     |
-| 27  | Rock 6/8 Feel      | 1      | Compound 8ths inside 4/4: kick / hats on triplets, snare on 3            | ☐     |
-
+| #  | Name               | Length | What you should hear                                                          | Heard |
+| -- | ------------------ | ------ | ----------------------------------------------------------------------------- | ----- |
+| 0  | Silent             | 1      | Nothing. No kick, no bass                                                     | ☐    |
+| 1  | Verse Groove       | 2      | Backbeat S on 2/4, closed hats, ride-bell accent on beat 3 of bar 1           | ☐    |
+| 2  | Verse Half-Time    | 1      | Snare on**beat 3 only**, sparse kicks, ride on 4                        | ☐    |
+| 3  | Verse Fast         | 1      | Double-kick 16ths, S on 2/4, closed-hat timekeeping                           | ☐    |
+| 4  | Chorus Mid         | 2      | **Crash on 1**, open hats, ride bell bar 2. Bigger than verse           | ☐    |
+| 5  | Chorus Fast        | 1      | China on 1, constant double-kick, open hats, S on 2/4                         | ☐    |
+| 6  | Breakdown          | 2      | Sparse, china, clustered ghost snares, crushing kicks                         | ☐    |
+| 7  | Half-Time          | 1      | Straight half-time: K on 1, S on 2**and** 4 (not the sludge snare-on-3) | ☐    |
+| 8  | Blast Beat         | 1      | Kick/snare**alternating 16ths**, ride quarters, crash on 1              | ☐    |
+| 9  | Sparse Breakdown   | 2      | Almost nothing: china+kick on 1, then kick+snare on beat 3 of bar 2           | ☐    |
+| 10 | Thrash             | 1      | Double-kick on 1 and 3, S on 2/4, driving closed hats                         | ☐    |
+| 11 | Intro Build        | 4      | Bar 1 splash+ride taps → kicks enter → ghosts → tom fill into crash        | ☐    |
+| 12 | Intro Full         | 2      | Full groove + crash, tom fill into crash at end of bar 2                      | ☐    |
+| 13 | Pre-Chorus Rise    | 2      | Floor-tom + ride tension, tom build into crash                                | ☐    |
+| 14 | Chorus Open Groove | 2      | Big crash + open hats + ride bell, china on bar 2                             | ☐    |
+| 15 | Breakdown Full     | 2      | Heavier 6: more ghost snares, china, crash at the end                         | ☐    |
+| 16 | Outro Decay        | 4      | Groove simplifies each bar, final crash on bar 4                              | ☐    |
+| 17 | Fill Short         | 1      | Normal groove beats 1–3,**tom burst on beat 4** into crash             | ☐    |
+| 18 | Fill Medium        | 1      | Groove 1–2,**toms from beat 3**                                        | ☐    |
+| 19 | Fill Big           | 1      | **Full-bar tom roll** + crash. Loudest fill                             | ☐    |
+| 20 | Verse Ghost        | 1      | Closed-hat 16ths with**ghost snares** on the e’s and a’s              | ☐    |
+| 21 | Chorus Blast       | 1      | Double-kick + snare blast, ride bell, crashes                                 | ☐    |
+| 22 | Rock Backbeat      | 1      | Classic rock: K 1/3, S 2/4, closed-hat 8ths                                   | ☐    |
+| 23 | Rock Half-Time     | 1      | Snare on 3, sparse kicks, ride in bar 2 feel                                  | ☐    |
+| 24 | Rock Shuffle       | 1      | Shuffle/triplet 8ths (Swing knob exaggerates this)                            | ☐    |
+| 25 | Punk D-Beat        | 1      | Straight 8th kicks, S on 2/4, ride quarters. D-beat motorik                   | ☐    |
+| 26 | Rock Ballad        | 2      | Soft ride + backbeats, bar 2 goes half-time                                   | ☐    |
+| 27 | Rock 6/8 Feel      | 1      | Compound 8ths inside 4/4: kick / hats on triplets, snare on 3                 | ☐    |
 
 If you hear a groove that matches a row but the index is different, write **both** — the renderer may be ornamenting (ghosts, micro-fills, swing) on top of a named pattern.
 
 ---
-
-
 
 ## 5. Coverage map — how every thing is supposed to fire
 
@@ -224,14 +200,12 @@ This is the contract. Use it when something does not appear.
 
 The engine is **idle and silent** until you arm it.
 
-
-| Mode                     | How you arm                               | What the drums do                                                                                                                                                                                                                                   | What the bass does                                                                                                     |
-| ------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| **Idle**                 | Load plugin, or press Forget after a take | Silence. Pattern 0. Style → Silence                                                                                                                                                                                                                 | Nothing                                                                                                                |
-| **Play**                 | PLAY button                               | Walks the Sections list **once**. Pool rotation every 2 bars (4 for INTRO/BREAKDOWN/OUTRO). Last bar of each section = fill 17/18/19. Crash into the next section. **Stops and returns to idle after the last section** — it does not wrap to INTRO | Follows your live root, in the **section’s harmony** (not a recorded riff). Pickup into section changes                |
-| **Record riff**          | Record riff                               | 1 bar click count-in, then 4 bars of click while you play, then **LOCK** that take for LOCK bars. Drums freeze on the captured groove                                                                                                               | Note-for-note learned riff for the whole lock. Root does **not** chase mid-lock                                        |
-| **Post-lock transition** | Automatic after lock expires              | One contrast section (B, then later C…) for TRANSITION BARS. Crash + build-up fill on entry. Status `Transition: B - CHORUS - n/N bars`. **Then back to A.** With TRANSITION SECTIONS = 2 the cycle is **A-B-A-C-A**, not A-B-C-A                   | Leaves the riff; follows you / new section harmony. Returning to the recorded riff **cuts** that contrast and re-locks |
-
+| Mode                           | How you arm                               | What the drums do                                                                                                                                                                                                                                               | What the bass does                                                                                                          |
+| ------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Idle**                 | Load plugin, or press Forget after a take | Silence. Pattern 0. Style → Silence                                                                                                                                                                                                                            | Nothing                                                                                                                     |
+| **Play**                 | PLAY button                               | Walks the Sections list**once**. Pool rotation every 2 bars (4 for INTRO/BREAKDOWN/OUTRO). Last bar of each section = fill 17/18/19. Crash into the next section. **Stops and returns to idle after the last section** — it does not wrap to INTRO | Follows your live root, in the**section’s harmony** (not a recorded riff). Pickup into section changes               |
+| **Record riff**          | Record riff                               | 1 bar click count-in, then 4 bars of click while you play, then**LOCK** that take for LOCK bars. Drums freeze on the captured groove                                                                                                                      | Note-for-note learned riff for the whole lock. Root does**not** chase mid-lock                                        |
+| **Post-lock transition** | Automatic after lock expires              | One contrast (B, then later C…) for TRANSITION BARS. Crash + build-up fill on entry. Status `Transition` (SECTIONS=1) or `Transition B` (SECTIONS>1) plus bar countdown — **not** `Transition B - CHORUS`. **Then back to A.** SECTIONS=1 is **A-B-A-B** (same B). SECTIONS=2 is **A-B-A-C-A**, not A-B-C-A | Leaves the riff; follows you / new section harmony. Returning to the recorded riff**cuts** that contrast and re-locks |
 
 Play and Record riff fight: starting Play **cancels** a capture. Do not overlap them.
 
@@ -241,30 +215,26 @@ Two **families** share pattern pools. Every preset still has its own velocity, g
 
 **Metal family** (metal/shared pools: 1–21 in Play; no 22–27 in Play)
 
-
-| id  | Genre        | Groove slot | Ghosts | BPM range | Suggested host | What you are listening for vs Metal                     |
-| --- | ------------ | ----------- | ------ | --------- | -------------- | ------------------------------------------------------- |
-| 3   | Metal        | Metal       | 0.10   | 40–300    | 120            | Reference: chorus can produce **21 Blast**; tight grid  |
-| 4   | Sludge       | Sludge      | 0.05   | 40–220    | 70             | Lazier, fewer ghosts, half-time bias, do not exceed 220 |
-| 5   | Thrash Metal | Metal       | 0.20   | 90–300    | 180            | Hotter, busier, min 90 — do not sit at 70               |
-| 6   | Death Metal  | Metal       | 0.25   | 80–300    | 180            | Even hotter velocities, dense                           |
-| 7   | Black Metal  | Metal       | 0.30   | 100–300   | 180            | Fast floor (min 100), more ornaments than Metal         |
-| 8   | Doom Metal   | Sludge      | 0.08   | 40–160    | 60             | Slow ceiling **160** — must not run away at 200         |
-| 9   | Djent        | Metal       | 0.15   | 60–240    | 140            | Slight default swing 0.05, precise, max 240             |
-
+| id | Genre        | Groove slot | Ghosts | BPM range | Suggested host | What you are listening for vs Metal                         |
+| -- | ------------ | ----------- | ------ | --------- | -------------- | ----------------------------------------------------------- |
+| 3  | Metal        | Metal       | 0.10   | 40–300   | 120            | Reference: chorus can produce**21 Blast**; tight grid |
+| 4  | Sludge       | Sludge      | 0.05   | 40–220   | 70             | Lazier, fewer ghosts, half-time bias, do not exceed 220     |
+| 5  | Thrash Metal | Metal       | 0.20   | 90–300   | 180            | Hotter, busier, min 90 — do not sit at 70                  |
+| 6  | Death Metal  | Metal       | 0.25   | 80–300   | 180            | Even hotter velocities, dense                               |
+| 7  | Black Metal  | Metal       | 0.30   | 100–300  | 180            | Fast floor (min 100), more ornaments than Metal             |
+| 8  | Doom Metal   | Sludge      | 0.08   | 40–160   | 60             | Slow ceiling**160** — must not run away at 200       |
+| 9  | Djent        | Metal       | 0.15   | 60–240   | 140            | Slight default swing 0.05, precise, max 240                 |
 
 **Rock family** (rock-first pools: 22–26 in verse/chorus/outro)
 
-
-| id  | Genre        | Groove slot | Ghosts | BPM range | Suggested host | What you are listening for vs Rock                                                     |
-| --- | ------------ | ----------- | ------ | --------- | -------------- | -------------------------------------------------------------------------------------- |
-| 0   | Rock         | Rock        | 0.35   | 40–300    | 120            | Reference: verse **22/23**, chorus **24 Shuffle / 25 D-Beat**, outro **26**            |
-| 1   | Hard Rock    | Hard Rock   | 0.30   | 40–300    | 120            | Hotter backbeats; preset swing 0.10 (confirm the **Swing slider** is the live control) |
-| 2   | Punk         | Punk        | 0.15   | 80–300    | 180            | Tight, near-grid, min 80, D-beat/shuffle in chorus                                     |
-| 10  | Classic Rock | Rock        | 0.30   | 60–200    | 100            | Looser, swing 0.10, max 200                                                            |
-| 11  | Alternative  | Rock        | 0.35   | 60–220    | 120            | Slight swing 0.05, same pools as Rock                                                  |
-| 12  | Grunge       | Rock        | 0.25   | 50–200    | 90             | Heavier half-time bias, max 200                                                        |
-
+| id | Genre        | Groove slot | Ghosts | BPM range | Suggested host | What you are listening for vs Rock                                                           |
+| -- | ------------ | ----------- | ------ | --------- | -------------- | -------------------------------------------------------------------------------------------- |
+| 0  | Rock         | Rock        | 0.35   | 40–300   | 120            | Reference: verse**22/23**, chorus **24 Shuffle / 25 D-Beat**, outro **26** |
+| 1  | Hard Rock    | Hard Rock   | 0.30   | 40–300   | 120            | Hotter backbeats; preset swing 0.10 (confirm the**Swing slider** is the live control)  |
+| 2  | Punk         | Punk        | 0.15   | 80–300   | 180            | Tight, near-grid, min 80, D-beat/shuffle in chorus                                           |
+| 10 | Classic Rock | Rock        | 0.30   | 60–200   | 100            | Looser, swing 0.10, max 200                                                                  |
+| 11 | Alternative  | Rock        | 0.35   | 60–220   | 120            | Slight swing 0.05, same pools as Rock                                                        |
+| 12 | Grunge       | Rock        | 0.25   | 50–200   | 90             | Heavier half-time bias, max 200                                                              |
 
 The 22-class ONNX model still has **five feel slots** (Rock / Hard Rock / Punk / Metal / Sludge). Broader presets map onto the closest slot — Thrash/Death/Black/Djent → Metal slot, Doom → Sludge slot, Classic/Alternative/Grunge → Rock slot. You are still testing the **preset** (velocity, ghosts, BPM clamp), not a new model class.
 
@@ -276,7 +246,6 @@ Phrasing: VERSE / CHORUS / SOLO hold a groove **2 bars** then pick a different p
 
 **Metal family** (Metal, Sludge, Thrash, Death, Black, Doom, Djent)
 
-
 | Section   | Pool (indices) | Names                                       |
 | --------- | -------------- | ------------------------------------------- |
 | INTRO     | 11, 12         | Intro Build, Intro Full                     |
@@ -286,9 +255,7 @@ Phrasing: VERSE / CHORUS / SOLO hold a groove **2 bars** then pick a different p
 | SOLO      | 4, 14          | Chorus Mid, Chorus Open                     |
 | OUTRO     | 16             | Outro Decay                                 |
 
-
 **Rock family** (Rock, Hard Rock, Punk, Classic Rock, Alternative, Grunge)
-
 
 | Section   | Pool (indices) | Names                                                        |
 | --------- | -------------- | ------------------------------------------------------------ |
@@ -299,7 +266,6 @@ Phrasing: VERSE / CHORUS / SOLO hold a groove **2 bars** then pick a different p
 | SOLO      | 4, 14, 24      | Chorus Mid, Chorus Open, Rock Shuffle                        |
 | OUTRO     | 16, 26         | Outro Decay, Rock Ballad                                     |
 
-
 Last bar of **every** section: fill **17 / 18 / 19** chosen by how loud you are (quiet → Short, mid → Medium, loud → Big). Play loud at the end of CHORUS to force Fill Big; play barely-there at the end of INTRO to force Fill Short.
 
 ### 5.4 Playing styles (perception head) → groove family
@@ -307,7 +273,6 @@ Last bar of **every** section: fill **17 / 18 / 19** chosen by how loud you are 
 Style must show the label **while you are playing that articulation**. After it is stable, follow/transition selection is steered into this pool (filtered to SOFT vs LOUD so a style cannot force a structurally wrong groove).
 
 **Metal family**
-
 
 | Style       | Play this                | Pool                                            |
 | ----------- | ------------------------ | ----------------------------------------------- |
@@ -317,9 +282,7 @@ Style must show the label **while you are playing that articulation**. After it 
 | Sustain     | Held notes / drones      | 6 Breakdown, 9 Sparse, 7 Half-Time              |
 | Silence     | Stop                     | 0 Silent                                        |
 
-
 **Rock family**
-
 
 | Style       | Play this         | Pool                                           |
 | ----------- | ----------------- | ---------------------------------------------- |
@@ -329,47 +292,38 @@ Style must show the label **while you are playing that articulation**. After it 
 | Sustain     | Held notes        | 26 Ballad, 9 Sparse, 7 Half-Time               |
 | Silence     | Stop              | 0 Silent                                       |
 
-
 Style steering is the **only designed path** for several metal-extreme indices (7, 8, 10) and for 5 / 13 / 20 / 27. Those are **not** in Play-mode pools. Station D exists to force them during a post-lock transition (Play off, lock expired, drums still audible).
 
 ### 5.5 Patterns with no Play-mode pool (must hunt in Station D)
 
 If these never appear after Station D, log **MISS** — do not excuse them.
 
-
-| #   | Name            | Intended trigger                                                                                                                                                    |
-| --- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 5   | Chorus Fast     | Metal + LOUD + fast host tempo (≥160) + open/aggressive playing during transition                                                                                   |
-| 7   | Half-Time       | Metal + Palm Mute (SOFT) or Sustain                                                                                                                                 |
-| 8   | Blast Beat      | Metal + LOUD + BPM ≥ 160 + bright/open (high centroid) + dense 16th picking                                                                                         |
-| 10  | Thrash          | Metal + Single Note + dense picking (≥8th-note chugs) + LOUD                                                                                                        |
-| 13  | Pre-Chorus Rise | Metal + LOUD; ONNX class 13. Easy to miss — hunt it, log MISS if absent                                                                                             |
-| 20  | Verse Ghost     | Metal + SOFT + lighter ghost-note style playing                                                                                                                     |
-| 27  | Rock 6/8 Feel   | Rock + SOFT + compound 6/8 riff. **Not in any style or section pool** — only if the classifier picks 27 and style does not override. Treat a miss as a coverage gap |
-
-
-
+| #  | Name            | Intended trigger                                                                                                                                                          |
+| -- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 5  | Chorus Fast     | Metal + LOUD + fast host tempo (≥160) + open/aggressive playing during transition                                                                                        |
+| 7  | Half-Time       | Metal + Palm Mute (SOFT) or Sustain                                                                                                                                       |
+| 8  | Blast Beat      | Metal + LOUD + BPM ≥ 160 + bright/open (high centroid) + dense 16th picking                                                                                              |
+| 10 | Thrash          | Metal + Single Note + dense picking (≥8th-note chugs) + LOUD                                                                                                             |
+| 13 | Pre-Chorus Rise | Metal + LOUD; ONNX class 13. Easy to miss — hunt it, log MISS if absent                                                                                                  |
+| 20 | Verse Ghost     | Metal + SOFT + lighter ghost-note style playing                                                                                                                           |
+| 27 | Rock 6/8 Feel   | Rock + SOFT + compound 6/8 riff.**Not in any style or section pool** — only if the classifier picks 27 and style does not override. Treat a miss as a coverage gap |
 
 ### 5.6 Fills, crashes, ornaments (always on)
 
 These are not pattern indices you select; they layer on top.
 
-
 | Feature                      | When                                                                                                                                                                                 |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Fill 17/18/19                | Last bar of a Play section; energy picks the size                                                                                                                                    |
-| Transition crash (49)        | Section change in Play; lock → transition; transition → next section; return to riff                                                                                                 |
+| Transition crash (49)        | Section change in Play; lock → transition; transition → next section; return to riff                                                                                               |
 | Build-up fill                | Entry into a post-lock contrast section                                                                                                                                              |
 | Micro-fill (two tom pickups) | End of a 4-bar phrase, not on a fill pattern                                                                                                                                         |
 | Ghost notes                  | Genre ghost density: Rock 0.35, Alternative 0.35, Hard Rock / Classic Rock 0.30, Black 0.30, Death / Grunge 0.25, Thrash 0.20, Punk / Djent 0.15, Metal 0.10, Doom 0.08, Sludge 0.05 |
 | Swing                        | Swing knob; Rock Shuffle (24) shows it most                                                                                                                                          |
-| Guitar-energy swell          | Hit harder → drums/bass a bit louder (not a pattern change)                                                                                                                          |
+| Guitar-energy swell          | Hit harder → drums/bass a bit louder (not a pattern change)                                                                                                                         |
 | Click track                  | Only during Record riff count-in + 4-bar take                                                                                                                                        |
 
-
 ---
-
-
 
 ## 6. The playthrough
 
@@ -378,8 +332,6 @@ Tempo suggestions assume Drop C, metronome on, you playing **with** the DAW clic
 Before each station: glance at Groove status so you know which mode you are in.
 
 ---
-
-
 
 ### Station A — Idle, arming, scope, silence (2 min)
 
@@ -392,38 +344,32 @@ Host tempo: **120**. Genre: **Metal**. Do **not** press Play or Record yet.
 Tab (play this while idle — drums must stay dead):
 
 ```
-    PM................................
-C |--0-0-0-0-0-0-0-0-|--0-0-0-0-0-0-0-0-|
+  PM................................
+C |0-0-0-0-0-0-0-0|0-0-0-0-0-0-0-0-|
   |1 e & a 2 e & a 3 e & a 4 e & a
 ```
 
-
-| Check         | Expected                                                                            | Result | Notes                                                                                                                                    |
-| ------------- | ----------------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Groove status | `idle - press Play or Record riff`                                                  | pass   |                                                                                                                                          |
-| Pattern       | 0                                                                                   | pass   | Pattern changes while I play as expected though. 0 on silence                                                                            |
-| Style         | Silence (until you play, then it may still not arm)                                 | pass   | Upon initial load of plugin style has weird symbols like $@ or something, presumeably to represent nothing but let's clean up the symbol |
-| Drums / bass  | **Complete silence** even while you chug                                            | pass   |                                                                                                                                          |
+| Check         | Expected                                                                             | Result | Notes                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Groove status | `idle - press Play or Record riff`                                                 | pass   |                                                                                                                                          |
+| Pattern       | 0                                                                                    | pass   | Pattern changes while I play as expected though. 0 on silence                                                                            |
+| Style         | Silence (until you play, then it may still not arm)                                  | pass   | Upon initial load of plugin style has weird symbols like $@ or something, presumeably to represent nothing but let's clean up the symbol |
+| Drums / bass  | **Complete silence** even while you chug                                       | pass   |                                                                                                                                          |
 | Scope         | Waveform appears when you play; downbeat notch 1 at left; playhead fills left→right | pass   |                                                                                                                                          |
-
 
 **A2. Arm via Play, then stop**
 
 - Press PLAY. Drums must start on (or within one bar of) beat 1, with a crash into INTRO.
 - Press PLAY again to stop, **or let the form finish** — it must return to idle/silence after OUTRO (no wrap to INTRO).
 
-
-| Check     | Expected                                                           | Result | Notes |
-| --------- | ------------------------------------------------------------------ | ------ | ----- |
-| Status    | `Groove: PLAYING` then back to idle                                | pass   |       |
-| Section   | `Section: INTRO` on start                                          | pass   |       |
-| Entry     | Crash / fill into first groove, not a random pickup mid-bar        | pass   |       |
+| Check     | Expected                                                            | Result | Notes |
+| --------- | ------------------------------------------------------------------- | ------ | ----- |
+| Status    | `Groove: PLAYING` then back to idle                               | pass   |       |
+| Section   | `Section: INTRO` on start                                         | pass   |       |
+| Entry     | Crash / fill into first groove, not a random pickup mid-bar         | pass   |       |
 | Completes | If you let the form run, it stops after the last section — no wrap | pass   |       |
 
-
 ---
-
-
 
 ### Station B — Record riff, lock, bass freeze, transition, return (8–10 min)
 
@@ -450,16 +396,14 @@ C |--0-0-0-0-0-0-0-0○|
 
 If you flub, press **Forget**, then Record again. Capture auto-locks when bar 4 ends if it heard ≥2 hits.
 
-
-| Check             | Expected                                                                                                         | Result | Pattern # | Notes |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------- | ------ | --------- | ----- |
-| Count-in          | 1 bar of click, no groove yet                                                                                    | pass   |           |       |
-| Recording         | Button `Rec n/4 - N` with N climbing                                                                             | pass   |           |       |
-| Lock              | `Groove: LOCKED - bar 1/4 - 3 left…`                                                                             | pass   |           |       |
-| Drums during lock | **Frozen** — same groove all 4 bars, does not chase your dynamics                                                | pass   |           |       |
-| Bass during lock  | Loops the captured rhythm **and pitches** (C then Eb then C). Changing chord mid-lock must **not** yank the bass | pass   |           |       |
-| Style during take | Palm Mute                                                                                                        | pass   |           |       |
-
+| Check             | Expected                                                                                                                    | Result | Pattern # | Notes |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------- | ------ | --------- | ----- |
+| Count-in          | 1 bar of click, no groove yet                                                                                               | pass   |           |       |
+| Recording         | Button`Rec n/4 - N` with N climbing                                                                                       | pass   |           |       |
+| Lock              | `Groove: LOCKED - bar 1/4 - 3 left…`                                                                                     | pass   |           |       |
+| Drums during lock | **Frozen** — same groove all 4 bars, does not chase your dynamics                                                    | pass   |           |       |
+| Bass during lock  | Loops the captured rhythm**and pitches** (C then Eb then C). Changing chord mid-lock must **not** yank the bass | pass   |           |       |
+| Style during take | Palm Mute                                                                                                                   | pass   |           |       |
 
 **B2. Mid-lock freedom (drums stay, bass stays)**
 
@@ -474,17 +418,15 @@ F |------7-8-10--------|----------------|
 C |--8-10--------------|----------------|
 ```
 
-
-| Check | Expected                                     | Result                                                                        | Notes                                                                                      |
-| ----- | -------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Drums | Unchanged for the rest of the lock           | pass                                                                          | The 'LOCK' refers to the first time the riff gets accompanied? then this works as expected |
+| Check | Expected                                      | Result                                                                        | Notes                                                                                      |
+| ----- | --------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Drums | Unchanged for the rest of the lock            | pass                                                                          | The 'LOCK' refers to the first time the riff gets accompanied? then this works as expected |
 | Style | May flip to Single Note — drums still frozen | Did not flip at all even when I changed style. Works outside record riff fine |                                                                                            |
-| Bass  | Still the locked riff, not the solo notes    | FAIL. LOCKED RIFF DOESN'T PERSIST                                             |                                                                                            |
-
+| Bass  | Still the locked riff, not the solo notes     | FAIL. LOCKED RIFF DOESN'T PERSIST                                             |                                                                                            |
 
 **B3. Lock expires → B, back to A, then C, back to A**
 
-When the lock hits 0, you should hear a **crash + build-up fill**, status `Groove: transition` and `Transition: B - <SECTION> - 4/4 bars`. Section name must **not** be the same family as the locked groove (verse-like lock should not transition into VERSE).
+When the lock hits 0, you should hear a **crash + build-up fill**, status `Groove: transition` and `Section: Transition B - bar 1/4 - 3 left` (this station uses SECTIONS=2, so the letter is shown). With SECTIONS=1 the letter is omitted (`Section: Transition - bar …`) and the **same** contrast returns every time — it must not flip CHORUS then SOLO.
 
 During B, play **open chorus chords** (so the bass can leave the riff):
 
@@ -503,42 +445,34 @@ Stay off the lock riff during that second A as well (or you will just extend the
 
 The full shape with TRANSITION SECTIONS = 2 is **A-B-A-C-A**. If you hear A-B-C-A (C immediately after B, no riff in between), that is a **fail**.
 
-
-| Check                             | Expected                                                    | Result | Section name | Pattern #s heard | Notes |
-| --------------------------------- | ----------------------------------------------------------- | ------ | ------------ | ---------------- | ----- |
-| Entry                             | Crash + fill, not a splice                                  | ☐      |              |                  |       |
-| B is a contrast                   | Not the riff’s own family                                   | ☐      |              |                  |       |
-| Bass during B                     | Leaves the recorded riff; follows live chords / new harmony | ☐      |              |                  |       |
-| Return to A after B               | After 4 bars of B, `LOCKED` again, riff drums+bass back     | ☐      |              |                  |       |
-| C appears after the second A      | New contrast, **not** the same name as B, another crash     | ☐      |              |                  |       |
-| Return to A after C               | Locked riff again                                           | ☐      |              |                  |       |
-| Consecutive grooves in a contrast | Pattern index changes every 2–4 bars, no immediate repeat   | ☐      |              |                  |       |
-
+| Check                             | Expected                                                     | Result | Section name | Pattern#s heard | Notes |
+| --------------------------------- | ------------------------------------------------------------ | ------ | ------------ | --------------- | ----- |
+| Entry                             | Crash + fill, not a splice                                   | ☐     |              |                 |       |
+| B is a contrast                   | Not the riff’s own family                                   | ☐     |              |                 |       |
+| Bass during B                     | Leaves the recorded riff; follows live chords / new harmony  | ☐     |              |                 |       |
+| Return to A after B               | After 4 bars of B,`LOCKED` again, riff drums+bass back     | ☐     |              |                 |       |
+| C appears after the second A      | New contrast,**not** the same name as B, another crash | ☐     |              |                 |       |
+| Return to A after C               | Locked riff again                                            | ☐     |              |                 |       |
+| Consecutive grooves in a contrast | Pattern index changes every 2–4 bars, no immediate repeat   | ☐     |              |                 |       |
 
 **B4. Cut-on-riff**
 
 Expire the next lock, and **as soon as B (or C) starts**, play Lock Riff A again. That contrast must **cut short** and re-lock. The other contrast in the pair should still be reachable on a later expiry (you already heard both in B3).
 
-
 | Check             | Expected                                     | Result | Notes |
 | ----------------- | -------------------------------------------- | ------ | ----- |
-| Natural A-B-A-C-A | Heard in B3                                  | ☐      |       |
-| Cut on riff       | Playing A during B or C re-locks immediately | ☐      |       |
-
+| Natural A-B-A-C-A | Heard in B3                                  | ☐     |       |
+| Cut on riff       | Playing A during B or C re-locks immediately | ☐     |       |
 
 **B5. Forget**
 
 Press **Forget**. Must go idle, drums die, Record riff re-enabled.
 
-
 | Check  | Expected                   | Result | Notes |
 | ------ | -------------------------- | ------ | ----- |
-| Forget | Idle + silence + Pattern 0 | ☐      |       |
-
+| Forget | Idle + silence + Pattern 0 | ☐     |       |
 
 ---
-
-
 
 ### Station C — Play mode: every section × every genre (~20–30 min)
 
@@ -608,16 +542,14 @@ On the **last bar of each section**, listen for a tom fill. Dig in on CHORUS las
 
 #### C-Metal (genre Metal) — log
 
-
 | Section   | Must-see indices (any of) | Indices you saw | Fill # on last bar | State | Style | Pass? |
 | --------- | ------------------------- | --------------- | ------------------ | ----- | ----- | ----- |
-| INTRO     | 11, 12                    |                 |                    |       |       | ☐     |
-| VERSE     | 1, 2, 3                   |                 |                    |       |       | ☐     |
-| CHORUS    | 4, 14, 21                 |                 |                    |       |       | ☐     |
-| BREAKDOWN | 6, 15, 9                  |                 |                    |       |       | ☐     |
-| SOLO      | 4, 14                     |                 |                    |       |       | ☐     |
-| OUTRO     | 16                        |                 |                    |       |       | ☐     |
-
+| INTRO     | 11, 12                    |                 |                    |       |       | ☐    |
+| VERSE     | 1, 2, 3                   |                 |                    |       |       | ☐    |
+| CHORUS    | 4, 14, 21                 |                 |                    |       |       | ☐    |
+| BREAKDOWN | 6, 15, 9                  |                 |                    |       |       | ☐    |
+| SOLO      | 4, 14                     |                 |                    |       |       | ☐    |
+| OUTRO     | 16                        |                 |                    |       |       | ☐    |
 
 Chorus **must** be able to produce **21 Chorus Blast** within 8 bars (pool rotates every 2 bars, 3 members — wait the full 8). If 21 never appears, MISS.
 
@@ -629,17 +561,13 @@ After OUTRO, Play **must stop** (idle, silence). A second INTRO without pressing
 
 Set host tempo **70**. Same form. Pools are the metal pools; feel should be lazier, fewer ghosts, less chorus lift.
 
-
 | Check             | Expected                    | Result | Notes |
 | ----------------- | --------------------------- | ------ | ----- |
-| Tempo             | UI BPM ≈ 70                 | ☐      |       |
-| Pools             | Same indices as Metal table | ☐      |       |
-| Feel vs Metal     | Darker, less busy ornaments | ☐      |       |
-| Kit still in time | No rushing at 70            | ☐      |       |
-| Stops after OUTRO | Idle, not a second INTRO    | ☐      |       |
-
-
-
+| Tempo             | UI BPM ≈ 70                | ☐     |       |
+| Pools             | Same indices as Metal table | ☐     |       |
+| Feel vs Metal     | Darker, less busy ornaments | ☐     |       |
+| Kit still in time | No rushing at 70            | ☐     |       |
+| Stops after OUTRO | Idle, not a second INTRO    | ☐     |       |
 
 #### C-Rock (genre Rock) — host **120**, same form, rock tabs if you want more “bar band”
 
@@ -656,16 +584,14 @@ C |--0-0-0-0-0-0-0-0-|--8-8-8-8-7-7-7-7-|
 G |--0-0-0-0-0-0-0-0-|--8-8-8-8-7-7-7-7-|
 ```
 
-
 | Section   | Must-see indices | Indices you saw | Fill # | Pass? |
 | --------- | ---------------- | --------------- | ------ | ----- |
-| INTRO     | 11, 12           |                 |        | ☐     |
-| VERSE     | 22, 23, 1, 2     |                 |        | ☐     |
-| CHORUS    | 4, 24, 25, 14    |                 |        | ☐     |
-| BREAKDOWN | 6, 15, 9         |                 |        | ☐     |
-| SOLO      | 4, 14, 24        |                 |        | ☐     |
-| OUTRO     | 16, 26           |                 |        | ☐     |
-
+| INTRO     | 11, 12           |                 |        | ☐    |
+| VERSE     | 22, 23, 1, 2     |                 |        | ☐    |
+| CHORUS    | 4, 24, 25, 14    |                 |        | ☐    |
+| BREAKDOWN | 6, 15, 9         |                 |        | ☐    |
+| SOLO      | 4, 14, 24        |                 |        | ☐    |
+| OUTRO     | 16, 26           |                 |        | ☐    |
 
 Rock chorus **must** be able to show **24 Shuffle** and **25 D-Beat**. Rock verse **must** show **22** and **23**. Outro **must** be able to show **26 Ballad** (2 members × 4-bar hold = 8 bars needed — bump OUTRO to 8 if 26 never appears in 4). After OUTRO, Play **must stop**.
 
@@ -673,16 +599,12 @@ Rock chorus **must** be able to show **24 Shuffle** and **25 D-Beat**. Rock vers
 
 Same pools as Rock. You are listening for **hotter velocities** and a hint of default swing (preset swing 0.10 even with the knob at 0? Confirm: the **Swing slider** is the live control; genre default may apply on genre change — watch whether hats lilt when you switch genre without touching Swing).
 
-
 | Check             | Expected                                       | Result | Notes |
 | ----------------- | ---------------------------------------------- | ------ | ----- |
-| Pools             | Same as Rock table                             | ☐      |       |
-| Vs Rock           | Louder backbeats / slightly different hat lilt | ☐      |       |
-| Swing slider      | Still 0 unless you moved it                    | ☐      |       |
-| Stops after OUTRO | Idle, not a second INTRO                       | ☐      |       |
-
-
-
+| Pools             | Same as Rock table                             | ☐     |       |
+| Vs Rock           | Louder backbeats / slightly different hat lilt | ☐     |       |
+| Swing slider      | Still 0 unless you moved it                    | ☐     |       |
+| Stops after OUTRO | Idle, not a second INTRO                       | ☐     |       |
 
 #### C-Punk (genre Punk) — host **180**, downstrokes
 
@@ -695,150 +617,110 @@ C |--0-0-0-0-0-0-0-0-|--0-0-0-0-0-0-0-0-|
 G |--0-0-0-0-0-0-0-0-|--0-0-0-0-0-0-0-0-|
 ```
 
-
-| Check             | Expected                                                                       | Result | Notes |
-| ----------------- | ------------------------------------------------------------------------------ | ------ | ----- |
-| BPM               | UI ≈ 180                                                                       | ☐      |       |
-| Chorus            | 25 D-Beat and/or 24 Shuffle appear                                             | ☐      |       |
-| Kit               | Tight, near-grid, fewer ghosts than Rock                                       | ☐      |       |
-| Min BPM           | Punk preset min is 80 — at 180 this is N/A; do not drop below 80 in this genre | ☐      |       |
-| Stops after OUTRO | Idle, not a second INTRO                                                       | ☐      |       |
-
-
-
+| Check             | Expected                                                                        | Result | Notes |
+| ----------------- | ------------------------------------------------------------------------------- | ------ | ----- |
+| BPM               | UI ≈ 180                                                                       | ☐     |       |
+| Chorus            | 25 D-Beat and/or 24 Shuffle appear                                              | ☐     |       |
+| Kit               | Tight, near-grid, fewer ghosts than Rock                                        | ☐     |       |
+| Min BPM           | Punk preset min is 80 — at 180 this is N/A; do not drop below 80 in this genre | ☐     |       |
+| Stops after OUTRO | Idle, not a second INTRO                                                        | ☐     |       |
 
 #### C-Thrash Metal — host **180**, metal pools, aggressive downstrokes
 
 Same metal tabs as C-Metal, faster. Do not sit below 90.
 
-
 | Check             | Expected                                   | Result | Notes |
 | ----------------- | ------------------------------------------ | ------ | ----- |
-| BPM               | UI ≈ 180                                   | ☐      |       |
-| Pools             | Same indices as Metal table                | ☐      |       |
-| Feel vs Metal     | Hotter, busier, more ghosts (0.20 vs 0.10) | ☐      |       |
-| Stops after OUTRO | Idle                                       | ☐      |       |
-
-
-
+| BPM               | UI ≈ 180                                  | ☐     |       |
+| Pools             | Same indices as Metal table                | ☐     |       |
+| Feel vs Metal     | Hotter, busier, more ghosts (0.20 vs 0.10) | ☐     |       |
+| Stops after OUTRO | Idle                                       | ☐     |       |
 
 #### C-Death Metal — host **180**
 
-
 | Check             | Expected                       | Result | Notes |
 | ----------------- | ------------------------------ | ------ | ----- |
-| BPM               | UI ≈ 180                       | ☐      |       |
-| Pools             | Metal table                    | ☐      |       |
-| Feel vs Metal     | Even hotter velocities, denser | ☐      |       |
-| Stops after OUTRO | Idle                           | ☐      |       |
-
-
-
+| BPM               | UI ≈ 180                      | ☐     |       |
+| Pools             | Metal table                    | ☐     |       |
+| Feel vs Metal     | Even hotter velocities, denser | ☐     |       |
+| Stops after OUTRO | Idle                           | ☐     |       |
 
 #### C-Black Metal — host **180** (do not drop below 100)
 
-
 | Check             | Expected                                 | Result | Notes |
 | ----------------- | ---------------------------------------- | ------ | ----- |
-| BPM               | UI ≈ 180                                 | ☐      |       |
-| Pools             | Metal table                              | ☐      |       |
-| Feel vs Metal     | Fast floor, more ornaments (ghosts 0.30) | ☐      |       |
-| Stops after OUTRO | Idle                                     | ☐      |       |
-
-
-
+| BPM               | UI ≈ 180                                | ☐     |       |
+| Pools             | Metal table                              | ☐     |       |
+| Feel vs Metal     | Fast floor, more ornaments (ghosts 0.30) | ☐     |       |
+| Stops after OUTRO | Idle                                     | ☐     |       |
 
 #### C-Doom Metal — host **60** (ceiling 160 — a fail if it runs away at 200)
 
 Same slow heavy tabs as Sludge.
 
-
 | Check             | Expected                                    | Result | Notes |
 | ----------------- | ------------------------------------------- | ------ | ----- |
-| BPM               | UI ≈ 60                                     | ☐      |       |
-| Pools             | Metal table                                 | ☐      |       |
-| Feel vs Sludge    | Similar dark/half-time, even slower ceiling | ☐      |       |
-| Stops after OUTRO | Idle                                        | ☐      |       |
-
-
-
+| BPM               | UI ≈ 60                                    | ☐     |       |
+| Pools             | Metal table                                 | ☐     |       |
+| Feel vs Sludge    | Similar dark/half-time, even slower ceiling | ☐     |       |
+| Stops after OUTRO | Idle                                        | ☐     |       |
 
 #### C-Djent — host **140**
 
 Palm-mute C chug, tight. Slight preset swing 0.05.
 
-
 | Check             | Expected                         | Result | Notes |
 | ----------------- | -------------------------------- | ------ | ----- |
-| BPM               | UI ≈ 140                         | ☐      |       |
-| Pools             | Metal table                      | ☐      |       |
-| Feel vs Metal     | Precise, a hint of lilt, max 240 | ☐      |       |
-| Swing slider      | Still 0 unless you moved it      | ☐      |       |
-| Stops after OUTRO | Idle                             | ☐      |       |
-
-
-
+| BPM               | UI ≈ 140                        | ☐     |       |
+| Pools             | Metal table                      | ☐     |       |
+| Feel vs Metal     | Precise, a hint of lilt, max 240 | ☐     |       |
+| Swing slider      | Still 0 unless you moved it      | ☐     |       |
+| Stops after OUTRO | Idle                             | ☐     |       |
 
 #### C-Classic Rock — host **100**, rock tabs
 
-
 | Check             | Expected                           | Result | Notes |
 | ----------------- | ---------------------------------- | ------ | ----- |
-| BPM               | UI ≈ 100                           | ☐      |       |
-| Pools             | Same as Rock table                 | ☐      |       |
-| Feel vs Rock      | Looser, preset swing 0.10, max 200 | ☐      |       |
-| Stops after OUTRO | Idle                               | ☐      |       |
-
-
-
+| BPM               | UI ≈ 100                          | ☐     |       |
+| Pools             | Same as Rock table                 | ☐     |       |
+| Feel vs Rock      | Looser, preset swing 0.10, max 200 | ☐     |       |
+| Stops after OUTRO | Idle                               | ☐     |       |
 
 #### C-Alternative — host **120**, rock tabs
 
-
 | Check             | Expected                          | Result | Notes |
 | ----------------- | --------------------------------- | ------ | ----- |
-| Pools             | Same as Rock table                | ☐      |       |
-| Feel vs Rock      | Similar ghosts, slight swing 0.05 | ☐      |       |
-| Stops after OUTRO | Idle                              | ☐      |       |
-
-
-
+| Pools             | Same as Rock table                | ☐     |       |
+| Feel vs Rock      | Similar ghosts, slight swing 0.05 | ☐     |       |
+| Stops after OUTRO | Idle                              | ☐     |       |
 
 #### C-Grunge — host **90**, heavier rock tabs
 
-
 | Check             | Expected                                             | Result | Notes |
 | ----------------- | ---------------------------------------------------- | ------ | ----- |
-| BPM               | UI ≈ 90                                              | ☐      |       |
-| Pools             | Same as Rock table                                   | ☐      |       |
-| Feel vs Rock      | Heavier half-time bias, fewer ghosts (0.25), max 200 | ☐      |       |
-| Stops after OUTRO | Idle                                                 | ☐      |       |
-
-
-
+| BPM               | UI ≈ 90                                             | ☐     |       |
+| Pools             | Same as Rock table                                   | ☐     |       |
+| Feel vs Rock      | Heavier half-time bias, fewer ghosts (0.25), max 200 | ☐     |       |
+| Stops after OUTRO | Idle                                                 | ☐     |       |
 
 #### C — Play-mode cross-checks (all genres)
 
-
-| Check                      | Expected                                                                                 | Result | Notes |
-| -------------------------- | ---------------------------------------------------------------------------------------- | ------ | ----- |
-| Phrase rotation            | Groove holds 2 bars (4 in INTRO/BREAKDOWN/OUTRO) then changes                            | ☐      |       |
-| No immediate repeat        | Next phrase ≠ previous index                                                             | ☐      |       |
-| Last-bar fill              | Every section, a 17/18/19 instead of the pool groove                                     | ☐      |       |
-| Crash on section change    | Audible 49 into the new section                                                          | ☐      |       |
-| Bass follows root          | Verse C chug → bass around C; chorus F/Eb chords → bass moves                            | ☐      |       |
-| Bass not the recorded riff | Play-mode bass is harmonic, not Station B’s riff                                         | ☐      |       |
-| Bass lead-in               | Last bar of a section, bass anticipates the next                                         | ☐      |       |
-| Custom form                | Adding/removing a section in the list changes what Play does on the next start           | ☐      |       |
-| Stops after OUTRO          | Form does **not** wrap to INTRO. Groove → idle, drums die. Next PLAY restarts from INTRO | ☐      |       |
-| Stop mid-form              | PLAY off → silence, next PLAY restarts from INTRO                                        | ☐      |       |
-
+| Check                      | Expected                                                                                       | Result | Notes |
+| -------------------------- | ---------------------------------------------------------------------------------------------- | ------ | ----- |
+| Phrase rotation            | Groove holds 2 bars (4 in INTRO/BREAKDOWN/OUTRO) then changes                                  | ☐     |       |
+| No immediate repeat        | Next phrase ≠ previous index                                                                  | ☐     |       |
+| Last-bar fill              | Every section, a 17/18/19 instead of the pool groove                                           | ☐     |       |
+| Crash on section change    | Audible 49 into the new section                                                                | ☐     |       |
+| Bass follows root          | Verse C chug → bass around C; chorus F/Eb chords → bass moves                                | ☐     |       |
+| Bass not the recorded riff | Play-mode bass is harmonic, not Station B’s riff                                              | ☐     |       |
+| Bass lead-in               | Last bar of a section, bass anticipates the next                                               | ☐     |       |
+| Custom form                | Adding/removing a section in the list changes what Play does on the next start                 | ☐     |       |
+| Stops after OUTRO          | Form does**not** wrap to INTRO. Groove → idle, drums die. Next PLAY restarts from INTRO | ☐     |       |
+| Stop mid-form              | PLAY off → silence, next PLAY restarts from INTRO                                             | ☐     |       |
 
 **Custom-form poke (30 s):** set Sections to `BREAKDOWN:4` only, PLAY, confirm you land in breakdown pools immediately. Then restore the full test form.
 
 ---
-
-
 
 ### Station D — Style + leftover patterns (the hunt) (8 min)
 
@@ -887,17 +769,13 @@ G |--0~~~~~~~~~~~~~~~|--~~~~~~~~~~~~~~~~|
 
 Put the guitar down for **3+ seconds**. LOUD→SILENT hold is ~1 s, SOFT→SILENT ~1 s.
 
-
-| Style       | UI showed it? | Pattern #s while it was showing | Pass? | Notes                                |
-| ----------- | ------------- | ------------------------------- | ----- | ------------------------------------ |
-| Palm Mute   | ☐             |                                 | ☐     | Want 7 / 1 / 9                       |
-| Open Chord  | ☐             |                                 | ☐     | Want 4 / 6 / 14                      |
-| Single Note | ☐             |                                 | ☐     | Want 3 / 10 / 2                      |
-| Sustain     | ☐             |                                 | ☐     | Want 6 / 9 / 7                       |
-| Silence     | ☐             | 0                               | ☐     | Drums should drop out if energy dies |
-
-
-
+| Style       | UI showed it? | Pattern#s while it was showing | Pass? | Notes                                |
+| ----------- | ------------- | ------------------------------ | ----- | ------------------------------------ |
+| Palm Mute   | ☐            |                                | ☐    | Want 7 / 1 / 9                       |
+| Open Chord  | ☐            |                                | ☐    | Want 4 / 6 / 14                      |
+| Single Note | ☐            |                                | ☐    | Want 3 / 10 / 2                      |
+| Sustain     | ☐            |                                | ☐    | Want 6 / 9 / 7                       |
+| Silence     | ☐            | 0                              | ☐    | Drums should drop out if energy dies |
 
 #### D2. Density / blast / thrash hunt (Metal, host **180**, LOUD)
 
@@ -916,15 +794,13 @@ Then a **single-note 16th run** (Thrash bait):
 C |--0-0-3-3-5-5-3-3-|--0-0-5-5-7-7-5-5-|  (16ths)
 ```
 
-
 | Target       | Index | Heard? | What you were playing | Notes |
 | ------------ | ----- | ------ | --------------------- | ----- |
-| Blast Beat   | 8     | ☐      |                       |       |
-| Chorus Fast  | 5     | ☐      |                       |       |
-| Chorus Blast | 21    | ☐      |                       |       |
-| Thrash       | 10    | ☐      |                       |       |
-| Verse Fast   | 3     | ☐      |                       |       |
-
+| Blast Beat   | 8     | ☐     |                       |       |
+| Chorus Fast  | 5     | ☐     |                       |       |
+| Chorus Blast | 21    | ☐     |                       |       |
+| Thrash       | 10    | ☐     |                       |       |
+| Verse Fast   | 3     | ☐     |                       |       |
 
 If 8 and 10 never appear at 180 with dense picking, that is a **MISS** (rhythm-density rule is supposed to steer LOUD dense playing to thrash/blast).
 
@@ -945,17 +821,13 @@ Soft 16th ghosts on one note (verse ghost bait)
 C |--0-x-0-x-0-x-0-x-|--0-x-0-x-0-x-0-x-|
 ```
 
-
 | Target           | Index | Heard? | Notes |
 | ---------------- | ----- | ------ | ----- |
-| Half-Time        | 7     | ☐      |       |
-| Verse Half-Time  | 2     | ☐      |       |
-| Sparse Breakdown | 9     | ☐      |       |
-| Verse Ghost      | 20    | ☐      |       |
-| Pre-Chorus Rise  | 13    | ☐      |       |
-
-
-
+| Half-Time        | 7     | ☐     |       |
+| Verse Half-Time  | 2     | ☐     |       |
+| Sparse Breakdown | 9     | ☐     |       |
+| Verse Ghost      | 20    | ☐     |       |
+| Pre-Chorus Rise  | 13    | ☐     |       |
 
 #### D4. Rock leftovers (Genre Rock, host **90**, then **140**)
 
@@ -984,42 +856,34 @@ G |--0---------------|--7---------------|
 C |--0---------------|--7---------------|
 ```
 
-
-| Target         | Index | Heard? | Notes                             |
-| -------------- | ----- | ------ | --------------------------------- |
-| Rock Backbeat  | 22    | ☐      | Also guaranteed in Play verse     |
-| Rock Half-Time | 23    | ☐      |                                   |
-| Rock Shuffle   | 24    | ☐      |                                   |
-| Punk D-Beat    | 25    | ☐      |                                   |
-| Rock Ballad    | 26    | ☐      |                                   |
-| Rock 6/8 Feel  | 27    | ☐      | **Likely gap if absent — log it** |
-
+| Target         | Index | Heard? | Notes                                    |
+| -------------- | ----- | ------ | ---------------------------------------- |
+| Rock Backbeat  | 22    | ☐     | Also guaranteed in Play verse            |
+| Rock Half-Time | 23    | ☐     |                                          |
+| Rock Shuffle   | 24    | ☐     |                                          |
+| Punk D-Beat    | 25    | ☐     |                                          |
+| Rock Ballad    | 26    | ☐     |                                          |
+| Rock 6/8 Feel  | 27    | ☐     | **Likely gap if absent — log it** |
 
 ---
-
-
 
 ### Station E — Tempo, energy, State machine (4 min)
 
 Genre **Metal**. Press PLAY so drums are audible. Change **host tempo** while playing the verse chug.
 
-
-| Step | Host BPM | Play                            | Expected                                                                                                      | Result | Notes |
-| ---- | -------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------ | ----- |
-| E1   | 60       | slow chugs                      | UI BPM ≈ 60, kit in time, no double-time runaway                                                              | ☐      |       |
-| E2   | 120      | same riff                       | Smooth catch-up within ~2 bars                                                                                | ☐      |       |
-| E3   | 200      | 8th/16th chugs                  | UI ≈ 200, kit still even (Punk/Metal max 300; Sludge max 220 — do not use Sludge here)                        | ☐      |       |
-| E4   | 120      | verse mute → slam chorus chords | State SOFT → LOUD within ~0.5 s                                                                               | ☐      |       |
-| E5   | 120      | chorus → back to mute           | LOUD → SOFT takes ~2 s (must **not** flicker every hit)                                                       | ☐      |       |
-| E6   | 120      | stop playing                    | SILENT after ~1 s; Play mode **keeps drums going** (song form). Confirm drums continue in Play despite SILENT | ☐      |       |
-| E7   | 120      | Play OFF, stop                  | After Forget: SILENT + Pattern 0 + no MIDI                                                                    | ☐      |       |
-
+| Step | Host BPM | Play                             | Expected                                                                                                           | Result | Notes |
+| ---- | -------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------ | ----- |
+| E1   | 60       | slow chugs                       | UI BPM ≈ 60, kit in time, no double-time runaway                                                                  | ☐     |       |
+| E2   | 120      | same riff                        | Smooth catch-up within ~2 bars                                                                                     | ☐     |       |
+| E3   | 200      | 8th/16th chugs                   | UI ≈ 200, kit still even (Punk/Metal max 300; Sludge max 220 — do not use Sludge here)                           | ☐     |       |
+| E4   | 120      | verse mute → slam chorus chords | State SOFT → LOUD within ~0.5 s                                                                                   | ☐     |       |
+| E5   | 120      | chorus → back to mute           | LOUD → SOFT takes ~2 s (must**not** flicker every hit)                                                      | ☐     |       |
+| E6   | 120      | stop playing                     | SILENT after ~1 s; Play mode**keeps drums going** (song form). Confirm drums continue in Play despite SILENT | ☐     |       |
+| E7   | 120      | Play OFF, stop                   | After Forget: SILENT + Pattern 0 + no MIDI                                                                         | ☐     |       |
 
 Phrase breath (Play off, armed via a lock/transition): pause 1 beat then resume. Should **not** fully reset; a crash on re-entry is allowed.
 
 ---
-
-
 
 ### Station F — Bass pitch tracking (3 min)
 
@@ -1044,154 +908,134 @@ C |--0---------------| then  |--12--------------|   (12th fret C)
 
 Bass should stay in its register (not leap an octave with you).
 
-
 | Check                | Expected                                       | Result | Notes                                     |
 | -------------------- | ---------------------------------------------- | ------ | ----------------------------------------- |
-| Roots C–G            | Bass pitch class matches within ~1 bar         | ☐      | Distortion can lag YIN — note delay       |
-| Bb / other chromatic | Still tracks                                   | ☐      |                                           |
-| Octave jump          | Same bass note, not 12 semitones up            | ☐      |                                           |
-| Play vs Lock         | Play: live root. Lock: frozen captured pitches | ☐      | Already covered in B; confirm they differ |
-
+| Roots C–G           | Bass pitch class matches within ~1 bar         | ☐     | Distortion can lag YIN — note delay      |
+| Bb / other chromatic | Still tracks                                   | ☐     |                                           |
+| Octave jump          | Same bass note, not 12 semitones up            | ☐     |                                           |
+| Play vs Lock         | Play: live root. Lock: frozen captured pitches | ☐     | Already covered in B; confirm they differ |
 
 ---
-
-
 
 ### Station G — Swing, fills, ornaments, scope, energy (3 min)
 
-
-| Step | What you do                                  | Expected                                     | Result | Notes |
-| ---- | -------------------------------------------- | -------------------------------------------- | ------ | ----- |
-| G1   | Genre Rock, Play, CHORUS, Swing **0.00**     | Straight 8ths (unless pattern 24)            | ☐      |       |
-| G2   | Same, Swing **0.50**                         | Off-beats late; Shuffle (24) becomes obvious | ☐      |       |
-| G3   | Swing **1.00**                               | Hard shuffle / dotted                        | ☐      |       |
-| G4   | Swing back to 0                              | Straight again next bar                      | ☐      |       |
-| G5   | Last bar of CHORUS, strum as hard as you can | Fill **19** (full-bar toms)                  | ☐      |       |
-| G6   | Last bar of INTRO, barely touch the strings  | Fill **17** (toms only on 4)                 | ☐      |       |
-| G7   | Medium last bar                              | Fill **18**                                  | ☐      |       |
-| G8   | Listen across 4-bar phrases (not a fill bar) | Tiny two-tom pickup into the downbeat        | ☐      |       |
-| G9   | Dig in vs ease off, same riff                | Kit velocity swells, pattern may stay        | ☐      |       |
-| G10  | Scope vs kick                                | Kick on 1 lines up with notch **1**          | ☐      |       |
-
+| Step | What you do                                   | Expected                                     | Result | Notes |
+| ---- | --------------------------------------------- | -------------------------------------------- | ------ | ----- |
+| G1   | Genre Rock, Play, CHORUS, Swing**0.00** | Straight 8ths (unless pattern 24)            | ☐     |       |
+| G2   | Same, Swing**0.50**                     | Off-beats late; Shuffle (24) becomes obvious | ☐     |       |
+| G3   | Swing**1.00**                           | Hard shuffle / dotted                        | ☐     |       |
+| G4   | Swing back to 0                               | Straight again next bar                      | ☐     |       |
+| G5   | Last bar of CHORUS, strum as hard as you can  | Fill**19** (full-bar toms)             | ☐     |       |
+| G6   | Last bar of INTRO, barely touch the strings   | Fill**17** (toms only on 4)            | ☐     |       |
+| G7   | Medium last bar                               | Fill**18**                             | ☐     |       |
+| G8   | Listen across 4-bar phrases (not a fill bar)  | Tiny two-tom pickup into the downbeat        | ☐     |       |
+| G9   | Dig in vs ease off, same riff                 | Kit velocity swells, pattern may stay        | ☐     |       |
+| G10  | Scope vs kick                                 | Kick on 1 lines up with notch**1**     | ☐     |       |
 
 ---
-
-
 
 ### Station H — UI / session hygiene (2 min)
 
-
-| Step                         | Expected                                                                                    | Result | Notes |
-| ---------------------------- | ------------------------------------------------------------------------------------------- | ------ | ----- |
-| Genre change mid-Play        | Next phrase uses the new genre’s pool (Rock chorus starts producing 24/25; Metal chorus 21) | ☐      |       |
-| Record riff while Play is on | Capture cancelled / ignored — Play wins                                                     | ☐      |       |
-| Forget while locked          | Immediate idle                                                                              | ☐      |       |
-| Forget while capturing       | Abort, no lock                                                                              | ☐      |       |
-| Resize the window            | Controls remain usable; no clipped Sections list                                            | ☐      |       |
-| Close / reopen editor        | Params (genre, swing, lock, sections) persist with the session                              | ☐      |       |
-| Bypass / disable the plugin  | MIDI stops; no stuck crash/bass note                                                        | ☐      |       |
-| Stuck notes                  | After SILENT, no hanging crash or bass                                                      | ☐      |       |
-| Version string               | Still the build you meant to test                                                           | ☐      |       |
-
+| Step                         | Expected                                                                                     | Result | Notes |
+| ---------------------------- | -------------------------------------------------------------------------------------------- | ------ | ----- |
+| Genre change mid-Play        | Next phrase uses the new genre’s pool (Rock chorus starts producing 24/25; Metal chorus 21) | ☐     |       |
+| Record riff while Play is on | Capture cancelled / ignored — Play wins                                                     | ☐     |       |
+| Forget while locked          | Immediate idle                                                                               | ☐     |       |
+| Forget while capturing       | Abort, no lock                                                                               | ☐     |       |
+| Resize the window            | Controls remain usable; no clipped Sections list                                             | ☐     |       |
+| Close / reopen editor        | Params (genre, swing, lock, sections) persist with the session                               | ☐     |       |
+| Bypass / disable the plugin  | MIDI stops; no stuck crash/bass note                                                         | ☐     |       |
+| Stuck notes                  | After SILENT, no hanging crash or bass                                                       | ☐     |       |
+| Version string               | Still the build you meant to test                                                            | ☐     |       |
 
 ---
-
-
 
 ## 7. Master sighting log — every pattern must be ticked
 
 Copy indices from Stations C–D. A blank row at the end of the session is a **MISS**.
 
-
-| #   | Name               | First heard in station | Genre | Mode (Play / Lock / Transition) | Tick |
-| --- | ------------------ | ---------------------- | ----- | ------------------------------- | ---- |
-| 0   | Silent             |                        |       |                                 | ☐    |
-| 1   | Verse Groove       |                        |       |                                 | ☐    |
-| 2   | Verse Half-Time    |                        |       |                                 | ☐    |
-| 3   | Verse Fast         |                        |       |                                 | ☐    |
-| 4   | Chorus Mid         |                        |       |                                 | ☐    |
-| 5   | Chorus Fast        |                        |       |                                 | ☐    |
-| 6   | Breakdown          |                        |       |                                 | ☐    |
-| 7   | Half-Time          |                        |       |                                 | ☐    |
-| 8   | Blast Beat         |                        |       |                                 | ☐    |
-| 9   | Sparse Breakdown   |                        |       |                                 | ☐    |
-| 10  | Thrash             |                        |       |                                 | ☐    |
-| 11  | Intro Build        |                        |       |                                 | ☐    |
-| 12  | Intro Full         |                        |       |                                 | ☐    |
-| 13  | Pre-Chorus Rise    |                        |       |                                 | ☐    |
-| 14  | Chorus Open Groove |                        |       |                                 | ☐    |
-| 15  | Breakdown Full     |                        |       |                                 | ☐    |
-| 16  | Outro Decay        |                        |       |                                 | ☐    |
-| 17  | Fill Short         |                        |       |                                 | ☐    |
-| 18  | Fill Medium        |                        |       |                                 | ☐    |
-| 19  | Fill Big           |                        |       |                                 | ☐    |
-| 20  | Verse Ghost        |                        |       |                                 | ☐    |
-| 21  | Chorus Blast       |                        |       |                                 | ☐    |
-| 22  | Rock Backbeat      |                        |       |                                 | ☐    |
-| 23  | Rock Half-Time     |                        |       |                                 | ☐    |
-| 24  | Rock Shuffle       |                        |       |                                 | ☐    |
-| 25  | Punk D-Beat        |                        |       |                                 | ☐    |
-| 26  | Rock Ballad        |                        |       |                                 | ☐    |
-| 27  | Rock 6/8 Feel      |                        |       |                                 | ☐    |
-
-
-
+| #  | Name               | First heard in station | Genre | Mode (Play / Lock / Transition) | Tick |
+| -- | ------------------ | ---------------------- | ----- | ------------------------------- | ---- |
+| 0  | Silent             |                        |       |                                 | ☐   |
+| 1  | Verse Groove       |                        |       |                                 | ☐   |
+| 2  | Verse Half-Time    |                        |       |                                 | ☐   |
+| 3  | Verse Fast         |                        |       |                                 | ☐   |
+| 4  | Chorus Mid         |                        |       |                                 | ☐   |
+| 5  | Chorus Fast        |                        |       |                                 | ☐   |
+| 6  | Breakdown          |                        |       |                                 | ☐   |
+| 7  | Half-Time          |                        |       |                                 | ☐   |
+| 8  | Blast Beat         |                        |       |                                 | ☐   |
+| 9  | Sparse Breakdown   |                        |       |                                 | ☐   |
+| 10 | Thrash             |                        |       |                                 | ☐   |
+| 11 | Intro Build        |                        |       |                                 | ☐   |
+| 12 | Intro Full         |                        |       |                                 | ☐   |
+| 13 | Pre-Chorus Rise    |                        |       |                                 | ☐   |
+| 14 | Chorus Open Groove |                        |       |                                 | ☐   |
+| 15 | Breakdown Full     |                        |       |                                 | ☐   |
+| 16 | Outro Decay        |                        |       |                                 | ☐   |
+| 17 | Fill Short         |                        |       |                                 | ☐   |
+| 18 | Fill Medium        |                        |       |                                 | ☐   |
+| 19 | Fill Big           |                        |       |                                 | ☐   |
+| 20 | Verse Ghost        |                        |       |                                 | ☐   |
+| 21 | Chorus Blast       |                        |       |                                 | ☐   |
+| 22 | Rock Backbeat      |                        |       |                                 | ☐   |
+| 23 | Rock Half-Time     |                        |       |                                 | ☐   |
+| 24 | Rock Shuffle       |                        |       |                                 | ☐   |
+| 25 | Punk D-Beat        |                        |       |                                 | ☐   |
+| 26 | Rock Ballad        |                        |       |                                 | ☐   |
+| 27 | Rock 6/8 Feel      |                        |       |                                 | ☐   |
 
 ### Style / genre / section ticks
 
-
 | Item                                                | Tick | Notes |
 | --------------------------------------------------- | ---- | ----- |
-| Style: Palm Mute                                    | ☐    |       |
-| Style: Open Chord                                   | ☐    |       |
-| Style: Single Note                                  | ☐    |       |
-| Style: Sustain                                      | ☐    |       |
-| Style: Silence                                      | ☐    |       |
-| State: SILENT                                       | ☐    |       |
-| State: SOFT                                         | ☐    |       |
-| State: LOUD                                         | ☐    |       |
-| Genre: Rock                                         | ☐    |       |
-| Genre: Hard Rock                                    | ☐    |       |
-| Genre: Punk                                         | ☐    |       |
-| Genre: Metal                                        | ☐    |       |
-| Genre: Sludge                                       | ☐    |       |
-| Genre: Thrash Metal                                 | ☐    |       |
-| Genre: Death Metal                                  | ☐    |       |
-| Genre: Black Metal                                  | ☐    |       |
-| Genre: Doom Metal                                   | ☐    |       |
-| Genre: Djent                                        | ☐    |       |
-| Genre: Classic Rock                                 | ☐    |       |
-| Genre: Alternative                                  | ☐    |       |
-| Genre: Grunge                                       | ☐    |       |
-| Section: INTRO                                      | ☐    |       |
-| Section: VERSE                                      | ☐    |       |
-| Section: CHORUS                                     | ☐    |       |
-| Section: BREAKDOWN                                  | ☐    |       |
-| Section: SOLO                                       | ☐    |       |
-| Section: OUTRO                                      | ☐    |       |
-| Idle until arm                                      | ☐    |       |
-| Record count-in click                               | ☐    |       |
-| Groove lock freeze                                  | ☐    |       |
-| Bass frozen in lock                                 | ☐    |       |
-| Transition B contrast                               | ☐    |       |
-| Return to A after B                                 | ☐    |       |
-| Transition C second contrast (after A, not after B) | ☐    |       |
-| Return to A after C                                 | ☐    |       |
-| Cut transition by replaying riff                    | ☐    |       |
-| Forget → idle                                       | ☐    |       |
-| Play form walk                                      | ☐    |       |
-| Play stops after last section                       | ☐    |       |
-| Last-bar fill                                       | ☐    |       |
-| Section-change crash                                | ☐    |       |
-| Swing knob                                          | ☐    |       |
-| Bass root tracking                                  | ☐    |       |
-| Scope downbeat = beat 1                             | ☐    |       |
-| Host tempo follow                                   | ☐    |       |
-
+| Style: Palm Mute                                    | ☐   |       |
+| Style: Open Chord                                   | ☐   |       |
+| Style: Single Note                                  | ☐   |       |
+| Style: Sustain                                      | ☐   |       |
+| Style: Silence                                      | ☐   |       |
+| State: SILENT                                       | ☐   |       |
+| State: SOFT                                         | ☐   |       |
+| State: LOUD                                         | ☐   |       |
+| Genre: Rock                                         | ☐   |       |
+| Genre: Hard Rock                                    | ☐   |       |
+| Genre: Punk                                         | ☐   |       |
+| Genre: Metal                                        | ☐   |       |
+| Genre: Sludge                                       | ☐   |       |
+| Genre: Thrash Metal                                 | ☐   |       |
+| Genre: Death Metal                                  | ☐   |       |
+| Genre: Black Metal                                  | ☐   |       |
+| Genre: Doom Metal                                   | ☐   |       |
+| Genre: Djent                                        | ☐   |       |
+| Genre: Classic Rock                                 | ☐   |       |
+| Genre: Alternative                                  | ☐   |       |
+| Genre: Grunge                                       | ☐   |       |
+| Section: INTRO                                      | ☐   |       |
+| Section: VERSE                                      | ☐   |       |
+| Section: CHORUS                                     | ☐   |       |
+| Section: BREAKDOWN                                  | ☐   |       |
+| Section: SOLO                                       | ☐   |       |
+| Section: OUTRO                                      | ☐   |       |
+| Idle until arm                                      | ☐   |       |
+| Record count-in click                               | ☐   |       |
+| Groove lock freeze                                  | ☐   |       |
+| Bass frozen in lock                                 | ☐   |       |
+| Transition B contrast                               | ☐   |       |
+| Return to A after B                                 | ☐   |       |
+| Transition C second contrast (after A, not after B) | ☐   |       |
+| Return to A after C                                 | ☐   |       |
+| Cut transition by replaying riff                    | ☐   |       |
+| Forget → idle                                      | ☐   |       |
+| Play form walk                                      | ☐   |       |
+| Play stops after last section                       | ☐   |       |
+| Last-bar fill                                       | ☐   |       |
+| Section-change crash                                | ☐   |       |
+| Swing knob                                          | ☐   |       |
+| Bass root tracking                                  | ☐   |       |
+| Scope downbeat = beat 1                             | ☐   |       |
+| Host tempo follow                                   | ☐   |       |
 
 ---
-
-
 
 ## 8. Miss / bug log
 
@@ -1214,8 +1058,6 @@ ID | Station | Time on recording | What you played | UI (BPM/State/Style/Pattern
 Known-hard indices (do not pre-excuse them, but tell the agent they have no Play-mode pool): **5, 7, 8, 10, 13, 20, 27**.
 
 ---
-
-
 
 ## 9. Agent review prompt (paste with the recordings)
 
@@ -1257,33 +1099,26 @@ Do not excuse a missing pattern because it is hard. If the trigger recipe was fo
 
 ---
 
-
-
 ## 10. Speed-run clock
 
 If you only have half an hour, skip the 11 subgenre Play passes (do Metal + Rock full forms, 20-second feel checks on the rest):
 
-
-| Min   | Station                                                                                         | Skip if needed                     |
-| ----- | ----------------------------------------------------------------------------------------------- | ---------------------------------- |
-| 0–2   | A idle + one Play arm (confirm it **stops** after a 4-bar custom form if you are short on time) | —                                  |
+| Min    | Station                                                                                              | Skip if needed                     |
+| ------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 0–2   | A idle + one Play arm (confirm it**stops** after a 4-bar custom form if you are short on time) | —                                 |
 | 2–12  | B Metal lock → B → A → C → A → forget                                                           | Skip B2 solo                       |
-| 12–22 | C Metal + Rock full forms (add BREAKDOWN+SOLO). Confirm Play **stops** after OUTRO              | Subgenres as 20-second feel checks |
-| 22–28 | D style five-pack + 180 BPM blast bait + 6/8 bait (TRANSITION BARS=8)                           | —                                  |
-| 28–32 | E tempo jumps, F three roots (C/E/G), G swing + one Fill Big                                    | —                                  |
-| 32–35 | H Forget / genre swap (Metal → Thrash → Rock → Grunge) / stuck notes                            | —                                  |
-
+| 12–22 | C Metal + Rock full forms (add BREAKDOWN+SOLO). Confirm Play**stops** after OUTRO              | Subgenres as 20-second feel checks |
+| 22–28 | D style five-pack + 180 BPM blast bait + 6/8 bait (TRANSITION BARS=8)                                | —                                 |
+| 28–32 | E tempo jumps, F three roots (C/E/G), G swing + one Fill Big                                         | —                                 |
+| 32–35 | H Forget / genre swap (Metal → Thrash → Rock → Grunge) / stuck notes                              | —                                 |
 
 Full session (all 13 Play passes) is ~45–60 min. Then fill Section 7 honestly. Empty boxes are data, not failure of the test.
 
 ---
 
-
-
 ## Appendix — GM MIDI cheat (for piano-roll inspection)
 
 When you dump the MIDI, this is how you confirm a pattern without guessing from the kit mix:
-
 
 | Pattern | Signature in the piano roll                                |
 | ------- | ---------------------------------------------------------- |
@@ -1297,6 +1132,5 @@ When you dump the MIDI, this is how you confirm a pattern without guessing from 
 | 24      | 8ths with swing when knob > 0                              |
 | 25      | 8th-note 36s, 38 on 2/4, 51 quarters                       |
 | 27      | hats/kicks at 0.666 / 1.333 / 2.666 / 3.333 (triplet grid) |
-
 
 Bass is channel 2, typically 28–55. During lock it repeats the captured contour. During Play/transition it should move when you change chord and stay in-key with the section.
