@@ -783,6 +783,77 @@ TEST_CASE("Processor pipeline: two transition sections return to the riff betwee
     REQUIRE_FALSE(proc.isTransitionSectionActive());
     REQUIRE(proc.isGrooveLocked());
 
+    // Third lock expiry → wrap: slot 0 reused, so family == sectionB.
+    // Lock has ~4s remaining; feed 5s to expire it and land 1s into the
+    // 4s transition (short enough that the hold has not yet finished).
+    feed(0.05, 400.0, static_cast<int>(5.0 * sr / block), blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE(proc.getTransitionSectionNumber() == 1);
+    REQUIRE(std::string(proc.getTransitionSectionName()) == sectionB);
+
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: one transition section repeats the same contrast (A-B-A-B)", "[integration][pipeline][transition]")
+{
+    // With TRANSITION SECTIONS = 1, every lock expiry must revisit the same
+    // contrast family (B). The form is A-B-A-B, not A-B1-A-B2.
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);  // 4-bar lock
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(2.0f));  // 2 bars
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));  // N=1
+
+    auto feed = [&](float amp, double freq, int numBlocks, int& blockIdx) {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(blockIdx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++blockIdx;
+        }
+    };
+
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);
+    REQUIRE(proc.isGrooveLocked());
+
+    // First lock expiry → B (slot 0 first visit: new family chosen and pinned).
+    feed(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE(proc.getTransitionSectionNumber() == 1);
+    const std::string sectionB1 = proc.getTransitionSectionName();
+    REQUIRE_FALSE(sectionB1.empty());
+
+    // B finishes → back to A (locked riff).
+    feed(0.05, 400.0, static_cast<int>(5.0 * sr / block), blockIdx);
+    REQUIRE_FALSE(proc.isTransitionSectionActive());
+    REQUIRE(proc.isGrooveLocked());
+
+    // Second lock expiry → slot 0 is pinned, so must reuse the same family.
+    feed(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE(proc.getTransitionSectionNumber() == 1);
+    REQUIRE(std::string(proc.getTransitionSectionName()) == sectionB1);
+
     proc.releaseResources();
 }
 
