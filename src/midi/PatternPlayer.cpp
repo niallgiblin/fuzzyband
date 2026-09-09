@@ -1125,7 +1125,7 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         }
     }
 
-    // Learned bass note-ons (RiffA snapshot / leftover RiffBLocked learner).
+    // Learned bass note-ons (RiffA / RiffBLocked snapshots, or live listen).
     // Duration is already gated by the caller (0.25 beat for frozen 16ths,
     // kBassGate for live mirror). Do not multiply sectionBassGate() again.
     {

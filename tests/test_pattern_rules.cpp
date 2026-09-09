@@ -814,4 +814,10 @@ TEST_CASE("PatternRules::contrastHomePattern avoids verse-neighborhood when poss
     mixed.indices[2] = 9;
     REQUIRE(PatternRules::contrastHomePattern(1, mixed) == 6);
     REQUIRE(PatternRules::isStrongContrastPattern(6));
+
+    PatternRules::SectionPatternPool chorus = PatternRules::sectionPatternPool("CHORUS");
+    REQUIRE(chorus.count >= 2);
+    REQUIRE(PatternRules::contrastHomePattern(1, chorus) == 14);
+    REQUIRE(PatternRules::isStrongContrastPattern(14));
+    REQUIRE_FALSE(PatternRules::isVerseFeelNeighborhood(14));
 }

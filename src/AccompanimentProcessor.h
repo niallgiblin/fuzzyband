@@ -152,6 +152,34 @@ public:
         return riffA.midi[static_cast<size_t>(slot)];
     }
 
+    int getDrumA() const noexcept { return drumA; }
+    int getDrumB0() const noexcept { return drumB0; }
+    int getDrumB() const noexcept { return drumB; }
+    bool isRiffBLocked() const noexcept { return enginePhase == EnginePhase::RiffBLocked; }
+
+    int getRiffBOccupiedCount() const noexcept
+    {
+        if (!riffB.valid)
+            return 0;
+        int n = 0;
+        for (int i = 0; i < PhraseLearner::kGridSlots; ++i)
+            if (riffB.occupied[static_cast<size_t>(i)])
+                ++n;
+        return n;
+    }
+    bool getRiffBSlotOccupied(int slot) const noexcept
+    {
+        return riffB.valid && slot >= 0 && slot < PhraseLearner::kGridSlots
+            && riffB.occupied[static_cast<size_t>(slot)];
+    }
+    int getRiffBSlotMidi(int slot) const noexcept
+    {
+        if (!riffB.valid || slot < 0 || slot >= PhraseLearner::kGridSlots
+            || !riffB.occupied[static_cast<size_t>(slot)])
+            return -1;
+        return riffB.midi[static_cast<size_t>(slot)];
+    }
+
     // ── Post-lock transition grammar (A5.2) ──────────────────────────────────
     // After a groove lock expires, the engine plays a *contrast* section for a
     // few bars before firmly returning to the locked riff (A). UI reads these
@@ -229,9 +257,13 @@ private:
     void drainFeatureQueueAndRunInference();
     /** @brief Smooth a raw style classification into the committed style used downstream. */
     void updateCommittedStyle(int rawStyle) noexcept;
-    /** @brief Emit occupied riffA 16ths whose onsets fall in this block (RiffA only). */
-    void emitFrozenRiffA(int numSamples, double bpm, double sr,
-                         int64_t clockSample, int bassTranspose) noexcept;
+    /** @brief Emit occupied 16ths from a learned-riff snapshot in this block. */
+    void emitFrozenRiff(const PhraseLearner::LearnedRiff& riff, int64_t originSample,
+                        int numSamples, double bpm, double sr,
+                        int64_t clockSample, int bassTranspose) noexcept;
+    void stampLearnerGridSlots(const float* in, int numSamples,
+                               double beatStart, double beatEnd, double samplesPerBeat,
+                               double originBeat, int bassMidi, bool wrapLoop) noexcept;
     struct OutgoingFillArm
     {
         bool lastBar = false;
@@ -305,6 +337,7 @@ private:
     PhraseLearner::LearnedRiff riffA{};
     PhraseLearner::LearnedRiff riffB{};
     int64_t riffAPlayOriginSample = -1;
+    int64_t riffBPlayOriginSample = -1;
     int drumA = 0;
     int drumB0 = 0;
     int drumB = 0;
@@ -375,8 +408,7 @@ private:
 
     // ── Play / post-lock section tracking ────────────────────────────────────
     // Play holds one pool-constrained groove (inference 2-bar hold); Record B
-    // freezes drumB0. These fields track section edges and leftover transition
-    // picks, not hash rotation.
+    // freezes drumB0 then drumB. No pool rotation.
     int lastSectionIndex = -1;      // section we last seeded for
     int sectionEntryBar = 0;        // global bar count at current section entry
     bool wasPlayOn = false;         // play-start edge detection (re-seed)
@@ -386,9 +418,6 @@ private:
     bool playCountInWaitingBar = false;
     double playCountInStartBeat = 0.0;
     int lastSeenBarsElapsed = -1;   // loop/restart edge detection (re-seed on wrap)
-    int lastPlayedPoolPattern = -1; // leftover; B contrast uses drumB0
-    int lastTransitionSlot = -1;    // post-lock hold slot
-    int cachedTransitionPick = -1;  // fallback if drumB0 was never set
     OutgoingFillArm playFillArm{};
     OutgoingFillArm riffAFillArm{};
     OutgoingFillArm riffBFillArm{};

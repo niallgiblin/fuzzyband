@@ -172,6 +172,7 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     riffA = {};
     riffB = {};
     riffAPlayOriginSample = -1;
+    riffBPlayOriginSample = -1;
     drumA = drumB0 = drumB = 0;
     guitarSilentSamples = 0;
     playSectionIndex.store(-1, std::memory_order_relaxed);
@@ -728,6 +729,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         riffA = {};
         riffB = {};
         riffAPlayOriginSample = -1;
+        riffBPlayOriginSample = -1;
         phraseLearner.reset();
         phraseLearner.setAutoLockEnabled(false);
         enginePhase = EnginePhase::PlayCountIn;
@@ -847,8 +849,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             effectivePatternIdx = drumB;
         else if (drumB0 > 0)
             effectivePatternIdx = drumB0;
-        else if (cachedTransitionPick >= 0)
-            effectivePatternIdx = cachedTransitionPick;
     }
     else if (!playOn && enginePhase == EnginePhase::RiffA && drumA > 0)
     {
@@ -1073,6 +1073,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             riffA = {};
             riffB = {};
             riffAPlayOriginSample = -1;
+            riffBPlayOriginSample = -1;
             drumA = drumB0 = drumB = 0;
             phraseLearner.reset();
             phraseLearner.setAutoLockEnabled(false);
@@ -1099,6 +1100,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             riffA = {};
             riffB = {};
             riffAPlayOriginSample = -1;
+            riffBPlayOriginSample = -1;
             drumA = drumB0 = drumB = 0;
             phraseLearner.beginGridCapture();
             phraseLearner.setAutoLockEnabled(false);
@@ -1167,37 +1169,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                         const int pc = ((static_cast<int>(std::round(instPitch)) % 12) + 12) % 12;
                         bassMidi = 36 + pc;
                     }
-                    // Per-slot peak: a ringing palm-mute must not paint neighboring 16ths.
-                    const double recRel0 = cap0 - recStart;
-                    const double recRel1 = cap1 - recStart;
-                    const int slot0 = std::max(0, static_cast<int>(std::floor(recRel0 * 4.0)));
-                    const int slot1 = std::min(PhraseLearner::kGridSlots - 1,
-                                               static_cast<int>(std::floor((recRel1 - 1.0e-9) * 4.0)));
-                    const double blockBeat0 = beatStart;
-                    for (int s = slot0; s <= slot1; ++s)
-                    {
-                        const double slotA = recStart + static_cast<double>(s) * 0.25;
-                        const double slotB = slotA + 0.25;
-                        const double ov0 = juce::jmax(cap0, slotA);
-                        const double ov1 = juce::jmin(cap1, slotB);
-                        if (ov1 <= ov0)
-                            continue;
-                        const int i0 = juce::jlimit(0, numSamples - 1,
-                            static_cast<int>(std::floor((ov0 - blockBeat0) * samplesPerBeat)));
-                        const int i1 = juce::jlimit(1, numSamples,
-                            static_cast<int>(std::ceil((ov1 - blockBeat0) * samplesPerBeat)));
-                        float slotPeak = 0.0f;
-                        for (int i = i0; i < i1; ++i)
-                        {
-                            const float a = std::abs(in[i]);
-                            if (a > slotPeak)
-                                slotPeak = a;
-                        }
-                        phraseLearner.stampGridRange(
-                            static_cast<double>(s) * 0.25,
-                            static_cast<double>(s) * 0.25 + 0.25,
-                            slotPeak, bassMidi);
-                    }
+                    stampLearnerGridSlots(in, numSamples, cap0, cap1, samplesPerBeat,
+                                          recStart, bassMidi, false);
                 }
 
                 const int bar = 1 + static_cast<int>(std::floor((cap0 - recStart) / kBar));
@@ -1217,6 +1190,22 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             }
         }
 
+        if (enginePhase == EnginePhase::RiffBListen && phraseLearner.isGridListening()
+            && samplesPerBeat > 0.0 && transitionStartSample >= 0)
+        {
+            int bassMidi = (pcForBass != INT_MIN) ? 36 + pcForBass : 36;
+            const float instPitch = pitchEstimator.getMidiNote();
+            const float instConf  = pitchEstimator.getConfidence();
+            if (instConf > 0.3f)
+            {
+                const int pc = ((static_cast<int>(std::round(instPitch)) % 12) + 12) % 12;
+                bassMidi = 36 + pc;
+            }
+            const double originBeat = static_cast<double>(transitionStartSample) / samplesPerBeat;
+            stampLearnerGridSlots(in, numSamples, beatStart, beatEnd, samplesPerBeat,
+                                  originBeat, bassMidi, true);
+        }
+
         // Do not wipe a user take on phrase-breath silence.
         const auto bassNote = ((silentNow || !armActive) && !capturingNow)
             ? PhraseLearner::BassNote{}
@@ -1232,7 +1221,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // Idle (armActive false) or silence: don't keep the riff mirror learning
         // in the background — the plugin only learns once the user arms it.
         if ((silentNow || !armActive) && !capturingNow && !phraseLearner.isLocked()
-            && !phraseLearner.isGridCapturing())
+            && !phraseLearner.isGridCapturing() && !phraseLearner.isGridListening()
+            && enginePhase != EnginePhase::RiffBListen
+            && enginePhase != EnginePhase::RiffBLocked)
             phraseLearner.reset();
 
         if (riffCaptureStop.exchange(false, std::memory_order_acq_rel)
@@ -1258,7 +1249,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // still exists as a fallback when the user does not record first.
         // P0/R2: the hold is a FIXED `lockBars`-bar window.
 
-        if (phraseLearner.justMatchedRiff())
+        if (phraseLearner.justMatchedRiff()
+            && enginePhase != EnginePhase::RiffBListen
+            && enginePhase != EnginePhase::RiffBLocked)
             lastRiffMatchSample = clockSample;
 
         const bool phraseLockEdge = (phraseLocked && !prevPhraseLocked);
@@ -1313,13 +1306,14 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 drumB = (oneShot >= 0)
                     ? PatternRules::constrainToPool(oneShot, transitionPool, st)
                     : drumB0;
-                requestBLockPick.store(true, std::memory_order_release);
-                phraseLearner.loadPattern(riffB);
-                enginePhase = EnginePhase::RiffBLocked;
-                patternPlayer.setBeatGridBassEnabled(false);
-                patternPlayer.setPatternIndex(drumB > 0 ? drumB : drumB0);
+                phraseLearner.cancelLiveGridListen();
                 phraseLearner.setAutoLockEnabled(false);
                 phraseLearner.setHoldActive(true);
+                enginePhase = EnginePhase::RiffBLocked;
+                riffBPlayOriginSample = clockSample;
+                patternPlayer.setBeatGridBassEnabled(false);
+                patternPlayer.setPatternIndex(drumB > 0 ? drumB : drumB0);
+                riffHeld.store(true, std::memory_order_release);
             }
         }
 
@@ -1408,21 +1402,21 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             postLockPhase = PostLockPhase::TransitionHold;
             transitionPool = ts.pool;
             transitionSectionNameStr = ts.name;
-            lastPlayedPoolPattern = -1;
-            lastTransitionSlot = -1;
-            cachedTransitionPick = -1;
             drumB0 = PatternRules::contrastHomePattern(
                 drumA > 0 ? drumA : lockedPat, ts.pool);
             drumB = drumB0;
             riffB = {};
+            riffBPlayOriginSample = -1;
             if (!riffA.valid)
                 phraseLearner.exportPattern(riffA);
             phraseLearner.reset();
+            phraseLearner.beginLiveGridListen();
             phraseLearner.setAutoLockEnabled(true);
             enginePhase = EnginePhase::RiffBListen;
             grooveLockActive = false;
             riffLoopActive = true;
             requestBLockPick.store(true, std::memory_order_release);
+            bLockPick.store(-1, std::memory_order_release);
             patternPlayer.setBeatGridBassEnabled(true);
             patternPlayer.setPatternIndex(drumB0);
             transitionSectionName.store(ts.name, std::memory_order_release);
@@ -1452,7 +1446,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 postLockPhase = PostLockPhase::Idle;
                 transitionSectionActive.store(false, std::memory_order_release);
                 riffB = {};
+                riffBPlayOriginSample = -1;
                 riffBFillArm.clear();
+                phraseLearner.cancelLiveGridListen();
                 patternPlayer.armTransitionCrash();
                 enterRiffA();
             }
@@ -1528,12 +1524,19 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         if (enginePhase == EnginePhase::RiffA && !guitarStopped
             && !riffCaptureActive.load(std::memory_order_acquire))
         {
-            emitFrozenRiffA(numSamples, static_cast<double>(bpmForPlayer), sr,
-                            clockSample, bassTranspose);
+            emitFrozenRiff(riffA, riffAPlayOriginSample, numSamples,
+                           static_cast<double>(bpmForPlayer), sr,
+                           clockSample, bassTranspose);
+        }
+        else if (enginePhase == EnginePhase::RiffBLocked && !guitarStopped)
+        {
+            emitFrozenRiff(riffB, riffBPlayOriginSample, numSamples,
+                           static_cast<double>(bpmForPlayer), sr,
+                           clockSample, bassTranspose);
         }
         else if (shouldTrigger && !riffCaptureActive.load(std::memory_order_acquire)
             && !phraseLearner.isGridCapturing()
-            && (enginePhase == EnginePhase::RiffBLocked || listenBass))
+            && listenBass)
         {
             const int note = mirrorNote + bassTranspose;
             const double sixteenthQ = samplesPerBeatQ / 4.0;
@@ -1569,6 +1572,21 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     }
 
     hostSampleTime += numSamples;
+
+    if (!playOn && (enginePhase == EnginePhase::RiffBListen || enginePhase == EnginePhase::RiffBLocked
+             || postLockPhase == PostLockPhase::TransitionHold))
+    {
+        if (enginePhase == EnginePhase::RiffBLocked && drumB > 0)
+            effectivePatternIdx = drumB;
+        else if (drumB0 > 0)
+            effectivePatternIdx = drumB0;
+        patternPlayer.setPatternIndex(effectivePatternIdx);
+    }
+    else if (!playOn && enginePhase == EnginePhase::RiffA && drumA > 0)
+    {
+        effectivePatternIdx = drumA;
+        patternPlayer.setPatternIndex(effectivePatternIdx);
+    }
 
     // Display updates
     displayBpm.store(bpmForPlayer, std::memory_order_relaxed);
@@ -1665,23 +1683,95 @@ void AccompanimentProcessor::updateOutgoingFill(OutgoingFillArm& arm, bool isLas
     }
 }
 
-void AccompanimentProcessor::emitFrozenRiffA(int numSamples, double bpm, double sr,
-                                            int64_t clockSample, int bassTranspose) noexcept
+void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSamples,
+                                                   double beatStart, double beatEnd,
+                                                   double samplesPerBeat, double originBeat,
+                                                   int bassMidi, bool wrapLoop) noexcept
 {
-    if (!riffA.valid || numSamples <= 0 || bpm <= 0.0 || sr <= 0.0)
+    if (in == nullptr || numSamples <= 0 || samplesPerBeat <= 0.0)
         return;
-    const double loopBeats = riffA.lenBeats > 0.0 ? riffA.lenBeats : 16.0;
+    if (beatEnd <= beatStart)
+        return;
+
+    constexpr double kLoop = static_cast<double>(PhraseLearner::kGridBars) * 4.0;
+    const double blockBeat0 = beatStart;
+
+    auto stampWindow = [&](double cap0, double cap1, double origin) noexcept
+    {
+        if (cap1 <= cap0)
+            return;
+        const int slot0 = std::max(0, static_cast<int>(std::floor((cap0 - origin) * 4.0)));
+        const int slot1 = std::min(PhraseLearner::kGridSlots - 1,
+                                   static_cast<int>(std::floor((cap1 - origin - 1.0e-9) * 4.0)));
+        for (int s = slot0; s <= slot1; ++s)
+        {
+            const double slotA = origin + static_cast<double>(s) * 0.25;
+            const double slotB = slotA + 0.25;
+            const double ov0 = juce::jmax(cap0, slotA);
+            const double ov1 = juce::jmin(cap1, slotB);
+            if (ov1 <= ov0)
+                continue;
+            const int i0 = juce::jlimit(0, numSamples - 1,
+                static_cast<int>(std::floor((ov0 - blockBeat0) * samplesPerBeat)));
+            const int i1 = juce::jlimit(1, numSamples,
+                static_cast<int>(std::ceil((ov1 - blockBeat0) * samplesPerBeat)));
+            float slotPeak = 0.0f;
+            for (int i = i0; i < i1; ++i)
+            {
+                const float a = std::abs(in[i]);
+                if (a > slotPeak)
+                    slotPeak = a;
+            }
+            phraseLearner.stampGridRange(
+                static_cast<double>(s) * 0.25,
+                static_cast<double>(s) * 0.25 + 0.25,
+                slotPeak, bassMidi);
+        }
+    };
+
+    if (!wrapLoop)
+    {
+        stampWindow(beatStart, beatEnd, originBeat);
+        return;
+    }
+
+    double t = beatStart - originBeat;
+    const double tEnd = beatEnd - originBeat;
+    if (tEnd <= 0.0)
+        return;
+    if (t < 0.0)
+        t = 0.0;
+    while (t < tEnd)
+    {
+        const double cycle = std::floor(t / kLoop);
+        const double cycleAbs = originBeat + cycle * kLoop;
+        const double chunkEndRel = juce::jmin(tEnd, (cycle + 1.0) * kLoop);
+        const double cap0 = originBeat + juce::jmax(t, cycle * kLoop);
+        const double cap1 = originBeat + chunkEndRel;
+        stampWindow(cap0, cap1, cycleAbs);
+        t = chunkEndRel;
+    }
+}
+
+void AccompanimentProcessor::emitFrozenRiff(const PhraseLearner::LearnedRiff& riff,
+                                            int64_t originSample, int numSamples,
+                                            double bpm, double sr, int64_t clockSample,
+                                            int bassTranspose) noexcept
+{
+    if (!riff.valid || numSamples <= 0 || bpm <= 0.0 || sr <= 0.0)
+        return;
+    const double loopBeats = riff.lenBeats > 0.0 ? riff.lenBeats : 16.0;
     const double spb = 60.0 / bpm * sr;
     if (spb <= 0.0)
         return;
-    const int64_t origin = (riffAPlayOriginSample >= 0) ? riffAPlayOriginSample : 0;
+    const int64_t origin = (originSample >= 0) ? originSample : 0;
     const double beat0 = static_cast<double>(clockSample - origin) / spb;
     const double beat1 = beat0 + static_cast<double>(numSamples) / spb;
     const int duration = juce::jmax(1, static_cast<int>(0.25 * spb));
 
     for (int s = 0; s < PhraseLearner::kGridSlots; ++s)
     {
-        if (!riffA.occupied[static_cast<size_t>(s)])
+        if (!riff.occupied[static_cast<size_t>(s)])
             continue;
         const double tSlot = static_cast<double>(s) * 0.25;
         double k = std::ceil((beat0 - tSlot) / loopBeats - 1.0e-12);
@@ -1692,7 +1782,7 @@ void AccompanimentProcessor::emitFrozenRiffA(int numSamples, double bpm, double 
             continue;
         const int offset = juce::jlimit(0, numSamples - 1,
             static_cast<int>(std::floor((t - beat0) * spb)));
-        const int note = riffA.midi[static_cast<size_t>(s)] + bassTranspose;
+        const int note = riff.midi[static_cast<size_t>(s)] + bassTranspose;
         patternPlayer.triggerLearnedBassNote(note, 0.58f, offset, duration);
     }
 }

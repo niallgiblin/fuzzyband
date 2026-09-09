@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.66] — Record B contrast, then freeze-on-learn
+
+- **B starts on a contrast home groove** (`contrastHomePattern`): verse-neighborhood
+  A (1/2/3/20/22/23) picks breakdown / half-time / chorus-open (6/7/9/14/15) when
+  that pool has one. No pool rotation — `drumB0` holds until B locks.
+- **B learns a second riff** on a live 16th grid (`beginLiveGridListen`). When the
+  phrase locks, `riffB` is snapshotted and drums freeze on `drumB` (one-shot
+  contrast-pool pick, else `drumB0`). Live mirror stops; only the B snapshot plays.
+- **A is never overwritten.** Return-to-A loads the capture `riffA` bit-for-bit
+  (A2 occupancy equals A1). Matching the original riff mid-B does not cut the
+  transition short. If B never locks, stay on `drumB0` + listen bass until the clock.
+
 ## [0.9.65] — On-grid fills and one crash
 
 - **Fills are library patterns 17/18/19 in beat time** (`barStart + beatOffset`),

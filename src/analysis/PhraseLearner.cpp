@@ -368,6 +368,31 @@ void PhraseLearner::exportPattern(LearnedRiff& dest) const noexcept
             ++n;
     }
     dest.valid = n >= 2;
+    if (dest.valid || !locked_ || patternLen_ < 2)
+        return;
+
+    dest.occupied.fill(false);
+    dest.midi.fill(36);
+    dest.lenBeats = static_cast<double>(kGridBars) * 4.0;
+    n = 0;
+    for (int i = 0; i < patternLen_; ++i)
+    {
+        double beat = pattern_[static_cast<size_t>(i)].beatOffset;
+        beat = std::fmod(beat, dest.lenBeats);
+        if (beat < 0.0)
+            beat += dest.lenBeats;
+        int slot = static_cast<int>(std::floor(beat * 4.0 + 1.0e-9));
+        if (slot < 0)
+            slot = 0;
+        if (slot >= kGridSlots)
+            slot = kGridSlots - 1;
+        if (dest.occupied[static_cast<size_t>(slot)])
+            continue;
+        dest.occupied[static_cast<size_t>(slot)] = true;
+        dest.midi[static_cast<size_t>(slot)] = pattern_[static_cast<size_t>(i)].midiNote;
+        ++n;
+    }
+    dest.valid = n >= 2;
 }
 
 bool PhraseLearner::loadPattern(const LearnedRiff& src) noexcept

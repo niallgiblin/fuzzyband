@@ -2686,3 +2686,220 @@ TEST_CASE("Processor pipeline: click and lock length follow 85 BPM not 120", "[i
     proc.setPlayHead(nullptr);
     proc.releaseResources();
 }
+
+TEST_CASE("Processor pipeline: Record B freezes a contrast groove unlike A", "[integration][pipeline][riffb][transition]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(4.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
+
+    auto feedTone = [&](float amp, double freq, int numBlocks, int& idx) {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(idx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++idx;
+        }
+    };
+
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);
+    REQUIRE(proc.isGrooveLocked());
+    REQUIRE(proc.getDrumA() == 1);
+
+    const int cap = static_cast<int>(20.0 * sr / block);
+    int guard = 0;
+    while (!proc.isTransitionSectionActive() && guard++ < cap)
+        feedTone(0.05, 400.0, 1, blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE_FALSE(proc.isRiffBLocked());
+
+    const int drumB0 = proc.getDrumB0();
+    REQUIRE(drumB0 != proc.getDrumA());
+    REQUIRE((PatternRules::isStrongContrastPattern(drumB0)
+             || !PatternRules::isVerseFeelNeighborhood(drumB0)));
+    REQUIRE(proc.getDisplayPatternIndex() == drumB0);
+
+    const int frozen = proc.getDisplayPatternIndex();
+    feedTone(0.05, 400.0, static_cast<int>(2.0 * sr / block), blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE(proc.getDisplayPatternIndex() == frozen);
+    REQUIRE(proc.getDisplayPatternIndex() == proc.getDrumB0());
+
+    // Replaying the original C2 chug must not cut B short.
+    for (int b = 0; b < static_cast<int>(1.0 * sr / block); ++b)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillChugBlock(buf, blockIdx, block, sr, 65.406);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        ++blockIdx;
+    }
+    REQUIRE(proc.isTransitionSectionActive());
+
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: Record B can lock a second riff without mutating A", "[integration][pipeline][riffb][lock]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    const double samplesPerBeat = 60.0 / 120.0 * sr;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(8.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
+
+    auto feedTone = [&](float amp, double freq, int numBlocks, int& idx) {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(idx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++idx;
+        }
+    };
+
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);
+    REQUIRE(proc.isGrooveLocked());
+
+    bool aSlots[64]{};
+    int aMidi[64]{};
+    for (int s = 0; s < 64; ++s)
+    {
+        aSlots[s] = proc.getRiffASlotOccupied(s);
+        aMidi[s] = proc.getRiffASlotMidi(s);
+    }
+
+    const int cap = static_cast<int>(40.0 * sr / block);
+    int guard = 0;
+    while (!proc.isTransitionSectionActive() && guard++ < cap)
+        feedTone(0.05, 400.0, 1, blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+
+    std::set<int> bBass;
+    guard = 0;
+    while (!proc.isRiffBLocked() && guard++ < cap && proc.isTransitionSectionActive())
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillChugBlock(buf, blockIdx, block, sr, 98.0);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        if (proc.isRiffBLocked())
+        {
+            for (const auto meta : midi)
+            {
+                const auto msg = meta.getMessage();
+                if (msg.isNoteOn() && msg.getChannel() == 2)
+                    bBass.insert(msg.getNoteNumber());
+            }
+        }
+        ++blockIdx;
+    }
+    REQUIRE(proc.isRiffBLocked());
+    REQUIRE(proc.getRiffBOccupiedCount() >= 2);
+    for (int s = 0; s < 64; ++s)
+    {
+        REQUIRE(proc.getRiffASlotOccupied(s) == aSlots[s]);
+        REQUIRE(proc.getRiffASlotMidi(s) == aMidi[s]);
+    }
+
+    for (int b = 0; b < static_cast<int>(2.0 * sr / block); ++b)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillChugBlock(buf, blockIdx, block, sr, 98.0);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn() && msg.getChannel() == 2)
+                bBass.insert(msg.getNoteNumber());
+        }
+        ++blockIdx;
+    }
+    REQUIRE_FALSE(bBass.empty());
+    const bool bNotJustC2 = (bBass.count(36) == 0) || (bBass.size() > 1);
+    REQUIRE(bNotJustC2);
+
+    BassHitCollector a2;
+    const int64_t a2Need = static_cast<int64_t>(std::ceil(16.0 * samplesPerBeat));
+    guard = 0;
+    while (guard++ < cap)
+    {
+        const bool waiting = proc.isTransitionSectionActive();
+        juce::AudioBuffer<float> buf(2, block);
+        if (waiting)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(blockIdx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(0.05 * std::sin(2.0 * M_PI * 400.0 * tt));
+                }
+            }
+        }
+        else
+            fillChugBlock(buf, blockIdx, block, sr, 65.406);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        collectIfLocked(proc, midi, blockIdx, block, samplesPerBeat, a2);
+        ++blockIdx;
+        if (!waiting && a2.originSample >= 0
+            && static_cast<int64_t>(blockIdx) * block - a2.originSample >= a2Need)
+            break;
+    }
+    REQUIRE_FALSE(proc.isTransitionSectionActive());
+    REQUIRE(proc.isGrooveLocked());
+    for (int s = 0; s < 64; ++s)
+    {
+        REQUIRE(proc.getRiffASlotOccupied(s) == aSlots[s]);
+        REQUIRE(proc.getRiffASlotMidi(s) == aMidi[s]);
+    }
+
+    proc.releaseResources();
+}
