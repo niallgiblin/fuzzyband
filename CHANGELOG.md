@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.63] — Unified listen bass mixer
+
+- **Play and Record B listen through one bass engine.** Attack mirror first;
+  otherwise the beat-grid root from `setBassParams` (`emitHarmonicBass`). Library
+  `bassEvents` are not mixed into the live path. A ringing mirror still blocks an
+  overlapping grid hit.
+- **B/C holes are gone.** Loud guitar with sparse attacks still gets beats 1/3
+  while learning B — the grid is no longer muted.
+- **Late picks emit now.** Snap to the nearest 16th only when it is still in this
+  block and within 30 ms / half a 16th; a past nearest is offset 0, never the
+  next 16th.
+- **Guitar stop cuts locked bass.** SILENT or RMS below the play floor for ~1 s
+  all-notes-off even in Riff A. Play keeps the song-form kit on quiet input.
+
 ## [0.9.62] — Exclusive engine phase; Record A is a snapshot
 
 - **One engine phase owns drums and bass.** Play, Record capture, and Riff A no

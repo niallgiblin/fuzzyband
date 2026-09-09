@@ -248,7 +248,6 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     while (grooveCommitQueue.try_dequeue(staleCommit)) {}
 
     hostSampleTime = 0;
-    bassListenArmedUntilSample = -1;  // clock reset: any prior grace is stale
     latestPatternIndex.store(0, std::memory_order_relaxed);
 
     inferencePaused.store(false, std::memory_order_release);
@@ -1087,7 +1086,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             prevPhraseLocked = false;
             grooveLocked.store(false, std::memory_order_release);
             riffHeld.store(false, std::memory_order_release);
-            bassListenArmedUntilSample = -1;
             guitarSilentSamples = 0;
             patternPlayer.setBeatGridBassEnabled(true);
             playSectionIndex.store(-1, std::memory_order_release);
@@ -1532,10 +1530,11 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 const int64_t nearest = static_cast<int64_t>(
                     std::llround(static_cast<double>(clockSample) / sixteenthQ)
                     * sixteenthQ);
-                const int64_t delta = nearest - clockSample;
+                const int64_t delta = nearest - clockSample; // negative ⇒ already passed
                 if (std::abs(static_cast<double>(delta)) <= maxSnap
                     && delta >= 0 && delta < numSamples)
                     offset = static_cast<int>(delta);
+                // else offset 0: never add sixteenthQ to chase the next 16th.
             }
             patternPlayer.triggerLearnedBassNote(note, mirrorVel, offset, durationSamples);
         }

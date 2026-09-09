@@ -297,13 +297,6 @@ private:
     bool prevPhraseLocked = false;     // phrase-lock edge detection
     bool grooveLockReleaseArmed = false;  // P0/R4: arm a transition fill at lock expiry
 
-    // Listening-bass hysteresis (audio thread). While the guitarist is audibly
-    // picking, the bass mirrors each detected attack (play-along) instead of the
-    // fixed beat 1/3 root drone. Armed on any recent attack and held for a brief
-    // grace so sparse playing does not flap back and forth to the drone. Compared
-    // against the monotonic audio-thread clock hostSampleTime; self-expiring.
-    int64_t bassListenArmedUntilSample = -1;  // -1 = not armed
-
     // ── Riff-lock hold progress (audio thread → UI) ───────────────────────────
     // While a riff lock is held (recorded take or live grid listen), the UI
     // shows "bar X of Y, N left" so the guitarist knows when the transition

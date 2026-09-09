@@ -1020,7 +1020,6 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
     }
 
     const MidiPattern& pattern = library->getPattern(activePatternIndex);
-    const int prevPatternIndex = activePatternIndex;  // pre-change index for the split bass
 
     if (changeBeat < 0.0)
     {
@@ -1106,6 +1105,8 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
     }
 
     // Learned bass note-ons (RiffA snapshot / leftover RiffBLocked learner).
+    // Duration is already gated by the caller (0.25 beat for frozen 16ths,
+    // kBassGate for live mirror). Do not multiply sectionBassGate() again.
     {
         PendingLearnedNote notes[kMaxPendingLearned];
         int n = 0;
@@ -1123,29 +1124,24 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         {
             const int off = juce::jlimit(0, numSamples - 1, notes[i].offset);
             const int vel = juce::jlimit(1, 127, static_cast<int>(std::lround(notes[i].vel * 127.0f)));
-            const int durSamps = juce::jmax(1, static_cast<int>(
-                static_cast<double>(notes[i].duration) * sectionBassGate()));
+            const int durSamps = juce::jmax(1, notes[i].duration);
             emitBassNote(midi, numSamples, sampleCounter, notes[i].midi, vel, off, durSamps, 0);
         }
     }
 
-    // Bass engine: Play / RiffBListen use beat-grid fallback. Frozen riffs
-    // (RiffA / RiffBLocked) play only the learned snapshot via triggerLearnedBassNote.
-    // A ringing mirror note blocks a grid hit that would overlap the same samples.
+    // Listen mixer (Play / RiffBListen): beat-grid ROOT from setBassParams.
+    // Library bassEvents are not the live source. Frozen riffs leave this off
+    // and play only the snapshot via triggerLearnedBassNote. A ringing mirror
+    // (bassNoteOffSample) already skips overlapping grid hits in emitHarmonicBass.
+    // Pattern 0 must not mute this path — phase owns the grid, not the kit index.
     if (beatGridBassEnabled_)
     {
-        const MidiPattern& bassPattern = library->getPattern(activePatternIndex);
         if (changeBeat < 0.0)
-        {
-            if (activePatternIndex != 0)
-                emitBassRange(midi, numSamples, beatStart, beatEnd, bassPattern, 0);
-        }
+            emitHarmonicBass(midi, numSamples, beatStart, beatEnd, 0);
         else
         {
-            if (prevPatternIndex != 0)
-                emitBassRange(midi, numSamples, beatStart, changeBeat, pattern, 0);
-            if (activePatternIndex != 0)
-                emitBassRange(midi, numSamples, changeBeat, beatEnd, bassPattern, 0);
+            emitHarmonicBass(midi, numSamples, beatStart, changeBeat, 0);
+            emitHarmonicBass(midi, numSamples, changeBeat, beatEnd, 0);
         }
     }
 }
