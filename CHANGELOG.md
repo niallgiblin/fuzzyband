@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.65] — On-grid fills and one crash
+
+- **Fills are library patterns 17/18/19 in beat time** (`barStart + beatOffset`),
+  not a buffer-relative splat. Fill 19 armed on the penultimate bar so the last
+  bar's downbeat is already the fill.
+- **Crash (MIDI 49) only when armed** — Play section change, A→B, B→A. Phrase
+  rotations and listening picks do not auto-crash.
+- **Play last-bar fill lands on that bar.** Beats 1–3 stay the listening groove
+  unless the fill is 19. The next section's bar 1 is not a leftover overlay.
+- **Record A/B fills on the outgoing last bar.** Incoming B / return-A bar 1
+  gets the armed crash, not a fill overlay.
+
 ## [0.9.64] — Play hybrid drums (listen inside the section)
 
 - **Play drums listen inside the current section's pool.** Inference argmax is

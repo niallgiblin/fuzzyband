@@ -1,4 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
+#include <cmath>
 #include <map>
 #include <set>
 #include <vector>
@@ -367,6 +369,60 @@ TEST_CASE("armBarFill 19 fromNextBar defers until the next bar downbeat", "[midi
     REQUIRE(armed);
     REQUIRE(tomsAfterArmOnBar0 == 0);
     REQUIRE(tomsOnBar1Downbeat >= 1);
+}
+
+TEST_CASE("armBarFill 17 fromNextBar lands beat-4 toms on the next bar", "[midi][fill]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.snapBpm(120.0f);
+    player.setStructureSilent(false);
+    player.setPatternIndex(1);
+
+    auto isTom = [](int note) {
+        return note == 41 || note == 43 || note == 45 || note == 47 || note == 48;
+    };
+
+    constexpr int block = 512;
+    constexpr int64_t bar1 = 96000;
+    constexpr double kSamplesPerBeat = 24000.0;
+    int64_t pos = 0;
+    bool armed = false;
+    int tomsBar0Beat4 = 0;
+    int tomsBar1Beat4 = 0;
+
+    while (pos < bar1 * 2)
+    {
+        if (!armed && pos + block > 95744)
+        {
+            player.armBarFill(17, true);
+            armed = true;
+        }
+        juce::MidiBuffer midi;
+        player.process(midi, block, pos);
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (!msg.isNoteOn() || msg.getChannel() != 10 || !isTom(msg.getNoteNumber()))
+                continue;
+            const int64_t abs = pos + meta.samplePosition;
+            const int hitBar = static_cast<int>(abs / bar1);
+            double beatInBar = std::fmod(static_cast<double>(abs) / kSamplesPerBeat, 4.0);
+            if (beatInBar < 0.0)
+                beatInBar += 4.0;
+            if (hitBar == 0 && beatInBar >= 3.0 && beatInBar < 4.0)
+                ++tomsBar0Beat4;
+            if (hitBar == 1 && beatInBar >= 3.0 && beatInBar < 4.0)
+                ++tomsBar1Beat4;
+        }
+        pos += block;
+    }
+
+    REQUIRE(armed);
+    REQUIRE(tomsBar0Beat4 == 0);
+    REQUIRE(tomsBar1Beat4 >= 1);
 }
 
 // ── Musicality pivot: bass engine (A1) ───────────────────────────────────────

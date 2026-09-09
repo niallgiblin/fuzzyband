@@ -1,4 +1,6 @@
 #include "AccompanimentProcessor.h"
+
+#include <algorithm>
 #include "AccompanimentEditor.h"
 #include "inference/RuleBasedInference.h"
 #include "inference/pattern_rules.h"
@@ -787,6 +789,14 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     int effectivePatternIdx = patternIdx;
     if (playOn)
     {
+        // Sample last/penultimate *before* advance: the sequencer increments
+        // barsElapsed at the wrap in this block's last samples, which still
+        // belong to the outgoing bar on the host grid. Arming after advance
+        // queued fills one bar late (expired before beat 4 of the real last bar).
+        const bool fillLast = structureSequencer.isLastBar();
+        const bool fillPenultimate =
+            structureSequencer.getBarsElapsed() == structureSequencer.getBarsInSection() - 2;
+
         structureSequencer.advance(numSamples, bpmForPlayer, sr);
         if (structureSequencer.isComplete())
         {
@@ -822,11 +832,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 beatInBar += 4.0;
             const unsigned seed = static_cast<unsigned>(structureSequencer.getGlobalBarCount())
                                 ^ static_cast<unsigned>(secIndex * 31u);
-            const int barsInSec = structureSequencer.getBarsInSection();
-            updateOutgoingFill(playFillArm,
-                               structureSequencer.isLastBar(),
-                               barsElapsedNow == barsInSec - 2,
-                               rms, seed, beatInBar);
+            updateOutgoingFill(playFillArm, fillLast, fillPenultimate, rms, seed, beatInBar);
         }
     }
     else
@@ -1643,10 +1649,12 @@ void AccompanimentProcessor::updateOutgoingFill(OutgoingFillArm& arm, bool isLas
         if (!arm.deferred19)
         {
             const int fill = PatternRules::selectFillPattern(0, rms, seed);
-            if (fill == 19)
-                patternPlayer.armBarFill(beatInBar < 0.05 ? 19 : 18);
-            else
-                patternPlayer.armBarFill(fill);
+            // Play's sequencer latches isLast on the last block of the
+            // penultimate host bar (beat ~4). fromNextBar puts 17/18/19 on the
+            // real last bar. Record latches at beat 0 of the last bar, so
+            // fromNext stays false.
+            const bool fromNext = (beatInBar >= 0.05);
+            patternPlayer.armBarFill(fill, fromNext);
         }
         arm.lastBar = true;
     }

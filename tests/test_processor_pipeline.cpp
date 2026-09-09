@@ -1721,6 +1721,16 @@ TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section i
 
     std::vector<int> barPat(static_cast<size_t>(kTotalBars), -1);
     int64_t blockStartSample = 0;
+    constexpr double kSamplesPerBeat = 24000.0;
+    auto isTom = [](int note) {
+        return note == 41 || note == 43 || note == 45 || note == 47 || note == 48;
+    };
+    int lastIntroBar = -1;
+    int firstVerseBar = -1;
+    juce::String lastIntroDetail;
+    struct TomHit { int bar; double beatInBar; juce::String name; };
+    std::vector<TomHit> toms;
+
     for (int b = 0; b < kBlocksPerBar * kTotalBars; ++b)
     {
         juce::MidiBuffer midi;
@@ -1728,6 +1738,26 @@ TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section i
         const int bar = static_cast<int>(blockStartSample / kSamplesPerBar);
         if (bar >= 0 && bar < kTotalBars)
             barPat[static_cast<size_t>(bar)] = proc.getPlayedPatternIndex();
+        const auto name = proc.getCurrentSectionName();
+        if (name == "INTRO" && bar >= 0)
+        {
+            lastIntroBar = bar;
+            lastIntroDetail = proc.getSectionName();
+        }
+        if (name == "VERSE" && firstVerseBar < 0 && bar >= 0)
+            firstVerseBar = bar;
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (!msg.isNoteOn() || msg.getChannel() != 10 || !isTom(msg.getNoteNumber()))
+                continue;
+            const int64_t abs = blockStartSample + meta.samplePosition;
+            const int hitBar = static_cast<int>(abs / kSamplesPerBar);
+            double beatInBar = std::fmod(static_cast<double>(abs) / kSamplesPerBeat, 4.0);
+            if (beatInBar < 0.0)
+                beatInBar += 4.0;
+            toms.push_back({ hitBar, beatInBar, name });
+        }
         blockStartSample += block;
     }
     proc.playActive.store(false, std::memory_order_release);
@@ -1742,6 +1772,122 @@ TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section i
     REQUIRE(poolContains(intro, barPat[2]));
     for (int bar = 3; bar <= 8; ++bar)
         REQUIRE(barPat[static_cast<size_t>(bar)] == barPat[2]);
+
+    REQUIRE(lastIntroBar >= 0);
+    REQUIRE(firstVerseBar >= 0);
+    bool lastIntroFill = false;
+    int nBeat4 = 0;
+    for (const auto& h : toms)
+    {
+        if (h.beatInBar >= 3.0 && h.beatInBar < 4.0)
+            ++nBeat4;
+        const bool onLastIntro = (h.bar == lastIntroBar && h.name == "INTRO")
+            || (h.bar == lastIntroBar && firstVerseBar == lastIntroBar);
+        if (onLastIntro && h.beatInBar >= 3.0 && h.beatInBar < 4.0)
+            lastIntroFill = true;
+    }
+    INFO("lastIntroBar=" << lastIntroBar << " firstVerseBar=" << firstVerseBar
+         << " nToms=" << toms.size() << " nBeat4=" << nBeat4
+         << " lastIntroDetail=" << lastIntroDetail);
+    REQUIRE(lastIntroFill);
+    for (const auto& h : toms)
+    {
+        if (h.name != "VERSE")
+            continue;
+        if (h.bar == firstVerseBar)
+            REQUIRE_FALSE((h.beatInBar >= 0.0 && h.beatInBar < 0.25));
+        if (h.bar == lastIntroBar + 1)
+            REQUIRE_FALSE((h.beatInBar >= 3.0 && h.beatInBar < 4.0));
+    }
+
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: Record A/B last-bar fills do not overlay the incoming bar", "[integration][pipeline][fill]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    const double samplesPerBeat = 60.0 / 120.0 * sr;
+    constexpr int64_t kSamplesPerBar = 96000;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(2.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
+
+    auto isTom = [](int note) {
+        return note == 41 || note == 43 || note == 45 || note == 47 || note == 48;
+    };
+
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);
+    REQUIRE(proc.isGrooveLocked());
+
+    struct Hit { int64_t abs; double beatInBar; bool trans; int lockBar; int lockTotal; };
+    std::vector<Hit> toms;
+    int64_t transOrigin = -1;
+    int64_t returnOrigin = -1;
+    const int extra = blocksForBars(sr, block, 8.0);
+    for (int i = 0; i < extra; ++i)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, 65.406, 0.08f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        const int64_t blockStart = static_cast<int64_t>(blockIdx) * block;
+        const bool trans = proc.isTransitionSectionActive();
+        if (trans && transOrigin < 0)
+            transOrigin = blockStart;
+        if (transOrigin >= 0 && !trans && returnOrigin < 0)
+            returnOrigin = blockStart;
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (!msg.isNoteOn() || msg.getChannel() != 10 || !isTom(msg.getNoteNumber()))
+                continue;
+            const int64_t abs = blockStart + meta.samplePosition;
+            double beatInBar = std::fmod(static_cast<double>(abs) / samplesPerBeat, 4.0);
+            if (beatInBar < 0.0)
+                beatInBar += 4.0;
+            toms.push_back({ abs, beatInBar, trans, proc.getLockBarCurrent(), proc.getLockBarsTotal() });
+        }
+        ++blockIdx;
+        if (returnOrigin >= 0 && blockStart - returnOrigin >= kSamplesPerBar)
+            break;
+    }
+
+    REQUIRE(transOrigin >= 0);
+    REQUIRE(returnOrigin > transOrigin);
+
+    bool aLastFill = false;
+    bool bLastFill = false;
+    for (const auto& h : toms)
+    {
+        if (!h.trans && h.lockTotal > 0 && h.lockBar == h.lockTotal
+            && h.beatInBar >= 2.0 && h.beatInBar < 4.0)
+            aLastFill = true;
+        const int64_t bLast0 = transOrigin + kSamplesPerBar;
+        if (h.abs >= bLast0 && h.abs < bLast0 + kSamplesPerBar
+            && h.beatInBar >= 2.0 && h.beatInBar < 4.0)
+            bLastFill = true;
+        if (h.abs >= transOrigin && h.abs < transOrigin + kSamplesPerBar)
+        {
+            REQUIRE_FALSE((h.beatInBar >= 0.0 && h.beatInBar < 0.25));
+            REQUIRE_FALSE((h.beatInBar >= 3.0 && h.beatInBar < 4.0));
+        }
+        if (h.abs >= returnOrigin && h.abs < returnOrigin + kSamplesPerBar)
+        {
+            REQUIRE_FALSE((h.beatInBar >= 0.0 && h.beatInBar < 0.25));
+            REQUIRE_FALSE((h.beatInBar >= 3.0 && h.beatInBar < 4.0));
+        }
+    }
+    REQUIRE(aLastFill);
+    REQUIRE(bLastFill);
 
     proc.releaseResources();
 }
