@@ -34,35 +34,6 @@ std::unique_ptr<IInference> makeInference()
 constexpr int kStyleStableWindows = 3;
 constexpr int kStyleHoldWindows   = 4;
 
-[[maybe_unused]]
-PatternPlayer::TransitionFillKind chooseTransitionFillKind(StructureState from,
-                                                           StructureState to,
-                                                           int targetPatternIndex,
-                                                           float rmsEnergy,
-                                                           float rmsDelta) noexcept
-{
-    if (targetPatternIndex == 6)
-        return PatternPlayer::TransitionFillKind::BreakdownOrImpact;
-    if (from == StructureState::SILENT && to != StructureState::SILENT)
-        return PatternPlayer::TransitionFillKind::Entry;
-
-    // Energy-aware fills (Phase 2): a sudden loud hit wants an impact fill, a
-    // gradual rise a build-up; same-state transitions get a subtle impact only
-    // when genuinely loud (keeps reactive mode's embellishment "only a little").
-    if (from == StructureState::SOFT && to == StructureState::LOUD)
-    {
-        if (rmsDelta > 0.8f || rmsEnergy > 0.5f)
-            return PatternPlayer::TransitionFillKind::BreakdownOrImpact;
-        return PatternPlayer::TransitionFillKind::BuildUp;
-    }
-    if (from == StructureState::LOUD && to == StructureState::SOFT)
-        return PatternPlayer::TransitionFillKind::Release;
-    if (from == to && to != StructureState::SILENT)
-        return (rmsEnergy > 0.35f)
-            ? PatternPlayer::TransitionFillKind::BreakdownOrImpact
-            : PatternPlayer::TransitionFillKind::None;
-    return PatternPlayer::TransitionFillKind::None;
-}
 } // namespace
 
 juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::createParameterLayout()
@@ -204,6 +175,9 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     playSectionIndex.store(-1, std::memory_order_relaxed);
     requestBLockPick.store(false, std::memory_order_relaxed);
     bLockPick.store(-1, std::memory_order_relaxed);
+    playFillArm.clear();
+    riffAFillArm.clear();
+    riffBFillArm.clear();
 
     // A5.2 post-lock transition state + display scope.
     postLockPhase = PostLockPhase::Idle;
@@ -763,6 +737,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         resetDrumHoldRequested.store(true, std::memory_order_release);
         guitarSilentSamples = 0;
         patternPlayer.setBeatGridBassEnabled(true);
+        playFillArm.clear();
+        riffAFillArm.clear();
+        riffBFillArm.clear();
     }
     if (!playRequested)
     {
@@ -838,16 +815,26 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             lastSeenBarsElapsed = barsElapsedNow;
             if (pool.count > 0)
                 effectivePatternIdx = PatternRules::constrainToPool(patternIdx, pool, st);
-            if (structureSequencer.isLastBar())
-            {
-                const unsigned seed = static_cast<unsigned>(structureSequencer.getGlobalBarCount())
-                                    ^ static_cast<unsigned>(secIndex * 31u);
-                patternPlayer.armBarFill(PatternRules::selectFillPattern(0, rms, seed));
-            }
+            const double spbFill = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
+            double beatInBar = (spbFill > 0.0)
+                ? std::fmod(static_cast<double>(clockSample) / spbFill, 4.0) : 0.0;
+            if (beatInBar < 0.0)
+                beatInBar += 4.0;
+            const unsigned seed = static_cast<unsigned>(structureSequencer.getGlobalBarCount())
+                                ^ static_cast<unsigned>(secIndex * 31u);
+            const int barsInSec = structureSequencer.getBarsInSection();
+            updateOutgoingFill(playFillArm,
+                               structureSequencer.isLastBar(),
+                               barsElapsedNow == barsInSec - 2,
+                               rms, seed, beatInBar);
         }
     }
-    else if (enginePhase == EnginePhase::RiffBListen || enginePhase == EnginePhase::RiffBLocked
-             || postLockPhase == PostLockPhase::TransitionHold)
+    else
+    {
+        playFillArm.clear();
+    }
+    if (!playOn && (enginePhase == EnginePhase::RiffBListen || enginePhase == EnginePhase::RiffBLocked
+             || postLockPhase == PostLockPhase::TransitionHold))
     {
         // Frozen contrast groove — no pool rotation.
         if (enginePhase == EnginePhase::RiffBLocked && drumB > 0)
@@ -857,7 +844,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         else if (cachedTransitionPick >= 0)
             effectivePatternIdx = cachedTransitionPick;
     }
-    else if (enginePhase == EnginePhase::RiffA && drumA > 0)
+    else if (!playOn && enginePhase == EnginePhase::RiffA && drumA > 0)
     {
         effectivePatternIdx = drumA;
     }
@@ -1095,6 +1082,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             guitarSilentSamples = 0;
             patternPlayer.setBeatGridBassEnabled(true);
             playSectionIndex.store(-1, std::memory_order_release);
+            playFillArm.clear();
+            riffAFillArm.clear();
+            riffBFillArm.clear();
         }
 
         if (riffCaptureStart.exchange(false, std::memory_order_acq_rel))
@@ -1294,8 +1284,13 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 const int total = lockBarsTotal.load(std::memory_order_relaxed);
                 const int current = juce::jlimit(1, juce::jmax(1, total),
                     static_cast<int>((clockSample - grooveLockStartSample) / samplesPerBar) + 1);
-                if (current == total)
-                    patternPlayer.armBarFill(PatternRules::selectFillPattern(0, rms, 0u));
+                const double spbA = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
+                double beatInBarA = (spbA > 0.0)
+                    ? std::fmod(static_cast<double>(clockSample) / spbA, 4.0) : 0.0;
+                if (beatInBarA < 0.0)
+                    beatInBarA += 4.0;
+                updateOutgoingFill(riffAFillArm, current == total, current == total - 1,
+                                   rms, 0u, beatInBarA);
             }
             if (clockSample >= grooveLockEndSample)
             {
@@ -1435,7 +1430,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             transitionSectionActive.store(true, std::memory_order_release);
 
             patternPlayer.armTransitionCrash();
-            patternPlayer.armBarFill(PatternRules::selectFillPattern(0, rms, 0u));
+            riffAFillArm.clear();
         }
 
         // ── A5.2: run the transition hold. ────────────────────────────────────
@@ -1451,7 +1446,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 postLockPhase = PostLockPhase::Idle;
                 transitionSectionActive.store(false, std::memory_order_release);
                 riffB = {};
-                patternPlayer.armBarFill(PatternRules::selectFillPattern(0, rms, 0u));
+                riffBFillArm.clear();
                 patternPlayer.armTransitionCrash();
                 enterRiffA();
             }
@@ -1465,6 +1460,13 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     ? static_cast<int>((remaining + samplesPerBarC - 1) / samplesPerBarC)
                     : 0;
                 transitionBarsRemaining.store(juce::jmax(0, barsLeft), std::memory_order_release);
+                const double spbB = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
+                double beatInBarB = (spbB > 0.0)
+                    ? std::fmod(static_cast<double>(clockSample) / spbB, 4.0) : 0.0;
+                if (beatInBarB < 0.0)
+                    beatInBarB += 4.0;
+                updateOutgoingFill(riffBFillArm, barsLeft == 1, barsLeft == 2,
+                                   rms, 0u, beatInBarB);
             }
         }
 
@@ -1618,6 +1620,41 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     // Playhead fraction is computed earlier in the block from the resolved host
     // clock (so it aligns with the drums' transport grid).
+}
+
+void AccompanimentProcessor::updateOutgoingFill(OutgoingFillArm& arm, bool isLast,
+                                                bool isPenultimate, float rms,
+                                                unsigned seed, double beatInBar) noexcept
+{
+    if (isPenultimate && !arm.penultimate)
+    {
+        if (PatternRules::selectFillPattern(0, rms, seed) == 19)
+        {
+            patternPlayer.armBarFill(19, true);
+            arm.deferred19 = true;
+        }
+        arm.penultimate = true;
+    }
+    if (!isPenultimate)
+        arm.penultimate = false;
+
+    if (isLast && !arm.lastBar)
+    {
+        if (!arm.deferred19)
+        {
+            const int fill = PatternRules::selectFillPattern(0, rms, seed);
+            if (fill == 19)
+                patternPlayer.armBarFill(beatInBar < 0.05 ? 19 : 18);
+            else
+                patternPlayer.armBarFill(fill);
+        }
+        arm.lastBar = true;
+    }
+    if (!isLast && !isPenultimate)
+    {
+        arm.lastBar = false;
+        arm.deferred19 = false;
+    }
 }
 
 void AccompanimentProcessor::emitFrozenRiffA(int numSamples, double bpm, double sr,

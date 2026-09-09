@@ -232,6 +232,15 @@ private:
     /** @brief Emit occupied riffA 16ths whose onsets fall in this block (RiffA only). */
     void emitFrozenRiffA(int numSamples, double bpm, double sr,
                          int64_t clockSample, int bassTranspose) noexcept;
+    struct OutgoingFillArm
+    {
+        bool lastBar = false;
+        bool penultimate = false;
+        bool deferred19 = false;
+        void clear() noexcept { lastBar = penultimate = deferred19 = false; }
+    };
+    void updateOutgoingFill(OutgoingFillArm& arm, bool isLast, bool isPenultimate,
+                            float rms, unsigned seed, double beatInBar) noexcept;
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -380,6 +389,9 @@ private:
     int lastPlayedPoolPattern = -1; // leftover; B contrast uses drumB0
     int lastTransitionSlot = -1;    // post-lock hold slot
     int cachedTransitionPick = -1;  // fallback if drumB0 was never set
+    OutgoingFillArm playFillArm{};
+    OutgoingFillArm riffAFillArm{};
+    OutgoingFillArm riffBFillArm{};
 
     // ── Style steering (perception layer): inference-thread state ────────────
     // classifyStyle() returns a raw argmax once per mel window (~2 Hz: one 512 ms
