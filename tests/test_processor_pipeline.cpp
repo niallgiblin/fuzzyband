@@ -6,6 +6,7 @@
  */
 
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <cmath>
 #include <set>
 #include <string>
@@ -589,6 +590,34 @@ static void slotMapsFromHits(const std::vector<BassHit>& hits, bool occupied[64]
         occupied[slot] = true;
         midi[slot] = h.midiNote;
     }
+}
+
+static void fillSineAmp(juce::AudioBuffer<float>& buf, int blockIdx, int block,
+                        double sr, double freq, float amp)
+{
+    for (int ch = 0; ch < buf.getNumChannels(); ++ch)
+    {
+        float* p = buf.getWritePointer(ch);
+        const double t0 = static_cast<double>(blockIdx) * block / sr;
+        for (int i = 0; i < block; ++i)
+        {
+            const double tt = t0 + static_cast<double>(i) / sr;
+            p[i] = amp * static_cast<float>(std::sin(2.0 * M_PI * freq * tt));
+        }
+    }
+}
+
+// Loud sustain (so RMS ≫ 0.003) plus a short pick that is NOT on beat 0 or 2.
+static float ampForSustainPick(int64_t abs0, int block, int64_t origin,
+                               double samplesPerBeat, int bar, int pickBlocks)
+{
+    const int64_t barSamples = static_cast<int64_t>(4.0 * samplesPerBeat);
+    const int64_t pickStart = origin + static_cast<int64_t>(bar) * barSamples
+                            + static_cast<int64_t>(1.0 * samplesPerBeat);
+    const int64_t pickEnd = pickStart + static_cast<int64_t>(pickBlocks) * block;
+    if (abs0 + block > pickStart && abs0 < pickEnd)
+        return 0.5f;
+    return 0.12f;
 }
 
 static void fillChugBlock(juce::AudioBuffer<float>& buf, int blockIdx, int block,
@@ -1359,89 +1388,109 @@ TEST_CASE("Processor pipeline: bass root maps C2→36, E2→40, G2→43", "[inte
     proc.releaseResources();
 }
 
-TEST_CASE("Processor pipeline: sparse picking drives the bass instead of a fixed groove", "[integration][pipeline][bass]")
+TEST_CASE("Processor pipeline: RiffBListen bass has grid on beats 1/3 with sparse attacks",
+          "[integration][pipeline][bass][blisten]")
 {
-    // The bass has two Play-mode personalities. When the guitarist is picked
-    // (audible attacks), the bass mirrors those attacks ("play along"); when they
-    // hold a sustained tone the bass falls back to a fixed beat-groove. This guards
-    // that a picked figure keeps the bass attached to the guitar — leaner, attack-
-    // driven onsets — instead of piling the steady groove on top. It compares the
-    // SAME 7-bar signal rendered as (a) a sustained tone and (b) a sparse picked
-    // figure, and checks the picked figure yields fewer bass onsets than the
-    // sustained grid.
+    // Oracle 2026-09-09: B/C had digital-silence holes at 26/29/32 s while the
+    // guitar was loud. Listen mixer = attack mirror then beats 1/3 root grid.
     const double sr = 48000.0;
     const int block = 512;
-    const int bars = 7;
-    const int barSamples = 4 * static_cast<int>(60.0 / 120.0 * sr);  // 96000 @ 120 BPM
-    const int total = barSamples * bars;
+    const double samplesPerBeat = 60.0 / 120.0 * sr;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);  // 4-bar lock
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(8.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
 
-    auto buildSource = [&](bool picked) {
-        // Use sr/block (≈93.75 Hz): exactly one cycle per 512-sample block, so the
-        // per-block RMS is constant and the quiet base produces no false attacks.
-        const double f = sr / block;
-        juce::AudioBuffer<float> src(2, total);
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            float* p = src.getWritePointer(ch);
-            for (int i = 0; i < total; ++i)
-                p[i] = 0.04f * static_cast<float>(std::sin(2.0 * M_PI * f * i / sr));
-        }
-        if (picked)
-        {
-            // A short, clearly-rhythmical loud→quiet→loud pick at beat 2 of bar 0.
-            // "picked" is only used to flip the input; this is a behaviour guard,
-            // not a strict single-attack discriminator (the 100 ms RMS window
-            // smooths edges so exact attack counts are not atomic).
-            const int s = 24000;
-            const auto fill = [&](int from, int to, float amp) {
-                for (int ch = 0; ch < 2; ++ch)
-                    for (int i = from; i < to && i < total; ++i)
-                        src.setSample(ch, i, amp * static_cast<float>(
-                            std::sin(2.0 * M_PI * f * i / sr)));
-            };
-            fill(s, s + 20 * block, 0.45f);
-            fill(s + 20 * block, s + 28 * block, 0.04f);
-            fill(s + 28 * block, s + 48 * block, 0.45f);
-        }
-        return src;
-    };
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);
+    REQUIRE(proc.isGrooveLocked());
 
-    auto runAndCount = [&](bool picked) {
-        AccompanimentProcessor proc;
-        proc.prepareToPlay(sr, block);
-        proc.pauseBackgroundInferenceForTests();
-        proc.playActive.store(true, std::memory_order_release);
-        auto src = buildSource(picked);
-        const int totalBlocks = total / block;
-        int count = 0;
-        for (int b = 0; b < totalBlocks; ++b)
-        {
-            juce::AudioBuffer<float> buf(2, block);
-            for (int ch = 0; ch < 2; ++ch)
-                for (int i = 0; i < block; ++i)
-                    buf.setSample(ch, i, src.getSample(ch, (b * block + i) % total));
-            juce::MidiBuffer midi;
-            proc.processBlock(buf, midi);
-            proc.flushBackgroundInferenceForTests();
-            for (const auto meta : midi)
-            {
-                const auto msg = meta.getMessage();
-                if (msg.isNoteOn() && msg.getChannel() == 2)
-                    ++count;
-            }
-        }
-        proc.releaseResources();
-        return count;
-    };
+    const int maxWait = static_cast<int>(20.0 * sr / block);
+    for (int i = 0; i < maxWait
+         && !(proc.isTransitionSectionActive() && proc.getSectionPhase() == 3); ++i)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, 65.406, 0.12f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        ++blockIdx;
+    }
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE(proc.getSectionPhase() == 3);
 
-    const int sustainedCount = runAndCount(false);
-    const int pickedCount = runAndCount(true);
-    INFO("sustained (grid) bass onsets = " << sustainedCount);
-    INFO("picked (mirrored) bass onsets = " << pickedCount);
-    REQUIRE(sustainedCount >= 1);           // grid fallback on beats 1/3
-    REQUIRE(pickedCount >= 1);              // attacks still produce bass
-    // Mirror notes block overlapping grid hits, so a picked figure is not a
-    // second copy of the 16th wall — but grid still fills holes between picks.
+    const int64_t origin = static_cast<int64_t>(blockIdx) * block;
+    constexpr int kBars = 4;
+    constexpr int kPickBlocks = 4;
+    std::vector<int64_t> bassAbs;
+    const int collectBlocks = static_cast<int>(
+        std::ceil(static_cast<double>(kBars) * 4.0 * samplesPerBeat / block));
+    for (int b = 0; b < collectBlocks; ++b)
+    {
+        const int64_t abs0 = static_cast<int64_t>(blockIdx) * block;
+        const int bar = static_cast<int>((abs0 - origin) / (4.0 * samplesPerBeat));
+        const float amp = ampForSustainPick(abs0, block, origin, samplesPerBeat, bar, kPickBlocks);
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, 65.406, amp);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (!msg.isNoteOn() || msg.getChannel() != 2 || msg.getVelocity() <= 0)
+                continue;
+            bassAbs.push_back(abs0 + meta.samplePosition);
+        }
+        ++blockIdx;
+    }
+
+    REQUIRE(bassAbs.size() >= 8);
+
+    // Host clock starts at 0 in these tests — score complete bars on that grid,
+    // not the (possibly mid-bar) BListen detect block.
+    const double startBeat = static_cast<double>(origin) / samplesPerBeat;
+    const double endBeat = static_cast<double>(origin)
+        / samplesPerBeat + static_cast<double>(kBars) * 4.0;
+    const int bar0 = static_cast<int>(std::ceil(startBeat / 4.0 - 1.0e-9));
+    const int bar1 = static_cast<int>(std::floor(endBeat / 4.0 + 1.0e-9));
+    int beat1Hits = 0;
+    int beat3Hits = 0;
+    for (int bar = bar0; bar < bar1; ++bar)
+    {
+        for (const int64_t absSample : bassAbs)
+        {
+            double beat = static_cast<double>(absSample) / samplesPerBeat;
+            if (beat < static_cast<double>(bar) * 4.0
+                || beat >= static_cast<double>(bar + 1) * 4.0)
+                continue;
+            double beatInBar = std::fmod(beat, 4.0);
+            if (beatInBar < 0.0)
+                beatInBar += 4.0;
+            if (beatInBar >= 0.0 && beatInBar < 0.5)
+                ++beat1Hits;
+            if (beatInBar >= 1.7 && beatInBar < 2.5)
+                ++beat3Hits;
+        }
+    }
+    INFO("BListen beat1Hits=" << beat1Hits << " beat3Hits=" << beat3Hits
+         << " bars=" << (bar1 - bar0) << " nHits=" << bassAbs.size());
+    REQUIRE(beat1Hits >= 3);
+    REQUIRE(beat3Hits >= 3);
+
+    auto sorted = bassAbs;
+    std::sort(sorted.begin(), sorted.end());
+    // Half-note grid at 120 BPM is 0.5 s; a skipped 1/3 hit is ~1 s.
+    const int64_t maxGap = static_cast<int64_t>(0.75 * sr);
+    for (size_t i = 1; i < sorted.size(); ++i)
+        REQUIRE(sorted[i] - sorted[i - 1] < maxGap);
+
+    proc.releaseResources();
 }
 
 TEST_CASE("Processor pipeline: custom song form loads and persists (Phase 2)", "[integration][pipeline][structure]")
@@ -1875,12 +1924,11 @@ TEST_CASE("Processor pipeline: bass leaves the locked riff during a post-lock tr
 // ── Play-mode bass: reflects the guitarist's root in the song's key ───────────
 TEST_CASE("Processor pipeline: play-mode bass follows the guitarist's root", "[integration][pipeline][play][bass]")
 {
-    // In Play mode the bass must stay anchored to the guitarist's root (so it
-    // sounds in-key and follows the guitar), even when the learned riff is held.
-    // Regression: when the learner locks a riff, the bass played the riff's notes
-    // note-for-note, which could pull it out of the song's key.
+    // Play mixer: a pick produces bass near the attack; between sparse picks,
+    // beats 1 and 3 still have the live root (C2=36). Not a leftover Record riff.
     const double sr = 48000.0;
     const int block = 512;
+    const double samplesPerBeat = 60.0 / 120.0 * sr;
     AccompanimentProcessor proc;
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
@@ -1889,43 +1937,103 @@ TEST_CASE("Processor pipeline: play-mode bass follows the guitarist's root", "[i
     proc.playActive.store(true, std::memory_order_release);
 
     int blockIdx = 0;
-    constexpr int cycle = 24;
-    std::set<int> bassNotes;
-    bool anyBass = false;
-    const int totalBlocks = static_cast<int>(8.0 * 96000.0 / block);
-    for (int b = 0; b < totalBlocks; ++b)
+    const int maxWait = static_cast<int>(4.0 * sr / block);
+    for (int i = 0; i < maxWait && proc.getSectionPhase() != 1; ++i)
     {
-        const int pos = blockIdx % cycle;
-        const bool loud = (pos >= cycle - 4);
         juce::AudioBuffer<float> buf(2, block);
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            float* p = buf.getWritePointer(ch);
-            const double t = static_cast<double>(blockIdx) * block / sr;
-            for (int i = 0; i < block; ++i)
-            {
-                const double tt = t + static_cast<double>(i) / sr;
-                p[i] = static_cast<float>((loud ? 0.5 : 0.08) * std::sin(2.0 * M_PI * 65.406 * tt));
-            }
-        }
+        fillSineAmp(buf, blockIdx, block, sr, 65.406, 0.12f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        ++blockIdx;
+    }
+    REQUIRE(proc.getSectionPhase() == 1);
+
+    // Decay so detectAttack's fall window is armed before the first pick.
+    for (int i = 0; i < 16; ++i)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, 65.406, 0.04f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        ++blockIdx;
+    }
+
+    const int64_t origin = static_cast<int64_t>(blockIdx) * block;
+    constexpr int kBars = 6;
+    constexpr int kPickBlocks = 4;
+    std::set<int> bassNotes;
+    std::vector<int64_t> bassAbs;
+    std::vector<int64_t> pickStarts;
+    for (int bar = 0; bar < kBars; ++bar)
+        pickStarts.push_back(origin
+            + static_cast<int64_t>(bar) * static_cast<int64_t>(4.0 * samplesPerBeat)
+            + static_cast<int64_t>(1.0 * samplesPerBeat));
+    const int collectBlocks = static_cast<int>(
+        std::ceil(static_cast<double>(kBars) * 4.0 * samplesPerBeat / block));
+    for (int b = 0; b < collectBlocks; ++b)
+    {
+        const int64_t abs0 = static_cast<int64_t>(blockIdx) * block;
+        const int bar = static_cast<int>((abs0 - origin) / (4.0 * samplesPerBeat));
+        const float amp = ampForSustainPick(abs0, block, origin, samplesPerBeat, bar, kPickBlocks);
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, 65.406, amp);
         juce::MidiBuffer midi;
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
         for (const auto meta : midi)
         {
             const auto msg = meta.getMessage();
-            if (msg.isNoteOn() && msg.getChannel() == 2)
-            {
-                bassNotes.insert(msg.getNoteNumber());
-                anyBass = true;
-            }
+            if (!msg.isNoteOn() || msg.getChannel() != 2 || msg.getVelocity() <= 0)
+                continue;
+            bassNotes.insert(msg.getNoteNumber());
+            bassAbs.push_back(abs0 + meta.samplePosition);
         }
         ++blockIdx;
     }
 
-    // Bass present and anchored on the guitarist's C2 root (36), in the song's key.
-    REQUIRE(anyBass);
     REQUIRE(bassNotes.count(36) > 0);
+
+    bool nearPick = false;
+    const int64_t window150 = static_cast<int64_t>(0.150 * sr);
+    for (const int64_t pick : pickStarts)
+    {
+        for (const int64_t hit : bassAbs)
+        {
+            if (std::llabs(hit - pick) <= window150)
+                nearPick = true;
+        }
+    }
+    REQUIRE(nearPick);
+
+    const double startBeat = static_cast<double>(origin) / samplesPerBeat;
+    const double endBeat = startBeat + static_cast<double>(kBars) * 4.0;
+    const int bar0 = static_cast<int>(std::ceil(startBeat / 4.0 - 1.0e-9));
+    const int bar1 = static_cast<int>(std::floor(endBeat / 4.0 + 1.0e-9));
+    int beat1Hits = 0;
+    int beat3Hits = 0;
+    for (int bar = bar0; bar < bar1; ++bar)
+    {
+        for (const int64_t absSample : bassAbs)
+        {
+            double beat = static_cast<double>(absSample) / samplesPerBeat;
+            if (beat < static_cast<double>(bar) * 4.0
+                || beat >= static_cast<double>(bar + 1) * 4.0)
+                continue;
+            double beatInBar = std::fmod(beat, 4.0);
+            if (beatInBar < 0.0)
+                beatInBar += 4.0;
+            if (beatInBar >= 0.0 && beatInBar < 0.5)
+                ++beat1Hits;
+            if (beatInBar >= 1.7 && beatInBar < 2.5)
+                ++beat3Hits;
+        }
+    }
+    INFO("beat1Hits=" << beat1Hits << " beat3Hits=" << beat3Hits
+         << " bars=" << (bar1 - bar0));
+    REQUIRE(beat1Hits >= 3);
+    REQUIRE(beat3Hits >= 2);
 
     proc.playActive.store(false, std::memory_order_release);
     proc.releaseResources();
@@ -2236,6 +2344,8 @@ TEST_CASE("Processor pipeline: Play start wipes a prior Record riff", "[integrat
 
 TEST_CASE("Processor pipeline: guitar stop while locked emits all-notes-off", "[integration][pipeline][gate]")
 {
+    // Residual RMS below the play floor (not digital zero) must still cut bass
+    // after ~1 s in RiffA — digital silence already trips the idle gate.
     const double sr = 48000.0;
     const int block = 512;
     AccompanimentProcessor proc;
@@ -2248,11 +2358,13 @@ TEST_CASE("Processor pipeline: guitar stop while locked emits all-notes-off", "[
     REQUIRE(proc.isGrooveLocked());
 
     bool sawAllOff = false;
-    int bassOnsAfter = 0;
+    int bassOnsLate = 0;
     const int silentBlocks = static_cast<int>(1.2 * sr / block);
+    const int lastWindow = static_cast<int>(0.15 * sr / block);
     for (int b = 0; b < silentBlocks; ++b)
     {
-        auto buf = makeSilenceBuffer(block);
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, idx, block, sr, 65.406, 0.0008f);
         juce::MidiBuffer midi;
         proc.processBlock(buf, midi);
         for (const auto meta : midi)
@@ -2260,12 +2372,59 @@ TEST_CASE("Processor pipeline: guitar stop while locked emits all-notes-off", "[
             const auto msg = meta.getMessage();
             if (msg.isAllNotesOff())
                 sawAllOff = true;
-            if (msg.isNoteOn() && msg.getChannel() == 2 && b > silentBlocks / 2)
-                ++bassOnsAfter;
+            if (msg.isNoteOn() && msg.getChannel() == 2 && b >= silentBlocks - lastWindow)
+                ++bassOnsLate;
         }
+        ++idx;
     }
     REQUIRE(sawAllOff);
-    REQUIRE(bassOnsAfter == 0);
+    REQUIRE(bassOnsLate == 0);
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: Play is not gated by the guitar-stop timer",
+          "[integration][pipeline][gate][play]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    proc.setCustomSongForm("VERSE:8");
+    proc.playActive.store(true, std::memory_order_release);
+
+    int blockIdx = 0;
+    const int maxWait = static_cast<int>(4.0 * sr / block);
+    for (int i = 0; i < maxWait && proc.getSectionPhase() != 1; ++i)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, 65.406, 0.12f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        ++blockIdx;
+    }
+    REQUIRE(proc.getSectionPhase() == 1);
+
+    bool sawAllOff = false;
+    const int quietBlocks = static_cast<int>(1.2 * sr / block);
+    for (int b = 0; b < quietBlocks; ++b)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, 65.406, 0.0008f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isAllNotesOff())
+                sawAllOff = true;
+        }
+        ++blockIdx;
+    }
+    REQUIRE_FALSE(sawAllOff);
+
+    proc.playActive.store(false, std::memory_order_release);
     proc.releaseResources();
 }
 
@@ -2311,9 +2470,11 @@ TEST_CASE("Processor pipeline: click and lock length follow 85 BPM not 120", "[i
         ph.samples += block;
     }
     REQUIRE(kickOns.size() >= 2);
-    const double expected = 4.0 * 60.0 / 85.0 * sr;
+    const double expected85 = 4.0 * 60.0 / 85.0 * sr;
+    const double expected120 = 4.0 * 60.0 / 120.0 * sr;
     const double period = static_cast<double>(kickOns[1] - kickOns[0]);
-    REQUIRE(std::abs(period - expected) < 1024.0);
+    REQUIRE(std::abs(period - expected85) < 1024.0);
+    REQUIRE(std::abs(period - expected120) > 1024.0);
 
     proc.setPlayHead(nullptr);
     proc.releaseResources();

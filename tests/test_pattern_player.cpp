@@ -280,7 +280,7 @@ TEST_CASE("armBarFill 17 emits toms on beat 4 independent of block size", "[midi
 
 // ── Musicality pivot: bass engine (A1) ───────────────────────────────────────
 
-TEST_CASE("A1: authored bassEvents play, transposed to the live root", "[midi][A1]")
+TEST_CASE("A1: listen-grid bass is harmonic root from setBassParams", "[midi][A1]")
 {
     MidiPatternLibrary lib;
     PatternPlayer player;
@@ -288,9 +288,10 @@ TEST_CASE("A1: authored bassEvents play, transposed to the live root", "[midi][A
     player.prepare(48000.0, 512);
     player.setRandomSeed(99);
     player.snapBpm(120.0f);
-    player.setPatternIndex(4);  // Chorus Mid — bassEvents: root, +5, root, +7
+    player.setPatternIndex(4);  // Chorus Mid — library has authored intervals
     player.setStructureSilent(false);
-    player.setBassParams(40, 2);  // E2 live root
+    player.setBeatGridBassEnabled(true);
+    player.setBassParams(40, 2);  // E2 live root, beats 1/3
 
     juce::MidiBuffer midi;
     player.process(midi, 192000, 0);  // 2 bars at 120 BPM (Chorus Mid is a 2-bar pattern)
@@ -302,10 +303,10 @@ TEST_CASE("A1: authored bassEvents play, transposed to the live root", "[midi][A
         if (msg.isNoteOn() && msg.getChannel() == 2)
             bassNotes.insert(msg.getNoteNumber());
     }
-    // Authored notes 36, 41, 43 transposed by (liveRoot - 36): 40, 45, 47.
+    // Listen grid is harmonic root from setBassParams, not authored intervals.
     REQUIRE(bassNotes.count(40) > 0);  // root
-    REQUIRE(bassNotes.count(45) > 0);  // +5 (fourth)
-    REQUIRE(bassNotes.count(47) > 0);  // +7 (fifth)
+    REQUIRE(bassNotes.count(45) == 0); // library +5 must not leak
+    REQUIRE(bassNotes.count(47) == 0); // library +7 must not leak
 }
 
 TEST_CASE("A1: pattern without bassEvents uses the harmonic fallback (root + dynamics)", "[midi][A1]")
@@ -350,8 +351,9 @@ TEST_CASE("A1: multi-pitch bass lines never leave stuck notes across small block
     player.prepare(48000.0, 512);
     player.setRandomSeed(11);
     player.snapBpm(120.0f);
-    player.setPatternIndex(4);  // Chorus Mid — bassEvents: root, +5, root, +7
+    player.setPatternIndex(4);
     player.setStructureSilent(false);
+    player.setBeatGridBassEnabled(true);
     player.setSection(Groove::SongSectionId::Chorus);
     player.setBassParams(43, 4);
 
@@ -425,6 +427,7 @@ TEST_CASE("silent pattern: bass stops when switching to Silent (no droning root)
     // Switch to Silent; render 4 more bars. The change lands at the next bar
     // boundary (beat 4.0), so bars 2-4 must be bass-free.
     player.setPatternIndex(0);
+    player.setBeatGridBassEnabled(false);
     int bassInBar[4] = {};
     for (int i = 0; i < 4; ++i)
         bassInBar[i] = countBassOns(player, 96000, 96000 + static_cast<int64_t>(i) * 96000);
