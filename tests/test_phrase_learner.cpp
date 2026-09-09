@@ -597,3 +597,49 @@ TEST_CASE("PhraseLearner: live grid listen uses the same 16th occupancy lock", "
     REQUIRE(learner.getPatternLenBeats() == 16.0);
     REQUIRE(learner.getPatternNote(0) == 38);
 }
+
+TEST_CASE("PhraseLearner: 2 silent bars + 2 occupied keep rests in slots 0-31", "[phrase][bass][capture][grid][rests]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    learner.beginGridCapture();
+
+    // Bars 3-4 occupied (slots 32-63); bars 1-2 silent (below stamp floor).
+    learner.stampGridRange(0.0, 8.0, 0.004f, 36);
+    for (int slot = 32; slot < PhraseLearner::kGridSlots; ++slot)
+        learner.stampGridRange(static_cast<double>(slot) * 0.25,
+                               static_cast<double>(slot) * 0.25 + 0.24, 0.2f, 40);
+
+    REQUIRE(learner.getGridOccupiedCount() >= 32);
+    REQUIRE(learner.getGridOccupiedCount() < 64);
+    for (int s = 0; s < 32; ++s)
+        REQUIRE_FALSE(learner.getGridSlotOccupied(s));
+
+    REQUIRE(learner.commitGridCapture());
+    REQUIRE(learner.getPatternLenBeats() == 16.0);
+
+    PhraseLearner::LearnedRiff snap;
+    learner.exportPattern(snap);
+    REQUIRE(snap.valid);
+    PhraseLearner restored;
+    restored.prepare(kSr);
+    REQUIRE(restored.loadPattern(snap));
+    for (int s = 0; s < 32; ++s)
+        REQUIRE_FALSE(restored.getGridSlotOccupied(s));
+    REQUIRE(restored.getGridSlotOccupied(32));
+}
+
+TEST_CASE("PhraseLearner: setAutoLockEnabled(false) never auto-locks", "[phrase][bass][autolock]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    learner.setAutoLockEnabled(false);
+    REQUIRE_FALSE(learner.isAutoLockEnabled());
+    for (int i = 0; i < 64; ++i)
+    {
+        const bool loud = (i % 8) < 2;
+        learner.process(static_cast<int64_t>(i) * kBlock,
+                        loud ? 0.2f : 0.02f, 36.0f, 0.8f, kBpm, kBlock);
+    }
+    REQUIRE_FALSE(learner.isLocked());
+}

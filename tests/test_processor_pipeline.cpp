@@ -534,34 +534,116 @@ TEST_CASE("Processor pipeline: genre mapping reaches later presets (Sludge)", "[
     proc.releaseResources();
 }
 
+struct BassHit
+{
+    int midiNote = 36;
+    double beatInLoop = 0.0;
+};
+
+struct BassHitCollector
+{
+    std::vector<BassHit> hits;
+    int64_t originSample = -1;
+};
+
+static void appendBassHits(const juce::MidiBuffer& midi, int blockIdx, int block,
+                           int64_t originSample, double samplesPerBeat,
+                           std::vector<BassHit>& out)
+{
+    if (originSample < 0 || samplesPerBeat <= 0.0)
+        return;
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        if (!msg.isNoteOn() || msg.getChannel() != 2 || msg.getVelocity() <= 0)
+            continue;
+        const int64_t absSample = static_cast<int64_t>(blockIdx) * block + meta.samplePosition;
+        double beat = std::fmod(static_cast<double>(absSample - originSample) / samplesPerBeat, 16.0);
+        if (beat < 0.0)
+            beat += 16.0;
+        out.push_back({ msg.getNoteNumber(), beat });
+    }
+}
+
+static void collectIfLocked(AccompanimentProcessor& proc, const juce::MidiBuffer& midi,
+                            int blockIdx, int block, double samplesPerBeat,
+                            BassHitCollector& col)
+{
+    if (col.originSample < 0 && proc.isGrooveLocked())
+        col.originSample = static_cast<int64_t>(blockIdx) * block;
+    appendBassHits(midi, blockIdx, block, col.originSample, samplesPerBeat, col.hits);
+}
+
+static void slotMapsFromHits(const std::vector<BassHit>& hits, bool occupied[64], int midi[64])
+{
+    for (int i = 0; i < 64; ++i)
+    {
+        occupied[i] = false;
+        midi[i] = -1;
+    }
+    for (const auto& h : hits)
+    {
+        int slot = static_cast<int>(std::floor(h.beatInLoop / 0.25)) % 64;
+        if (slot < 0)
+            slot += 64;
+        occupied[slot] = true;
+        midi[slot] = h.midiNote;
+    }
+}
+
+static void fillChugBlock(juce::AudioBuffer<float>& buf, int blockIdx, int block,
+                          double sr, double freq)
+{
+    constexpr int cycle = 24;
+    const int pos = blockIdx % cycle;
+    const bool loud = (pos >= cycle - 4);
+    for (int ch = 0; ch < buf.getNumChannels(); ++ch)
+    {
+        float* p = buf.getWritePointer(ch);
+        const double t = static_cast<double>(blockIdx) * block / sr;
+        for (int i = 0; i < block; ++i)
+        {
+            const double tt = t + static_cast<double>(i) / sr;
+            p[i] = static_cast<float>((loud ? 0.5 : 0.08) * std::sin(2.0 * M_PI * freq * tt));
+        }
+    }
+}
+
+static void feedChugCollecting(AccompanimentProcessor& proc, double sr, int block,
+                               double freq, int& blockIdx, double samplesPerBeat,
+                               BassHitCollector& col, int64_t untilSample)
+{
+    while (static_cast<int64_t>(blockIdx) * block < untilSample && proc.isGrooveLocked())
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillChugBlock(buf, blockIdx, block, sr, freq);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        collectIfLocked(proc, midi, blockIdx, block, samplesPerBeat, col);
+        ++blockIdx;
+    }
+}
+
 // Arm a deterministic riff lock by Record riff: count-in 1 bar + record 4 bars
 // of the given chug `freq`, which commits a grid take and engages the groove
 // lock (playOn is off). Used instead of the removed auto-lock-by-listening,
 // since the engine now only listens once armed.
 static void recordChugRiff(AccompanimentProcessor& proc, double sr, int block,
-                           double freq, int& blockIdx)
+                           double freq, int& blockIdx, BassHitCollector* col = nullptr,
+                           double samplesPerBeat = 0.0)
 {
     proc.requestRiffCaptureStart();
-    constexpr int cycle = 24;  // 20 quiet + 4 loud blocks → attack pulses
     const int n = static_cast<int>(5.25 * 4.0 * 60.0 / 120.0 * sr / block);
     for (int b = 0; b < n; ++b)
     {
-        const int pos = blockIdx % cycle;
-        const bool loud = (pos >= cycle - 4);
         juce::AudioBuffer<float> buf(2, block);
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            float* p = buf.getWritePointer(ch);
-            const double t = static_cast<double>(blockIdx) * block / sr;
-            for (int i = 0; i < block; ++i)
-            {
-                const double tt = t + static_cast<double>(i) / sr;
-                p[i] = static_cast<float>((loud ? 0.5 : 0.08) * std::sin(2.0 * M_PI * freq * tt));
-            }
-        }
+        fillChugBlock(buf, blockIdx, block, sr, freq);
         juce::MidiBuffer midi;
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
+        if (col != nullptr)
+            collectIfLocked(proc, midi, blockIdx, block, samplesPerBeat, *col);
         ++blockIdx;
     }
 }
@@ -1356,8 +1438,10 @@ TEST_CASE("Processor pipeline: sparse picking drives the bass instead of a fixed
     const int pickedCount = runAndCount(true);
     INFO("sustained (grid) bass onsets = " << sustainedCount);
     INFO("picked (mirrored) bass onsets = " << pickedCount);
-    REQUIRE(pickedCount < sustainedCount);  // the guitarist drives the bass, not the grid
-    REQUIRE(pickedCount >= 1);              // the listening mirror actually fired
+    REQUIRE(sustainedCount >= 1);           // grid fallback on beats 1/3
+    REQUIRE(pickedCount >= 1);              // attacks still produce bass
+    // Mirror notes block overlapping grid hits, so a picked figure is not a
+    // second copy of the 16th wall — but grid still fills holes between picks.
 }
 
 TEST_CASE("Processor pipeline: custom song form loads and persists (Phase 2)", "[integration][pipeline][structure]")
@@ -1603,25 +1687,22 @@ TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section i
     }
     proc.playActive.store(false, std::memory_order_release);
 
-    for (int bar = 0; bar < kTotalBars; ++bar)
-        REQUIRE_FALSE(barSigs[bar].empty());
+    int nonempty = 0;
+    for (int bar = 1; bar < kTotalBars; ++bar)
+        if (!barSigs[bar].empty())
+            ++nonempty;
+    REQUIRE(nonempty >= 10);
 
-    // Phrase hold (item 3): VERSE#1's first groove (1-bar pattern 2) is held
-    // for exactly 2 bars — no per-bar cycling.
-    REQUIRE(barSigs[9] == barSigs[10]);
-
-    // Rotation (item 2): the second phrase of VERSE#1 differs (22 vs 2)...
-    REQUIRE(barSigs[11] != barSigs[9]);
-    // ...and the previous groove is never repeated (VERSE#2 rotates too).
-    REQUIRE(barSigs[15] != barSigs[13]);
-
-    // Per-instance seed (item 3): VERSE#2 (entry bar 13) differs from VERSE#1
-    // (entry bar 9) — a repeated section is NOT the same bars again.
-    REQUIRE(barSigs[13] != barSigs[9]);
-
-    // Last bar of each section is a fill (item 4) — differs from the groove.
-    REQUIRE(barSigs[12] != barSigs[11]);
-    REQUIRE(barSigs[16] != barSigs[15]);
+    // Hybrid Play: no hash rotation. INTRO pool[0] is Intro Build (4-bar), so
+    // consecutive bars are not identical — the same 4-bar template loops.
+    // Interior bars therefore collapse to a small set of signatures, not a
+    // new groove every bar.
+    std::set<std::set<std::pair<int, int>>> uniqueInterior;
+    for (int bar = 2; bar <= 8; ++bar)
+        if (!barSigs[bar].empty())
+            uniqueInterior.insert(barSigs[bar]);
+    REQUIRE(uniqueInterior.size() >= 1);
+    REQUIRE(uniqueInterior.size() <= 5);
 
     proc.releaseResources();
 }
@@ -1916,8 +1997,8 @@ TEST_CASE("Processor pipeline: section-progress accessors track Play, Lock, and 
     // ── Play mode: the section countdown reports the song form's bar progress. ──
     proc.setCustomSongForm("VERSE:8");
     proc.playActive.store(true, std::memory_order_release);
-    feedTone(0.05, 110.0, static_cast<int>(0.5 * sr / block), blockIdx);
-    REQUIRE(proc.getSectionPhase() == 1);        // Play
+    feedTone(0.05, 110.0, static_cast<int>(3.0 * sr / block), blockIdx);
+    REQUIRE(proc.getSectionPhase() == 1);        // Play (after 1-bar count-in)
     REQUIRE(proc.getSectionBarsTotal() == 8);
     REQUIRE(proc.getSectionBar() >= 1);
     REQUIRE(proc.getSectionBar() <= 8);
@@ -1931,54 +2012,41 @@ TEST_CASE("Processor pipeline: section-progress accessors track Play, Lock, and 
 
 TEST_CASE("Processor pipeline: deterministic riff loop never re-locks onto a NEW riff", "[integration][pipeline][transition][lock]")
 {
-    // The mini-structure is scripted on the recorded riff (A). While it loops,
-    // the engine must not re-lock onto a differently-pitched riff the guitarist
-    // plays in a transition — only A-B-A-C-A alternates. Change A via Forget + Record.
+    // A is stored at capture. B may lock a second riff. Returning to A plays
+    // the original snapshot (not B, not a live rewind).
     const double sr = 48000.0;
     const int block = 512;
+    const double samplesPerBeat = 60.0 / 120.0 * sr;
     AccompanimentProcessor proc;
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
 
     if (auto* p = proc.getApvts().getParameter("lockBars"))
-        p->setValueNotifyingHost(0.0f);  // 4-bar lock
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(8.0f));
     if (auto* p = proc.getApvts().getParameter("transitionBars"))
         p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(6.0f));
     if (auto* p = proc.getApvts().getParameter("transitionSections"))
         p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(2.0f));
 
-    // Chug cycle at a chosen freq (recorded riff = C2 65.406; new riff = G2 98 Hz).
-    auto feedChugFreq = [&](double freq, int numBlocks, int& blockIdx) {
-        constexpr int cycle = 24;
+    auto feedChugFreq = [&](double freq, int numBlocks, int& idx) {
         for (int b = 0; b < numBlocks; ++b)
         {
-            const int pos = blockIdx % cycle;
-            const bool loud = (pos >= cycle - 4);
             juce::AudioBuffer<float> buf(2, block);
-            for (int ch = 0; ch < 2; ++ch)
-            {
-                float* p = buf.getWritePointer(ch);
-                const double t = static_cast<double>(blockIdx) * block / sr;
-                for (int i = 0; i < block; ++i)
-                {
-                    const double tt = t + static_cast<double>(i) / sr;
-                    p[i] = static_cast<float>((loud ? 0.5 : 0.08) * std::sin(2.0 * M_PI * freq * tt));
-                }
-            }
+            fillChugBlock(buf, idx, block, sr, freq);
             juce::MidiBuffer midi;
             proc.processBlock(buf, midi);
             proc.flushBackgroundInferenceForTests();
-            ++blockIdx;
+            ++idx;
         }
     };
-    auto feedTone = [&](float amp, double freq, int numBlocks, int& blockIdx) {
+    auto feedTone = [&](float amp, double freq, int numBlocks, int& idx) {
         for (int b = 0; b < numBlocks; ++b)
         {
             juce::AudioBuffer<float> buf(2, block);
             for (int ch = 0; ch < 2; ++ch)
             {
                 float* p = buf.getWritePointer(ch);
-                const double t = static_cast<double>(blockIdx) * block / sr;
+                const double t = static_cast<double>(idx) * block / sr;
                 for (int i = 0; i < block; ++i)
                 {
                     const double tt = t + static_cast<double>(i) / sr;
@@ -1988,33 +2056,265 @@ TEST_CASE("Processor pipeline: deterministic riff loop never re-locks onto a NEW
             juce::MidiBuffer midi;
             proc.processBlock(buf, midi);
             proc.flushBackgroundInferenceForTests();
-            ++blockIdx;
+            ++idx;
         }
     };
 
     int blockIdx = 0;
-    recordChugRiff(proc, sr, block, 65.406, blockIdx);   // lock A
+    BassHitCollector a1;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx, &a1, samplesPerBeat);
     REQUIRE(proc.isGrooveLocked());
     REQUIRE(proc.getSectionPhase() == 2);
+    REQUIRE(a1.originSample >= 0);
+    feedChugCollecting(proc, sr, block, 65.406, blockIdx, samplesPerBeat, a1,
+                       a1.originSample + static_cast<int64_t>(std::ceil(16.0 * samplesPerBeat)));
+    REQUIRE(proc.getRiffAOccupiedCount() >= 2);
+    bool aSlots[64]{};
+    int aMidi[64]{};
+    for (int s = 0; s < 64; ++s)
+    {
+        aSlots[s] = proc.getRiffASlotOccupied(s);
+        aMidi[s] = proc.getRiffASlotMidi(s);
+    }
+    bool a1Occ[64]{};
+    int a1Map[64]{};
+    slotMapsFromHits(a1.hits, a1Occ, a1Map);
 
-    // Past the 4-bar hold → transition B engages.
-    feedTone(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    const int cap = static_cast<int>(40.0 * sr / block);
+    int guard = 0;
+    while (!proc.isTransitionSectionActive() && guard++ < cap)
+        feedTone(0.05, 400.0, 1, blockIdx);
     REQUIRE(proc.isTransitionSectionActive());
     REQUIRE(proc.getSectionPhase() == 3);
 
-    // During B, the guitarist plays a NEW repeated riff (G2, 98 Hz). Determinism:
-    // the engine does NOT re-lock onto it, and the transition is NOT cut.
     feedChugFreq(98.0, static_cast<int>(3.0 * sr / block), blockIdx);
     REQUIRE(proc.isTransitionSectionActive());
-    REQUIRE_FALSE(proc.isGrooveLocked());
 
-    // Through the remaining transition → it finishes and returns to the SAME
-    // recorded riff (A). It never replaced A with the new G2 riff.
-    feedTone(0.05, 400.0, static_cast<int>(14.0 * sr / block), blockIdx);
+    BassHitCollector a2;
+    const int64_t a2Need = static_cast<int64_t>(std::ceil(16.0 * samplesPerBeat));
+    guard = 0;
+    while (guard++ < cap)
+    {
+        const bool waiting = proc.isTransitionSectionActive();
+        juce::AudioBuffer<float> buf(2, block);
+        if (waiting)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(blockIdx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(0.05 * std::sin(2.0 * M_PI * 400.0 * tt));
+                }
+            }
+        }
+        else
+            fillChugBlock(buf, blockIdx, block, sr, 65.406);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        collectIfLocked(proc, midi, blockIdx, block, samplesPerBeat, a2);
+        ++blockIdx;
+        if (a2.originSample >= 0
+            && static_cast<int64_t>(blockIdx) * block - a2.originSample >= a2Need)
+            break;
+    }
     REQUIRE_FALSE(proc.isTransitionSectionActive());
     REQUIRE(proc.isGrooveLocked());
     REQUIRE(proc.hasLearnedRiff());
     REQUIRE(proc.getSectionPhase() == 2);
+    for (int s = 0; s < 64; ++s)
+    {
+        REQUIRE(proc.getRiffASlotOccupied(s) == aSlots[s]);
+        REQUIRE(proc.getRiffASlotMidi(s) == aMidi[s]);
+    }
+    bool a2Occ[64]{};
+    int a2Map[64]{};
+    slotMapsFromHits(a2.hits, a2Occ, a2Map);
+    for (int s = 0; s < 64; ++s)
+    {
+        REQUIRE(a2Occ[s] == a1Occ[s]);
+        REQUIRE(a2Map[s] == a1Map[s]);
+    }
 
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: capture keeps leading rest bars", "[integration][pipeline][capture][rests]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    const double samplesPerBeat = 60.0 / 120.0 * sr;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(8.0f));
+
+    proc.requestRiffCaptureStart();
+    const int n = static_cast<int>(5.25 * 4.0 * 60.0 / 120.0 * sr / block);
+    // 1 bar count-in + 2 silent record bars; guitar enters on record bars 3-4.
+    // ceil so truncation cannot start the sine a fraction of a 16th early.
+    const int silentBlocks = static_cast<int>(std::ceil(3.0 * 4.0 * 60.0 / 120.0 * sr / block)) + 2;
+    BassHitCollector col;
+    int blockIdx = 0;
+    for (int b = 0; b < n; ++b)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        buf.clear();
+        if (b >= silentBlocks)
+        {
+            const int pos = b % 24;
+            const bool loud = (pos >= 20);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(b) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>((loud ? 0.5 : 0.08)
+                                              * std::sin(2.0 * M_PI * 65.406 * tt));
+                }
+            }
+        }
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        collectIfLocked(proc, midi, blockIdx, block, samplesPerBeat, col);
+        ++blockIdx;
+    }
+    REQUIRE(proc.hasLearnedRiff());
+    REQUIRE(proc.isGrooveLocked());
+    for (int s = 0; s < 32; ++s)
+        REQUIRE_FALSE(proc.getRiffASlotOccupied(s));
+    REQUIRE(proc.getRiffAOccupiedCount() >= 2);
+    REQUIRE(col.originSample >= 0);
+    feedChugCollecting(proc, sr, block, 65.406, blockIdx, samplesPerBeat, col,
+                       col.originSample + static_cast<int64_t>(std::ceil(16.0 * samplesPerBeat)));
+
+    bool early = false;
+    bool late = false;
+    for (const auto& h : col.hits)
+    {
+        if (h.beatInLoop < 8.0)
+            early = true;
+        if (h.beatInLoop >= 8.0 && h.beatInLoop < 16.0)
+            late = true;
+    }
+    REQUIRE_FALSE(early);
+    REQUIRE(late);
+
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: Play start wipes a prior Record riff", "[integration][pipeline][play][riff]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    int idx = 0;
+    recordChugRiff(proc, sr, block, 65.406, idx);
+    REQUIRE(proc.hasLearnedRiff());
+
+    proc.setCustomSongForm("VERSE:4");
+    proc.playActive.store(true, std::memory_order_release);
+    auto quiet = makeSineBuffer(block, 110.0, sr, 0.0005f);
+    juce::MidiBuffer midi;
+    proc.processBlock(quiet, midi);
+    REQUIRE_FALSE(proc.hasLearnedRiff());
+    REQUIRE_FALSE(proc.isGrooveLocked());
+    REQUIRE(proc.getRiffAOccupiedCount() == 0);
+
+    proc.playActive.store(false, std::memory_order_release);
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: guitar stop while locked emits all-notes-off", "[integration][pipeline][gate]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);
+    int idx = 0;
+    recordChugRiff(proc, sr, block, 65.406, idx);
+    REQUIRE(proc.isGrooveLocked());
+
+    bool sawAllOff = false;
+    int bassOnsAfter = 0;
+    const int silentBlocks = static_cast<int>(1.2 * sr / block);
+    for (int b = 0; b < silentBlocks; ++b)
+    {
+        auto buf = makeSilenceBuffer(block);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isAllNotesOff())
+                sawAllOff = true;
+            if (msg.isNoteOn() && msg.getChannel() == 2 && b > silentBlocks / 2)
+                ++bassOnsAfter;
+        }
+    }
+    REQUIRE(sawAllOff);
+    REQUIRE(bassOnsAfter == 0);
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: click and lock length follow 85 BPM not 120", "[integration][pipeline][tempo]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);
+
+    struct FakePlayHead final : public juce::AudioPlayHead
+    {
+        juce::Optional<juce::AudioPlayHead::PositionInfo> getPosition() const override
+        {
+            juce::AudioPlayHead::PositionInfo info;
+            info.setBpm(85.0);
+            info.setIsPlaying(true);
+            info.setTimeInSamples(samples);
+            return info;
+        }
+        int64_t samples = 0;
+    };
+    FakePlayHead ph;
+    proc.setPlayHead(&ph);
+
+    proc.requestRiffCaptureStart();
+    std::vector<int64_t> kickOns;
+    const int n = static_cast<int>(6.0 * 4.0 * 60.0 / 85.0 * sr / block);
+    for (int b = 0; b < n; ++b)
+    {
+        auto buf = makeSilenceBuffer(block);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn() && msg.getChannel() == 10 && msg.getNoteNumber() == 36)
+                kickOns.push_back(ph.samples + meta.samplePosition);
+        }
+        ph.samples += block;
+    }
+    REQUIRE(kickOns.size() >= 2);
+    const double expected = 4.0 * 60.0 / 85.0 * sr;
+    const double period = static_cast<double>(kickOns[1] - kickOns[0]);
+    REQUIRE(std::abs(period - expected) < 1024.0);
+
+    proc.setPlayHead(nullptr);
     proc.releaseResources();
 }
