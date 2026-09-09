@@ -153,10 +153,12 @@ public:
     void armTransitionCrash() noexcept { armCrashPending = true; }
 
     /**
-     * @brief Overlay library fill 17/18/19 on the current bar in beat time.
+     * @brief Overlay library fill 17/18/19 in beat time (barStart + beatOffset).
      *        17: beat ≥ 3.0; 18: beat ≥ 2.0; 19: entire bar. Independent of block size.
+     *        @p fromNextBar defers emission until the next bar downbeat (fill 19
+     *        armed on the penultimate bar so last-bar beat 1 is already the fill).
      */
-    void armBarFill(int fillPatternIndex) noexcept;
+    void armBarFill(int fillPatternIndex, bool fromNextBar = false) noexcept;
 
     // ── Musicality pivot (Workstream A / B1) ──────────────────────────────────
 
@@ -266,7 +268,8 @@ private:
                      int numSamples,
                      double beatStart,
                      double beatEnd,
-                     int fillPatternIndex) noexcept;
+                     int fillPatternIndex,
+                     double fillBarStart) noexcept;
 
     /** Emit a crash cymbal hit with a scheduled note-off (no hanging cymbal). */
     void emitCrashHit(juce::MidiBuffer& midi,
@@ -326,6 +329,7 @@ private:
 
     bool beatGridBassEnabled_ = true;   // Play / BListen grid fallback; off for frozen riffs
     int pendingBarFillIndex_ = -1;      // 17/18/19 overlay; -1 = none
+    double barFillStartBeat_ = -1.0;    // >=0: defer emit until this beat; -1 now; -2 resolve next process
 
     // Pending learned-bass note-ons (set by triggerLearnedBassNote, consumed in process).
     // A large block can contain more than one 16th; keep a fixed queue, no heap.

@@ -278,6 +278,97 @@ TEST_CASE("armBarFill 17 emits toms on beat 4 independent of block size", "[midi
     REQUIRE(a.front() >= 72000 - 2400);  // beat 4 at 120 BPM / 48 kHz = 72000
 }
 
+TEST_CASE("pattern change does not auto-crash; armTransitionCrash does", "[midi][fill]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.snapBpm(120.0f);
+    player.setStructureSilent(false);
+    player.setPatternIndex(1);
+
+    auto hasCrash = [](const juce::MidiBuffer& midi) {
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn() && msg.getChannel() == 10 && msg.getNoteNumber() == 49)
+                return true;
+        }
+        return false;
+    };
+
+    {
+        juce::MidiBuffer midi;
+        player.process(midi, 96000, 0);
+        REQUIRE_FALSE(hasCrash(midi));
+    }
+
+    player.setPatternIndex(2);
+    {
+        juce::MidiBuffer midi;
+        player.process(midi, 96000, 96000);
+        REQUIRE_FALSE(hasCrash(midi));
+    }
+
+    player.armTransitionCrash();
+    {
+        juce::MidiBuffer midi;
+        player.process(midi, 512, 192000);
+        REQUIRE(hasCrash(midi));
+    }
+}
+
+TEST_CASE("armBarFill 19 fromNextBar defers until the next bar downbeat", "[midi][fill]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.snapBpm(120.0f);
+    player.setStructureSilent(false);
+    player.setPatternIndex(1);
+
+    auto isTom = [](int note) {
+        return note == 41 || note == 43 || note == 45 || note == 47 || note == 48;
+    };
+
+    constexpr int block = 512;
+    constexpr int64_t armSample = 72000;   // beat 3 of bar 0
+    constexpr int64_t bar1 = 96000;
+    int64_t pos = 0;
+    bool armed = false;
+    int tomsAfterArmOnBar0 = 0;
+    int tomsOnBar1Downbeat = 0;
+
+    while (pos < bar1 + 4800)
+    {
+        if (!armed && pos + block > armSample)
+        {
+            player.armBarFill(19, true);
+            armed = true;
+        }
+        juce::MidiBuffer midi;
+        player.process(midi, block, pos);
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (!msg.isNoteOn() || msg.getChannel() != 10 || !isTom(msg.getNoteNumber()))
+                continue;
+            const int64_t abs = pos + meta.samplePosition;
+            if (armed && abs >= armSample && abs < bar1)
+                ++tomsAfterArmOnBar0;
+            if (abs >= bar1 - 2400 && abs <= bar1 + 2400)
+                ++tomsOnBar1Downbeat;
+        }
+        pos += block;
+    }
+
+    REQUIRE(armed);
+    REQUIRE(tomsAfterArmOnBar0 == 0);
+    REQUIRE(tomsOnBar1Downbeat >= 1);
+}
+
 // ── Musicality pivot: bass engine (A1) ───────────────────────────────────────
 
 TEST_CASE("A1: listen-grid bass is harmonic root from setBassParams", "[midi][A1]")

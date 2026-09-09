@@ -83,6 +83,7 @@ void PatternPlayer::reset()
     bassLeadInArmed = false;
     beatGridBassEnabled_ = true;
     pendingBarFillIndex_ = -1;
+    barFillStartBeat_ = -1.0;
     for (auto& n : pendingLearned_)
         n = {};
     sampleCounter = 0;
@@ -155,10 +156,12 @@ void PatternPlayer::clearPendingGrooveCommit() noexcept
     pendingGrooveCommit = GrooveCommit{};
 }
 
-void PatternPlayer::armBarFill(int fillPatternIndex) noexcept
+void PatternPlayer::armBarFill(int fillPatternIndex, bool fromNextBar) noexcept
 {
-    if (fillPatternIndex >= 17 && fillPatternIndex <= 19)
-        pendingBarFillIndex_ = fillPatternIndex;
+    if (fillPatternIndex < 17 || fillPatternIndex > 19)
+        return;
+    pendingBarFillIndex_ = fillPatternIndex;
+    barFillStartBeat_ = fromNextBar ? -2.0 : -1.0;
 }
 
 void PatternPlayer::setBpm(float newBpm)
@@ -405,7 +408,8 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
                                 int numSamples,
                                 double beatStart,
                                 double beatEnd,
-                                int fillPatternIndex) noexcept
+                                int fillPatternIndex,
+                                double fillBarStart) noexcept
 {
     if (library == nullptr || numSamples <= 0 || beatEnd <= beatStart + 1.0e-9)
         return;
@@ -414,7 +418,7 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
 
     const MidiPattern& fill = library->getPattern(fillPatternIndex);
     const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
-    const double barStart = std::floor(beatStart / 4.0) * 4.0;
+    const double barStart = fillBarStart;
     const double windowStart = (fillPatternIndex == 17) ? barStart + 3.0
                              : (fillPatternIndex == 18) ? barStart + 2.0
                              : barStart;
@@ -1019,21 +1023,38 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
             changeBeat = boundary;
     }
 
-    const MidiPattern& pattern = library->getPattern(activePatternIndex);
+    if (pendingBarFillIndex_ >= 17 && barFillStartBeat_ < -1.5)
+        barFillStartBeat_ = (std::floor(beatStart / 4.0) + 1.0) * 4.0;
+
+    const double fillOrigin = (pendingBarFillIndex_ >= 17)
+        ? ((barFillStartBeat_ >= 0.0) ? barFillStartBeat_ : std::floor(beatStart / 4.0) * 4.0)
+        : beatEnd;
+    const bool fillEmitting = pendingBarFillIndex_ >= 17 && beatEnd > fillOrigin + 1.0e-12;
+    const bool fill19Live = fillEmitting && pendingBarFillIndex_ == 19;
+
+    auto emitGroove = [&](double from, double to, int patIdx) noexcept
+    {
+        if (patIdx == 0 || to <= from + 1.0e-12)
+            return;
+        if (fill19Live)
+        {
+            if (from >= fillOrigin - 1.0e-12)
+                return;
+            to = std::min(to, fillOrigin);
+            if (to <= from + 1.0e-12)
+                return;
+        }
+        emitDrumEventsForRange(midi, numSamples, from, to, library->getPattern(patIdx), orn, 0);
+    };
 
     if (changeBeat < 0.0)
     {
-        // No change this block — play the active pattern across the whole block.
-        if (activePatternIndex != 0)
-            emitDrumEventsForRange(midi, numSamples, beatStart, beatEnd, pattern, orn, 0);
+        emitGroove(beatStart, beatEnd, activePatternIndex);
     }
     else
     {
-        // 1) Old pattern up to the boundary.
-        if (activePatternIndex != 0)
-            emitDrumEventsForRange(midi, numSamples, beatStart, changeBeat, pattern, orn, 0);
+        emitGroove(beatStart, changeBeat, activePatternIndex);
 
-        // 2) Apply the change.
         if (pendingGrooveCommitValid)
         {
             activePatternIndex = pendingGrooveCommit.patternIndex;
@@ -1049,23 +1070,23 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         // Crash only when armTransitionCrash() was set (handled above). Phrase
         // rotations and listening picks must not crash.
 
-        // 4) New pattern from the boundary onward.
-        if (activePatternIndex != 0)
-            emitDrumEventsForRange(midi, numSamples, changeBeat, beatEnd,
-                                   library->getPattern(activePatternIndex), orn, 0);
+        emitGroove(changeBeat, beatEnd, activePatternIndex);
     }
 
-    if (pendingBarFillIndex_ >= 17)
+    if (fillEmitting)
     {
-        emitBarFill(midi, numSamples, beatStart, beatEnd, pendingBarFillIndex_);
-        const double barEnd = std::floor(beatStart / 4.0) * 4.0 + 4.0;
-        if (beatEnd >= barEnd - 1.0e-9)
+        emitBarFill(midi, numSamples, beatStart, beatEnd, pendingBarFillIndex_, fillOrigin);
+        const double fillBarEnd = fillOrigin + 4.0;
+        if (beatEnd >= fillBarEnd - 1.0e-9)
+        {
             pendingBarFillIndex_ = -1;
+            barFillStartBeat_ = -1.0;
+        }
     }
 
     // Tier-0 micro-fill: a two-note tom pickup into the next downbeat at the end
     // of a 4-bar phrase (the downbeat's own kick/crash is the pattern's).
-    if (orn.microFill && activePatternIndex != 0)
+    if (orn.microFill && activePatternIndex != 0 && !fill19Live)
         emitMicroFill(midi, numSamples, beatStart, beatEnd, 0);
 
     // ── Bass note-off bookkeeping (A1) ──────────────────────────────────────
