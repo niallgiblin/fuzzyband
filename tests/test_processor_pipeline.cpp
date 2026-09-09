@@ -83,6 +83,29 @@ void feedBlocks(AccompanimentProcessor& proc,
     }
 }
 
+static void feedQuietBlocks(AccompanimentProcessor& proc, double sr, int block, int n)
+{
+    auto quiet = makeSineBuffer(block, 110.0, sr, 0.0005f);
+    for (int i = 0; i < n; ++i)
+    {
+        juce::MidiBuffer midi;
+        proc.processBlock(quiet, midi);
+    }
+}
+
+static int blocksForBars(double sr, int block, double bars, double bpm = 120.0)
+{
+    return static_cast<int>(std::ceil(bars * 4.0 * 60.0 / bpm * sr / static_cast<double>(block)));
+}
+
+static bool poolContains(const PatternRules::SectionPatternPool& pool, int idx)
+{
+    for (int i = 0; i < pool.count; ++i)
+        if (pool.indices[i] == idx)
+            return true;
+    return false;
+}
+
 } // namespace
 
 // ─── Silent pipeline ─────────────────────────────────────────────────────────
@@ -1675,6 +1698,10 @@ TEST_CASE("Editor construction smoke test", "[integration][editor]")
 //   bar 11 = 22, bar 12 = fill. VERSE#2 (seed 51): slots [22, 1, 22] →
 //   bar 13 = 22 (≠ VERSE#1's first groove), bar 15 = 1, bar 16 = fill.
 
+// ─── Play hybrid drums: section pool + listen, no hash rotation ──────────────
+// Slice 3: Play honors an in-pool pick, snaps outsiders, holds 2+ bars, and
+// constrains immediately on section change. Hash rotation is gone.
+
 TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section instance, and fills the last bar", "[integration][pipeline][play][variety]")
 {
     const double sr = 48000.0;
@@ -1683,75 +1710,109 @@ TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section i
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
 
-    // INTRO:9 then two VERSE sections. The first play block loads the form AND
-    // starts the grid at host sample 0 (beat 0 = bar boundary), so changes are
-    // applied without lag. Entry-bar seed: VERSE#1 = 9 ^ (1*31) = 22,
-    // VERSE#2 = 13 ^ (2*31) = 51.
     proc.setCustomSongForm("INTRO:9,VERSE:4,VERSE:4");
     proc.playActive.store(true, std::memory_order_release);
 
-    // Quiet (non-digital-silence) audio so play-mode drums are not gated.
     auto quiet = makeSineBuffer(block, 110.0, sr, 0.0005f);
 
-    // 17 bars at 120 BPM = 2 s/bar = 96000 samples/bar = 187.5 blocks/bar.
     constexpr int64_t kSamplesPerBar = 96000;
     constexpr int kBlocksPerBar = 188;
     constexpr int kTotalBars = 17;
 
-    // Per-bar signature: {(note, 16th-tick)} on the drum channel.
-    constexpr int kSnare = 38;
-    constexpr int kCrash = 49;
-    constexpr int kHatClosed = 42;
-    constexpr int kHatOpen = 46;
-    std::vector<std::set<std::pair<int, int>>> barSigs(kTotalBars);
+    std::vector<int> barPat(static_cast<size_t>(kTotalBars), -1);
     int64_t blockStartSample = 0;
     for (int b = 0; b < kBlocksPerBar * kTotalBars; ++b)
     {
         juce::MidiBuffer midi;
         proc.processBlock(quiet, midi);
-        for (const auto meta : midi)
-        {
-            const auto msg = meta.getMessage();
-            if (!msg.isNoteOn() || msg.getChannel() != 10) continue;
-            const int note = msg.getNoteNumber();
-            if (note == kCrash) continue;                       // transition crash
-            if (note == kSnare && msg.getVelocity() < 50) continue;  // ghost snare
-            // Tier-0 openHat ornamentation varies the closed hat (42) -> open
-            // hat (46) per bar in the verse, so the hat voices are excluded from
-            // the "same groove" signature. Ride/bell stay: they distinguish
-            // patterns (e.g. Rock Backbeat vs Verse Groove) and are never
-            // ornamented in a verse section.
-            if (note == kHatClosed || note == kHatOpen) continue;
-            // Round to the NEAREST 16th: the data-derived groove microtiming
-            // (timingMs up to ±9 ms) plus bounded jitter (±15 ms) can pull an
-            // event scheduled at a 16th boundary into the previous tick under
-            // a floor division — rounding makes the signature deterministic.
-            const int64_t rounded = blockStartSample + meta.samplePosition + 3000;
-            const int bar = static_cast<int>(rounded / kSamplesPerBar);
-            const int tick = static_cast<int>((rounded % kSamplesPerBar) / 6000);
-            if (bar >= 0 && bar < kTotalBars && tick >= 0 && tick < 16)
-                barSigs[bar].insert({ note, tick });
-        }
+        const int bar = static_cast<int>(blockStartSample / kSamplesPerBar);
+        if (bar >= 0 && bar < kTotalBars)
+            barPat[static_cast<size_t>(bar)] = proc.getPlayedPatternIndex();
         blockStartSample += block;
     }
     proc.playActive.store(false, std::memory_order_release);
 
-    int nonempty = 0;
-    for (int bar = 1; bar < kTotalBars; ++bar)
-        if (!barSigs[bar].empty())
-            ++nonempty;
-    REQUIRE(nonempty >= 10);
+    const auto intro = PatternRules::sectionPatternPoolForGenre("INTRO", 0);
+    const auto verse = PatternRules::sectionPatternPoolForGenre("VERSE", 0);
+    REQUIRE(intro.count > 0);
+    REQUIRE(verse.count > 0);
 
-    // Hybrid Play: no hash rotation. INTRO pool[0] is Intro Build (4-bar), so
-    // consecutive bars are not identical — the same 4-bar template loops.
-    // Interior bars therefore collapse to a small set of signatures, not a
-    // new groove every bar.
-    std::set<std::set<std::pair<int, int>>> uniqueInterior;
-    for (int bar = 2; bar <= 8; ++bar)
-        if (!barSigs[bar].empty())
-            uniqueInterior.insert(barSigs[bar]);
-    REQUIRE(uniqueInterior.size() >= 1);
-    REQUIRE(uniqueInterior.size() <= 5);
+    // Count-in occupies wall-clock bar 0. INTRO holds one pool member (no
+    // hash rotation). Skip bar 1 (count-in → form apply).
+    REQUIRE(poolContains(intro, barPat[2]));
+    for (int bar = 3; bar <= 8; ++bar)
+        REQUIRE(barPat[static_cast<size_t>(bar)] == barPat[2]);
+
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: play hybrid drums constrain to pool and hold", "[integration][pipeline][play][hybrid]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    const auto intro = PatternRules::sectionPatternPoolForGenre("INTRO", 0);
+    const auto verse = PatternRules::sectionPatternPoolForGenre("VERSE", 0);
+    REQUIRE(intro.count >= 2);
+    REQUIRE(verse.count >= 2);
+
+    proc.setCustomSongForm("INTRO:8,VERSE:4");
+    proc.playActive.store(true, std::memory_order_release);
+
+    feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 2.25));
+    REQUIRE(proc.getSectionPhase() == 1);
+    REQUIRE(proc.getCurrentSectionName() == "INTRO");
+    REQUIRE(poolContains(intro, proc.getPlayedPatternIndex()));
+
+    proc.injectDrumPatternForTests(12);
+    feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 1.0));
+    REQUIRE(proc.getPlayedPatternIndex() == 12);
+    feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 1.0));
+    REQUIRE(proc.getPlayedPatternIndex() == 12);
+
+    proc.injectDrumPatternForTests(8);
+    feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 1.0));
+    REQUIRE(proc.getPlayedPatternIndex() != 8);
+    REQUIRE(poolContains(intro, proc.getPlayedPatternIndex()));
+
+    int guard = 0;
+    while (proc.getCurrentSectionName() != "VERSE" && guard++ < blocksForBars(sr, block, 6.0))
+        feedQuietBlocks(proc, sr, block, 1);
+    REQUIRE(proc.getCurrentSectionName() == "VERSE");
+    REQUIRE(proc.getSectionPhase() == 1);
+    feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 1.0));
+    REQUIRE(proc.getPlayedPatternIndex() != 12);
+    REQUIRE(poolContains(verse, proc.getPlayedPatternIndex()));
+
+    proc.injectDrumPatternForTests(2);
+    feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 1.0));
+    REQUIRE(proc.getPlayedPatternIndex() == 2);
+    feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 2.0));
+    REQUIRE(proc.getPlayedPatternIndex() == 2);
+
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: play section does not freeze pattern inference", "[integration][pipeline][play][hybrid]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    proc.setCustomSongForm("INTRO:8");
+    proc.playActive.store(true, std::memory_order_release);
+    feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 2.25));
+    REQUIRE(proc.getSectionPhase() == 1);
+    REQUIRE(proc.getCurrentSectionName() == "INTRO");
+
+    const int before = proc.getInferencePatternSelectCountForTests();
+    proc.flushBackgroundInferenceForTests();
+    REQUIRE(proc.getInferencePatternSelectCountForTests() > before);
 
     proc.releaseResources();
 }

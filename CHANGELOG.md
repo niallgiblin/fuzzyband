@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.64] — Play hybrid drums (listen inside the section)
+
+- **Play drums listen inside the current section's pool.** Inference argmax is
+  honored when the pick is in the pool; otherwise it snaps to a compatible
+  member (home groove if none). Genre/style rewrite does not run in Play.
+- **Sticky 2-bar hold**, reset on section change so a chorus does not keep the
+  verse groove. No hash rotation through the pool.
+- **Count-in / Record / riff phases freeze pattern select.** Play does not.
+
 ## [0.9.63] — Unified listen bass mixer
 
 - **Play and Record B listen through one bass engine.** Attack mirror first;

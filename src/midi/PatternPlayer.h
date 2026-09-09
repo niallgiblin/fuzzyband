@@ -82,6 +82,8 @@ public:
 
     void setBpm(float bpm);
     void setPatternIndex(int index);
+    /** @brief Pattern currently sounding (after bar-boundary apply). Tests/UI. */
+    int getActivePatternIndex() const noexcept { return activePatternIndex; }
     void setStructureSilent(bool silent);
 
     /**

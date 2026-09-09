@@ -181,6 +181,8 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     phraseLearner.prepare(sr);
     lastDrumPatternChangeSample = -1;
     lastCommittedStructureState = StructureState::SILENT;
+    patternSelectFrozen.store(false, std::memory_order_relaxed);
+    inferencePatternSelectCount.store(0, std::memory_order_relaxed);
     playbackGate.reset();
     prevBlockRms = 0.0f;
     guitarEnergySmooth_ = 1.0f;
@@ -309,9 +311,12 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         }
 #endif
 
-        // Pattern selection is frozen in Record riff A/B and during click/capture.
-        // Play honors argmax (constrained on the audio thread). Style still updates.
-        if (grooveLocked.load(std::memory_order_acquire)
+        // Pattern selection is frozen in count-in, capture, and Record riff A/B.
+        // PlaySection honors argmax (constrained on the audio thread). Style still updates.
+        // Keep the derived Record flags too so a one-block phase lag cannot reopen
+        // selection during B listen (slice 2 bass grid).
+        if (patternSelectFrozen.load(std::memory_order_acquire)
+            || grooveLocked.load(std::memory_order_acquire)
             || transitionSectionActive.load(std::memory_order_acquire)
             || riffCaptureActive.load(std::memory_order_acquire))
         {
@@ -332,6 +337,8 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             }
             return;
         }
+
+        inferencePatternSelectCount.fetch_add(1, std::memory_order_relaxed);
 
         FeatureVector patternFeatures = latest;
 
@@ -400,23 +407,17 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         if (auto* rawGenre = apvts.getRawParameterValue("genre"))
             genreId = juce::jlimit(0, Groove::presetCount() - 1,
                                    static_cast<int>(std::lround(rawGenre->load())));
-        const int diversifiedIdx = PatternRules::diversifyPatternForGenre(idx, latest, barMod8, genreId);
 
-        // Style steering (perception-layer wiring, A4.1): route the groove family
-        // through the style pool for the *committed* (smoothed) articulation, so
-        // how you play (chug → half-time/breakdown, open chord → chorus,
-        // single-note → fast, sustain → sparse) drives selection. The committed
-        // style is already hysteresis-gated by updateCommittedStyle(), so it holds
-        // one articulation instead of flip-flopping; the 4-bar phrase hold above
-        // does the rest of the smoothing, so steering only affects the next
-        // phrase-boundary commit. Silence (4) steers nothing.
-        int finalIdx = diversifiedIdx;
-        // Play skips style rewrite (audio thread constrains to the section pool).
-        // Follow/idle still steers by committed style.
-        if (committedStyle >= 0 && committedStyle <= 3
-            && playSectionIndex.load(std::memory_order_acquire) < 0)
-            finalIdx = PatternRules::diversifyPatternForStyle(
-                diversifiedIdx, committedStyle, barMod8, latest.state, genreId);
+        // Play skips genre/style rewrite (audio thread constrains to the section
+        // pool). Idle/follow still steers so the UI groove can move.
+        int finalIdx = idx;
+        if (playSectionIndex.load(std::memory_order_acquire) < 0)
+        {
+            finalIdx = PatternRules::diversifyPatternForGenre(idx, latest, barMod8, genreId);
+            if (committedStyle >= 0 && committedStyle <= 3)
+                finalIdx = PatternRules::diversifyPatternForStyle(
+                    finalIdx, committedStyle, barMod8, latest.state, genreId);
+        }
 
         if (drumHoldExpired || excludeParam >= 0)
         {
@@ -861,6 +862,11 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         effectivePatternIdx = drumA;
     }
     wasPlayOn = playOn;
+    {
+        const bool freezeSelect = (enginePhase != EnginePhase::Idle
+                                   && enginePhase != EnginePhase::PlaySection);
+        patternSelectFrozen.store(freezeSelect, std::memory_order_release);
+    }
     patternPlayer.setPatternIndex(effectivePatternIdx);
 
     // Section for velocity contrast (A3.1) and bass harmony (A1.2).

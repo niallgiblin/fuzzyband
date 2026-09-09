@@ -78,6 +78,18 @@ public:
 
     /** @brief The pattern the drums are actually playing (last committed). Tests/UI. */
     int getLatestPatternIndex() const noexcept { return latestPatternIndex.load(std::memory_order_relaxed); }
+    /** @brief PatternPlayer active index after bar-boundary apply. Tests. */
+    int getPlayedPatternIndex() const noexcept { return patternPlayer.getActivePatternIndex(); }
+    /** @brief Test-only: pretend inference committed this index (Play constrains it). */
+    void injectDrumPatternForTests(int idx) noexcept
+    {
+        latestPatternIndex.store(idx, std::memory_order_release);
+    }
+    /** @brief Test-only: how many times inference actually selected a Play/idle pattern. */
+    int getInferencePatternSelectCountForTests() const noexcept
+    {
+        return inferencePatternSelectCount.load(std::memory_order_relaxed);
+    }
     int getDisplayStyle() const noexcept { return displayStyle.load(std::memory_order_relaxed); }
     float getDisplayRms() const noexcept { return displayRms.load(std::memory_order_relaxed); }
     float getDisplayCentroid() const noexcept { return displayCentroid.load(std::memory_order_relaxed); }
@@ -251,6 +263,8 @@ private:
 
     std::atomic<int> latestPatternIndex{ 0 };
     std::atomic<bool> resetDrumHoldRequested{ false };
+    std::atomic<bool> patternSelectFrozen{ false };
+    std::atomic<int> inferencePatternSelectCount{ 0 };
 
     // Mel spectrogram queue: audio thread → inference thread (v0.8.0)
 
