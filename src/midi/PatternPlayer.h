@@ -7,13 +7,16 @@
  * The drum/bass clock is anchored to the DAW transport. process() receives the
  * host sample position (getTimeInSamples()) and derives the beat grid from it,
  * so patterns stay locked to the host timeline across seeks, loops and transport
- * start/stop. Tempo is host-authoritative (set via setBpm()/snapBpm()).
+ * start/stop. A stopped playhead free-runs internally; the first moving sample
+ * after that snaps onto the host grid without a seek dump (DAW Record must not
+ * restart count-in). Tempo is host-authoritative (set via setBpm()/snapBpm()).
  */
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "MidiPatternLibrary.h"
 #include "GrooveTemplate.h"
 #include "GrooveGrid.h"
+#include <array>
 #include <atomic>
 
 /**
@@ -91,8 +94,10 @@ public:
     /**
      * @brief The host-clock sample this block will use (frozen-transport aware).
      *        Matches the clock @ref process will apply; call before process().
+     *        @p hostRolling is true when the host reports playing or recording.
      */
-    int64_t previewResolvedHostSample(int64_t hostSamplePosition, int numSamples) const noexcept;
+    int64_t previewResolvedHostSample(int64_t hostSamplePosition, int numSamples,
+                                      bool hostRolling = false) const noexcept;
 
     /** @brief Drops deferred pattern changes; the host grid is authoritative, so no beat reset occurs. */
     void snapToBarStart();
@@ -120,8 +125,11 @@ public:
      */
     int snapBassToSectionHarmony(int rawNote) const noexcept;
 
-    /** @brief Enable/disable phrase-learned bass mode. When enabled, beat-aligned bass is suppressed. */
-    void setPhraseLearnerActive(bool active) noexcept { phraseLearnerActive_ = active; }
+    /**
+     * @brief Beat-grid / pattern bass (Play + RiffBListen fallback). Off during
+     *        RiffA / RiffBLocked so only the learned-riff snapshot sounds.
+     */
+    void setBeatGridBassEnabled(bool enabled) noexcept { beatGridBassEnabled_ = enabled; }
 
     /** @brief Trigger a single bass note from PhraseLearner. Call from audio thread. */
     void triggerLearnedBassNote(int midiNote, float velocity, int sampleOffset, int durationSamples) noexcept;
@@ -132,11 +140,21 @@ public:
     /** @brief Cancel a deferred groove commit before its bar-boundary activation. Audio thread safe. */
     void clearPendingGrooveCommit() noexcept;
 
-    /** @brief Fill @p midi for this audio block, anchoring the beat grid to @p hostSamplePosition. */
-    void process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition);
+    /**
+     * @brief Fill @p midi for this audio block, anchoring the beat grid to @p hostSamplePosition.
+     *        @p hostRolling is true when the host reports playing or recording.
+     */
+    void process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition,
+                 bool hostRolling = false);
 
     /** @brief Arm a crash cymbal (MIDI 49) hit at the next block start. Audio thread safe. */
     void armTransitionCrash() noexcept { armCrashPending = true; }
+
+    /**
+     * @brief Overlay library fill 17/18/19 on the current bar in beat time.
+     *        17: beat ≥ 3.0; 18: beat ≥ 2.0; 19: entire bar. Independent of block size.
+     */
+    void armBarFill(int fillPatternIndex) noexcept;
 
     // ── Musicality pivot (Workstream A / B1) ──────────────────────────────────
 
@@ -242,10 +260,11 @@ private:
     /** @brief Note-gate multiplier for the current section (legato vs staccato). */
     float sectionBassGate() const noexcept;
 
-    void emitTransitionFill(juce::MidiBuffer& midi,
-                            int numSamples,
-                            TransitionFillKind kind,
-                            int sampleOffsetBase) noexcept;
+    void emitBarFill(juce::MidiBuffer& midi,
+                     int numSamples,
+                     double beatStart,
+                     double beatEnd,
+                     int fillPatternIndex) noexcept;
 
     /** Emit a crash cymbal hit with a scheduled note-off (no hanging cymbal). */
     void emitCrashHit(juce::MidiBuffer& midi,
@@ -281,6 +300,7 @@ private:
     int64_t sampleCounter = 0;       // last host sample position
     int64_t expectedHostSample = 0;  // next expected host position (jump detection)
     int64_t lastHostSample = -1;     // raw host position from the previous block (frozen-transport detection)
+    bool lastTransportFrozen = true; // previous block used the free-run clock
 
     bool structureSilent = false;
     bool wasSilent = false;
@@ -302,14 +322,21 @@ private:
     // last bar. The player emits it once as a block crosses the bar's last beat.
     bool bassLeadInArmed = false;
 
-    bool phraseLearnerActive_ = false;  // When true, beat-aligned bass is suppressed
+    bool beatGridBassEnabled_ = true;   // Play / BListen grid fallback; off for frozen riffs
+    int pendingBarFillIndex_ = -1;      // 17/18/19 overlay; -1 = none
 
-    // Pending note from PhraseLearner (set by triggerLearnedBassNote, consumed in process)
-    bool pendingLearnedNote_ = false;
-    int pendingLearnedMidi_ = 40;
-    float pendingLearnedVel_ = 0.9f;
-    int pendingLearnedOffset_ = 0;
-    int pendingLearnedDuration_ = 10000;
+    // Pending learned-bass note-ons (set by triggerLearnedBassNote, consumed in process).
+    // A large block can contain more than one 16th; keep a fixed queue, no heap.
+    static constexpr int kMaxPendingLearned = 8;
+    struct PendingLearnedNote
+    {
+        bool active = false;
+        int midi = 40;
+        float vel = 0.58f;
+        int offset = 0;
+        int duration = 10000;
+    };
+    std::array<PendingLearnedNote, kMaxPendingLearned> pendingLearned_{};
 
     // Transition crash state — note-off is deferred so the cymbal decays cleanly.
     bool armCrashPending = false;

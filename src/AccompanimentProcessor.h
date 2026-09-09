@@ -116,6 +116,30 @@ public:
     int getRiffCaptureBar() const noexcept { return riffCaptureBar.load(std::memory_order_relaxed); }
     bool hasLearnedRiff() const noexcept { return riffHeld.load(std::memory_order_relaxed); }
 
+    /** @brief Test/debug: occupied 16ths in the Record A snapshot (0 if none). */
+    int getRiffAOccupiedCount() const noexcept
+    {
+        if (!riffA.valid)
+            return 0;
+        int n = 0;
+        for (int i = 0; i < PhraseLearner::kGridSlots; ++i)
+            if (riffA.occupied[static_cast<size_t>(i)])
+                ++n;
+        return n;
+    }
+    bool getRiffASlotOccupied(int slot) const noexcept
+    {
+        return riffA.valid && slot >= 0 && slot < PhraseLearner::kGridSlots
+            && riffA.occupied[static_cast<size_t>(slot)];
+    }
+    int getRiffASlotMidi(int slot) const noexcept
+    {
+        if (!riffA.valid || slot < 0 || slot >= PhraseLearner::kGridSlots
+            || !riffA.occupied[static_cast<size_t>(slot)])
+            return -1;
+        return riffA.midi[static_cast<size_t>(slot)];
+    }
+
     // ── Post-lock transition grammar (A5.2) ──────────────────────────────────
     // After a groove lock expires, the engine plays a *contrast* section for a
     // few bars before firmly returning to the locked riff (A). UI reads these
@@ -193,6 +217,9 @@ private:
     void drainFeatureQueueAndRunInference();
     /** @brief Smooth a raw style classification into the committed style used downstream. */
     void updateCommittedStyle(int rawStyle) noexcept;
+    /** @brief Emit occupied riffA 16ths whose onsets fall in this block (RiffA only). */
+    void emitFrozenRiffA(int numSamples, double bpm, double sr,
+                         int64_t clockSample, int bassTranspose) noexcept;
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -246,8 +273,24 @@ private:
     // Generative groove lock (Phase: lock-in). The audio thread runs the lock
     // state machine; the inference thread and UI read grooveLocked.
     std::atomic<bool> grooveLocked{ false };
-    bool grooveLockActive = false;     // audio-thread lock state
-    bool riffLoopActive = false;       // record-riff mini-structure running (scripted A-B-A-C-A)
+    enum class EnginePhase {
+        Idle, PlayCountIn, PlaySection,
+        RecWaitBar, RecCountIn, RecCapture,
+        RiffA, RiffBListen, RiffBLocked
+    };
+    EnginePhase enginePhase = EnginePhase::Idle;
+    PhraseLearner::LearnedRiff riffA{};
+    PhraseLearner::LearnedRiff riffB{};
+    int64_t riffAPlayOriginSample = -1;
+    int drumA = 0;
+    int drumB0 = 0;
+    int drumB = 0;
+    std::atomic<int> playSectionIndex{ -1 };
+    std::atomic<bool> requestBLockPick{ false };
+    std::atomic<int> bLockPick{ -1 };
+    int64_t guitarSilentSamples = 0;
+    bool grooveLockActive = false;     // derived: enginePhase == RiffA (UI/tests)
+    bool riffLoopActive = false;       // derived: any Riff* phase
     int64_t grooveLockEndSample = -1;  // hold ends here (hostSampleTime frame)
     int64_t grooveLockStartSample = -1; // hold began here (hostSampleTime frame)
     int64_t lastRiffMatchSample = std::numeric_limits<int64_t>::min() / 2;  // last riff-grid attack
@@ -314,11 +357,10 @@ private:
     std::atomic<int> sectionBarsRemaining{ 0 };
     std::atomic<float> sectionProgress{ 0.0f };  // elapsed fraction [0,1]
 
-    // ── Pool phrasing & seeded rotation (variety): audio-thread state ────────
-    // Each section instance seeds its pool rotation from the global bar count
-    // at entry, holds each groove for barsPerGrooveForSection bars, and never
-    // repeats the immediately-previous groove. Reseeded on section change and
-    // on play start, so verse 1 ≠ verse 2 and every Play session re-variates.
+    // ── Play / post-lock section tracking ────────────────────────────────────
+    // Play holds one pool-constrained groove (inference 2-bar hold); Record B
+    // freezes drumB0. These fields track section edges and leftover transition
+    // picks, not hash rotation.
     int lastSectionIndex = -1;      // section we last seeded for
     int sectionEntryBar = 0;        // global bar count at current section entry
     bool wasPlayOn = false;         // play-start edge detection (re-seed)
@@ -328,11 +370,9 @@ private:
     bool playCountInWaitingBar = false;
     double playCountInStartBeat = 0.0;
     int lastSeenBarsElapsed = -1;   // loop/restart edge detection (re-seed on wrap)
-    int lastPlayedPoolPattern = -1; // immediate-repeat exclusion (play + post-lock)
-    int lastRotationSlot = -1;      // phrase slot the rotation was last computed for
-    int cachedPoolPick = -1;        // the rotation's pick for lastRotationSlot
-    int lastTransitionSlot = -1;    // post-lock hold slot the rotation was computed for
-    int cachedTransitionPick = -1;  // the post-lock rotation's pick
+    int lastPlayedPoolPattern = -1; // leftover; B contrast uses drumB0
+    int lastTransitionSlot = -1;    // post-lock hold slot
+    int cachedTransitionPick = -1;  // fallback if drumB0 was never set
 
     // ── Style steering (perception layer): inference-thread state ────────────
     // classifyStyle() returns a raw argmax once per mel window (~2 Hz: one 512 ms

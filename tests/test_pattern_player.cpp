@@ -22,37 +22,6 @@ bool hasDrumNoteOn(const juce::MidiBuffer& midi, int note)
     return false;
 }
 
-std::vector<int> drumNoteOns(const juce::MidiBuffer& midi)
-{
-    std::vector<int> notes;
-    for (const auto meta : midi)
-    {
-        const auto msg = meta.getMessage();
-        if (msg.isNoteOn() && msg.getChannel() == 10)
-            notes.push_back(msg.getNoteNumber());
-    }
-    return notes;
-}
-
-juce::MidiBuffer renderQueuedFill(PatternPlayer::TransitionFillKind kind, int patternIndex)
-{
-    MidiPatternLibrary lib;
-    PatternPlayer player;
-    player.setPatternLibrary(&lib);
-    player.prepare(48000.0, 512);
-    player.snapBpm(120.0f);
-    player.setStructureSilent(false);
-
-    PatternPlayer::GrooveCommit commit{};
-    commit.patternIndex = patternIndex;
-    commit.fillKind = kind;
-    player.queueGrooveCommit(commit);
-
-    juce::MidiBuffer midi;
-    player.process(midi, 512, 0);
-    return midi;
-}
-
 bool patternHasNote(const MidiPatternLibrary& lib, int patternIndex, int note)
 {
     const auto& p = lib.getPattern(patternIndex);
@@ -266,41 +235,47 @@ TEST_CASE("PatternPlayer applies bass semitone offset", "[midi]")
     REQUIRE(sawShiftedRoot);
 }
 
-TEST_CASE("RHY-FILL-01: Entry fill emits crash and kick at a queued groove commit", "[midi]")
+TEST_CASE("armBarFill 17 emits toms on beat 4 independent of block size", "[midi][fill]")
 {
-    const auto midi = renderQueuedFill(PatternPlayer::TransitionFillKind::Entry, 1);
+    auto collectBeat4 = [](int block) -> std::vector<int64_t>
+    {
+        MidiPatternLibrary lib;
+        PatternPlayer player;
+        player.setPatternLibrary(&lib);
+        player.prepare(48000.0, block);
+        player.snapBpm(120.0f);
+        player.setStructureSilent(false);
+        player.setPatternIndex(1);
+        player.armBarFill(17);
 
-    REQUIRE(hasDrumNoteOn(midi, 49));
-    REQUIRE(hasDrumNoteOn(midi, 36));
-}
+        std::vector<int64_t> samples;
+        int64_t pos = 0;
+        const int64_t bar = 96000;
+        while (pos < bar)
+        {
+            juce::MidiBuffer midi;
+            player.process(midi, block, pos);
+            for (const auto meta : midi)
+            {
+                const auto msg = meta.getMessage();
+                if (!msg.isNoteOn() || msg.getChannel() != 10)
+                    continue;
+                const int note = msg.getNoteNumber();
+                if (note == 45 || note == 48 || note == 43 || note == 41 || note == 47)
+                    samples.push_back(pos + meta.samplePosition);
+            }
+            pos += block;
+        }
+        return samples;
+    };
 
-TEST_CASE("RHY-FILL-01: BuildUp fill emits a distinct snare and tom gesture", "[midi]")
-{
-    const auto midi = renderQueuedFill(PatternPlayer::TransitionFillKind::BuildUp, 0);
-    const auto notes = drumNoteOns(midi);
-
-    REQUIRE(hasDrumNoteOn(midi, 38));
-    REQUIRE(hasDrumNoteOn(midi, 45));
-    REQUIRE(notes.size() == 2);
-}
-
-TEST_CASE("RHY-FILL-01: Release fill emits a distinct snare and closed-hat gesture", "[midi]")
-{
-    const auto midi = renderQueuedFill(PatternPlayer::TransitionFillKind::Release, 0);
-    const auto notes = drumNoteOns(midi);
-
-    REQUIRE(hasDrumNoteOn(midi, 38));
-    REQUIRE(hasDrumNoteOn(midi, 42));
-    REQUIRE(notes.size() == 2);
-}
-
-TEST_CASE("RHY-FILL-01: BreakdownOrImpact fill emits a kick crash and floor-tom gesture", "[midi]")
-{
-    const auto midi = renderQueuedFill(PatternPlayer::TransitionFillKind::BreakdownOrImpact, 6);
-
-    REQUIRE(hasDrumNoteOn(midi, 36));
-    REQUIRE(hasDrumNoteOn(midi, 49));
-    REQUIRE(hasDrumNoteOn(midi, 43));
+    const auto a = collectBeat4(512);
+    const auto b = collectBeat4(256);
+    REQUIRE_FALSE(a.empty());
+    REQUIRE_FALSE(b.empty());
+    const int64_t d = (a.front() > b.front()) ? a.front() - b.front() : b.front() - a.front();
+    REQUIRE(d <= 1);
+    REQUIRE(a.front() >= 72000 - 2400);  // beat 4 at 120 BPM / 48 kHz = 72000
 }
 
 // ── Musicality pivot: bass engine (A1) ───────────────────────────────────────
@@ -519,6 +494,64 @@ TEST_CASE("frozen transport: internal beat clock keeps patterns musical (no mach
     REQUIRE(bassOffs == bassOns);
     for (const auto& kv : open)
         REQUIRE(kv.second == 0);
+}
+
+TEST_CASE("stopped-to-rolling: click stays on the host bar grid (no seek dump)", "[midi][transport][click]")
+{
+    // DAW Record starts the playhead after a stopped (frozen) run. The free-run
+    // sampleCounter is unrelated to host 0; treating that as a seek used to dump
+    // click state and restart count-in. After the handoff, one bar of click
+    // must still be kick+3 sticks — not 0, not machine-gun.
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.snapBpm(120.0f);
+    player.setStructureSilent(true);
+    player.setClickTrack(true);
+
+    constexpr int block = 512;
+    constexpr int barSamples = 96000;  // 1 bar at 120 BPM / 48 kHz
+    const int blocksPerBar = barSamples / block;
+
+    auto countClickOns = [](const juce::MidiBuffer& midi) -> int
+    {
+        int n = 0;
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn() && msg.getChannel() == 10)
+                ++n;
+        }
+        return n;
+    };
+
+    int frozenClicks = 0;
+    for (int b = 0; b < blocksPerBar; ++b)
+    {
+        juce::MidiBuffer midi;
+        player.process(midi, block, 0, false);
+        frozenClicks += countClickOns(midi);
+    }
+    REQUIRE(frozenClicks >= 3);
+    REQUIRE(frozenClicks <= 5);
+
+    // Count-in schedules from previewResolvedHostSample *before* process().
+    // That preview must already be on the host grid (0), not the free-run
+    // counter (~1 bar in), or WaitBar/CountIn last the wrong number of beats.
+    REQUIRE(player.previewResolvedHostSample(0, block, true) == 0);
+
+    int rollingClicks = 0;
+    int64_t pos = 0;
+    for (int b = 0; b < blocksPerBar; ++b)
+    {
+        juce::MidiBuffer midi;
+        player.process(midi, block, pos, true);
+        rollingClicks += countClickOns(midi);
+        pos += block;
+    }
+    REQUIRE(rollingClicks >= 3);
+    REQUIRE(rollingClicks <= 5);
 }
 
 TEST_CASE("A1.2: live-mirror bass snaps to the section's chord tones", "[midi][A1]")

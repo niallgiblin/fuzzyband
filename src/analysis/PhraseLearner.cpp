@@ -298,11 +298,19 @@ void PhraseLearner::stampGridRange(double beat0, double beat1, float peak, int b
     if (b <= a)
         return;
 
+    // Stamp only 16ths that this range actually overlaps. A ringing palm-mute
+    // in one slot must not paint neighbors: each caller's peak is for THIS
+    // range only (processor splits the block per slot).
     const int slot0 = std::max(0, static_cast<int>(std::floor(a * 4.0)));
     const int slot1 = std::min(kGridSlots - 1,
                                static_cast<int>(std::floor((b - 1.0e-9) * 4.0)));
     for (int s = slot0; s <= slot1; ++s)
     {
+        const double slotA = static_cast<double>(s) * 0.25;
+        const double slotB = slotA + 0.25;
+        const double overlap = std::min(b, slotB) - std::max(a, slotA);
+        if (overlap <= 1.0e-9)
+            continue;
         auto& slot = gridSlots_[static_cast<size_t>(s)];
         if (!slot.occupied)
         {
@@ -344,20 +352,59 @@ bool PhraseLearner::commitGridCapture() noexcept
     return true;
 }
 
-void PhraseLearner::releaseForTransition() noexcept
+void PhraseLearner::exportPattern(LearnedRiff& dest) const noexcept
 {
-    holdActive_ = false;
-    if (state_ == State::Locked)
+    dest.valid = false;
+    dest.lenBeats = static_cast<double>(kGridBars) * 4.0;
+    dest.occupied.fill(false);
+    dest.midi.fill(36);
+    int n = 0;
+    for (int s = 0; s < kGridSlots; ++s)
     {
-        // Stop autonomous riff looping and revert to live-follow (Learning). Keep
-        // the learned pattern + length so isFollowingRiff / justMatchedRiff still
-        // recognise the riff (post-lock transition cut-short), and so it re-locks
-        // promptly when the guitarist returns to it.
-        state_ = State::Learning;
-        locked_ = false;
-        following_ = false;
-        justMatched_ = false;
+        const auto& slot = gridSlots_[static_cast<size_t>(s)];
+        dest.occupied[static_cast<size_t>(s)] = slot.occupied;
+        dest.midi[static_cast<size_t>(s)] = slot.occupied ? slot.midiNote : 36;
+        if (slot.occupied)
+            ++n;
     }
+    dest.valid = n >= 2;
+}
+
+bool PhraseLearner::loadPattern(const LearnedRiff& src) noexcept
+{
+    if (!src.valid)
+        return false;
+
+    gridSlots_.fill({});
+    gridOccupied_ = 0;
+    patternLen_ = 0;
+    const int nSlots = std::min(kGridSlots, kMaxPattern);
+    for (int s = 0; s < nSlots; ++s)
+    {
+        if (!src.occupied[static_cast<size_t>(s)])
+            continue;
+        auto& slot = gridSlots_[static_cast<size_t>(s)];
+        slot.occupied = true;
+        slot.midiNote = src.midi[static_cast<size_t>(s)];
+        ++gridOccupied_;
+        pattern_[static_cast<size_t>(patternLen_)].beatOffset =
+            static_cast<double>(s) * 0.25;
+        pattern_[static_cast<size_t>(patternLen_)].midiNote = slot.midiNote;
+        ++patternLen_;
+    }
+    if (patternLen_ < 2)
+        return false;
+
+    patternLenBeats_ = src.lenBeats > 0.0 ? src.lenBeats
+                                          : static_cast<double>(kGridBars) * 4.0;
+    userCapturing_ = false;
+    gridCapturing_ = false;
+    gridListening_ = false;
+    locked_ = true;
+    state_ = State::Locked;
+    playbackPhase_ = 0.0;
+    playbackStep_ = 0;
+    return true;
 }
 
 PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, float pitchMidi,
@@ -453,11 +500,10 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
         following_ = matched;
         justMatched_ = matched;
 
-        // Live riff mirror: follow each attack while Learning (pre-lock), and
-        // also while Locked if mirrorWhileHeld_ is set (post-lock transition —
-        // the bass follows the new chords while the riff is retained for A).
+        // Live riff mirror: follow each attack while Learning (pre-lock).
+        // Locked playback of a snapshot is the processor's job (RiffA / RiffBLocked).
         // Active capture is silent accompaniment — no bass until commit.
-        if ((state_ != State::Locked || mirrorWhileHeld_) && !userCapturing_ && !gridCapturing_)
+        if (state_ != State::Locked && !userCapturing_ && !gridCapturing_)
         {
             result.trigger = true;
             result.midiNote = attackBassNote;
@@ -472,7 +518,8 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
         {
             // Active grid capture records occupancy, not attack slices. Passive
             // listen leaves auto-lock running (it stamps the grid in parallel).
-            if (userCapturing_ || gridCapturing_)
+            // Play disables auto-lock so a leftover riff cannot freeze bass.
+            if (userCapturing_ || gridCapturing_ || !autoLockEnabled_)
                 break;
 
             // P0/§1.4 option A: wait for more evidence, then capture the longest
@@ -511,11 +558,8 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
                 playbackStep_ = 0;  // Reset to first note
             }
 
-            // Check if we should trigger the next note. Suppressed while
-            // mirrorWhileHeld_ (post-lock transition): the phase still advances
-            // so the riff stays held for re-engagement, but the live mirror above
-            // drives the bass instead of the frozen pattern.
-            if (!mirrorWhileHeld_ && playbackStep_ < patternLen_)
+            // Check if we should trigger the next note from the frozen snapshot.
+            if (playbackStep_ < patternLen_)
             {
                 const double noteOffset = pattern_[playbackStep_].beatOffset;
 

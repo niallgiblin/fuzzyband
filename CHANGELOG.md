@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.62] — Exclusive engine phase; Record A is a snapshot
+
+- **One engine phase owns drums and bass.** Play, Record capture, and Riff A no
+  longer overlap via independent flags as the source of truth.
+- **Grid capture stamps per 16th slot.** Empty leading record bars stay rests.
+  `riffA` is a 4-bar piano roll (occupied = note, empty = rest).
+- **Riff A playback is the snapshot.** The processor emits occupied `riffA`
+  slots at `slot * 0.25` beats (loop 16 beats). Return-to-A plays that buffer
+  from slot 0 — it does not rewind a learner that ran through B.
+
+## [0.9.61] — DAW Record no longer restarts count-in
+
+- **Hitting Record/Play in the DAW no longer treats the first moving playhead
+  sample as a seek.** While the transport is stopped the plugin free-runs; that
+  internal counter is unrelated to host `0`, so the old jump detector dumped
+  click/count-in state and the metronome left the bar grid. Record first, then
+  Record riff / Play: wait for the next DAW bar, 1 bar of click (kick on 1,
+  stick on 2/3/4), then the take.
+- While the host reports playing or recording, a stalled/duplicate position
+  stays on the host grid instead of flipping back to the free-run clock.
+  Real loops/seeks still re-anchor.
+
 ## [0.9.60] — One transition section stays one contrast
 
 - **Record riff with TRANSITION SECTIONS = 1 no longer walks CHORUS then SOLO.**

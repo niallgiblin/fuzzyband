@@ -690,4 +690,58 @@ inline TransitionSection pickNextSectionAfterLock(int lockedPatternIndex, int ge
     return pickNextSectionAfterLock(lockedPatternIndex, genreId, avoids, n);
 }
 
+/**
+ * @brief Keep @p patternIndex if it is already in @p pool; otherwise snap to the
+ *        first state-compatible member (pool is prior-ordered, so [0] is home).
+ */
+inline int constrainToPool(int patternIndex, const SectionPatternPool& pool,
+                           StructureState state = StructureState::SOFT) noexcept
+{
+    if (pool.count <= 0)
+        return patternIndex;
+    for (int i = 0; i < pool.count; ++i)
+    {
+        if (pool.indices[i] == patternIndex)
+            return patternIndex;
+    }
+    for (int i = 0; i < pool.count; ++i)
+    {
+        if (isPatternCompatibleWithState(pool.indices[i], state))
+            return pool.indices[i];
+    }
+    return pool.indices[0];
+}
+
+/** @brief 8th-kick verse-neighborhood (the 85 BPM take's A/B were too close). */
+inline bool isVerseFeelNeighborhood(int patternIndex) noexcept
+{
+    return patternIndex == 1 || patternIndex == 2 || patternIndex == 3
+        || patternIndex == 20 || patternIndex == 22 || patternIndex == 23;
+}
+
+/** @brief Breakdown / half-time / chorus-open — audibly unlike verse 8th-kicks. */
+inline bool isStrongContrastPattern(int patternIndex) noexcept
+{
+    return patternIndex == 6 || patternIndex == 7 || patternIndex == 9
+        || patternIndex == 14 || patternIndex == 15;
+}
+
+/**
+ * @brief Home groove for a Record-riff B contrast: pool[0] unless that still
+ *        sits in the same feel-neighborhood as @p drumA.
+ */
+inline int contrastHomePattern(int drumA, const SectionPatternPool& pool) noexcept
+{
+    if (pool.count <= 0)
+        return drumA;
+    if (!isVerseFeelNeighborhood(drumA))
+        return pool.indices[0];
+    for (int i = 0; i < pool.count; ++i)
+    {
+        if (isStrongContrastPattern(pool.indices[i]))
+            return pool.indices[i];
+    }
+    return pool.indices[0];
+}
+
 } // namespace PatternRules

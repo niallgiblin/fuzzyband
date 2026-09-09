@@ -793,3 +793,25 @@ TEST_CASE("PatternRules::diversifyPatternForGenre re-homes mel indices 7-21 for 
     REQUIRE(PatternRules::diversifyPatternForGenre(8, metalF, 0, 3)
             == PatternRules::diversifyPattern(8, metalF, 0));
 }
+
+TEST_CASE("PatternRules::constrainToPool keeps in-pool indices and snaps outsiders", "[pattern_rules][pool]")
+{
+    const auto verse = PatternRules::sectionPatternPoolForGenre("VERSE", 0);
+    REQUIRE(verse.count > 0);
+    const int home = verse.indices[0];
+    REQUIRE(PatternRules::constrainToPool(home, verse, StructureState::SOFT) == home);
+    const int snapped = PatternRules::constrainToPool(8, verse, StructureState::SOFT);
+    REQUIRE(snapped != 8);
+    REQUIRE(PatternRules::isPatternCompatibleWithState(snapped, StructureState::SOFT));
+}
+
+TEST_CASE("PatternRules::contrastHomePattern avoids verse-neighborhood when possible", "[pattern_rules][contrast]")
+{
+    PatternRules::SectionPatternPool mixed{};
+    mixed.count = 3;
+    mixed.indices[0] = 1;
+    mixed.indices[1] = 6;
+    mixed.indices[2] = 9;
+    REQUIRE(PatternRules::contrastHomePattern(1, mixed) == 6);
+    REQUIRE(PatternRules::isStrongContrastPattern(6));
+}

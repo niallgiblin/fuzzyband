@@ -69,6 +69,15 @@ public:
     static constexpr int kGridSlotsPerBar = 16;
     static constexpr int kGridSlots = kGridBars * kGridSlotsPerBar;  // 64 sixteenths
 
+    /** @brief 4-bar piano-roll snapshot. Unoccupied slots are rests. */
+    struct LearnedRiff
+    {
+        bool valid = false;
+        double lenBeats = 16.0;
+        std::array<bool, kGridSlots> occupied{};
+        std::array<int, kGridSlots> midi{};
+    };
+
     /**
      * @brief Arm a metronome-locked piano-roll capture: 4 bars of 16th slots.
      *        Occupancy is stamped with @ref stampGridRange; attacks are ignored.
@@ -95,20 +104,42 @@ public:
     bool isGridTakeActive() const noexcept { return gridCapturing_ || gridListening_; }
 
     /**
-     * @brief Mark 16th slots in [@p beat0, @p beat1) occupied when @p peak is
-     *        above the guitar-playing floor. Beats are relative to riff start
-     *        (0 = bar 1 beat 1, 16 = end of bar 4).
+     * @brief Mark 16th slots that overlap [@p beat0, @p beat1) when @p peak is
+     *        above the guitar-playing floor. Each overlapping slot is tested
+     *        independently — a ringing palm-mute must not paint neighbors.
+     *        Beats are relative to riff start (0 = bar 1 beat 1, 16 = end of bar 4).
      */
     void stampGridRange(double beat0, double beat1, float peak, int bassMidi) noexcept;
 
     /**
      * @brief Lock occupied 16th slots as a 4-bar (16-beat) bass loop.
-     *        Returns false if fewer than 2 slots were occupied.
+     *        Rest slots stay in the piano roll (lenBeats = 16). Returns false
+     *        if fewer than 2 slots were occupied.
      */
     bool commitGridCapture() noexcept;
 
+    /** @brief Copy the 64-slot occupancy+midi snapshot (rests included). */
+    void exportPattern(LearnedRiff& dest) const noexcept;
+
+    /** @brief Load a 64-slot snapshot and rewind playback to phase 0. */
+    bool loadPattern(const LearnedRiff& src) noexcept;
+
     /** @brief Occupied 16th slots in the current grid take (0 if not capturing). */
     int getGridOccupiedCount() const noexcept { return gridOccupied_; }
+
+    /** @brief Whether 16th slot @p i is occupied (0..63). */
+    bool getGridSlotOccupied(int i) const noexcept
+    {
+        return i >= 0 && i < kGridSlots && gridSlots_[static_cast<size_t>(i)].occupied;
+    }
+
+    /** @brief Bass MIDI for 16th slot @p i, or -1 when empty/invalid. */
+    int getGridSlotMidi(int i) const noexcept
+    {
+        if (i < 0 || i >= kGridSlots || !gridSlots_[static_cast<size_t>(i)].occupied)
+            return -1;
+        return gridSlots_[static_cast<size_t>(i)].midiNote;
+    }
 
     /** True when pattern is locked and bass is actively playing. */
     bool isLocked() const noexcept { return state_ == State::Locked; }
@@ -138,12 +169,20 @@ public:
     void setHoldActive(bool active) noexcept { holdActive_ = active; }
 
     /**
-     * @brief While true, a held (Locked) learner mirrors the guitarist's live
-     *        attacks instead of playing back the frozen pattern. Used during a
-     *        post-lock transition so the bass follows the new chords while the
-     *        learned riff is still retained (held) for the A re-engagement.
+     * @brief Deprecated. Record B listen uses the processor mixer; kept as a
+     *        no-op so leftover callers compile. Prefer @ref setAutoLockEnabled.
      */
-    void setMirrorWhileHeld(bool active) noexcept { mirrorWhileHeld_ = active; }
+    void setMirrorWhileHeld(bool) noexcept {}
+
+    /**
+     * @brief Deprecated mode switch. No longer releases the riff or changes
+     *        learner state — processor EnginePhase owns A/B playback.
+     */
+    void releaseForTransition() noexcept {}
+
+    /** @brief Play = false (never auto-lock). RiffBListen = true. */
+    void setAutoLockEnabled(bool enabled) noexcept { autoLockEnabled_ = enabled; }
+    bool isAutoLockEnabled() const noexcept { return autoLockEnabled_; }
 
     /**
      * @brief Rewind the learned riff to bar 1 beat 1 (phase 0) so a re-locked
@@ -158,15 +197,6 @@ public:
             playbackStep_ = 0;
         }
     }
-
-    /**
-     * @brief Release the groove-lock hold for a post-lock transition and stop
-     *        the autonomous riff loop, so the bass leaves the old riff and
-     *        follows the guitarist / the new section. The learned pattern is
-     *        kept so the riff can still be recognised (isFollowingRiff /
-     *        justMatchedRiff) and re-locked when it genuinely re-appears.
-     */
-    void releaseForTransition() noexcept;
 
     /** @brief Whether the most recent attack landed on the learned riff's grid. */
     bool isFollowingRiff() const noexcept { return following_; }
@@ -306,7 +336,7 @@ private:
     std::array<GridSlot, kGridSlots> gridSlots_{};
     int gridOccupied_ = 0;
     bool holdActive_ = false;       // Suppresses drift-unlock (bass keeps the riff)
-    bool mirrorWhileHeld_ = false;  // Mirror live attacks even while Locked (post-lock transition)
+    bool autoLockEnabled_ = true;   // Play disables; RiffBListen enables
     bool following_ = false;        // Last attack matched the learned riff's grid
     bool justMatched_ = false;      // Edge: matched on the current block
 
