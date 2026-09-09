@@ -19,10 +19,8 @@
 #include "analysis/PhraseLearner.h"
 #include "analysis/FeatureVector.h"
 #include "inference/IInference.h"
-#include "inference/GrooveRenderer.h"
 #include "inference/pattern_rules.h"
 #include "midi/MidiPatternLibrary.h"
-#include "midi/GrooveGrid.h"
 #include "midi/PatternPlayer.h"
 #include "readerwriterqueue.h"
 #include <atomic>
@@ -288,13 +286,11 @@ private:
     PatternPlayer patternPlayer;
 
     std::unique_ptr<IInference> inference;
-    GrooveRenderer grooveRenderer;                  // Tier-1 conditional groove renderer (ONNX)
 
     std::string activeInferenceName = "None";
 
     moodycamel::ReaderWriterQueue<FeatureVector> featureQueue{ 4096 };
     moodycamel::ReaderWriterQueue<PatternPlayer::GrooveCommit> grooveCommitQueue{ 32 };
-    moodycamel::ReaderWriterQueue<GrooveGrid> grooveGridQueue{ 32 };
 
     // Mel spectrogram queue: audio thread → inference thread (v0.8.0)
     static constexpr int kMelQueueCapacity = 32;

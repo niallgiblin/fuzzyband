@@ -209,11 +209,6 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     patternPlayer.prepare(sr, samplesPerBlock);
     patternPlayer.reset();
 
-    // Tier-1: load the conditional groove renderer once (no-op + template
-    // fallback when the model is not bundled). Off the audio thread.
-    grooveRenderer.prepare(sr);
-    grooveRenderer.tryLoadModel();
-
     // Pre-size the mel-window scratch buffer here (off the audio thread) so the
     // first ready window in processBlock() can never trigger a heap allocation on
     // the real-time path.
@@ -414,8 +409,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
                 lastCommittedStructureState = patternFeatures.state;
             }
         }
-
-        // GrooveRenderer is disconnected from the live path (template humanize only).
+        // Live drums use Groove::Template humanize only (no rendered grid enqueue).
     }
 }
 
@@ -921,15 +915,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         commit.fillKind = PatternPlayer::TransitionFillKind::None;
         patternPlayer.queueGrooveCommit(commit);
     }
-
-    // Tier-1: dequeue the latest rendered groove grid (inference -> audio) and
-    // hand it to the player. A non-matching/stale grid is ignored there (the
-    // fixed template fallback continues until the next grid arrives).
-    GrooveGrid grid{};
-    bool gotGrid = false;
-    while (grooveGridQueue.try_dequeue(grid)) gotGrid = true;
-    if (gotGrid)
-        patternPlayer.setGrooveGrid(grid);
 
     // ── 9. Phrase-learning bass ─────────────────────────────────────────────
     // Bass learns guitarist's riff pattern (rhythm + melody), then mirrors it.

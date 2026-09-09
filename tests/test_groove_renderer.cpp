@@ -130,4 +130,35 @@ TEST_CASE("PatternPlayer uses a rendered GrooveGrid for velocity (template fallb
         player.process(midi, 4800, 0);
         REQUIRE(noteOnVelocity(midi, 36) > 70);
     }
+
+    // (c) After reset(), a previously injected grid is cleared (live-path disconnect).
+    {
+        MidiPatternLibrary lib;
+        PatternPlayer player;
+        player.setPatternLibrary(&lib);
+        player.prepare(48000.0, 512);
+        player.snapBpm(120.0f);
+        player.setStructureSilent(false);
+        player.setSection(Groove::SongSectionId::Verse);
+        player.setGenrePreset(0);
+        player.setRandomSeed(7);
+
+        GrooveGrid grid;
+        grid.valid = true;
+        grid.patternIndex = 1;
+        grid.velocity[0][0] = 0.5f;
+        player.setGrooveGrid(grid);
+        player.reset();
+        player.setPatternIndex(1);
+
+        juce::MidiBuffer midi;
+        player.process(midi, 4800, 0);
+        REQUIRE(noteOnVelocity(midi, 36) > 70);
+    }
+}
+
+TEST_CASE("genre preset list stays 13", "[groove_renderer][genre]")
+{
+    REQUIRE(Groove::kPresetCount == 13);
+    REQUIRE(Groove::presetCount() == 13);
 }

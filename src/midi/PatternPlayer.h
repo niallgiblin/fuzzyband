@@ -180,10 +180,10 @@ public:
     void setGenrePreset(int presetId) noexcept;
 
     /**
-     * @brief Tier-1: hand a rendered groove grid (from GrooveRenderer) to the
-     *  player. When a valid grid matches the active pattern, emitDrumEventsForRange
-     *  uses its per-step velocity/offset instead of the fixed Groove::Template.
-     *  A non-matching/invalid grid is ignored (template fallback). Audio thread.
+     * @brief Offline / unit-test hook for a rendered GrooveGrid. The live
+     *        processor does not call this — drums use Groove::Template humanize.
+     *        Kept so GrooveRenderer unit tests (and a later milestone) can
+     *        still inject a grid. A non-matching/invalid grid is ignored.
      */
     void setGrooveGrid(const GrooveGrid& grid) noexcept { grooveGrid = grid; }
 

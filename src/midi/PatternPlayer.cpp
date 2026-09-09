@@ -84,6 +84,7 @@ void PatternPlayer::reset()
     beatGridBassEnabled_ = true;
     pendingBarFillIndex_ = -1;
     barFillStartBeat_ = -1.0;
+    grooveGrid = {};
     for (auto& n : pendingLearned_)
         n = {};
     sampleCounter = 0;

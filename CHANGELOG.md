@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.67] — One drum renderer: template humanize only
+
+- **GrooveRenderer is disconnected from the live path.** Inference no longer
+  enqueues a rendered grid; the processor does not load or apply one. Live drums
+  use `Groove::Template` timing/velocity jitter plus Tier-0 ornaments. The
+  renderer still compiles and its unit tests still run for a later milestone.
+- **Genre list stays 13.** Genre still selects the template and the section pool
+  family (Rock vs Metal). No new pools.
+
 ## [0.9.66] — Record B contrast, then freeze-on-learn
 
 - **B starts on a contrast home groove** (`contrastHomePattern`): verse-neighborhood
