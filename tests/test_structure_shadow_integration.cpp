@@ -57,7 +57,7 @@ TEST_CASE("Structure shadow fixture replay matches golden pattern transitions", 
         buf.copyFrom(1, 0, monoBuf, 0, start, block);
         proc.processBlock(buf, midi);
         acc += static_cast<int64_t>(block);
-        const int p = proc.getDisplayPatternIndex();
+        const int p = proc.getLatestPatternIndex();
         if (p != lastPat)
         {
             oss << acc << " " << p << "\n";

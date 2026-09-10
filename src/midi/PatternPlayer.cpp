@@ -20,8 +20,8 @@ constexpr int kTomMid    = 45;
 // ── Ornamentation probabilities (per-bar, percent). Deterministic per bar. ──
 constexpr int kOpenHatPctChorus    = 18;  // chorus/solo loosen up
 constexpr int kOpenHatPctElse      = 8;
-constexpr int kRideSwitchPctSolo   = 28;  // solo rides the cymbal
-constexpr int kRideSwitchPctChorus = 12;
+constexpr int kRideSwitchPctSolo   = 0;   // T4.3: ride→hat is a pattern change, not an ornament
+constexpr int kRideSwitchPctChorus = 0;
 constexpr int kExtraGhostPct       = 15;  // verse/breakdown only
 constexpr int kDropKickPctBreak    = 12;  // breakdown/outro leave space
 constexpr int kMicroFillPct        = 12;  // phrase-end bars only
@@ -103,6 +103,7 @@ void PatternPlayer::reset()
 
     // Musicality pivot state (Workstream A / B1)
     swing = 0.0f;
+    humanizeAmount = 1.0f;
     sectionId = Groove::SongSectionId::Verse;
     guitarEnergy = 1.0f;
     setGenrePreset(0);  // Rock default
@@ -111,6 +112,11 @@ void PatternPlayer::reset()
 void PatternPlayer::setSwing(float newSwing) noexcept
 {
     swing = juce::jlimit(0.0f, 1.0f, newSwing);
+}
+
+void PatternPlayer::setHumanize(float amount) noexcept
+{
+    humanizeAmount = juce::jlimit(0.0f, 1.0f, amount);
 }
 
 void PatternPlayer::setGenrePreset(int presetId) noexcept
@@ -306,7 +312,7 @@ bool PatternPlayer::sectionAllowsGhosts() const noexcept
 PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barNumber, int patternIndex) const noexcept
 {
     BarOrnamentation o{};
-    if (library == nullptr || patternIndex == 0)
+    if (library == nullptr || patternIndex == 0 || humanizeAmount <= 0.0f)
         return o;
 
     const MidiPattern& p = library->getPattern(patternIndex);
@@ -343,31 +349,71 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
     const bool chorusLike = (sectionId == Groove::SongSectionId::Chorus
                           || sectionId == Groove::SongSectionId::Solo);
 
+    auto scaledPct = [this](int pct) noexcept -> int
+    {
+        return juce::jlimit(0, 100,
+            static_cast<int>(std::lround(static_cast<double>(pct) * humanizeAmount)));
+    };
+
+    auto cellTaken = [&](int cell) noexcept -> bool
+    {
+        if (cell < 0) return true;
+        if (o.openHat && o.openHatCell == cell) return true;
+        if (o.extraGhost && o.extraGhostCell == cell) return true;
+        if (o.dropKick && o.dropKickCell == cell) return true;
+        return false;
+    };
+
+    // Injected ghosts (emitGhostNotes) occupy cell 9 at low density, or the
+    // off-16th set at high density — extraGhost must not double them.
+    bool injectedGhost[16] = {};
+    if (ghostDensity >= 0.7f)
+    {
+        injectedGhost[1] = injectedGhost[9] = injectedGhost[11] = injectedGhost[15] = true;
+    }
+    else
+    {
+        injectedGhost[9] = true;
+    }
+
     // 1) Open one closed-hat cell (chorus/solo loosen up; elsewhere subtle).
     if (hasClosedHat && closedHatCount > 0)
     {
-        const int pct = chorusLike ? kOpenHatPctChorus : kOpenHatPctElse;
-        if (barChance(barNumber, kSaltOpenHat, pct))
+        const int pct = scaledPct(chorusLike ? kOpenHatPctChorus : kOpenHatPctElse);
+        if (pct > 0 && barChance(barNumber, kSaltOpenHat, pct))
         {
-            o.openHat = true;
-            o.openHatCell = closedHatCells[static_cast<int>(
-                barHash(static_cast<unsigned>(barNumber), kSaltOpenHatCell) % static_cast<unsigned>(closedHatCount))];
+            const unsigned start = barHash(static_cast<unsigned>(barNumber), kSaltOpenHatCell)
+                                 % static_cast<unsigned>(closedHatCount);
+            for (int i = 0; i < closedHatCount; ++i)
+            {
+                const int cell = closedHatCells[(static_cast<int>(start) + i) % closedHatCount];
+                if (!cellTaken(cell))
+                {
+                    o.openHat = true;
+                    o.openHatCell = cell;
+                    break;
+                }
+            }
         }
     }
 
     // 2) Ride switch: hats -> ride/bell for the whole bar (solo/chorus only).
+    // Default probabilities are 0 (T4.3) — this is a pattern change, not an ornament.
     if (chorusLike && hasClosedHat && !hasRide)
     {
-        const int pct = (sectionId == Groove::SongSectionId::Solo)
-            ? kRideSwitchPctSolo : kRideSwitchPctChorus;
-        if (barChance(barNumber, kSaltRide, pct))
+        const int pct = scaledPct((sectionId == Groove::SongSectionId::Solo)
+            ? kRideSwitchPctSolo : kRideSwitchPctChorus);
+        if (pct > 0 && barChance(barNumber, kSaltRide, pct))
             o.rideSwitch = true;
     }
 
-    // 3) Extra ghost snare on an unoccupied off-16th (verse/breakdown).
+    // 3) Extra ghost snare on an unoccupied off-16th the pattern actually uses
+    // (verse/breakdown). Skip cells already claimed by another ornament or by
+    // the injected-ghost path.
     if (sectionAllowsGhosts())
     {
-        if (barChance(barNumber, kSaltGhost, kExtraGhostPct))
+        const int pct = scaledPct(kExtraGhostPct);
+        if (pct > 0 && barChance(barNumber, kSaltGhost, pct))
         {
             const int ghostCells[4] = { 1, 9, 11, 15 };
             const int start = static_cast<int>(
@@ -375,7 +421,7 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
             for (int i = 0; i < 4; ++i)
             {
                 const int cell = ghostCells[(start + i) % 4];
-                if (!snareOccupied[cell])
+                if (!snareOccupied[cell] && !injectedGhost[cell] && !cellTaken(cell))
                 {
                     o.extraGhost = true;
                     o.extraGhostCell = cell;
@@ -389,11 +435,12 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
     if ((sectionId == Groove::SongSectionId::Breakdown || sectionId == Groove::SongSectionId::Outro)
         && kickCount > 0)
     {
-        if (barChance(barNumber, kSaltKickDrop, kDropKickPctBreak))
+        const int pct = scaledPct(kDropKickPctBreak);
+        if (pct > 0 && barChance(barNumber, kSaltKickDrop, pct))
         {
             int candidates[16]; int n = 0;
             for (int i = 0; i < kickCount; ++i)
-                if (kickCells[i] != 0 && kickCells[i] != 8 && n < 16)  // never downbeat/beat-3
+                if (kickCells[i] != 0 && kickCells[i] != 8 && !cellTaken(kickCells[i]) && n < 16)
                     candidates[n++] = kickCells[i];
             if (n > 0)
             {
@@ -407,7 +454,8 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
     // 5) Micro-fill at the end of a 4-bar phrase (not on a fill pattern).
     if ((barNumber % 4) == 3 && patternIndex != 17 && patternIndex != 18 && patternIndex != 19)
     {
-        if (barChance(barNumber, kSaltMicroFill, kMicroFillPct))
+        const int pct = scaledPct(kMicroFillPct);
+        if (pct > 0 && barChance(barNumber, kSaltMicroFill, pct))
             o.microFill = true;
     }
 
@@ -1080,9 +1128,12 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         : 0;
     const BarOrnamentation orn = computeOrnamentation(barNumber, activePatternIndex);
 
-    // Propagate a pattern index change requested via setPatternIndex().
+    // Latest request wins. A pending change queued during click/silence used
+    // to block Play rotation (T4.1) because pendingPatternIndex stayed >= 0.
     const int requested = patternIndex.load(std::memory_order_relaxed);
-    if (requested != activePatternIndex && pendingPatternIndex < 0)
+    if (requested == activePatternIndex)
+        pendingPatternIndex = -1;
+    else
         pendingPatternIndex = requested;
 
     // Transport jump detection (seek / loop / re-instantiation) — drop any

@@ -74,6 +74,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout AccompanimentProcessor::crea
         juce::NormalisableRange<float>{ 0.0f, 1.0f, 0.01f },
         0.0f));
 
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{ "humanize", 1 },
+        "Humanize",
+        juce::NormalisableRange<float>{ 0.0f, 1.0f, 0.01f },
+        0.35f));
+
     // Bass register: shift the bass MIDI an octave to fit range-limited bass
     // VSTs. MIDI 36 = C2 in standard pitch (some VSTs display it as C1 with the
     // middle-C=C3 convention), so a "too low" bass is usually the instrument's
@@ -184,6 +190,12 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     drumA = drumB0 = drumB = 0;
     guitarSilentSamples = 0;
     playSectionIndex.store(-1, std::memory_order_relaxed);
+    sectionEntryBar.store(0, std::memory_order_relaxed);
+    lastPlayedPoolPattern = -1;
+    lastPlayGrooveSlot = -1;
+    lastFollowStateIndex = -1;
+    lastSectionIndex = -1;
+    lastSeenBarsElapsed = -1;
     requestBLockPick.store(false, std::memory_order_relaxed);
     bLockPick.store(-1, std::memory_order_relaxed);
     playFillArm.clear();
@@ -343,9 +355,12 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         {
             if (auto* groove = dynamic_cast<MetalGrooveInference*>(inference.get()))
             {
-                // Production: deterministic argmax (seed < 0). Seeded variety
-                // stays available for tests that pass a non-negative seed.
-                idx = groove->selectPatternFromMel(latestMel.data.data(), excludeParam, -1);
+                // T4.2: seed from the section instance so a phrase is stable
+                // while different sections (or follow-mode state entries) can
+                // draw a neighbour from the top-K. B-lock one-shots stay
+                // deterministic (seed -1) above.
+                const int melSeed = sectionEntryBar.load(std::memory_order_acquire) & 0x7fffffff;
+                idx = groove->selectPatternFromMel(latestMel.data.data(), excludeParam, melSeed);
                 usedMelPath = true;
             }
         }
@@ -410,7 +425,7 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             hasGrooveCommit = true;
             acceptedDrumPattern = true;
         }
-        displayPatternIndex.store(finalIdx, std::memory_order_relaxed);
+        // T4.4: audio thread is the only writer of displayPatternIndex.
 
         if (hasGrooveCommit && grooveCommitQueue.try_enqueue(commit))
         {
@@ -708,6 +723,11 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         swing = juce::jlimit(0.0f, 1.0f, rawSwing->load());
     patternPlayer.setSwing(swing);
 
+    float humanize = 0.35f;
+    if (auto* rawHumanize = apvts.getRawParameterValue("humanize"))
+        humanize = juce::jlimit(0.0f, 1.0f, rawHumanize->load());
+    patternPlayer.setHumanize(humanize);
+
     // Bass octave transposition: -12 / 0 / +12 semitones on the bass output.
     // The raw APVTS value is the choice index (0, 1, 2) for "-12 / 0 / +12".
     int bassTranspose = 0;
@@ -820,7 +840,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         {
             enginePhase = EnginePhase::PlaySection;
             const auto* secName = structureSequencer.getCurrentSectionName();
-            auto pool = PatternRules::sectionPatternPoolForGenre(secName, genreId);
+            const auto orderedPool = PatternRules::orderedSectionPatternPoolForGenre(secName, genreId);
             const int secIndex = structureSequencer.getCurrentSectionIndex();
             const int barsElapsedNow = structureSequencer.getBarsElapsed();
             playSectionIndex.store(secIndex, std::memory_order_release);
@@ -828,13 +848,38 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 || barsElapsedNow < lastSeenBarsElapsed)
             {
                 lastSectionIndex = secIndex;
-                sectionEntryBar = structureSequencer.getGlobalBarCount();
+                sectionEntryBar.store(structureSequencer.getGlobalBarCount(),
+                                      std::memory_order_release);
+                lastPlayedPoolPattern = -1;
+                lastPlayGrooveSlot = -1;
                 resetDrumHoldRequested.store(true, std::memory_order_release);
                 patternPlayer.armTransitionCrash();
             }
             lastSeenBarsElapsed = barsElapsedNow;
-            if (pool.count > 0)
-                effectivePatternIdx = PatternRules::constrainToPool(patternIdx, pool, st);
+
+            // T4.1: rotation is the source of truth in Play. Re-pick only when
+            // the groove slot advances so the 2-bar inference hold cannot fight
+            // the phrase length. The mel/rule argmax votes if it is already a
+            // pool member and is not an immediate repeat.
+            const int barsPerGroove = PatternRules::barsPerGrooveForSection(secName);
+            const int grooveSlot = barsElapsedNow / juce::jmax(1, barsPerGroove);
+            if (grooveSlot != lastPlayGrooveSlot || lastPlayedPoolPattern < 0)
+            {
+                const unsigned seed = static_cast<unsigned>(
+                    sectionEntryBar.load(std::memory_order_relaxed));
+                int picked = PatternRules::pickPoolPattern(
+                    orderedPool, seed, grooveSlot, lastPlayedPoolPattern);
+                if (PatternRules::poolContains(orderedPool, patternIdx)
+                    && patternIdx != lastPlayedPoolPattern
+                    && patternIdx > 0)
+                    picked = patternIdx;
+                if (picked < 0)
+                    picked = PatternRules::constrainToPool(patternIdx, orderedPool, st);
+                lastPlayedPoolPattern = picked;
+                lastPlayGrooveSlot = grooveSlot;
+            }
+            if (lastPlayedPoolPattern >= 0)
+                effectivePatternIdx = lastPlayedPoolPattern;
             const double spbFill = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
             double beatInBar = (spbFill > 0.0)
                 ? std::fmod(static_cast<double>(clockSample) / spbFill, 4.0) : 0.0;
@@ -863,6 +908,22 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         effectivePatternIdx = drumA;
     }
     wasPlayOn = playOn;
+    if (!playOn)
+    {
+        // T4.2: follow-mode "section instance" is a structure-state entry so
+        // identical features in two different states can draw different top-K
+        // neighbours, while a single state hold stays on one seed.
+        const int stIdx = static_cast<int>(st);
+        if (stIdx != lastFollowStateIndex)
+        {
+            lastFollowStateIndex = stIdx;
+            const int64_t spBar = static_cast<int64_t>(
+                4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
+            const int bar = (spBar > 0)
+                ? static_cast<int>(hostSampleTime / spBar) : 0;
+            sectionEntryBar.store(bar, std::memory_order_release);
+        }
+    }
     {
         const bool freezeSelect = (enginePhase != EnginePhase::Idle
                                    && enginePhase != EnginePhase::PlaySection);
@@ -921,18 +982,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     PatternPlayer::GrooveCommit commit{};
     bool gotCommit = false;
     while (grooveCommitQueue.try_dequeue(commit)) gotCommit = true;
-
-    // A queued commit is honored in Play (constrained to the section pool).
-    // Record riff freezes drums — ignore commits there.
-    if (gotCommit && playOn && !grooveLockActive)
-    {
-        const auto* secName = structureSequencer.getCurrentSectionName();
-        auto pool = PatternRules::sectionPatternPoolForGenre(secName, genreId);
-        commit.patternIndex = PatternRules::constrainToPool(commit.patternIndex, pool, st);
-        commit.fillKind = PatternPlayer::TransitionFillKind::None;
-        patternPlayer.queueGrooveCommit(commit);
-    }
-
+    (void)gotCommit;  // T4.1: Play rotation is authoritative; commits are vote-only.
     // ── 9. Phrase-learning bass ─────────────────────────────────────────────
     // Bass learns guitarist's riff pattern (rhythm + melody), then mirrors it.
     // Gated on the structure state: during SILENT the learner must not lock
@@ -1627,7 +1677,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     displayHfFlux.store(hfFlux, std::memory_order_relaxed);
     displayNoiseFloor.store(structureTagger.getNoiseFloorRms(), std::memory_order_relaxed);
     displayStateIndex.store(static_cast<int>(st), std::memory_order_relaxed);
-    displayPatternIndex.store(effectivePatternIdx, std::memory_order_relaxed);
+    displayPatternIndex.store(armActive ? effectivePatternIdx : 0, std::memory_order_relaxed);
 
     // ── Unified section-progress display (audio thread → UI) ─────────────────
     // One consistent "bar X of Y / N left" for Play, riff lock (A), and the

@@ -413,10 +413,12 @@ private:
     std::atomic<float> sectionProgress{ 0.0f };  // elapsed fraction [0,1]
 
     // ── Play / post-lock section tracking ────────────────────────────────────
-    // Play holds one pool-constrained groove (inference 2-bar hold); Record B
-    // freezes drumB0 then drumB. No pool rotation.
+    // Play rotates the section pool (T4.1); Record B freezes drumB0 then drumB.
     int lastSectionIndex = -1;      // section we last seeded for
-    int sectionEntryBar = 0;        // global bar count at current section entry
+    std::atomic<int> sectionEntryBar{ 0 };  // bar count at section/state entry (mel seed)
+    int lastPlayedPoolPattern = -1; // previous Play-slot pick (never immediate-repeat)
+    int lastPlayGrooveSlot = -1;    // groove slot last committed in this section
+    int lastFollowStateIndex = -1;  // follow-mode structure state for mel seed
     bool wasPlayOn = false;         // play-start edge detection (re-seed)
     // Play-mode count-in: 1 bar of click (kick 1, stick 2/3/4) before the form
     // starts, mirroring the Record-riff count-in.

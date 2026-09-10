@@ -355,6 +355,17 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     addAndMakeVisible(swingLabel);
     addAndMakeVisible(swingSlider);
 
+    humanizeLabel.setJustificationType(juce::Justification::centredLeft);
+    humanizeLabel.setFont(lookAndFeel.labelFont(12.0f));
+    humanizeLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::ink));
+    humanizeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    humanizeSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 18);
+    humanizeSlider.setRange(0.0, 1.0, 0.01);
+    humanizeSlider.setDoubleClickReturnValue(true, 0.35);
+    humanizeSlider.setTooltip("Ornament amount: scales open-hat, ghost, kick-drop and micro-fill probability. 0 is a literal groove.");
+    addAndMakeVisible(humanizeLabel);
+    addAndMakeVisible(humanizeSlider);
+
     songSectionsLabel.setJustificationType(juce::Justification::centredLeft);
     songSectionsLabel.setFont(lookAndFeel.labelFont(13.0f));
     songSectionsLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::moss));
@@ -425,6 +436,8 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
         apvts, "genre", genreCombo);
     swingAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "swing", swingSlider);
+    humanizeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "humanize", humanizeSlider);
 
     // Generative groove lock: hold length + live status indicator.
     lockBarsLabel.setJustificationType(juce::Justification::centredLeft);
@@ -523,7 +536,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
 
     setResizable(true, false);
     setResizeLimits(520, 900, 720, 1800);
-    setSize(520, 1040);
+    setSize(520, 1100);
     timerCallback();
     startTimerHz(20);
 }
@@ -869,9 +882,9 @@ void AccompanimentEditor::resized()
     constexpr int gap      = 12;    // breathing room between control groups
     constexpr int diagGap  = 14;    // panel → diagnostics
     constexpr int listMin  = 170;   // sections list never collapses below this
-    constexpr int nGaps    = 7;     // gaps inside the panel
+    constexpr int nGaps    = 8;     // gaps inside the panel
 
-    const int panelFixed = headH + 5 * rowH + sectionH;                 // heading, 5 rows, sections head
+    const int panelFixed = headH + 6 * rowH + sectionH;                 // heading, 6 rows, sections head
     const int diagFixed  = diagGap + 2 * diagH + progH + scopeH + 4 * diagH;  // status x2, progress, scope, readouts
     const int other      = panelFixed + nGaps * gap + diagFixed;        // everything except the list
     const int availH     = r.getHeight();
@@ -892,6 +905,11 @@ void AccompanimentEditor::resized()
     row = r.removeFromTop(rowH);
     swingLabel.setBounds(row.removeFromLeft(140));
     swingSlider.setBounds(row);
+    r.removeFromTop(gap);
+
+    row = r.removeFromTop(rowH);
+    humanizeLabel.setBounds(row.removeFromLeft(140));
+    humanizeSlider.setBounds(row);
     r.removeFromTop(gap);
 
     songSectionsLabel.setBounds(r.removeFromTop(sectionH));

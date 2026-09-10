@@ -102,6 +102,21 @@ TEST_CASE("MetalGrooveInference selectPatternFromMel deterministic", "[MetalGroo
     REQUIRE(first == second);
 }
 
+TEST_CASE("MetalGrooveInference selectPatternFromMel seed is stable per section instance", "[MetalGrooveInference][T4.2]")
+{
+    MetalGrooveInference inference;
+    REQUIRE(inference.tryLoadModel());
+
+    auto mel = makeMel(-40.0f);
+    const int a1 = inference.selectPatternFromMel(mel.data(), -1, 22);
+    const int a2 = inference.selectPatternFromMel(mel.data(), -1, 22);
+    REQUIRE(a1 == a2);
+    REQUIRE(a1 >= 0);
+
+    const int det = inference.selectPatternFromMel(mel.data(), -1, -1);
+    REQUIRE(det == inference.selectPatternFromMel(mel.data(), -1));
+}
+
 TEST_CASE("MetalGrooveInference selectPatternFromMel different inputs", "[MetalGrooveInference]")
 {
     MetalGrooveInference inference;

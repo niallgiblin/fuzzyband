@@ -805,6 +805,24 @@ TEST_CASE("PatternRules::constrainToPool keeps in-pool indices and snaps outside
     REQUIRE(PatternRules::isPatternCompatibleWithState(snapped, StructureState::SOFT));
 }
 
+TEST_CASE("PatternRules::constrainToPool falls back globally when the pool mismatches state", "[pattern_rules][pool][T4.1]")
+{
+    const auto verse = PatternRules::sectionPatternPoolForGenre("VERSE", 0);
+    REQUIRE(verse.count > 0);
+    const int snapped = PatternRules::constrainToPool(8, verse, StructureState::LOUD);
+    REQUIRE(PatternRules::isPatternCompatibleWithState(snapped, StructureState::LOUD));
+    REQUIRE_FALSE(PatternRules::poolContains(verse, snapped));
+}
+
+TEST_CASE("PatternRules::poolContains matches membership", "[pattern_rules][pool][T4.1]")
+{
+    const auto verse = PatternRules::sectionPatternPoolForGenre("VERSE", 0);
+    REQUIRE(PatternRules::poolContains(verse, verse.indices[0]));
+    REQUIRE_FALSE(PatternRules::poolContains(verse, 8));
+    PatternRules::SectionPatternPool empty{};
+    REQUIRE_FALSE(PatternRules::poolContains(empty, 1));
+}
+
 TEST_CASE("PatternRules::contrastHomePattern avoids verse-neighborhood when possible", "[pattern_rules][contrast]")
 {
     PatternRules::SectionPatternPool mixed{};

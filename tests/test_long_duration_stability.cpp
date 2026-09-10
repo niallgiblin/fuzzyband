@@ -70,7 +70,7 @@ static SectionResult feedSection(AccompanimentProcessor& proc,
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
     }
-    res.patternIndex = proc.getDisplayPatternIndex();
+    res.patternIndex = proc.getLatestPatternIndex();
     res.bpm          = proc.getDisplayBpm();
     res.stateIndex   = proc.getDisplayStateIndex();
     res.rms          = proc.getDisplayRms();

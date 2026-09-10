@@ -98,14 +98,6 @@ static int blocksForBars(double sr, int block, double bars, double bpm = 120.0)
     return static_cast<int>(std::ceil(bars * 4.0 * 60.0 / bpm * sr / static_cast<double>(block)));
 }
 
-static bool poolContains(const PatternRules::SectionPatternPool& pool, int idx)
-{
-    for (int i = 0; i < pool.count; ++i)
-        if (pool.indices[i] == idx)
-            return true;
-    return false;
-}
-
 } // namespace
 
 // ─── Silent pipeline ─────────────────────────────────────────────────────────
@@ -342,7 +334,7 @@ TEST_CASE("Processor rejection changes displayPatternIndex", "[integration][pipe
     // as a compatible class, so rejection cannot cycle to another pattern there.
     feedBlocks(proc, makeSineBuffer(512, 1500.0, 48000.0, 0.5f), 512, 300);
     proc.flushBackgroundInferenceForTests();
-    const int idxBefore = proc.getDisplayPatternIndex();
+    const int idxBefore = proc.getLatestPatternIndex();
     REQUIRE(idxBefore > 0);
 
     // Feed one more block so the queue has a fresh feature for the next flush
@@ -352,7 +344,7 @@ TEST_CASE("Processor rejection changes displayPatternIndex", "[integration][pipe
     proc.patternRejectionCount.store(1, std::memory_order_release);
 
     proc.flushBackgroundInferenceForTests();
-    const int idxAfter = proc.getDisplayPatternIndex();
+    const int idxAfter = proc.getLatestPatternIndex();
 
     REQUIRE(idxAfter != idxBefore);
     REQUIRE(idxAfter >= 1);
@@ -564,7 +556,7 @@ TEST_CASE("Processor pipeline: genre mapping reaches later presets (Sludge)", "[
         proc.flushBackgroundInferenceForTests();
     }
 
-    const int pat = proc.getDisplayPatternIndex();
+    const int pat = proc.getLatestPatternIndex();
     // Sludge → metal routing: SOFT low-energy stays in the metal/shared set.
     REQUIRE(pat >= 1);
     REQUIRE(pat < 22);
@@ -1778,7 +1770,7 @@ TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section i
     // hash rotation). Skip bar 1 (count-in → form apply).
     REQUIRE(poolContains(intro, barPat[2]));
     for (int bar = 3; bar <= 8; ++bar)
-        REQUIRE(barPat[static_cast<size_t>(bar)] == barPat[2]);
+        REQUIRE(poolContains(intro, barPat[static_cast<size_t>(bar)]));
 
     REQUIRE(lastIntroBar >= 0);
     REQUIRE(firstVerseBar >= 0);
@@ -1920,12 +1912,6 @@ TEST_CASE("Processor pipeline: play hybrid drums constrain to pool and hold", "[
     REQUIRE(proc.getCurrentSectionName() == "INTRO");
     REQUIRE(poolContains(intro, proc.getPlayedPatternIndex()));
 
-    proc.injectDrumPatternForTests(12);
-    feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 1.0));
-    REQUIRE(proc.getPlayedPatternIndex() == 12);
-    feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 1.0));
-    REQUIRE(proc.getPlayedPatternIndex() == 12);
-
     proc.injectDrumPatternForTests(8);
     feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 1.0));
     REQUIRE(proc.getPlayedPatternIndex() != 8);
@@ -1940,13 +1926,166 @@ TEST_CASE("Processor pipeline: play hybrid drums constrain to pool and hold", "[
     REQUIRE(proc.getPlayedPatternIndex() != 12);
     REQUIRE(poolContains(verse, proc.getPlayedPatternIndex()));
 
-    proc.injectDrumPatternForTests(2);
+    proc.injectDrumPatternForTests(8);
     feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 1.0));
-    REQUIRE(proc.getPlayedPatternIndex() == 2);
-    feedQuietBlocks(proc, sr, block, blocksForBars(sr, block, 2.0));
-    REQUIRE(proc.getPlayedPatternIndex() == 2);
+    REQUIRE(proc.getPlayedPatternIndex() != 8);
+    REQUIRE(poolContains(verse, proc.getPlayedPatternIndex()));
 
     proc.releaseResources();
+}
+
+TEST_CASE("T4.1: Play form rotates the section pool without consecutive repeats", "[integration][pipeline][play][T4.1]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    const auto versePool = PatternRules::orderedSectionPatternPoolForGenre("VERSE", 0);
+    const auto chorusPool = PatternRules::orderedSectionPatternPoolForGenre("CHORUS", 0);
+    REQUIRE(versePool.count >= 2);
+    REQUIRE(chorusPool.count >= 2);
+
+    proc.setCustomSongForm("VERSE:8,CHORUS:8,VERSE:8");
+    proc.playActive.store(true, std::memory_order_release);
+
+    const int totalBlocks = blocksForBars(sr, block, 30.0);
+    struct Hit { juce::String section; int barInSection; int pattern; };
+    std::vector<Hit> hits;
+    juce::String prevName;
+    int lastSectionBar = -1;
+
+    for (int i = 0; i < totalBlocks; ++i)
+    {
+        auto quiet = makeSineBuffer(block, 110.0, sr, 0.0005f);
+        juce::MidiBuffer midi;
+        proc.processBlock(quiet, midi);
+        if (proc.getSectionPhase() != 1)
+            continue;
+        const auto name = proc.getCurrentSectionName();
+        const int sb = proc.getSectionBar();
+        if (name != prevName)
+        {
+            prevName = name;
+            lastSectionBar = -1;
+        }
+        if (sb > 0 && sb != lastSectionBar)
+        {
+            lastSectionBar = sb;
+            const int pat = proc.getPlayedPatternIndex();
+            if (pat == 17 || pat == 18 || pat == 19 || pat == 0)
+                continue;
+            // Sample the last bar of each groove slot so PatternPlayer has
+            // already applied the bar-quantized rotation pick.
+            const int bpg = PatternRules::barsPerGrooveForSection(name.toRawUTF8());
+            if (((sb - 1) % juce::jmax(1, bpg)) == juce::jmax(0, bpg - 1))
+                hits.push_back({ name, sb - 1, pat });
+        }
+    }
+
+    auto collectSection = [&](const juce::String& name, const PatternRules::SectionPatternPool& pool)
+    {
+        std::vector<int> phrases;
+        const int bpg = PatternRules::barsPerGrooveForSection(name.toRawUTF8());
+        int lastSlot = -1;
+        int lastPat = -1;
+        int lastBar = -1;
+        for (const auto& h : hits)
+        {
+            if (h.section != name)
+                continue;
+            REQUIRE(poolContains(pool, h.pattern));
+            if (lastBar >= 0 && h.barInSection < lastBar)
+            {
+                lastSlot = -1;
+                lastPat = -1;
+            }
+            lastBar = h.barInSection;
+            const int slot = h.barInSection / juce::jmax(1, bpg);
+            if (slot != lastSlot)
+            {
+                if (lastPat >= 0 && pool.count > 1)
+                    REQUIRE(h.pattern != lastPat);
+                phrases.push_back(h.pattern);
+                lastPat = h.pattern;
+                lastSlot = slot;
+            }
+        }
+        return phrases;
+    };
+
+    const auto versePhrases = collectSection("VERSE", versePool);
+    const auto chorusPhrases = collectSection("CHORUS", chorusPool);
+    auto dump = [](const std::vector<int>& v) {
+        juce::String s;
+        for (int p : v) s += juce::String(p) + " ";
+        return s;
+    };
+    INFO("verse phrases=" << versePhrases.size() << " [" << dump(versePhrases)
+         << "] chorus phrases=" << chorusPhrases.size() << " [" << dump(chorusPhrases) << "]");
+    REQUIRE(versePhrases.size() >= 2);
+    REQUIRE(chorusPhrases.size() >= 1);
+
+    std::set<int> verseUnique(versePhrases.begin(), versePhrases.end());
+    std::set<int> chorusUnique(chorusPhrases.begin(), chorusPhrases.end());
+    REQUIRE(static_cast<int>(verseUnique.size()) >= juce::jmin(2, versePool.count));
+    REQUIRE(static_cast<int>(chorusUnique.size()) >= juce::jmin(2, chorusPool.count));
+
+    proc.playActive.store(false, std::memory_order_release);
+    proc.releaseResources();
+}
+
+TEST_CASE("T4.4: idle display pattern is 0; Play tracks the sounding index", "[integration][pipeline][T4.4]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    auto sig = makeSineBuffer(block, 1500.0, sr, 0.5f);
+    feedBlocks(proc, sig, block, static_cast<int>(3.0 * sr) / block);
+    proc.flushBackgroundInferenceForTests();
+
+    REQUIRE(proc.getDisplayPatternIndex() == 0);
+    REQUIRE(proc.getLatestPatternIndex() >= 0);
+
+    proc.setCustomSongForm("VERSE:8");
+    proc.playActive.store(true, std::memory_order_release);
+    int guard = 0;
+    while ((proc.getSectionPhase() != 1 || proc.getCurrentSectionName() != "VERSE"
+            || proc.getSectionBar() < 2)
+           && guard++ < blocksForBars(sr, block, 6.0))
+        feedQuietBlocks(proc, sr, block, 1);
+    REQUIRE(proc.getSectionPhase() == 1);
+    REQUIRE(proc.getCurrentSectionName() == "VERSE");
+    REQUIRE(proc.getDisplayPatternIndex() > 0);
+    REQUIRE(proc.getDisplayPatternIndex() == proc.getPlayedPatternIndex());
+
+    proc.playActive.store(false, std::memory_order_release);
+    feedQuietBlocks(proc, sr, block, 4);
+    REQUIRE(proc.getDisplayPatternIndex() == 0);
+
+    proc.releaseResources();
+}
+
+TEST_CASE("T4.3: humanize parameter persists with the session", "[integration][pipeline][T4.3]")
+{
+    AccompanimentProcessor proc;
+    auto* p = dynamic_cast<juce::AudioParameterFloat*>(proc.getApvts().getParameter("humanize"));
+    REQUIRE(p != nullptr);
+    REQUIRE(std::abs(p->get() - 0.35f) < 0.001f);
+    p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+    REQUIRE(p->get() < 0.01f);
+
+    juce::MemoryBlock state;
+    proc.getStateInformation(state);
+    AccompanimentProcessor proc2;
+    proc2.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    auto* p2 = dynamic_cast<juce::AudioParameterFloat*>(proc2.getApvts().getParameter("humanize"));
+    REQUIRE(p2 != nullptr);
+    REQUIRE(p2->get() < 0.01f);
 }
 
 TEST_CASE("Processor pipeline: play section does not freeze pattern inference", "[integration][pipeline][play][hybrid]")

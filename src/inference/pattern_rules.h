@@ -694,6 +694,23 @@ inline TransitionSection pickNextSectionAfterLock(int lockedPatternIndex, int ge
  * @brief Keep @p patternIndex if it is already in @p pool; otherwise snap to the
  *        first state-compatible member (pool is prior-ordered, so [0] is home).
  */
+inline bool poolContains(const SectionPatternPool& pool, int patternIndex) noexcept
+{
+    for (int i = 0; i < pool.count; ++i)
+        if (pool.indices[i] == patternIndex)
+            return true;
+    return false;
+}
+
+/** @brief First library index compatible with @p state (0 if none). */
+inline int firstCompatiblePattern(StructureState state) noexcept
+{
+    for (int i = 0; i < kPatternCount; ++i)
+        if (isPatternCompatibleWithState(i, state))
+            return i;
+    return 0;
+}
+
 inline int constrainToPool(int patternIndex, const SectionPatternPool& pool,
                            StructureState state = StructureState::SOFT) noexcept
 {
@@ -709,7 +726,9 @@ inline int constrainToPool(int patternIndex, const SectionPatternPool& pool,
         if (isPatternCompatibleWithState(pool.indices[i], state))
             return pool.indices[i];
     }
-    return pool.indices[0];
+    // T4.1: never collapse a loud verse onto pool[0] when no member matches
+    // the live state — fall back to a globally compatible groove instead.
+    return firstCompatiblePattern(state);
 }
 
 /** @brief 8th-kick verse-neighborhood (the 85 BPM take's A/B were too close). */

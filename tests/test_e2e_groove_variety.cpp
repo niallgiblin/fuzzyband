@@ -50,7 +50,7 @@ static int feedSection(AccompanimentProcessor& proc,
                        int numSamples,
                        int blockSize)
 {
-    int patIdx = proc.getDisplayPatternIndex();
+    int patIdx = proc.getLatestPatternIndex();
     for (int start = 0; start + blockSize <= numSamples; start += blockSize)
     {
         juce::AudioBuffer<float> buf(2, blockSize);
@@ -59,7 +59,7 @@ static int feedSection(AccompanimentProcessor& proc,
         juce::MidiBuffer midi;
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
-        patIdx = proc.getDisplayPatternIndex();
+        patIdx = proc.getLatestPatternIndex();
     }
     return patIdx;
 }
@@ -74,7 +74,7 @@ static std::string patternName(int idx)
 
 } // namespace
 
-TEST_CASE("E2E: multi-section jam produces >=3 distinct groove names", "[e2e][groove][!mayfail]")
+TEST_CASE("E2E: multi-section jam produces >=3 distinct groove names", "[e2e][groove]")
 {
     const double sr    = 48000.0;
     const int    block = 512;
@@ -99,7 +99,7 @@ TEST_CASE("E2E: multi-section jam produces >=3 distinct groove names", "[e2e][gr
         const int n = static_cast<int>(durSec * sr);
         auto sig = sineSection(n, 1500.0, sr, amp);
         (void)feedSection(proc, sig.data(), n, block);
-        const int patIdx = proc.getDisplayPatternIndex();
+        const int patIdx = proc.getLatestPatternIndex();
         const std::string name = patternName(patIdx);
         seenNames.insert(name);
         std::cerr << "[GROOVE] section " << sectionNum
@@ -144,9 +144,7 @@ TEST_CASE("E2E: multi-section jam produces >=3 distinct groove names", "[e2e][gr
     for (const auto& n : seenNames)
         INFO("  \"" << n << "\"");
 
-    // T0.3 / T4.1: the test title promises ≥3 distinct grooves. The current
-    // Play-mode pool snap stalls on two names; keep the assertion honest and
-    // [!mayfail] until T4.1 wires the rotation. Remove the tag in T4.1.
+    // T0.3 / T4.1: the test title promises ≥3 distinct grooves.
     REQUIRE(seenNames.size() >= 3);
 
     bool hasNew = false;

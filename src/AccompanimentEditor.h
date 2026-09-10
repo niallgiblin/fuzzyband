@@ -396,6 +396,8 @@ private:
     juce::ComboBox genreCombo;
     juce::Label swingLabel{ {}, "SWING" };
     juce::Slider swingSlider;
+    juce::Label humanizeLabel{ {}, "HUMANIZE" };
+    juce::Slider humanizeSlider;
 
     juce::Label songSectionsLabel{ {}, "SECTIONS" };
     juce::Viewport songSectionsViewport;
@@ -476,6 +478,7 @@ private:
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> genreAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> swingAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> humanizeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lockBarsAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> transitionBarsAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> transitionSectionsAttachment;

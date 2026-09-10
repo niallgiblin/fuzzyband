@@ -68,7 +68,7 @@ int feedSection(AccompanimentProcessor& proc,
                 int numSamples,
                 int blockSize)
 {
-    int patIdx = proc.getDisplayPatternIndex();
+    int patIdx = proc.getLatestPatternIndex();
     for (int start = 0; start + blockSize <= numSamples; start += blockSize)
     {
         juce::AudioBuffer<float> buf(2, blockSize);
@@ -77,7 +77,7 @@ int feedSection(AccompanimentProcessor& proc,
         juce::MidiBuffer midi;
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
-        patIdx = proc.getDisplayPatternIndex();
+        patIdx = proc.getLatestPatternIndex();
     }
     return patIdx;
 }
@@ -163,7 +163,7 @@ TEST_CASE("E2E: chorus-like section after verse drives pattern index to [4,5]", 
     // With default BPM ≈ 120 and LOUD state the selector picks a LOUD groove.
     // Style steering is now live, so the exact pattern rotates within the
     // LOUD-compatible pool — the invariant is that it matches the LOUD state.
-    const int pat = proc.getDisplayPatternIndex();
+    const int pat = proc.getLatestPatternIndex();
     REQUIRE(PatternRules::isPatternCompatibleWithState(pat, StructureState::LOUD));
 
     // Display state must be LOUD (index 3)

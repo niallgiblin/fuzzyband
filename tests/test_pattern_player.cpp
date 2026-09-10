@@ -9,6 +9,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "midi/MidiPatternLibrary.h"
 #include "midi/PatternPlayer.h"
+#include "fixtures/MidiProbe.h"
 
 namespace
 {
@@ -1163,4 +1164,116 @@ TEST_CASE("Tier-0 ornamentation activates across bars (not a static no-op)", "[m
     REQUIRE(anyOpenHat);
     REQUIRE(anyGhost);
     REQUIRE(anyMicroFill);
+}
+
+TEST_CASE("T4.3: humanize=0 disables every ornament", "[midi][ornament][T4.3]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.setHumanize(0.0f);
+
+    const Groove::SongSectionId sections[] = {
+        Groove::SongSectionId::Verse,     Groove::SongSectionId::Chorus,
+        Groove::SongSectionId::Breakdown, Groove::SongSectionId::Solo,
+        Groove::SongSectionId::Outro,
+    };
+    for (const auto section : sections)
+    {
+        player.setSection(section);
+        for (int64_t bar = 0; bar < 400; ++bar)
+        {
+            const auto o = player.computeOrnamentation(bar, 1);
+            REQUIRE(!o.openHat);
+            REQUIRE(!o.rideSwitch);
+            REQUIRE(!o.extraGhost);
+            REQUIRE(!o.dropKick);
+            REQUIRE(!o.microFill);
+            const auto p22 = player.computeOrnamentation(bar, 22);
+            REQUIRE(!p22.rideSwitch);
+        }
+    }
+}
+
+TEST_CASE("T4.3: ornaments fire near their stated rate and never share a cell", "[midi][ornament][T4.3]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.setHumanize(1.0f);
+    player.setGenrePreset(0);  // Rock: ghostDensity 0.35 → injected ghost is cell 9 only
+
+    constexpr int kBars = 400;
+    int openHat = 0, extraGhost = 0, dropKick = 0, microFill = 0, rideSwitch = 0;
+    player.setSection(Groove::SongSectionId::Verse);
+    for (int64_t bar = 0; bar < kBars; ++bar)
+    {
+        const auto o = player.computeOrnamentation(bar, 1);
+        if (o.openHat) ++openHat;
+        if (o.extraGhost) ++extraGhost;
+        if (o.microFill) ++microFill;
+        if (o.openHat && o.extraGhost)
+            REQUIRE(o.openHatCell != o.extraGhostCell);
+        if (o.extraGhost)
+            REQUIRE(o.extraGhostCell != 9);  // injected-ghost cell
+    }
+
+    player.setSection(Groove::SongSectionId::Breakdown);
+    for (int64_t bar = 0; bar < kBars; ++bar)
+    {
+        const auto o = player.computeOrnamentation(bar, 25);
+        if (o.dropKick) ++dropKick;
+        if (o.openHat && o.dropKick)
+            REQUIRE(o.openHatCell != o.dropKickCell);
+        if (o.extraGhost && o.dropKick)
+            REQUIRE(o.extraGhostCell != o.dropKickCell);
+    }
+
+    player.setSection(Groove::SongSectionId::Chorus);
+    for (int64_t bar = 0; bar < kBars; ++bar)
+        if (player.computeOrnamentation(bar, 22).rideSwitch)
+            ++rideSwitch;
+
+    // Stated rates at humanize=1: openHat 8%, extraGhost 15%, dropKick 12%,
+    // microFill 12% of phrase-end bars (≈3% of all bars), rideSwitch 0.
+    REQUIRE(openHat >= 8);
+    REQUIRE(openHat <= 80);
+    REQUIRE(extraGhost >= 15);
+    REQUIRE(extraGhost <= 120);
+    REQUIRE(dropKick >= 12);
+    REQUIRE(dropKick <= 100);
+    REQUIRE(microFill >= 1);
+    REQUIRE(rideSwitch == 0);
+}
+
+TEST_CASE("T4.3: humanize=0 MIDI matches a second render and differs from humanize=1", "[midi][ornament][T4.3]")
+{
+    MidiPatternLibrary lib;
+    auto prepare = [&](PatternPlayer& player, float humanize)
+    {
+        player.setPatternLibrary(&lib);
+        player.prepare(48000.0, 512);
+        player.setRandomSeed(0xC0FFEE);
+        player.snapBpm(120.0f);
+        player.setPatternIndex(1);
+        player.setSection(Groove::SongSectionId::Verse);
+        player.setGenrePreset(0);
+        player.setStructureSilent(false);
+        player.setSwing(0.0f);
+        player.setHumanize(humanize);
+        player.setBeatGridBassEnabled(false);
+    };
+
+    PatternPlayer a, b, c;
+    prepare(a, 0.0f);
+    prepare(b, 0.0f);
+    prepare(c, 1.0f);
+
+    constexpr int kBlock = 512;
+    constexpr int kBlocks = 188 * 32;  // 32 bars at 120 BPM / 48 kHz
+    const auto fa = MidiProbe::fingerprint(MidiProbe::render(a, kBlocks, kBlock, 0));
+    const auto fb = MidiProbe::fingerprint(MidiProbe::render(b, kBlocks, kBlock, 0));
+    const auto fc = MidiProbe::fingerprint(MidiProbe::render(c, kBlocks, kBlock, 0));
+    REQUIRE(fa == fb);
+    REQUIRE(fa != fc);
 }

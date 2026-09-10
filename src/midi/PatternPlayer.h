@@ -188,6 +188,13 @@ public:
     /** @brief Swing/shuffle ratio in [0,1]; delays off-8th events (A2.3). Audio thread. */
     void setSwing(float newSwing) noexcept;
 
+    /**
+     * @brief Ornament probability scale in [0,1] (T4.3). 0 disables every
+     *        per-bar mutation; the plugin default is 0.35. Audio thread.
+     */
+    void setHumanize(float amount) noexcept;
+    float getHumanize() const noexcept { return humanizeAmount; }
+
     /** @brief Current section; drives velocity contrast (A3.1) and bass harmony (A1.2). Audio thread. */
     void setSection(Groove::SongSectionId s) noexcept { sectionId = s; }
 
@@ -432,6 +439,7 @@ private:
     Groove::GenrePreset preset;                 // active genre preset (copy)
     Groove::SongSectionId sectionId = Groove::SongSectionId::Verse;
     float swing = 0.0f;                         // 0..1 (A2.3)
+    float humanizeAmount = 1.0f;                // 0..1 ornament scale (T4.3; tests default full)
     float sectionVelMul = 1.0f;                 // preset section multiplier (A3.1)
     float ghostDensity = 0.0f;                  // 0..1 (A3.2)
     float guitarEnergy = 1.0f;                  // guitarist-energy dynamic (drums + bass)
