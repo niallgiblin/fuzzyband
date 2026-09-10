@@ -2514,8 +2514,17 @@ TEST_CASE("Processor pipeline: capture keeps leading rest bars", "[integration][
         REQUIRE_FALSE(proc.getRiffASlotOccupied(s));
     REQUIRE(proc.getRiffAOccupiedCount() >= 2);
     REQUIRE(col.originSample >= 0);
+
+    // T2.1: frozen-riff playback is bar-phase locked, not lock-time locked.
+    // Measure the 16-beat loop from the bar line so occupied slots 32–63
+    // (beats 8–16) are not scored as "early" when lock engages mid-bar.
+    col.hits.clear();
+    const int64_t barSamps = static_cast<int64_t>(std::llround(4.0 * samplesPerBeat));
+    REQUIRE(barSamps > 0);
+    col.originSample = (col.originSample / barSamps) * barSamps;
+    const int64_t now = static_cast<int64_t>(blockIdx) * block;
     feedChugCollecting(proc, sr, block, 65.406, blockIdx, samplesPerBeat, col,
-                       col.originSample + static_cast<int64_t>(std::ceil(16.0 * samplesPerBeat)));
+                       now + static_cast<int64_t>(std::ceil(16.0 * samplesPerBeat)));
 
     bool early = false;
     bool late = false;

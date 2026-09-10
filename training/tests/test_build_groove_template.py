@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import statistics
 
 import build_groove_template as bgt
 
@@ -58,14 +59,37 @@ def test_reduce_template_builds_velocity_hierarchy() -> None:
     assert t["velocityMul"][1] < 1.0                    # ghosts below the mean
     # Jitter knobs are clamped to the musical band.
     assert bgt._TIMING_JITTER_MIN <= t["timingJitterMs"] <= bgt._TIMING_JITTER_MAX
+    assert abs(statistics.fmean(t["timingMs"])) < bgt._MAX_TIMING_MEAN_ABS_MS
     assert bgt._VEL_JITTER_MIN <= t["velocityJitter"] <= bgt._VEL_JITTER_MAX
+
+
+def test_centre_timing_subtracts_mean() -> None:
+    ms = [-6.0, 8.0] + [0.0] * 14
+    centred = bgt._centre_timing(ms)
+    assert abs(statistics.fmean(centred)) < 1e-6
+    # Relative shape is preserved.
+    assert centred[1] - centred[0] == pytest.approx(14.0, abs=1e-6)
+
+
+def test_reduce_template_centres_a_late_grid() -> None:
+    acc = bgt._new_acc()
+    bpm = 120.0
+    hits = []
+    # Every hit 10 ms late (0.02 beats at 120 BPM) on every 16th.
+    for _ in range(bgt._MIN_HITS_PER_CELL + 5):
+        for cell in range(16):
+            hits.append((cell / 4.0 + 0.02, 100, 36))
+    bgt._accumulate(hits, bpm, acc)
+    t = bgt._reduce_template(acc)
+    assert abs(statistics.fmean(t["timingMs"])) < bgt._MAX_TIMING_MEAN_ABS_MS
+    assert t["timingJitterMs"] <= bgt._TIMING_JITTER_MAX
 
 
 def test_derive_metal_and_punk_tighten_timing() -> None:
     rock = {
         "velocityMul": [1.0] * 16,
         "timingMs": [(-6.0 if i == 0 else 8.0 if i == 4 else 0.0) for i in range(16)],
-        "timingJitterMs": 6.0,
+        "timingJitterMs": 3.0,
         "velocityJitter": 8.0,
         "ghostVelocityLo": 15.0,
         "ghostVelocityHi": 42.0,
@@ -79,6 +103,7 @@ def test_derive_metal_and_punk_tighten_timing() -> None:
         assert abs(punk["timingMs"][i]) <= abs(metal["timingMs"][i]) + 1e-9
     assert metal["timingJitterMs"] < rock["timingJitterMs"]
     assert punk["timingJitterMs"] < metal["timingJitterMs"]
+    assert metal["timingJitterMs"] <= bgt._METAL_TIMING_JITTER_MAX
     assert metal["_derived_from"] == "rock"
     assert punk["_derived_from"] == "rock"
 

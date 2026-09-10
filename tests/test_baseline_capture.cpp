@@ -175,7 +175,8 @@ TEST_CASE("Baseline: capture current MIDI at 128/512/2048, loop wrap, and Play f
             << "lockBars 4\n"
             << "transitionBars 4\n"
             << "riff Drop-C palm-mute (C2 65.406 Hz, 16th envelope)\n"
-            << "purpose T0.2 pre-fix corpus for Phase 9 A/B\n";
+            << "purpose T3.1 re-baseline after velocity/humanise retune; "
+               "pre-Phase-3 corpus is .artifacts/baseline/pre-phase3/\n";
     }
 
     const int sizes[] = { 128, 512, 2048 };

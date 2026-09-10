@@ -18,6 +18,7 @@
 #include "GrooveGrid.h"
 #include <array>
 #include <atomic>
+#include <cstdint>
 
 /**
  * @brief Emits humanised drum (ch 10) and bass (ch 2) MIDI from the active pattern.
@@ -193,10 +194,23 @@ public:
     /**
      * @brief Guitarist-energy multiplier for the accompaniment (drums + bass).
      *        Lets the kit swell with the guitarist's picking and relax when they
-     *        ease off. Clamped to [0.75, 1.35]. Audio thread.
+     *        ease off. Clamped to [0.85, 1.20] (≈ −1.4 dB .. +1.6 dB). Audio thread.
      */
-    void setGuitarEnergy(float e) noexcept { guitarEnergy = juce::jlimit(0.75f, 1.35f, e); }
+    void setGuitarEnergy(float e) noexcept { guitarEnergy = juce::jlimit(0.85f, 1.20f, e); }
     float getGuitarEnergy() const noexcept { return guitarEnergy; }
+
+    /**
+     * @brief Map a long-window RMS onto the bidirectional energy multiplier.
+     *        Silence sits at 0.94 (below unity); a hot signal reaches 1.20.
+     *        T3.2: the input must be a *swell* window, not a per-block RMS.
+     */
+    static float guitarEnergyFromRms(float smoothedRms) noexcept
+    {
+        return juce::jlimit(0.85f, 1.20f, 0.94f + smoothedRms * 0.55f);
+    }
+
+    /** T3.1: scales the velocity product so accents peak near 118, not 127. */
+    static constexpr float kVelocityTrim = 0.80f;
 
     /** @brief Select the genre preset: groove template, section velocities, ghost density (B1). Audio thread. */
     void setGenrePreset(int presetId) noexcept;
@@ -209,8 +223,14 @@ public:
      */
     void setGrooveGrid(const GrooveGrid& grid) noexcept { grooveGrid = grid; }
 
-    /** @brief Seed the humanisation RNG deterministically (tests; A2.4 seed stability). */
-    void setRandomSeed(juce::int64 seed) noexcept { rng.setSeed(seed); }
+    /**
+     * @brief Salt the deterministic per-event humanisation hash (tests; T3.4).
+     *        Same seed + same timeline always yields the same velocities/offsets.
+     */
+    void setRandomSeed(juce::int64 seed) noexcept
+    {
+        humanizeSeed_ = static_cast<unsigned>(static_cast<uint64_t>(seed));
+    }
 
     float getSwing() const noexcept { return swing; }
 
@@ -323,8 +343,18 @@ private:
                         double beatEnd,
                         int64_t hostSamplePosition) noexcept;
 
-    /** @brief Bounded gaussian around a mean; clamps to ±2.5 sigma (A2.4). */
-    static float boundedGaussian(juce::Random& r, float mean, float sigma) noexcept;
+    /** @brief Bounded gaussian from two unit draws; clamps to ±2.5 sigma (A2.4). */
+    static float boundedGaussian(float u1, float u2, float mean, float sigma) noexcept;
+
+    /**
+     * @brief Deterministic per-event draw keyed by (bar, grid16, voice, salt).
+     *        Independent of block size and of how many events were emitted first.
+     */
+    float eventGaussian(int64_t barNumber, int grid16, int voice,
+                        unsigned salt, float sigma) const noexcept;
+
+    /** @brief Soft-knee above 110 so residual peaks keep headroom after jitter (T3.1). */
+    static int applyVelocityHeadroom(int vel) noexcept;
 
     /** @brief Whether ghost notes may be injected for the active section. */
     bool sectionAllowsGhosts() const noexcept;
@@ -332,7 +362,7 @@ private:
     const MidiPatternLibrary* library = nullptr;
 
     double sampleRate = 44100.0;
-    mutable juce::Random rng;
+    unsigned humanizeSeed_ = 0;  // T3.4: salts the per-event hash (not a stream RNG)
 
     float bpm = 120.0f;
     std::atomic<int> patternIndex{ 0 };

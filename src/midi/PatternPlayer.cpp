@@ -36,6 +36,14 @@ constexpr unsigned kSaltKickDrop     = 0x41u;
 constexpr unsigned kSaltKickDropCell = 0x42u;
 constexpr unsigned kSaltMicroFill    = 0x51u;
 
+// T3.4: per-event humanisation salts (independent of the ornament salts above).
+constexpr unsigned kSaltDrumTime  = 0xA1u;
+constexpr unsigned kSaltDrumVel   = 0xA2u;
+constexpr unsigned kSaltGhostTime = 0xA3u;
+constexpr unsigned kSaltGhostVel  = 0xA4u;
+constexpr unsigned kSaltBassTime  = 0xA5u;
+constexpr unsigned kSaltBassVel   = 0xA6u;
+
 // SplitMix32-style avalanche (same as PatternRules::hashMix) — kept local so
 // PatternPlayer does not depend on the inference headers.
 inline unsigned barHash(unsigned a, unsigned b) noexcept
@@ -57,7 +65,6 @@ void PatternPlayer::prepare(double newSampleRate, int blockSize)
 {
     (void)blockSize;
     sampleRate = newSampleRate;
-    rng.setSeedRandomly();
     reset();
 }
 
@@ -254,17 +261,40 @@ void PatternPlayer::snapBpm(float newBpm)
     bpm = juce::jlimit(40.0f, 300.0f, newBpm);
 }
 
-float PatternPlayer::boundedGaussian(juce::Random& r, float mean, float sigma) noexcept
+float PatternPlayer::boundedGaussian(float u1, float u2, float mean, float sigma) noexcept
 {
     if (sigma <= 0.0f)
         return mean;
-    float u1 = r.nextFloat();
-    float u2 = r.nextFloat();
-    if (u1 <= 0.0f)
+    if (u1 < 1.0e-6f)
         u1 = 1.0e-6f;
     // Box–Muller; clamp to ±2.5 sigma so no event strays far from the grid.
     const float z = std::sqrt(-2.0f * std::log(u1)) * std::cos(2.0f * juce::MathConstants<float>::pi * u2);
     return mean + juce::jlimit(-2.5f, 2.5f, z) * sigma;
+}
+
+float PatternPlayer::eventGaussian(int64_t barNumber, int grid16, int voice,
+                                   unsigned salt, float sigma) const noexcept
+{
+    if (sigma <= 0.0f)
+        return 0.0f;
+    const unsigned key = static_cast<unsigned>(barNumber)
+                       ^ (static_cast<unsigned>(grid16) * 0x9E3779B1u)
+                       ^ (static_cast<unsigned>(voice) * 0x85EBCA6Bu);
+    const unsigned h1 = barHash(key ^ humanizeSeed_, salt);
+    const unsigned h2 = barHash(key ^ humanizeSeed_, salt ^ 0x9E3779B9u);
+    const float u1 = static_cast<float>(h1 & 0x00FFFFFFu) * (1.0f / 16777216.0f);
+    const float u2 = static_cast<float>(h2 & 0x00FFFFFFu) * (1.0f / 16777216.0f);
+    return boundedGaussian(u1, u2, 0.0f, sigma);
+}
+
+int PatternPlayer::applyVelocityHeadroom(int vel) noexcept
+{
+    // T3.1: the product used to peak at ~1.39, pinning authored 92–125 at 127.
+    // Trim lives on sectionVelMul; this soft knee catches residual accents
+    // *after* ±2.5σ velocity jitter so a hot chorus is not a wall of 127.
+    if (vel > 110)
+        vel = 110 + static_cast<int>(std::lround(static_cast<double>(vel - 110) * 0.30));
+    return juce::jlimit(1, 127, vel);
 }
 
 bool PatternPlayer::sectionAllowsGhosts() const noexcept
@@ -621,6 +651,7 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
         for (double t = first; t < beatEnd - 1.0e-9; t += patternLenBeats)
         {
             const double rel = t - beatStart;
+            const int64_t eventBar = static_cast<int64_t>(std::floor(t / 4.0));
 
             // ── Microtiming: learned grid (Tier-1) or template + swing + jitter (A2.2/A2.3) ──
             float timeMs;
@@ -637,7 +668,8 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
                     timeMs += static_cast<float>(swingDelayMs);
                 if (isGhost)
                     timeMs += grooveTemplate.ghostTimingMs;
-                timeMs += boundedGaussian(rng, 0.0f, grooveTemplate.timingJitterMs);
+                timeMs += eventGaussian(eventBar, grid16, ev.note, kSaltDrumTime,
+                                        grooveTemplate.timingJitterMs);
             }
 
             int off = static_cast<int>(std::round(rel * samplesPerBeat + timeMs * samplesPerMs));
@@ -651,17 +683,19 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
                 // velocity (~1.0), not an absolute value — the authored pattern's
                 // dynamics are preserved and the model humanises around them.
                 vel = static_cast<int>(std::round(static_cast<float>(ev.velocity) * gridVel * sectionVelMul));
-                vel = juce::jlimit(1, 127, vel);
+                vel = applyVelocityHeadroom(vel);
             }
             else
             {
                 const float mul = grooveTemplate.velocityMul[grid16] * sectionVelMul;
                 vel = static_cast<int>(std::round(static_cast<float>(ev.velocity) * mul
-                                                  + boundedGaussian(rng, 0.0f, grooveTemplate.velocityJitter)));
+                                                  + eventGaussian(eventBar, grid16, ev.note, kSaltDrumVel,
+                                                                  grooveTemplate.velocityJitter)));
                 if (isGhost)
                     vel = juce::jlimit(static_cast<int>(grooveTemplate.ghostVelocityLo),
                                        static_cast<int>(grooveTemplate.ghostVelocityHi), vel);
-                vel = juce::jlimit(1, 127, vel);
+                else
+                    vel = applyVelocityHeadroom(vel);
             }
 
             int outNote = juce::jlimit(0, 127, static_cast<int>(ev.note));
@@ -708,15 +742,20 @@ void PatternPlayer::emitGhostNotes(juce::MidiBuffer& midi,
             return;
 
         const double rel = beat - beatStart;
+        const int64_t eventBar = static_cast<int64_t>(std::floor(barStart / 4.0));
         const float timeMs = grooveTemplate.ghostTimingMs
-                           + boundedGaussian(rng, 0.0f, grooveTemplate.timingJitterMs);
+                           + eventGaussian(eventBar, cell, 38, kSaltGhostTime,
+                                           grooveTemplate.timingJitterMs);
         int off = static_cast<int>(std::round(rel * samplesPerBeat + timeMs * samplesPerMs));
         const int absOff = juce::jlimit(0, numSamples - 1, sampleOffsetBase + off);
 
         const float ghostLo = grooveTemplate.ghostVelocityLo;
         const float ghostHi = grooveTemplate.ghostVelocityHi;
+        const unsigned h = barHash(static_cast<unsigned>(eventBar) ^ humanizeSeed_,
+                                   kSaltGhostVel ^ static_cast<unsigned>(cell));
+        const float u = static_cast<float>(h & 0x00FFFFFFu) * (1.0f / 16777216.0f);
         const int vel = juce::jlimit(1, 127,
-            static_cast<int>(std::round(ghostLo + rng.nextFloat() * (ghostHi - ghostLo))));
+            static_cast<int>(std::round(ghostLo + u * (ghostHi - ghostLo))));
 
         scheduleDrumNoteOff(midi, numSamples, sampleCounter, 38, absOff, durSamps);
         midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, 38, static_cast<float>(vel) / 127.0f),
@@ -822,9 +861,11 @@ void PatternPlayer::emitPatternBass(juce::MidiBuffer& midi,
         {
             const double rel = t - beatStart;
 
+            const int64_t eventBar = static_cast<int64_t>(std::floor(t / 4.0));
             // Bass sits slightly behind the kick for pocket (A1.2), with small jitter.
             float timeMs = grooveTemplate.bassPocketMs
-                         + boundedGaussian(rng, 0.0f, grooveTemplate.timingJitterMs);
+                         + eventGaussian(eventBar, grid16, ev.note, kSaltBassTime,
+                                         grooveTemplate.timingJitterMs);
             int off = static_cast<int>(std::round(rel * samplesPerBeat + timeMs * samplesPerMs));
             off = juce::jlimit(0, numSamples - 1, sampleOffsetBase + off);
 
@@ -841,8 +882,8 @@ void PatternPlayer::emitPatternBass(juce::MidiBuffer& midi,
             if (grid16 == 0)      mul *= 1.08f;   // downbeat
             else if (grid16 == 8) mul *= 0.96f;   // beat 3
             int vel = static_cast<int>(std::round(static_cast<float>(ev.velocity) * mul
-                                                  + boundedGaussian(rng, 0.0f, 4.0f)));
-            vel = juce::jlimit(1, 127, vel);
+                                                  + eventGaussian(eventBar, grid16, outNote, kSaltBassVel, 4.0f)));
+            vel = applyVelocityHeadroom(vel);
 
             const int durSamps = juce::jmax(1, static_cast<int>(std::round(
                 static_cast<double>(ev.durationBeats) * sectionBassGate() * samplesPerBeat)));
@@ -889,12 +930,15 @@ void PatternPlayer::emitHarmonicBass(juce::MidiBuffer& midi,
         float mul = sectionVelMul;
         if (beatInBar == 0)      mul *= 1.08f;
         else if (beatInBar == 2) mul *= 0.96f;
-        int vel = static_cast<int>(std::round(95.0f * mul + boundedGaussian(rng, 0.0f, 4.0f)));
-        vel = juce::jlimit(1, 127, vel);
+        const int64_t eventBar = static_cast<int64_t>(std::floor(beat / 4.0));
+        int vel = static_cast<int>(std::round(95.0f * mul + eventGaussian(eventBar, beatInBar * 4, outNote,
+                                                                          kSaltBassVel, 4.0f)));
+        vel = applyVelocityHeadroom(vel);
 
         // Slightly behind the kick for pocket.
         float timeMs = grooveTemplate.bassPocketMs
-                     + boundedGaussian(rng, 0.0f, grooveTemplate.timingJitterMs);
+                     + eventGaussian(eventBar, beatInBar * 4, outNote, kSaltBassTime,
+                                     grooveTemplate.timingJitterMs);
         int off = static_cast<int>(std::round(rel * samplesPerBeat + timeMs * samplesPerMs));
         off = juce::jlimit(0, numSamples - 1, sampleOffsetBase + off);
 
@@ -1022,7 +1066,9 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
 
     // Section velocity multiplier for this block (A3.1), scaled by the
     // guitarist-energy dynamic so the kit/bass swell with the guitarist's picking.
-    sectionVelMul = preset.sectionVelocityMultiplier(sectionId) * preset.velocityScale * guitarEnergy;
+    // T3.1: kVelocityTrim keeps the product from pinning every accent at 127.
+    sectionVelMul = preset.sectionVelocityMultiplier(sectionId) * preset.velocityScale
+                  * guitarEnergy * kVelocityTrim;
 
     // Tier-0 ornamentation: deterministic per-bar score-level mutations for the
     // block (subtle + reproducible — see computeOrnamentation). A block that

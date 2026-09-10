@@ -87,7 +87,7 @@ TEST_CASE("GrooveRenderer::buildCondition packs bpm/genre/phase, neutralises gui
 TEST_CASE("PatternPlayer uses a rendered GrooveGrid for velocity (template fallback otherwise)", "[groove_renderer]")
 {
     // Pattern 1 (Verse Groove) kick on the downbeat, authored velocity 115.
-    // Section = Verse, Rock preset 0 -> sectionVelMul = 0.92.
+    // Section = Verse, Rock preset 0 -> sectionVelMul = 0.92 × kVelocityTrim.
 
     // (a) With a valid grid: velocity is taken from the grid (no jitter).
     {
@@ -104,13 +104,14 @@ TEST_CASE("PatternPlayer uses a rendered GrooveGrid for velocity (template fallb
         GrooveGrid grid;
         grid.valid = true;
         grid.patternIndex = 1;
-        grid.velocity[0][0] = 0.5f;   // kick multiplier -> authored 115 * 0.5 * 0.92 = 53
+        grid.velocity[0][0] = 0.5f;   // kick multiplier
         player.setGrooveGrid(grid);
         player.setPatternIndex(1);
 
         juce::MidiBuffer midi;
         player.process(midi, 4800, 0);
-        REQUIRE(noteOnVelocity(midi, 36) == 53);
+        // authored 115 × 0.5 × verse 0.92 × kVelocityTrim 0.80 = 42
+        REQUIRE(noteOnVelocity(midi, 36) == 42);
     }
 
     // (b) Without a grid (invalid): template path -> authored 115 * hierarchy.

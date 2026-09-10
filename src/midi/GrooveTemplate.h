@@ -29,6 +29,19 @@
 namespace Groove
 {
 
+/** T3.3: baked templates must sit on a centred grid (|mean| < 1.5 ms). */
+constexpr float timingMeanMs(const float (&a)[16]) noexcept
+{
+    float s = 0.0f;
+    for (int i = 0; i < 16; ++i)
+        s += a[i];
+    return s * (1.0f / 16.0f);
+}
+
+static_assert(timingMeanMs(data::kRockTimingMs)  > -1.5f && timingMeanMs(data::kRockTimingMs)  < 1.5f);
+static_assert(timingMeanMs(data::kMetalTimingMs) > -1.5f && timingMeanMs(data::kMetalTimingMs) < 1.5f);
+static_assert(timingMeanMs(data::kPunkTimingMs)  > -1.5f && timingMeanMs(data::kPunkTimingMs)  < 1.5f);
+
 /** Musical sections used for per-section rendering policy (A3.1 dynamic contrast). */
 enum class SongSectionId
 {

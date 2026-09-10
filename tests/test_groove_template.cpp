@@ -3,6 +3,7 @@
 #include <string>
 #include "midi/GrooveTemplate.h"
 #include "midi/MidiPatternLibrary.h"
+#include "midi/PatternPlayer.h"
 
 TEST_CASE("Groove: grid16Of maps beats to 16th cells within a 4/4 bar", "[groove]")
 {
@@ -63,8 +64,13 @@ TEST_CASE("Groove: C1 data-derived templates — tightening hierarchy + sane ran
         REQUIRE(std::abs(rock.timingMs[c]) < 30.0f);
     }
     REQUIRE(rock.timingJitterMs > 0.0f);
-    REQUIRE(rock.timingJitterMs <= 6.0f);
+    REQUIRE(rock.timingJitterMs <= 3.0f);
+    REQUIRE(metal.timingJitterMs <= 2.0f);
     REQUIRE(rock.velocityJitter > 0.0f);
+
+    REQUIRE(std::abs(Groove::timingMeanMs(Groove::data::kRockTimingMs)) < 1.5f);
+    REQUIRE(std::abs(Groove::timingMeanMs(Groove::data::kMetalTimingMs)) < 1.5f);
+    REQUIRE(std::abs(Groove::timingMeanMs(Groove::data::kPunkTimingMs)) < 1.5f);
 
     // The backbeats (cells 4 and 12) must remain the loudest primary accents —
     // the whole point of a data-derived velocity hierarchy.
@@ -112,8 +118,11 @@ TEST_CASE("Groove: A3.1 dynamic contrast — chorus backbeat >= verse backbeat +
     // Chorus Mid = 118. Effective = authored × section multiplier × backbeat accent.
     const auto& rock = Groove::presetFor(0);
     const float backbeatAccent = Groove::rock().velocityMul[4];
-    const float verseVel = 110.0f * rock.sectionVelocityMultiplier(Groove::SongSectionId::Verse) * backbeatAccent;
-    const float chorusVel = 118.0f * rock.sectionVelocityMultiplier(Groove::SongSectionId::Chorus) * backbeatAccent;
+    const float trim = PatternPlayer::kVelocityTrim;
+    const float verseVel = 110.0f * rock.sectionVelocityMultiplier(Groove::SongSectionId::Verse)
+                         * backbeatAccent * trim;
+    const float chorusVel = 118.0f * rock.sectionVelocityMultiplier(Groove::SongSectionId::Chorus)
+                          * backbeatAccent * trim;
     REQUIRE(chorusVel - verseVel >= 15.0f);
 }
 

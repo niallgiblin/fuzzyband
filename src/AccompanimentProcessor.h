@@ -459,11 +459,11 @@ private:
 
     PlaybackGate playbackGate;
 
-    // Guitarist-energy dynamic (drums + bass): a slowly-smoothed multiplier driven
-    // by the live RMS, so the accompaniment swells when the guitarist digs in and
-    // relaxes when they ease off. Audio-thread state.
+    // Guitarist-energy dynamic (drums + bass): a ~500 ms RMS swell mapped onto
+    // [0.85, 1.20] so the accompaniment sits below unity when the guitarist eases
+    // off and above it when they dig in. Audio-thread state.
     float prevBlockRms = 0.0f;
-    float guitarEnergySmooth_ = 1.0f;
+    float guitarEnergyRms_ = 0.0f;
 
     std::atomic<double> cachedSampleRate{ 44100.0 };
     std::atomic<int> debugPreviewSamplesRemaining{ 0 };

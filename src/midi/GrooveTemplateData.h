@@ -5,6 +5,7 @@
 //   python3 training/build_groove_template.py
 // T1.5 pins ghostVelocityLo/Hi/Threshold to 30/55/62 in the generator so a
 // regenerate cannot disagree with MidiPatternLibrary's authored ghost band.
+// T3.3 recentres timingMs (mean ≈ 0) and caps jitter at 3 ms rock / 2 ms metal.
 // Source: Groove MIDI Dataset (GMD, CC-BY 4.0). See data/groove_templates.json
 // for provenance (file/hit counts per genre). 'metal' is derived from 'rock'
 // (GMD has no metal genre) by a documented tightening transform.
@@ -16,8 +17,8 @@ namespace Groove::data
 {
 // rock: 204 files, 115534 hits
 inline constexpr float kRockVelocityMul[16] = { 1.0273f, 0.8415f, 0.9483f, 0.9223f, 1.1200f, 0.8853f, 0.9750f, 0.8935f, 1.0291f, 0.9240f, 0.9828f, 0.9562f, 1.1152f, 0.9290f, 0.9937f, 0.9098f };
-inline constexpr float kRockTimingMs[16] = { -5.4350f, 8.6540f, -4.1670f, -9.0910f, -4.5450f, 3.3480f, -1.7260f, -2.3270f, -6.7930f, 8.5470f, -1.3230f, -9.6150f, -5.5560f, 3.8460f, -2.3810f, -2.7780f };
-inline constexpr float kRockTimingJitterMs = 6.000f;
+inline constexpr float kRockTimingMs[16] = { -3.4760f, 10.6130f, -2.2080f, -7.1320f, -2.5860f, 5.3070f, 0.2330f, -0.3680f, -4.8340f, 10.5060f, 0.6360f, -7.6560f, -3.5970f, 5.8050f, -0.4220f, -0.8190f };
+inline constexpr float kRockTimingJitterMs = 3.000f;
 inline constexpr float kRockVelocityJitter = 8.000f;
 inline constexpr float kRockGhostVelocityLo = 30.0f;
 inline constexpr float kRockGhostVelocityHi = 55.0f;
@@ -25,8 +26,8 @@ inline constexpr unsigned char kRockGhostThreshold = 62;
 
 // metal: 204 files, 115534 hits (derived from rock)
 inline constexpr float kMetalVelocityMul[16] = { 1.0478f, 0.8415f, 0.9483f, 0.9223f, 1.1424f, 0.8853f, 0.9750f, 0.8935f, 1.0291f, 0.9240f, 0.9828f, 0.9562f, 1.1375f, 0.9290f, 0.9937f, 0.9098f };
-inline constexpr float kMetalTimingMs[16] = { -2.7170f, 4.3270f, -2.0830f, -4.5450f, -2.2720f, 1.6740f, -0.8630f, -1.1630f, -3.3970f, 4.2740f, -0.6610f, -4.8080f, -2.7780f, 1.9230f, -1.1900f, -1.3890f };
-inline constexpr float kMetalTimingJitterMs = 4.200f;
+inline constexpr float kMetalTimingMs[16] = { -1.7380f, 5.3060f, -1.1040f, -3.5660f, -1.2930f, 2.6540f, 0.1170f, -0.1840f, -2.4170f, 5.2530f, 0.3180f, -3.8280f, -1.7980f, 2.9020f, -0.2110f, -0.4090f };
+inline constexpr float kMetalTimingJitterMs = 2.000f;
 inline constexpr float kMetalVelocityJitter = 8.000f;
 inline constexpr float kMetalGhostVelocityLo = 30.0f;
 inline constexpr float kMetalGhostVelocityHi = 55.0f;
@@ -34,8 +35,8 @@ inline constexpr unsigned char kMetalGhostThreshold = 62;
 
 // punk: 204 files, 115534 hits (derived from rock)
 inline constexpr float kPunkVelocityMul[16] = { 1.0273f, 0.8415f, 0.9483f, 0.9223f, 1.1200f, 0.8853f, 0.9750f, 0.8935f, 1.0291f, 0.9240f, 0.9828f, 0.9562f, 1.1152f, 0.9290f, 0.9937f, 0.9098f };
-inline constexpr float kPunkTimingMs[16] = { -1.3590f, 2.1630f, -1.0420f, -2.2730f, -1.1360f, 0.8370f, -0.4310f, -0.5820f, -1.6980f, 2.1370f, -0.3310f, -2.4040f, -1.3890f, 0.9620f, -0.5950f, -0.6950f };
-inline constexpr float kPunkTimingJitterMs = 3.300f;
+inline constexpr float kPunkTimingMs[16] = { -0.8690f, 2.6530f, -0.5520f, -1.7830f, -0.6460f, 1.3270f, 0.0580f, -0.0920f, -1.2080f, 2.6270f, 0.1590f, -1.9140f, -0.8990f, 1.4510f, -0.1050f, -0.2050f };
+inline constexpr float kPunkTimingJitterMs = 1.650f;
 inline constexpr float kPunkVelocityJitter = 8.000f;
 inline constexpr float kPunkGhostVelocityLo = 30.0f;
 inline constexpr float kPunkGhostVelocityHi = 55.0f;

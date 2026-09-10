@@ -164,7 +164,7 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     inferencePatternSelectCount.store(0, std::memory_order_relaxed);
     playbackGate.reset();
     prevBlockRms = 0.0f;
-    guitarEnergySmooth_ = 1.0f;
+    guitarEnergyRms_ = 0.0f;
     riffCapturePhase = RiffCapturePhase::Idle;
     riffCountInStartBeat = 0.0;
     playCountInActive = false;
@@ -881,13 +881,16 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         section = "CHORUS";
     patternPlayer.setSection(Groove::sectionIdFromName(section));
 
-    // Guitarist-energy dynamic: a slowly-smoothed multiplier from the live RMS so
-    // the drums/bass swell when the guitarist digs in and sit at level when they
-    // ease off. Neutral at silence (the song still plays solidly), subtly louder
-    // with a hot signal. That is the "some response to playing" for the kit.
-    const float guitarEnergyTarget = juce::jlimit(0.85f, 1.28f, 1.0f + rms * 1.5f);
-    guitarEnergySmooth_ = 0.90f * guitarEnergySmooth_ + 0.10f * guitarEnergyTarget;
-    patternPlayer.setGuitarEnergy(guitarEnergySmooth_);
+    // Guitarist-energy dynamic: a ~500 ms RMS swell so the kit tracks phrases,
+    // not per-block transients (T3.2). The map is bidirectional: silence sits
+    // at 0.94 (≈ −0.5 dB), a hot signal reaches 1.20 (≈ +1.6 dB).
+    const double srNow = cachedSampleRate.load(std::memory_order_relaxed);
+    const float blockSec = static_cast<float>(numSamples)
+                         / static_cast<float>(juce::jmax(1.0, srNow));
+    constexpr float kEnergyTauSec = 0.50f;
+    const float alpha = 1.0f - std::exp(-blockSec / kEnergyTauSec);
+    guitarEnergyRms_ += alpha * (rms - guitarEnergyRms_);
+    patternPlayer.setGuitarEnergy(PatternPlayer::guitarEnergyFromRms(guitarEnergyRms_));
 
     // ── 7. Silence gating ───────────────────────────────────────────────────
     const bool audioActive = (rms > 0.001f);

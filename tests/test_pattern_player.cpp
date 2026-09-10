@@ -929,8 +929,8 @@ TEST_CASE("A3.1: guitarist-energy dynamic scales the kit loudness", "[midi][A3]"
         return sum;
     };
 
-    const int quiet = sumDrumVel(0.75f);  // clamped lower bound
-    const int loud  = sumDrumVel(1.30f);  // clamped upper bound
+    const int quiet = sumDrumVel(0.85f);  // clamped lower bound (T3.2)
+    const int loud  = sumDrumVel(1.20f);  // clamped upper bound
     REQUIRE(quiet > 0);
     REQUIRE(loud > quiet + 4);
 }
