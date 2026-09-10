@@ -1882,23 +1882,34 @@ void AccompanimentProcessor::emitFrozenRiff(const PhraseLearner::LearnedRiff& ri
     if (spb <= 0.0)
         return;
     const int64_t origin = (originSample >= 0) ? originSample : 0;
-    const double beat0 = static_cast<double>(clockSample - origin) / spb;
-    const double beat1 = beat0 + static_cast<double>(numSamples) / spb;
     const int duration = juce::jmax(1, static_cast<int>(0.25 * spb));
+    const int64_t blockEnd = clockSample + static_cast<int64_t>(numSamples);
+
+    // Buffer-invariance (review T9.2): place each slot by its ABSOLUTE sample
+    // (origin + loop phase) in integer arithmetic. The previous form computed a
+    // block-relative beat difference in double and took std::floor of it, which
+    // flipped by ±1 sample with the block grid and clamped slots that fell into
+    // the neighbouring block onto the block start — the render then depended on
+    // the host buffer size.
+    const int64_t loopSamples = static_cast<int64_t>(std::llround(loopBeats * spb));
+    if (loopSamples <= 0)
+        return;
 
     for (int s = 0; s < PhraseLearner::kGridSlots; ++s)
     {
         if (!riff.occupied[static_cast<size_t>(s)])
             continue;
-        const double tSlot = static_cast<double>(s) * 0.25;
-        double k = std::ceil((beat0 - tSlot) / loopBeats - 1.0e-12);
-        if (k < 0.0)
-            k = 0.0;
-        const double t = tSlot + k * loopBeats;
-        if (t < beat0 - 1.0e-12 || t >= beat1 - 1.0e-12)
+        const int64_t slotOffset = static_cast<int64_t>(
+            std::llround(static_cast<double>(s) * 0.25 * spb));
+        // Smallest k with origin + slotOffset + k*loopSamples >= clockSample.
+        const int64_t rel = clockSample - (origin + slotOffset);
+        int64_t k = rel / loopSamples;
+        if (k * loopSamples < rel)
+            ++k;   // mathematical ceil (works for negative rel too)
+        const int64_t absSample = origin + slotOffset + k * loopSamples;
+        if (absSample < clockSample || absSample >= blockEnd)
             continue;
-        const int offset = juce::jlimit(0, numSamples - 1,
-            static_cast<int>(std::floor((t - beat0) * spb)));
+        const int offset = static_cast<int>(absSample - clockSample);
         const int note = riff.midi[static_cast<size_t>(s)] + bassTranspose;
         patternPlayer.triggerLearnedBassNote(note, 0.58f, offset, duration);
     }

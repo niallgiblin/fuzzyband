@@ -250,7 +250,6 @@ private:
                                 double beatStart,
                                 double beatEnd,
                                 const MidiPattern& pattern,
-                                const BarOrnamentation& orn,
                                 int sampleOffsetBase);
 
     /** @brief Emit off-16th ghost snare notes (A3.2) at cells not occupied by authored snares. */
@@ -258,9 +257,7 @@ private:
                         int numSamples,
                         double beatStart,
                         double beatEnd,
-                        const bool occupied[16],
-                        const BarOrnamentation& orn,
-                        int sampleOffsetBase);
+                        const bool occupied[16]);
 
     /** @brief Tier-0 micro-fill: a two-note tom pickup into the next downbeat. */
     void emitMicroFill(juce::MidiBuffer& midi,
@@ -290,7 +287,8 @@ private:
                           int numSamples,
                           double beatStart,
                           double beatEnd,
-                          int sampleOffsetBase);
+                          int sampleOffsetBase,
+                          bool clampEarly = false);
 
     /**
      * @brief Emit one bass note. The bass is monophonic (note duration is always
@@ -354,6 +352,26 @@ private:
     static float boundedGaussian(float u1, float u2, float mean, float sigma) noexcept;
 
     /**
+     * @brief How far (in beats) microtiming may pull an event outside
+     *        [beatStart, beatEnd). Used to enumerate which pattern occurrences
+     *        can land inside a block, so placement is buffer-size independent
+     *        (review T9.2).
+     */
+    void microtimingSlackBeats(double samplesPerBeat, double samplesPerMs, double swingDelayMs,
+                               double& earlyBeats, double& lateBeats) const noexcept;
+
+    /**
+     * @brief Block-relative sample offset for an absolute event sample, or -1 when
+     *        this block must not emit it (a neighbouring block owns it).
+     *
+     *        An event that microtiming pulled before sample 0 has no earlier block,
+     *        so the first block clamps it to 0 — but only within @p slackSamples, so
+     *        a distant occurrence cannot be dragged onto the timeline start.
+     */
+    int placeEvent(int64_t absSample, int numSamples, int64_t slackSamples,
+                   bool clampEarly = false) const noexcept;
+
+    /**
      * @brief Deterministic per-event draw keyed by (bar, grid16, voice, salt).
      *        Independent of block size and of how many events were emitted first.
      */
@@ -405,6 +423,7 @@ private:
     bool bassLeadInArmed = false;
 
     bool beatGridBassEnabled_ = true;   // Play / BListen grid fallback; off for frozen riffs
+    bool beatGridBassPrev_ = false;     // previous block's grid-bass state (phase onset)
     int pendingBarFillIndex_ = -1;      // 17/18/19 overlay; -1 = none
     double barFillStartBeat_ = -1.0;    // >=0: defer emit until this beat; -1 now; -2 resolve next process
 

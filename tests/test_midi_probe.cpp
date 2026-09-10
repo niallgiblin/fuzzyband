@@ -68,9 +68,10 @@ TEST_CASE("MidiProbe renders note-ons for a fixed pattern", "[midi][probe]")
 
 TEST_CASE("MidiProbe dual-block-size golden is buffer-invariant", "[midi][probe][golden]")
 {
-    // T1.1 / review §5.3: crash note-off *duration* is independent of block size.
-    // Absolute note-on samples still move with microtiming clamp (T3.4); this
-    // test asserts the deferred-off contract, not the full fingerprint.
+    // T1.1 / T9.2 / review §5.2: the whole rendered fingerprint — not just crash
+    // durations — must be independent of the host block size. Placement is by
+    // absolute sample (PatternPlayer::placeEvent), so microtiming is never
+    // clamped to a block boundary.
     MidiPatternLibrary lib;
     PatternPlayer a, b;
     prepareFixedPlayer(a, lib, 128);
@@ -82,6 +83,19 @@ TEST_CASE("MidiProbe dual-block-size golden is buffer-invariant", "[midi][probe]
 
     REQUIRE_FALSE(events128.empty());
     REQUIRE_FALSE(events2048.empty());
+    REQUIRE(events128.size() == events2048.size());
+
+    for (size_t i = 0; i < events128.size(); ++i)
+    {
+        INFO("event " << i << ": "
+             << events128[i].sample << "/" << (int) events128[i].note << " vs "
+             << events2048[i].sample << "/" << (int) events2048[i].note);
+        REQUIRE(events128[i].sample == events2048[i].sample);
+        REQUIRE(events128[i].note == events2048[i].note);
+        REQUIRE(events128[i].channel == events2048[i].channel);
+        REQUIRE(events128[i].velocity == events2048[i].velocity);
+        REQUIRE(events128[i].isNoteOn == events2048[i].isNoteOn);
+    }
 
     auto crashHolds = [](const std::vector<MidiProbe::Event>& ev) {
         std::vector<int64_t> holds, ons;
@@ -100,9 +114,7 @@ TEST_CASE("MidiProbe dual-block-size golden is buffer-invariant", "[midi][probe]
         return holds;
     };
     const auto h128 = crashHolds(events128);
-    const auto h2048 = crashHolds(events2048);
     REQUIRE_FALSE(h128.empty());
-    REQUIRE(h128 == h2048);
     const int64_t spb = static_cast<int64_t>(std::llround(48000.0 * 60.0 / 120.0));
     for (auto h : h128)
         REQUIRE(h >= spb);

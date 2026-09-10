@@ -947,3 +947,52 @@ one where a partial revert is unsafe — revert T2.1 and T2.2 together.
 | §2.22 tests enshrine regressions | T0.3 | — |
 | §2.23 dead code / races / docs | T8.1, T8.2, T8.5 | TSan target |
 | §0.1 stale binary | T0.1 | version string check |
+
+---
+
+## Post-implementation review — Phases 0–4 (v0.9.72)
+
+Reviewed after the Phase 0–4 commits (`5385856`, `3dd067a`, `d0bb9c5`, `7ab05a9`, `a729e66`).
+
+### Verified done
+
+All Phase 0–4 tasks (T0.1–T0.4, T1.1–T1.6, T2.1–T2.3, T3.1–T3.4, T4.1–T4.4) are present and
+tested. Both suites pass with only the two intentional `[!mayfail]` cases (T5.1 authored bass,
+T6.2 cut-short), and per-block cost is unchanged (mean 0.51 ms, p99 0.81 ms @ 256 samples).
+The Phase 2 clock work in particular is correct — the lock now survives a wrapping transport and
+expires on the monotonic clock, and the bar-phase latch does reproduce the intended downbeat
+alignment (verified algebraically and by the T2.1/T2.2 tests).
+
+### Defects found and fixed
+
+| # | Defect | Fix |
+| --- | --- | --- |
+| R1 | **T9.2 was unmet and documented as such.** The golden test only compared crash durations; the render was measurably buffer-dependent — 55 of 130 note-ons moved between 128 and 2048 (25 by ±1 sample from a `std::floor` on a block-relative beat difference, ~20 by 0.5–7 ms from the `jlimit(0, numSamples-1, …)` microtiming clamp). | Emitters enumerate occurrences by index and place each at its **absolute** sample via `placeEvent`; `emitFrozenRiff` uses integer placement. |
+| R2 | **Ornaments were keyed to the block-start bar**, so a block straddling a bar line picked different open-hat / ghost / kick-drop / micro-fill ornaments depending on the buffer size. | `computeOrnamentation` is resolved per **event bar** inside the drum, ghost and micro-fill paths. |
+| R3 | **A retrigger could beat a natural note end** depending on whether both landed in one block, making note-off times buffer-dependent. | `scheduleDrumNoteOff` releases the ringing note at its true sample when that is at or before the retrigger. |
+| R4 | **Grid bass could anticipate its beat.** `bassPocketMs` is a *delay* but jitter could pull a root ahead of the bar line, which dropped a BListen beat-1 root. | One-sided pocket clamp to the nominal beat sample (absolute, so still invariant). |
+| R5 | **The first event of the timeline was dropped** when microtiming placed it before sample 0 (no earlier block exists). | `placeEvent` clamps to 0 for the first block within the slack window; grid-bass phase onsets get the same allowance. |
+| R6 | **No changelog entries for 0.9.68–0.9.71** and the installed plugin was stale (0.9.70). | Entries added; version bumped to 0.9.72; VST3 + AU rebuilt, installed and verified (`auval` **PASS**). |
+
+`MidiProbe dual-block-size golden` now asserts full fingerprint equality (sample, note, channel,
+velocity, on/off) at 128 vs 2048, and a new `T9.2 pipeline render is buffer-size invariant
+(count-in + capture)` covers the processor end to end.
+
+### Deliberately still buffer-dependent (Phases 6–7)
+
+These are *state-machine* timings scheduled on block boundaries, not note placement, and were
+outside the Phase 0–4 scope:
+
+* the riff-lock **onset** (the capture is detected finishing on a block boundary),
+* **fill arming** (`fromNext = beatInBar >= 0.05` — T7.2),
+* the **transition start** (`hostSampleTime >= transitionEndMono`).
+
+Measured residual: 0 differences before the lock onset; a handful of events (up to one block, plus
+whole fill patterns) from bar 5 onward. Fixing them means scheduling the transitions at the exact
+sample rather than the first block past it — T7.2 plus a small addition to T6.1.
+
+### Recommended next
+
+Proceed to Phase 5 (T5.1 authored `bassEvents`, T5.2 riff note lengths, T5.3 mirror retrigger),
+which is where the remaining bass-musicality work sits, then Phase 6 (reactivity, which also carries
+the two `[!mayfail]` tests).

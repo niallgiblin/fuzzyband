@@ -2,6 +2,93 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.72] — Buffer-invariant render (review of Phases 0–4)
+
+Follow-up review of the `docs/IMPLEMENTATION_PLAN.md` Phases 0–4. The plan's
+T9.2 acceptance ("the render must be identical at any host block size") was
+documented as unmet; it now holds end to end.
+
+- **Note placement is by absolute sample.** `PatternPlayer` enumerates pattern
+  occurrences by index and places each at `origin + phase`, so microtiming can no
+  longer be clamped to a block boundary. Previously off-16ths were quantised to
+  the block start at small buffers and roughly 40 % of note-ons moved with the
+  buffer size (up to ±15 ms). Frozen-riff bass is placed with integer arithmetic
+  (`emitFrozenRiff`), which also removes a ±1-sample `std::floor` flip.
+- **Ornaments resolve per event bar.** `computeOrnamentation` is evaluated for
+  each event's own bar instead of the block-start bar, so a block straddling a
+  bar line can no longer pick different open-hat / ghost / kick-drop ornaments.
+- **A natural note end beats a retrigger that lands after it.** `scheduleDrumNoteOff`
+  releases a ringing note at its true sample when that falls at or before the
+  re-trigger; the outcome no longer depends on whether both land in one block.
+- **Grid bass never anticipates its beat.** `bassPocketMs` is a delay, so the
+  pocket clamp is one-sided; jitter can no longer pull a root ahead of the bar
+  line (which also dropped a BListen beat-1 hit).
+- **New tests.** `MidiProbe dual-block-size golden` now asserts full fingerprint
+  equality (sample, note, channel, velocity, on/off) at 128 vs 2048, and a new
+  `T9.2 pipeline render is buffer-size invariant (count-in + capture)` covers the
+  processor end to end.
+- **Out of scope, still block-quantised:** the lock onset, fill arming (T7.2) and
+  the transition start. These are state-machine timings scheduled on block
+  boundaries, not note placement — Phases 6–7.
+
+## [0.9.71] — Play rotates the section pool; humanize control
+
+- **T4.1 Play-mode rotation.** Play picks from the section pool by groove slot
+  (`pickPoolPattern`, seeded from the section-entry bar) instead of snapping the
+  inference index to the first compatible member, so a section no longer holds one
+  groove. Consecutive phrases never repeat; the mel/rule argmax votes when it is
+  already a pool member. `constrainToPool` falls back to a globally state-compatible
+  pattern rather than `pool[0]`.
+- **T4.2 mel variety draw re-enabled** with a per-section-instance seed (the
+  B-lock one-shot stays deterministic).
+- **T4.3 `humanize` parameter (default 0.35)** scales every Tier-0 ornament
+  probability; `rideSwitch` defaults to 0 because hat → ride is a pattern change,
+  not an ornament. Ornaments no longer collide on the same 16th cell.
+- **T4.4 idle display shows pattern 0**; the audio thread is the only writer.
+
+## [0.9.70] — Dynamics, deterministic humanisation, centred grid
+
+- **T3.1 velocity headroom.** `kVelocityTrim` plus a soft knee above 110 stops the
+  gain product pinning every authored 92–125 at 127 (the kit had no dynamics).
+- **T3.2 `guitarEnergy` is bidirectional** (`0.85–1.20`) over a ~500 ms swell, so
+  the kit can relax as well as push.
+- **T3.3 groove templates are mean-centred** (static-asserted at |mean| < 1.5 ms)
+  with jitter reduced to 3.0 / 2.0 / 1.65 ms; `tools/check_groove_template.py`
+  prints per-cell stats.
+- **T3.4 deterministic humanisation.** The stream RNG is replaced by a per-event
+  hash keyed on (bar, grid16, voice, salt), so a bounce is reproducible and the
+  feel no longer changes with block size.
+
+## [0.9.69] — Monotonic, grid-locked lock clock
+
+- **T2.1** Lock / transition schedules move to the plugin's monotonic
+  `hostSampleTime` frame (which the header always claimed) with the transport bar
+  phase latched once at engage. A DAW loop shorter than `lockBars` used to wedge
+  the lock forever and silence the frozen bass for part of every pass.
+- **T2.2** `PatternPlayer` exposes the seek/loop-wrap edge it already detected;
+  the processor re-anchors bar phase while preserving the remaining lock duration.
+- Renamed the schedule members to make their frame explicit.
+
+## [0.9.68] — Rendering correctness (drum note-offs, fills, crash, bass)
+
+- **T1.1 deferred drum note-offs.** A per-note table replaces
+  `jmin(numSamples - 1, off + durSamps)`; note lengths are no longer capped at the
+  block boundary and cymbals are no longer choked. Open hats get a >= 1-beat gate.
+- **T1.2 seek / silence / bypass release every pending note-off** instead of
+  clearing the tables silently (no more stuck bass or crash).
+- **T1.3 mid-block pattern changes use the correct sample base**, so the incoming
+  groove no longer overlaps the outgoing one inside the change block.
+- **T1.4 learned-bass octave fold** replaces a hard clamp that collapsed C/C#/D/D#
+  onto E1 with the ±12 transpose control.
+- **T1.5 ghost threshold restored to the authored 62** with the 30–55 band;
+  `MidiEvent::isGhost` marks authored ghosts and a test keeps library and template
+  in agreement.
+- **T1.6 the armed crash lands on a beat**, is skipped when the sounding pattern
+  already crashes there, holds >= 2 beats, and is dropped if armed while silent.
+- Phase 0 (preflight) added the `.artifacts/baseline` capture corpus, the
+  `MidiProbe` test harness, and restored three tests that had been weakened to
+  match the regressions.
+
 ## [0.9.67] — One drum renderer: template humanize only
 
 - **GrooveRenderer is disconnected from the live path.** Inference no longer

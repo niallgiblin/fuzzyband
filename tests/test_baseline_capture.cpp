@@ -198,3 +198,70 @@ TEST_CASE("Baseline: capture current MIDI at 128/512/2048, loop wrap, and Play f
     REQUIRE(writeCapture("play_default_form_512", playEvents));
     REQUIRE_FALSE(MidiProbe::noteOns(playEvents).empty());
 }
+
+TEST_CASE("T9.2 pipeline render is buffer-size invariant (count-in + capture)",
+          "[baseline][golden][t9.2]")
+{
+    // Review §5.2 / T9.2: the same musical span must render identical absolute
+    // event samples at any host block size. Note placement and ornament selection
+    // are absolute (PatternPlayer::placeEvent / per-event-bar ornaments).
+    //
+    // Scope: the 1-bar count-in plus the 4-bar capture. The lock's own onset is
+    // still block-quantised (the capture is detected finishing on a block
+    // boundary), as are fill arming and the transition start — that is T7.2 and
+    // the sample-accurate state-machine work in Phases 6-7, out of scope here.
+    // Note placement itself is covered end-to-end by the PatternPlayer golden.
+    const int64_t span = static_cast<int64_t>(4.8 * 4.0 * 60.0 / kBpm * kSr);
+
+    auto renderSession = [&](int blockSize) {
+        AccompanimentProcessor proc;
+        proc.prepareToPlay(kSr, blockSize);
+        proc.pauseBackgroundInferenceForTests();
+        applyPhase0Session(proc);
+
+        TransportPlayHead ph;
+        proc.setPlayHead(&ph);
+        proc.requestRiffCaptureStart();
+
+        const int blocks = static_cast<int>((span + blockSize - 1) / blockSize);
+        auto events = MidiProbe::renderWith(blocks, blockSize, 0,
+            [&](juce::MidiBuffer& midi, int n, int64_t pos)
+            {
+                ph.samples = pos;
+                juce::AudioBuffer<float> buf(2, n);
+                fillDropCPalmMute(buf, pos, n);
+                proc.processBlock(buf, midi);
+                proc.flushBackgroundInferenceForTests();
+            });
+
+        proc.setPlayHead(nullptr);
+        proc.releaseResources();
+        return events;
+    };
+
+    auto within = [&](const std::vector<MidiProbe::Event>& ev) {
+        std::vector<MidiProbe::Event> out;
+        for (const auto& e : ev)
+            if (e.sample < span)
+                out.push_back(e);
+        return out;
+    };
+    const auto ea = within(renderSession(128));
+    const auto eb = within(renderSession(2048));
+
+    REQUIRE_FALSE(ea.empty());
+    INFO("events: 128=" << ea.size() << " 2048=" << eb.size());
+    REQUIRE(ea.size() == eb.size());
+
+    for (size_t i = 0; i < ea.size(); ++i)
+    {
+        INFO("event " << i << " at " << ea[i].sample << " vs " << eb[i].sample
+             << " (note " << (int) ea[i].note << ")");
+        REQUIRE(ea[i].sample == eb[i].sample);
+        REQUIRE(ea[i].note == eb[i].note);
+        REQUIRE(ea[i].channel == eb[i].channel);
+        REQUIRE(ea[i].velocity == eb[i].velocity);
+        REQUIRE(ea[i].isNoteOn == eb[i].isNoteOn);
+        REQUIRE(ea[i].isNoteOff == eb[i].isNoteOff);
+    }
+}

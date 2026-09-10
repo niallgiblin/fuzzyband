@@ -89,6 +89,7 @@ void PatternPlayer::reset()
     armCrashPending = false;
     bassLeadInArmed = false;
     beatGridBassEnabled_ = true;
+    beatGridBassPrev_ = false;
     pendingBarFillIndex_ = -1;
     barFillStartBeat_ = -1.0;
     clearDrumNoteOffTable();
@@ -276,6 +277,47 @@ float PatternPlayer::boundedGaussian(float u1, float u2, float mean, float sigma
     // Box–Muller; clamp to ±2.5 sigma so no event strays far from the grid.
     const float z = std::sqrt(-2.0f * std::log(u1)) * std::cos(2.0f * juce::MathConstants<float>::pi * u2);
     return mean + juce::jlimit(-2.5f, 2.5f, z) * sigma;
+}
+
+void PatternPlayer::microtimingSlackBeats(double samplesPerBeat, double samplesPerMs,
+                                          double swingDelayMs,
+                                          double& earlyBeats, double& lateBeats) const noexcept
+{
+    float minTimingMs = 0.0f;
+    float maxTimingMs = 0.0f;
+    for (int c = 0; c < 16; ++c)
+    {
+        minTimingMs = juce::jmin(minTimingMs, grooveTemplate.timingMs[c]);
+        maxTimingMs = juce::jmax(maxTimingMs, grooveTemplate.timingMs[c]);
+    }
+    minTimingMs = juce::jmin(minTimingMs, grooveTemplate.ghostTimingMs)
+                - 2.5f * grooveTemplate.timingJitterMs;
+    maxTimingMs = juce::jmax(maxTimingMs, 0.0f)
+                + 2.5f * grooveTemplate.timingJitterMs
+                + static_cast<float>(swingDelayMs);
+    const double perBeat = (samplesPerBeat > 0.0) ? samplesPerBeat : 1.0;
+    // +0.125 beats covers a Tier-1 groove-grid offset of up to half a 16th.
+    earlyBeats = (static_cast<double>(juce::jmax(0.0f, -minTimingMs)) * samplesPerMs) / perBeat + 0.125;
+    lateBeats  = (static_cast<double>(juce::jmax(0.0f, maxTimingMs)) * samplesPerMs) / perBeat + 0.125;
+}
+
+int PatternPlayer::placeEvent(int64_t absSample, int numSamples, int64_t slackSamples,
+                              bool clampEarly) const noexcept
+{
+    if (clampEarly && absSample < sampleCounter && absSample >= sampleCounter - slackSamples)
+        return 0;   // first block of a phase: nothing earlier emitted this event
+    if (absSample < 0)
+    {
+        // Microtiming pushed the event before the render timeline. Only the first
+        // block can present it, and only when it is within the slack window.
+        if (sampleCounter != 0 || absSample < -slackSamples)
+            return -1;
+        absSample = 0;
+    }
+    const int64_t off = absSample - sampleCounter;
+    if (off < 0 || off >= static_cast<int64_t>(numSamples))
+        return -1;
+    return static_cast<int>(off);
 }
 
 float PatternPlayer::eventGaussian(int64_t barNumber, int grid16, int voice,
@@ -518,6 +560,16 @@ void PatternPlayer::scheduleDrumNoteOff(juce::MidiBuffer& midi, int numSamples,
 
     const int onOff = juce::jlimit(0, numSamples - 1, off);
     auto& slot = drumNoteOffSample[static_cast<size_t>(note)];
+    const int64_t noteOnAbs = blockStart + static_cast<int64_t>(onOff);
+    if (slot >= 0 && slot <= noteOnAbs)
+    {
+        // The ringing note already ends at or before this retrigger: release it at
+        // its true sample. Which of the two wins must not depend on whether they
+        // land in the same block (T9.2).
+        midi.addEvent(juce::MidiMessage::noteOff(kDrumChannel, note),
+                      juce::jlimit(0, numSamples - 1, static_cast<int>(slot - blockStart)));
+        slot = -1;
+    }
     if (slot >= 0)
     {
         midi.addEvent(juce::MidiMessage::noteOff(kDrumChannel, note), onOff);
@@ -627,26 +679,44 @@ void PatternPlayer::emitMicroFill(juce::MidiBuffer& midi,
     // Tier-0 micro-fill: a two-note tom pickup on the last 16ths of a phrase-end
     // bar, leading into the next bar's downbeat (whose kick/crash is the
     // pattern's own). Bounded, allocation-free.
+    //
+    // T9.2: the phrase-end decision is made per BAR over the block's beat window
+    // (not from the block-start bar), and the toms are placed by absolute sample,
+    // so the result cannot depend on the host buffer size.
+    (void) sampleOffsetBase;
     if (numSamples <= 0)
         return;
 
     const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
-    const double barStart = std::floor(beatStart / 4.0) * 4.0;
+    const double samplesPerMs = sampleRate / 1000.0;
+    const double blockStartBeat = static_cast<double>(sampleCounter) / samplesPerBeat;
+    double earlyBeats = 0.0, lateBeats = 0.0;
+    microtimingSlackBeats(samplesPerBeat, samplesPerMs, 0.0, earlyBeats, lateBeats);
+    const int64_t slackSamples = static_cast<int64_t>(std::llround(lateBeats * samplesPerBeat)) + 1;
 
     const auto addTom = [&](int note, int vel, double beat) noexcept {
-        if (beat < beatStart - 1.0e-9 || beat >= beatEnd - 1.0e-9)
+        const int64_t absSample = sampleCounter + static_cast<int64_t>(std::llround(
+            (beat - blockStartBeat) * samplesPerBeat));
+        const int absOff = placeEvent(absSample, numSamples, slackSamples);
+        if (absOff < 0)
             return;
-        const int off = juce::jlimit(0, numSamples - 1,
-            static_cast<int>(std::round((beat - beatStart) * samplesPerBeat)));
         const int durSamps = juce::jmax(1, static_cast<int>(std::round(0.125 * samplesPerBeat)));
-        const int absOff = juce::jlimit(0, numSamples - 1, sampleOffsetBase + off);
         scheduleDrumNoteOff(midi, numSamples, sampleCounter, note, absOff, durSamps);
         midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, note, static_cast<float>(vel) / 127.0f),
                       absOff);
     };
 
-    addTom(kTomHi, 105, barStart + 3.75);    // "a" of beat 4
-    addTom(kTomMid, 108, barStart + 3.875);  // the very last 16th before the downbeat
+    const double barLo = std::floor((beatStart - lateBeats) / 4.0) * 4.0;
+    const double barHi = beatEnd + earlyBeats;
+    for (double barStart = barLo; barStart < barHi - 1.0e-9; barStart += 4.0)
+    {
+        const auto barOrn = computeOrnamentation(
+            static_cast<int64_t>(std::floor(barStart / 4.0)), activePatternIndex);
+        if (!barOrn.microFill)
+            continue;
+        addTom(kTomHi, 105, barStart + 3.75);    // "a" of beat 4
+        addTom(kTomMid, 108, barStart + 3.875);  // the very last 16th before the downbeat
+    }
 }
 
 void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
@@ -654,7 +724,6 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
                                            double beatStart,
                                            double beatEnd,
                                            const MidiPattern& pattern,
-                                           const BarOrnamentation& orn,
                                            int sampleOffsetBase)
 {
     if (pattern.lengthInBars <= 0.0f || numSamples <= 0)
@@ -673,13 +742,38 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
             if (ev.note == 38)
                 occupied[Groove::grid16Of(ev.beatOffset)] = true;
 
+    // ── Buffer-invariant placement (review T9.2) ────────────────────────────
+    // An event's sample position must not depend on the host block size. Enumerate
+    // pattern occurrences by index (t = phase + n*patternLenBeats — an exact value
+    // for a 16th grid) and place each at its ABSOLUTE sample, skipping those that
+    // belong to a neighbouring block. The previous form rebuilt `t` against the
+    // per-block beat origin and clamped the offset into [0, numSamples-1], which
+    // quantised microtiming to the block start and made the render buffer-dependent.
+    const double blockBeats = static_cast<double>(numSamples) / samplesPerBeat;
+    const double blockStartBeat = static_cast<double>(sampleCounter) / samplesPerBeat;
+
+    double earlyBeats = 0.0, lateBeats = 0.0;
+    microtimingSlackBeats(samplesPerBeat, samplesPerMs, swingDelayMs, earlyBeats, lateBeats);
+
+    // The caller may split the block at a bar line. Apply the microtiming slack only
+    // on the outer edges of the block so the two halves stay disjoint and no event
+    // is emitted twice.
+    const bool isFirstSubRange = (sampleOffsetBase == 0);
+    const bool isLastSubRange  = (beatEnd >= blockStartBeat + blockBeats - 1.0e-9);
+    const double windowLo = beatStart - (isFirstSubRange ? lateBeats : 0.0);
+    const double windowHi = beatEnd  + (isLastSubRange  ? earlyBeats : 0.0);
+    const int64_t slackSamples = static_cast<int64_t>(std::llround(lateBeats * samplesPerBeat)) + 1;
+
+    // Tier-0 ornaments are a pure function of (bar, pattern). Resolve them per
+    // EVENT bar, not per block-start bar, or a block that straddles a bar line
+    // would pick different ornaments depending on the host buffer size (T9.2).
+    int64_t ornBar = std::numeric_limits<int64_t>::min();
+    BarOrnamentation ornLocal{};
+
     for (const auto& ev : pattern.drumEvents)
     {
         // Phase of this event within the looping pattern.
         const double phase = std::fmod(static_cast<double>(ev.beatOffset), patternLenBeats);
-        // First occurrence at or after beatStart, aligned to the pattern grid.
-        const double startPhase = std::fmod(beatStart, patternLenBeats);
-        const double first = beatStart + std::fmod(phase - startPhase + patternLenBeats, patternLenBeats);
 
         // 16th grid cell within the bar — drives the velocity/timing hierarchy.
         const int grid16 = Groove::grid16Of(ev.beatOffset);
@@ -692,14 +786,22 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
         const float gridVel = useGrid ? grooveGrid.velocity[static_cast<size_t>(voice)][static_cast<size_t>(grid16)] : 0.0f;
         const float gridOff = useGrid ? grooveGrid.offset[static_cast<size_t>(voice)][static_cast<size_t>(grid16)] : 0.0f;
 
-        // Tier-0: omit a non-essential kick to leave space (breakdown/outro).
-        if (orn.dropKick && ev.note == kKick && grid16 == orn.dropKickCell)
-            continue;
-
-        for (double t = first; t < beatEnd - 1.0e-9; t += patternLenBeats)
+        const double nLo = std::floor((windowLo - phase) / patternLenBeats);
+        const double nHi = std::ceil((windowHi - phase) / patternLenBeats);
+        for (double n = nLo; n <= nHi; n += 1.0)
         {
-            const double rel = t - beatStart;
+            const double t = phase + n * patternLenBeats;   // absolute beat
             const int64_t eventBar = static_cast<int64_t>(std::floor(t / 4.0));
+
+            if (eventBar != ornBar)
+            {
+                ornLocal = computeOrnamentation(eventBar, activePatternIndex);
+                ornBar = eventBar;
+            }
+
+            // Tier-0: omit a non-essential kick to leave space (breakdown/outro).
+            if (ornLocal.dropKick && ev.note == kKick && grid16 == ornLocal.dropKickCell)
+                continue;
 
             // ── Microtiming: learned grid (Tier-1) or template + swing + jitter (A2.2/A2.3) ──
             float timeMs;
@@ -720,8 +822,12 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
                                         grooveTemplate.timingJitterMs);
             }
 
-            int off = static_cast<int>(std::round(rel * samplesPerBeat + timeMs * samplesPerMs));
-            const int absOff = juce::jlimit(0, numSamples - 1, sampleOffsetBase + off);
+            const int64_t absSample = sampleCounter + static_cast<int64_t>(std::llround(
+                (t - blockStartBeat) * samplesPerBeat
+                + static_cast<double>(timeMs) * samplesPerMs));
+            const int absOff = placeEvent(absSample, numSamples, slackSamples);
+            if (absOff < 0)
+                continue;   // belongs to a neighbouring block; that block emits it
 
             // ── Velocity: learned grid (Tier-1) or template hierarchy + jitter (A2.1/A3.1) ──
             int vel;
@@ -748,9 +854,9 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
 
             int outNote = juce::jlimit(0, 127, static_cast<int>(ev.note));
             // Tier-0: open one closed-hat cell, or switch hats -> ride for the bar.
-            if (orn.openHat && ev.note == kHatClosed && grid16 == orn.openHatCell)
+            if (ornLocal.openHat && ev.note == kHatClosed && grid16 == ornLocal.openHatCell)
                 outNote = kHatOpen;
-            else if (orn.rideSwitch && ev.note == kHatClosed)
+            else if (ornLocal.rideSwitch && ev.note == kHatClosed)
                 outNote = (grid16 == 0) ? kRideBell : kRide;
 
             float durBeats = ev.durationBeats;
@@ -767,35 +873,38 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
 
     // ── Ghost notes (A3.2) ─────────────────────────────────────────────────
     if (ghostDensity > 0.01f && sectionAllowsGhosts())
-        emitGhostNotes(midi, numSamples, beatStart, beatEnd, occupied, orn, sampleOffsetBase);
+        emitGhostNotes(midi, numSamples, beatStart, beatEnd, occupied);
 }
 
 void PatternPlayer::emitGhostNotes(juce::MidiBuffer& midi,
                                    int numSamples,
                                    double beatStart,
                                    double beatEnd,
-                                   const bool occupied[16],
-                                   const BarOrnamentation& orn,
-                                   int sampleOffsetBase)
+                                   const bool occupied[16])
 {
     const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
     const double samplesPerMs = sampleRate / 1000.0;
     const int durSamps = juce::jmax(1, static_cast<int>(std::round(0.25 * samplesPerBeat)));
+    const double blockStartBeat = static_cast<double>(sampleCounter) / samplesPerBeat;
+    double earlyBeats = 0.0, lateBeats = 0.0;
+    microtimingSlackBeats(samplesPerBeat, samplesPerMs, 0.0, earlyBeats, lateBeats);
+    const int64_t slackSamples = static_cast<int64_t>(std::llround(lateBeats * samplesPerBeat)) + 1;
 
     const auto emitOneGhost = [&](double barStart, int cell) noexcept {
         if (occupied[cell])
             return;
         const double beat = barStart + static_cast<double>(cell) / 4.0;
-        if (beat < beatStart - 1.0e-9 || beat >= beatEnd - 1.0e-9)
-            return;
-
-        const double rel = beat - beatStart;
         const int64_t eventBar = static_cast<int64_t>(std::floor(barStart / 4.0));
         const float timeMs = grooveTemplate.ghostTimingMs
                            + eventGaussian(eventBar, cell, 38, kSaltGhostTime,
                                            grooveTemplate.timingJitterMs);
-        int off = static_cast<int>(std::round(rel * samplesPerBeat + timeMs * samplesPerMs));
-        const int absOff = juce::jlimit(0, numSamples - 1, sampleOffsetBase + off);
+        // Absolute placement (T9.2) — see emitDrumEventsForRange.
+        const int64_t absSample = sampleCounter + static_cast<int64_t>(std::llround(
+            (beat - blockStartBeat) * samplesPerBeat
+            + static_cast<double>(timeMs) * samplesPerMs));
+        const int absOff = placeEvent(absSample, numSamples, slackSamples);
+        if (absOff < 0)
+            return;
 
         const float ghostLo = grooveTemplate.ghostVelocityLo;
         const float ghostHi = grooveTemplate.ghostVelocityHi;
@@ -817,14 +926,20 @@ void PatternPlayer::emitGhostNotes(juce::MidiBuffer& midi,
     const int* cells = (ghostDensity >= 0.7f) ? highCells : lowCells;
     const int numCells = (ghostDensity >= 0.7f) ? 4 : 1;
 
-    for (double barStart = std::floor(beatStart / 4.0) * 4.0; barStart < beatEnd - 1.0e-9; barStart += 4.0)
+    const double barLo = std::floor((beatStart - lateBeats) / 4.0) * 4.0;
+    const double barHi = beatEnd + earlyBeats;
+    for (double barStart = barLo; barStart < barHi - 1.0e-9; barStart += 4.0)
     {
         for (int c = 0; c < numCells; ++c)
             emitOneGhost(barStart, cells[c]);
 
         // Tier-0: an extra ornamented ghost snare on an unoccupied off-16th.
-        if (orn.extraGhost && orn.extraGhostCell >= 0)
-            emitOneGhost(barStart, orn.extraGhostCell);
+        // Resolved per bar (not per block) so the choice cannot depend on the
+        // host buffer size (T9.2).
+        const auto barOrn = computeOrnamentation(
+            static_cast<int64_t>(std::floor(barStart / 4.0)), activePatternIndex);
+        if (barOrn.extraGhost && barOrn.extraGhostCell >= 0)
+            emitOneGhost(barStart, barOrn.extraGhostCell);
     }
 }
 
@@ -896,26 +1011,42 @@ void PatternPlayer::emitPatternBass(juce::MidiBuffer& midi,
     const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
     const double samplesPerMs = sampleRate / 1000.0;
     const int64_t blockStart = sampleCounter;
+    const double blockStartBeat = static_cast<double>(blockStart) / samplesPerBeat;
+    double earlyBeats = 0.0, lateBeats = 0.0;
+    microtimingSlackBeats(samplesPerBeat, samplesPerMs, 0.0, earlyBeats, lateBeats);
+    const int64_t slackSamples = static_cast<int64_t>(std::llround(lateBeats * samplesPerBeat)) + 1;
+
+    // Absolute placement (T9.2) — see emitDrumEventsForRange.
+    const double blockBeats = static_cast<double>(numSamples) / samplesPerBeat;
+    const bool isFirstSubRange = (sampleOffsetBase == 0);
+    const bool isLastSubRange  = (beatEnd >= blockStartBeat + blockBeats - 1.0e-9);
+    const double windowLo = beatStart - (isFirstSubRange ? lateBeats : 0.0);
+    const double windowHi = beatEnd  + (isLastSubRange  ? earlyBeats : 0.0);
 
     for (const auto& ev : pattern.bassEvents)
     {
         const double phase = std::fmod(static_cast<double>(ev.beatOffset), patternLenBeats);
-        const double startPhase = std::fmod(beatStart, patternLenBeats);
-        const double first = beatStart + std::fmod(phase - startPhase + patternLenBeats, patternLenBeats);
-
         const int grid16 = Groove::grid16Of(ev.beatOffset);
 
-        for (double t = first; t < beatEnd - 1.0e-9; t += patternLenBeats)
+        const double nLo = std::floor((windowLo - phase) / patternLenBeats);
+        const double nHi = std::ceil((windowHi - phase) / patternLenBeats);
+        for (double n = nLo; n <= nHi; n += 1.0)
         {
-            const double rel = t - beatStart;
-
+            const double t = phase + n * patternLenBeats;   // absolute beat
             const int64_t eventBar = static_cast<int64_t>(std::floor(t / 4.0));
             // Bass sits slightly behind the kick for pocket (A1.2), with small jitter.
-            float timeMs = grooveTemplate.bassPocketMs
-                         + eventGaussian(eventBar, grid16, ev.note, kSaltBassTime,
-                                         grooveTemplate.timingJitterMs);
-            int off = static_cast<int>(std::round(rel * samplesPerBeat + timeMs * samplesPerMs));
-            off = juce::jlimit(0, numSamples - 1, sampleOffsetBase + off);
+            const float timeMs = grooveTemplate.bassPocketMs
+                               + eventGaussian(eventBar, grid16, ev.note, kSaltBassTime,
+                                               grooveTemplate.timingJitterMs);
+            const int64_t nominalAbs = blockStart + static_cast<int64_t>(std::llround(
+                (t - blockStartBeat) * samplesPerBeat));
+            int64_t absSample = nominalAbs + static_cast<int64_t>(std::llround(
+                static_cast<double>(timeMs) * samplesPerMs));
+            if (absSample < nominalAbs)
+                absSample = nominalAbs;   // pocket delays, never anticipates
+            const int off = placeEvent(absSample, numSamples, slackSamples);
+            if (off < 0)
+                continue;   // belongs to a neighbouring block
 
             // Transpose the authored interval pattern to the live root, folding
             // back into the playable bass register.
@@ -936,8 +1067,7 @@ void PatternPlayer::emitPatternBass(juce::MidiBuffer& midi,
             const int durSamps = juce::jmax(1, static_cast<int>(std::round(
                 static_cast<double>(ev.durationBeats) * sectionBassGate() * samplesPerBeat)));
 
-            const int64_t hitAbs = blockStart + static_cast<int64_t>(off);
-            if (bassNoteOffSample >= 0 && hitAbs < bassNoteOffSample)
+            if (bassNoteOffSample >= 0 && absSample < bassNoteOffSample)
                 continue;
 
             emitBassNote(midi, numSamples, blockStart, outNote, vel, off, durSamps, 0);
@@ -949,7 +1079,8 @@ void PatternPlayer::emitHarmonicBass(juce::MidiBuffer& midi,
                                      int numSamples,
                                      double beatStart,
                                      double beatEnd,
-                                     int sampleOffsetBase)
+                                     int sampleOffsetBase,
+                                     bool clampEarly)
 {
     if (beatEnd <= beatStart + 1.0e-9 || bassNotesPerBar <= 0)
         return;
@@ -958,16 +1089,27 @@ void PatternPlayer::emitHarmonicBass(juce::MidiBuffer& midi,
     const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
     const double samplesPerMs = sampleRate / 1000.0;
     const double beatsPerNote = 4.0 / static_cast<double>(bassNotesPerBar);
+    const double blockStartBeat = static_cast<double>(blockStart) / samplesPerBeat;
+    double earlyBeats = 0.0, lateBeats = 0.0;
+    microtimingSlackBeats(samplesPerBeat, samplesPerMs, 0.0, earlyBeats, lateBeats);
+    const int64_t slackSamples = static_cast<int64_t>(std::llround(lateBeats * samplesPerBeat)) + 1;
+
+    // Absolute placement (T9.2). The caller may split the block at a bar line;
+    // keep the two halves disjoint by applying slack only on the block's outer edges.
+    const double blockBeats = static_cast<double>(numSamples) / samplesPerBeat;
+    const bool isFirstSubRange = (sampleOffsetBase == 0);
+    const bool isLastSubRange  = (beatEnd >= blockStartBeat + blockBeats - 1.0e-9);
+    const double windowLo = beatStart - (isFirstSubRange ? lateBeats : 0.0);
+    const double windowHi = beatEnd  + (isLastSubRange  ? earlyBeats : 0.0);
 
     // Find the first beat in this window that should trigger a bass note.
-    double firstBeat = std::ceil(beatStart / beatsPerNote) * beatsPerNote;
-    const int bar = static_cast<int>(std::floor(beatStart / 4.0));
+    const double firstBeat = std::ceil((windowLo - 1.0e-9) / beatsPerNote) * beatsPerNote;
 
-    for (double beat = firstBeat; beat < beatEnd - 1.0e-9; beat += beatsPerNote)
+    for (double beat = firstBeat; beat < windowHi - 1.0e-9; beat += beatsPerNote)
     {
-        const double rel = beat - beatStart;
         const int beatInBar = static_cast<int>(std::floor(std::fmod(beat, 4.0)));
-        const int degree = harmonyDegree(beatInBar, bar);
+        const int64_t eventBar = static_cast<int64_t>(std::floor(beat / 4.0));
+        const int degree = harmonyDegree(beatInBar, static_cast<int>(eventBar));
 
         int outNote = bassRootMidi + bassSemitoneOffset + degree;
         while (outNote < 28) outNote += 12;
@@ -978,7 +1120,6 @@ void PatternPlayer::emitHarmonicBass(juce::MidiBuffer& midi,
         float mul = sectionVelMul;
         if (beatInBar == 0)      mul *= 1.08f;
         else if (beatInBar == 2) mul *= 0.96f;
-        const int64_t eventBar = static_cast<int64_t>(std::floor(beat / 4.0));
         int vel = static_cast<int>(std::round(95.0f * mul + eventGaussian(eventBar, beatInBar * 4, outNote,
                                                                           kSaltBassVel, 4.0f)));
         vel = applyVelocityHeadroom(vel);
@@ -987,15 +1128,25 @@ void PatternPlayer::emitHarmonicBass(juce::MidiBuffer& midi,
         float timeMs = grooveTemplate.bassPocketMs
                      + eventGaussian(eventBar, beatInBar * 4, outNote, kSaltBassTime,
                                      grooveTemplate.timingJitterMs);
-        int off = static_cast<int>(std::round(rel * samplesPerBeat + timeMs * samplesPerMs));
-        off = juce::jlimit(0, numSamples - 1, sampleOffsetBase + off);
+        const int64_t nominalAbs = blockStart + static_cast<int64_t>(std::llround(
+            (beat - blockStartBeat) * samplesPerBeat));
+        int64_t absSample = nominalAbs + static_cast<int64_t>(std::llround(
+            static_cast<double>(timeMs) * samplesPerMs));
+        // The pocket offset is a *delay* (bassPocketMs > 0); jitter must not pull a
+        // root ahead of its beat, or the note would be scored against the previous
+        // bar. Clamping to the nominal beat sample is absolute, so it stays
+        // buffer-invariant.
+        if (absSample < nominalAbs)
+            absSample = nominalAbs;
+        const int off = placeEvent(absSample, numSamples, slackSamples, clampEarly);
+        if (off < 0)
+            continue;   // belongs to a neighbouring block
 
         // 85% gate (kept from the old engine, now a named parameter scaled by section).
         const double noteDuration = beatsPerNote * sectionBassGate();
         const int durSamps = juce::jmax(1, static_cast<int>(std::round(noteDuration * samplesPerBeat)));
 
-        const int64_t hitAbs = blockStart + static_cast<int64_t>(off);
-        if (bassNoteOffSample >= 0 && hitAbs < bassNoteOffSample)
+        if (bassNoteOffSample >= 0 && absSample < bassNoteOffSample)
             continue;
 
         emitBassNote(midi, numSamples, blockStart, outNote, vel, off, durSamps, 0);
@@ -1118,15 +1269,9 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
     sectionVelMul = preset.sectionVelocityMultiplier(sectionId) * preset.velocityScale
                   * guitarEnergy * kVelocityTrim;
 
-    // Tier-0 ornamentation: deterministic per-bar score-level mutations for the
-    // block (subtle + reproducible — see computeOrnamentation). A block that
-    // straddles a bar boundary applies the block-start bar's ornaments
-    // throughout, which is inaudible for these subtle changes.
-    const double samplesPerBar = 4.0 * samplesPerBeat;
-    const int64_t barNumber = (samplesPerBar > 0.0)
-        ? static_cast<int64_t>(std::floor(static_cast<double>(hostSamplePosition) / samplesPerBar))
-        : 0;
-    const BarOrnamentation orn = computeOrnamentation(barNumber, activePatternIndex);
+    // Tier-0 ornamentation is resolved per EVENT bar inside the emitters
+    // (computeOrnamentation), so it cannot depend on where the block boundaries
+    // fall — see T9.2.
 
     // Latest request wins. A pending change queued during click/silence used
     // to block Play rotation (T4.1) because pendingPatternIndex stayed >= 0.
@@ -1229,7 +1374,7 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
                 return;
         }
         const int base = juce::jmax(0, static_cast<int>(std::llround((from - beatStart) * samplesPerBeat)));
-        emitDrumEventsForRange(midi, numSamples, from, to, library->getPattern(patIdx), orn, base);
+        emitDrumEventsForRange(midi, numSamples, from, to, library->getPattern(patIdx), base);
     };
 
     if (changeBeat < 0.0)
@@ -1290,7 +1435,7 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
 
     // Tier-0 micro-fill: a two-note tom pickup into the next downbeat at the end
     // of a 4-bar phrase (the downbeat's own kick/crash is the pattern's).
-    if (orn.microFill && activePatternIndex != 0 && !fill19Live)
+    if (!fill19Live)
         emitMicroFill(midi, numSamples, beatStart, beatEnd, 0);
 
     // ── Bass note-off bookkeeping (A1) ──────────────────────────────────────
@@ -1361,16 +1506,21 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
     // Pattern 0 must not mute this path — phase owns the grid, not the kit index.
     if (beatGridBassEnabled_)
     {
+        // A phase that switches the grid bass on has no earlier block to own an
+        // event microtiming pulled before this one, so allow a one-block clamp.
+        const bool gridBassOnset = !beatGridBassPrev_;
         if (changeBeat < 0.0)
-            emitHarmonicBass(midi, numSamples, beatStart, beatEnd, 0);
+            emitHarmonicBass(midi, numSamples, beatStart, beatEnd, 0, gridBassOnset);
         else
         {
-            emitHarmonicBass(midi, numSamples, beatStart, changeBeat, 0);
+            emitHarmonicBass(midi, numSamples, beatStart, changeBeat, 0, gridBassOnset);
             const int bassBase = juce::jmax(0,
                 static_cast<int>(std::llround((changeBeat - beatStart) * samplesPerBeat)));
-            emitHarmonicBass(midi, numSamples, changeBeat, beatEnd, bassBase);
+            emitHarmonicBass(midi, numSamples, changeBeat, beatEnd, bassBase, false);
         }
     }
+    beatGridBassPrev_ = beatGridBassEnabled_;
 
+    // Release drum notes whose gate expires in this block, at their exact sample.
     flushDueDrumNoteOffs(midi, numSamples, sampleCounter);
 }
