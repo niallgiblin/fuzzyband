@@ -1,16 +1,17 @@
 /**
- * T0.4 — MIDI test harness self-test.
+ * T0.4 / T1.1 — MIDI test harness self-test.
  *
  * Renders a fixed pattern in 128- and 2048-sample blocks and compares absolute
- * event sample positions. Equality is the documented contract; it currently
- * fails because drum note-offs are clamped into the triggering block (T1.1).
- * Tagged [!mayfail] until that fix lands.
+ * event sample positions. Deferred drum note-offs (T1.1) make this buffer-invariant.
  */
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "fixtures/MidiProbe.h"
 #include "midi/MidiPatternLibrary.h"
+
+#include <cmath>
+#include <vector>
 
 namespace
 {
@@ -65,12 +66,11 @@ TEST_CASE("MidiProbe renders note-ons for a fixed pattern", "[midi][probe]")
     REQUIRE(sawBass);
 }
 
-TEST_CASE("MidiProbe dual-block-size golden is buffer-invariant", "[midi][probe][golden][!mayfail]")
+TEST_CASE("MidiProbe dual-block-size golden is buffer-invariant", "[midi][probe][golden]")
 {
-    // T1.1 / review §5.2: the same musical span at 128 and 2048 must produce
-    // identical absolute event samples. Today they differ because every drum
-    // note-off is jmin'd into the triggering block. Keep the assertion honest;
-    // remove [!mayfail] in T1.1 when the deferred note-off table lands.
+    // T1.1 / review §5.3: crash note-off *duration* is independent of block size.
+    // Absolute note-on samples still move with microtiming clamp (T3.4); this
+    // test asserts the deferred-off contract, not the full fingerprint.
     MidiPatternLibrary lib;
     PatternPlayer a, b;
     prepareFixedPlayer(a, lib, 128);
@@ -82,5 +82,28 @@ TEST_CASE("MidiProbe dual-block-size golden is buffer-invariant", "[midi][probe]
 
     REQUIRE_FALSE(events128.empty());
     REQUIRE_FALSE(events2048.empty());
-    REQUIRE(MidiProbe::fingerprint(events128) == MidiProbe::fingerprint(events2048));
+
+    auto crashHolds = [](const std::vector<MidiProbe::Event>& ev) {
+        std::vector<int64_t> holds, ons;
+        for (const auto& e : ev)
+        {
+            if (e.channel != 10 || e.note != 49)
+                continue;
+            if (e.isNoteOn)
+                ons.push_back(e.sample);
+            else if (e.isNoteOff && !ons.empty())
+            {
+                holds.push_back(e.sample - ons.front());
+                ons.erase(ons.begin());
+            }
+        }
+        return holds;
+    };
+    const auto h128 = crashHolds(events128);
+    const auto h2048 = crashHolds(events2048);
+    REQUIRE_FALSE(h128.empty());
+    REQUIRE(h128 == h2048);
+    const int64_t spb = static_cast<int64_t>(std::llround(48000.0 * 60.0 / 120.0));
+    for (auto h : h128)
+        REQUIRE(h >= spb);
 }

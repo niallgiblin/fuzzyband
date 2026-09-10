@@ -139,3 +139,21 @@ TEST_CASE("MidiPatternLibrary: rock backbeat has kick 1/3 and snare 2/4", "[midi
     REQUIRE(snare2);
     REQUIRE(snare4);
 }
+
+TEST_CASE("MidiPatternLibrary: open hats have a musical gate and ghosts are marked", "[midi_pattern_library][phase1]")
+{
+    MidiPatternLibrary lib;
+    for (int i = 0; i < lib.patternCount(); ++i)
+    {
+        for (const auto& e : lib.getPattern(i).drumEvents)
+        {
+            if (e.note == 46)
+            {
+                INFO("pattern " << i << " open hat at " << e.beatOffset);
+                REQUIRE(e.durationBeats >= 1.0f);
+            }
+            if (e.isGhost)
+                REQUIRE(e.velocity <= 62);
+        }
+    }
+}

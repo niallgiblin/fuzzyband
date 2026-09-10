@@ -223,14 +223,10 @@ def _reduce_template(acc: dict) -> dict:
     timing_jitter = round(min(max(timing_jitter, _TIMING_JITTER_MIN), _TIMING_JITTER_MAX), 3)
     velocity_jitter = round(min(max(velocity_jitter, _VEL_JITTER_MIN), _VEL_JITTER_MAX), 3)
 
-    # Ghost stats from the low tail of snare velocities.
-    snare = sorted(acc["snare_vel"])
-    if len(snare) >= 20:
-        lo = snare[int(0.05 * len(snare))]
-        hi = snare[int(0.30 * len(snare))]
-        ghost_threshold = snare[int(0.30 * len(snare))]
-    else:
-        lo, hi, ghost_threshold = 30, 55, 62
+    # T1.5: pin the documented ghost band. GMD's 5th–30th snare percentile
+    # (~15–42) is too quiet and disagrees with MidiPatternLibrary (authored
+    # ghosts at velocity <= 62, rendered in 30–55). Regeneration must not undo this.
+    lo, hi, ghost_threshold = 30.0, 55.0, 62
 
     return {
         "velocityMul": velocity_mul,

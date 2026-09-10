@@ -15,6 +15,7 @@ struct MidiEvent
     uint8_t velocity = 100;
     float beatOffset = 0.0f;
     float durationBeats = 0.25f;
+    bool isGhost = false;  // authored ghost; must sit at velocity <= ghostThreshold (T1.5)
 };
 
 /** @brief Named loop of drum and bass events with bar length. */

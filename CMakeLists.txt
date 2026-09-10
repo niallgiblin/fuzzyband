@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.9.67)
+project(MetalAccompaniment VERSION 0.9.68)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -286,6 +286,7 @@ if(MA_BUILD_TESTS)
         tests/test_feature_capture.cpp
         tests/test_groove_renderer.cpp
         tests/test_midi_probe.cpp
+        tests/test_phase1_rendering.cpp
 
         # Plugin sources compiled into the test executable
         src/capture/FeatureCapture.cpp

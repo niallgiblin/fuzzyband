@@ -20,14 +20,22 @@ constexpr uint8_t kBassRoot  = 36; // C2 (drop C tuning)
 
 // ── Event helpers ────────────────────────────────────────────────────────────
 
-MidiEvent drum(uint8_t n, uint8_t vel, float beat, float dur = 0.25f)
+MidiEvent drum(uint8_t n, uint8_t vel, float beat, float dur = -1.0f)
 {
-    return MidiEvent{ n, vel, beat, dur };
+    // Open hats default to a 1-beat gate so they are not choked like closed hats (T1.1).
+    const float d = (dur >= 0.0f) ? dur : ((n == kHatOpen) ? 1.0f : 0.25f);
+    return MidiEvent{ n, vel, beat, d, false };
+}
+
+MidiEvent ghostSnare(uint8_t vel, float beat, float dur = 0.25f)
+{
+    // Documented ghost band: velocity must sit under Groove::Template::ghostThreshold (62).
+    return MidiEvent{ kSnare, vel, beat, dur, true };
 }
 
 MidiEvent bass(uint8_t n, uint8_t vel, float beat, float dur = 4.0f)
 {
-    return MidiEvent{ n, vel, beat, dur };
+    return MidiEvent{ n, vel, beat, dur, false };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -685,19 +693,19 @@ MidiPattern buildVerseGhost()
     p.drumEvents = {
         drum(kKick,      112, 0.0f),
         drum(kHatClosed,  74, 0.25f),
-        drum(kSnare,      70, 0.5f),  // ghost
+        ghostSnare(        52, 0.5f),  // ghost
         drum(kHatClosed,  72, 0.75f),
         drum(kSnare,     108, 1.0f),
         drum(kHatClosed,  74, 1.25f),
-        drum(kSnare,      68, 1.5f),  // ghost
+        ghostSnare(        48, 1.5f),  // ghost
         drum(kHatClosed,  72, 1.75f),
         drum(kKick,      110, 2.0f),
         drum(kHatClosed,  74, 2.25f),
-        drum(kSnare,      70, 2.5f),  // ghost
+        ghostSnare(        50, 2.5f),  // ghost
         drum(kHatClosed,  72, 2.75f),
         drum(kSnare,     110, 3.0f),
         drum(kHatClosed,  74, 3.25f),
-        drum(kSnare,      72, 3.5f),  // ghost
+        ghostSnare(        54, 3.5f),  // ghost
         drum(kHatClosed,  70, 3.75f),
     };
     p.bassEvents = {
@@ -780,7 +788,7 @@ MidiPattern buildRockBackbeat()
         drum(kSnare,     112, 5.0f),
         drum(kHatClosed,  74, 5.5f),
         drum(kKick,      114, 6.0f),
-        drum(kSnare,      40, 6.5f),  // ghost
+        ghostSnare(        40, 6.5f),  // ghost
         drum(kHatClosed,  74, 6.5f),
         drum(kSnare,     112, 7.0f),
         drum(kHatClosed,  72, 7.5f),
@@ -817,7 +825,7 @@ MidiPattern buildRockHalfTime()
         drum(kKick,      110, 6.0f),
         drum(kSnare,     114, 6.0f),
         drum(kRide,       82, 6.0f),
-        drum(kSnare,      40, 7.0f),  // ghost
+        ghostSnare(        40, 7.0f),  // ghost
     };
     p.bassEvents = {
         bass(kBassRoot, 93, 0.0f, 3.0f),

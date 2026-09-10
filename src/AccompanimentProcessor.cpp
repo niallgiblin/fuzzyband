@@ -1865,6 +1865,7 @@ void AccompanimentProcessor::processBlockBypassed(
     juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     midi.clear();
+    patternPlayer.flushAllPendingNoteOffs(midi, 0);
     for (int ch = 1; ch <= 16; ++ch)
         midi.addEvent(juce::MidiMessage::allNotesOff(ch), 0);
     patternPlayer.reset();

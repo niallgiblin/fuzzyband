@@ -47,6 +47,10 @@ def test_reduce_template_builds_velocity_hierarchy() -> None:
     bgt._accumulate(hits, bpm, acc)
     t = bgt._reduce_template(acc)
 
+    assert t["ghostVelocityLo"] == 30.0
+    assert t["ghostVelocityHi"] == 55.0
+    assert t["ghostThreshold"] == 62
+
     assert len(t["velocityMul"]) == 16
     assert len(t["timingMs"]) == 16
     assert t["velocityMul"][4] > t["velocityMul"][1]   # backbeat louder than off-16th

@@ -100,6 +100,9 @@ TEST_CASE("Groove: metal preset is heavier than rock", "[groove][B1]")
     const auto metalTmpl = Groove::templateFor(metal.templateId);
     REQUIRE(std::abs(metalTmpl.timingMs[4]) <= std::abs(Groove::rock().timingMs[4]));
     REQUIRE(metalTmpl.timingJitterMs <= Groove::rock().timingJitterMs);
+    REQUIRE(Groove::rock().ghostThreshold == 62);
+    REQUIRE(Groove::rock().ghostVelocityLo == 30.0f);
+    REQUIRE(Groove::rock().ghostVelocityHi == 55.0f);
 }
 
 TEST_CASE("Groove: A3.1 dynamic contrast — chorus backbeat >= verse backbeat + 15", "[groove][A3]")

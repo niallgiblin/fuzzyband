@@ -149,8 +149,19 @@ public:
     void process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition,
                  bool hostRolling = false);
 
-    /** @brief Arm a crash cymbal (MIDI 49) hit at the next block start. Audio thread safe. */
+    /**
+     * @brief Arm a crash cymbal (MIDI 49) at the next beat boundary, or at the
+     *        pending section bar line when a groove commit is waiting.
+     *        Audio thread safe.
+     */
     void armTransitionCrash() noexcept { armCrashPending = true; }
+
+    /**
+     * @brief Emit every deferred drum/bass/click note-off at @p sampleOffset and
+     *        clear the tables. Used on seek, silence, and host bypass so ringing
+     *        cymbals/bass cannot stick. Audio thread safe.
+     */
+    void flushAllPendingNoteOffs(juce::MidiBuffer& midi, int sampleOffset = 0) noexcept;
 
     /**
      * @brief Overlay library fill 17/18/19 in beat time (barStart + beatOffset).
@@ -277,6 +288,23 @@ private:
                       int64_t hostSamplePosition,
                       int sampleOffset) noexcept;
 
+    /**
+     * @brief Defer a drum note-off past the current block when needed.
+     *        Last-write-wins per MIDI note: a re-trigger closes the previous
+     *        instance at @p off before the new duration is scheduled.
+     *        Call *before* the matching note-on so a same-sample close sorts first.
+     */
+    void scheduleDrumNoteOff(juce::MidiBuffer& midi, int numSamples,
+                             int64_t blockStart, int note, int off, int durSamps) noexcept;
+
+    /** @brief Emit drum note-offs whose absolute sample falls inside this block. */
+    void flushDueDrumNoteOffs(juce::MidiBuffer& midi, int numSamples, int64_t blockStart) noexcept;
+
+    void clearDrumNoteOffTable() noexcept;
+
+    /** @brief True when @p pattern already has MIDI 49 within ±20 ms of @p targetBeat. */
+    bool patternCrashesNear(const MidiPattern& pattern, double targetBeat) const noexcept;
+
     /** Metronome: kick on 1, side-stick on 2/3/4. */
     void emitClickTrack(juce::MidiBuffer& midi,
                         int numSamples,
@@ -344,9 +372,17 @@ private:
     };
     std::array<PendingLearnedNote, kMaxPendingLearned> pendingLearned_{};
 
-    // Transition crash state — note-off is deferred so the cymbal decays cleanly.
+    // Transition crash state. The sounding note-off lives on drumNoteOffSample[kCrashNote]
+    // (T1.1); crashNoteOffSample mirrors that slot so seek/silence flushes stay explicit
+    // about the armed-crash voice (T1.2). Not a second scheduler.
     bool armCrashPending = false;
     int64_t crashNoteOffSample = -1;
+
+    // Deferred drum note-offs (T1.1). Pattern crashes, hats, fills and ghosts used
+    // to clamp the off into the triggering block, so cymbals choked at the buffer
+    // boundary. One slot per MIDI note; -1 = none. Armed-crash offs share note 49.
+    static constexpr int kDrumVoices = 128;
+    std::array<int64_t, kDrumVoices> drumNoteOffSample{};
 
     // ── Musicality pivot state (Workstream A / B1) ────────────────────────────
     Groove::Template grooveTemplate;            // velocity hierarchy + microtiming
