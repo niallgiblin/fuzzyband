@@ -41,6 +41,9 @@ FeatureVector makeF(StructureState state, float bpm = 120.0f)
 
 TEST_CASE("MetalGrooveInference loads bundled model", "[MetalGrooveInference]")
 {
+    // T0.3: this is the unit-level ONNX availability guard. The processor-level
+    // twin in test_processor_pipeline.cpp asserts the plugin did not silently
+    // fall back to RuleBasedInference.
     MetalGrooveInference inference;
     REQUIRE(inference.tryLoadModel());
     REQUIRE(inference.getLoadErrorCount() == 0);

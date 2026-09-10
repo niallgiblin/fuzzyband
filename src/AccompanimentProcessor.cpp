@@ -22,6 +22,12 @@ std::unique_ptr<IInference> makeInference()
     auto groove = std::make_unique<MetalGrooveInference>();
     if (groove->tryLoadModel())
         return groove;
+    // T0.3: a failed load used to fall through silently, so a stale ONNX
+    // Runtime dylib looked like a working ML build. jassert fires in Debug;
+    // the integration test asserts getActiveInferenceName() so Release CI
+    // cannot masquerade either. Keep the fallback so a DAW session still
+    // instantiates if the model is missing.
+    jassertfalse;
 #endif
     return std::make_unique<RuleBasedInference>();
 }

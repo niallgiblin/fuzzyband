@@ -110,6 +110,19 @@ static bool poolContains(const PatternRules::SectionPatternPool& pool, int idx)
 
 // ─── Silent pipeline ─────────────────────────────────────────────────────────
 
+#if defined(MA_ENABLE_ONNX)
+TEST_CASE("Processor pipeline: ONNX build loads MetalGrooveInference, not the rule-based fallback",
+          "[integration][pipeline][onnx]")
+{
+    // T0.3: tryLoadModel() used to fail silently and the processor ran
+    // RuleBasedInference under an ONNX-enabled binary. Fail loudly.
+    AccompanimentProcessor proc;
+    REQUIRE(proc.getActiveInferenceName() == "MetalGrooveInference");
+    REQUIRE(proc.getOnnxErrorCount() == 0);
+    proc.releaseResources();
+}
+#endif
+
 TEST_CASE("Processor pipeline: silence produces pattern 0 with no note-on MIDI", "[integration][pipeline]")
 {
     AccompanimentProcessor proc;
@@ -1135,12 +1148,13 @@ TEST_CASE("Processor pipeline: transition countdown updates live", "[integration
     proc.releaseResources();
 }
 
-TEST_CASE("Processor pipeline: riff replay mid-transition does NOT cut it short (deterministic loop)", "[integration][pipeline][transition][lock]")
+TEST_CASE("Processor pipeline: same-riff replay mid-transition cuts it short at the next bar", "[integration][pipeline][transition][lock][!mayfail]")
 {
-    // Riff-loop determinism (A5.2 rework): once a riff is recorded, the loop is
-    // scripted — A-B-A-C-A. Replaying the recorded riff during a transition must
-    // NOT cut that contrast short (the old behaviour re-locked immediately);
-    // each transition always plays its full `transitionBars`, then returns to A.
+    // T0.3 / T6.2 / END_USER_STRESS_TEST §B4: replaying the locked riff during
+    // a transition must cut that contrast short at the next bar and re-lock.
+    // A *different* riff still must not cut the transition (T6.2 keeps that).
+    // Today the hold is uninterruptible; keep the assertion honest and
+    // [!mayfail] until T6.2 lands. Remove the tag in T6.2.
     const double sr = 48000.0;
     const int block = 512;
     AccompanimentProcessor proc;
@@ -1209,20 +1223,13 @@ TEST_CASE("Processor pipeline: riff replay mid-transition does NOT cut it short 
     feedTone(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
     REQUIRE_FALSE(proc.isGrooveLocked());
     REQUIRE(proc.isTransitionSectionActive());
-    const int barsTotal = proc.getTransitionBarsTotal();
 
-    // Phase 3: the riff re-appears mid-transition. Determinism: the contrast is
-    // NOT cut short — it keeps playing (transition stays active) even though the
-    // recorded riff is matched, until its full `transitionBars` elapse.
+    // Phase 3: the recorded riff re-appears. Same-riff cut-short: after the
+    // next bar line the contrast must yield and the groove must re-lock.
+    // 3 s at 120 BPM is 1.5 bars — enough to cross one bar boundary.
     feedChug(static_cast<int>(3.0 * sr / block), blockIdx);
-    REQUIRE(proc.isTransitionSectionActive());
-
-    // Phase 4: feed through the remaining transition → it completes and firmly
-    // returns to the locked riff (A).
-    feedTone(0.05, 400.0, static_cast<int>(14.0 * sr / block), blockIdx);
     REQUIRE_FALSE(proc.isTransitionSectionActive());
     REQUIRE(proc.isGrooveLocked());
-    REQUIRE(proc.getTransitionBarsTotal() == barsTotal);
 
     proc.releaseResources();
 }

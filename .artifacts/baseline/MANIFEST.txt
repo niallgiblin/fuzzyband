@@ -1,0 +1,8 @@
+version 0.9.67
+sampleRate 48000
+bpm 120
+genre Metal (index 3)
+lockBars 4
+transitionBars 4
+riff Drop-C palm-mute (C2 65.406 Hz, 16th envelope)
+purpose T0.2 pre-fix corpus for Phase 9 A/B

@@ -3,49 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>fuzzyband — free guitar plugins</title>
+  <title>niallgiblin - guitar plugins</title>
   <meta name="description"
-        content="fuzzyband: free, open-source guitar plugins by Niall Giblin — fuzzyband (AI metal drum + bass MIDI accompaniment) and Fairo (Pharaoh fuzz). Download the latest builds for macOS, Windows and Linux." />
+        content="guitar plugins by Niall Giblin — fuzzyband (AI drum + bass MIDI accompaniment) and Fairo (Pharaoh fuzz). Download the latest builds for macOS, Windows and Linux." />
   <link rel="stylesheet" href="assets/styles.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎸</text></svg>" />
 </head>
 <body>
   <header class="masthead">
     <div class="wrap">
       <div class="brand">
-        <span class="brand-mark">⌁</span>
         <div>
-          <h1>fuzzyband</h1>
-          <p class="tagline">free, open-source guitar plugins by Niall Giblin</p>
+          <h1>niallgiblin</h1>
+          <p class="tagline">guitar plugins</p>
         </div>
       </div>
       <nav class="nav">
-        <a href="#downloads">Downloads</a>
-        <a href="#build">Build from source</a>
-        <a href="#safety">Safety</a>
-        <a href="#about">About</a>
       </nav>
     </div>
   </header>
 
   <main class="wrap">
-    <!-- Intro -->
-    <section class="hero">
-      <div class="hero-copy">
-        <h2>Play guitar. Get treated properly.</h2>
-        <p>
-          <strong>fuzzyband</strong> is a small family of free, open-source guitar plugins:
-          a musical AI accompaniment that writes drum &amp; bass MIDI as you play, and a
-          fuzz pedal model that traces a real analog circuit. Everything is built straight
-          from the public source — no accounts, no restrictions.
-        </p>
-        <ol class="quickstart">
-          <li>Pick a plugin below and download it for your OS.</li>
-          <li>Put it into your DAW's plugin folder.</li>
-          <li>Insert it and play. (Route its MIDI out to a drum / bass instrument where relevant.)</li>
-        </ol>
-      </div>
-    </section>
 
     <!-- Each product section is rendered here from its repo's Releases API -->
     <section id="downloads">
@@ -54,58 +31,8 @@
       </div>
     </section>
 
-    <!-- Safety (applies to every unsigned macOS build) -->
-    <section id="safety" class="panel">
-      <h3>Safe to download?</h3>
-      <p class="muted">Yes. Everything on this page ships from the project's GitHub Releases — the same place the source lives. Every release is built fresh and the CI runs the tests on it.</p>
 
-      <h4>macOS Gatekeeper note (unsigned builds)</h4>
-      <p class="muted">
-        macOS builds are <strong>unsigned</strong> (no paid Apple Developer certificate is
-        involved), so Gatekeeper may warn the first time you open a plugin. To allow it:
-      </p>
-      <ul class="muted">
-        <li><strong>Right-click → Open</strong> on the downloaded bundle instead of double-clicking, then choose <em>Open</em>, <em>or</em></li>
-        <li>clear the quarantine flag once on the downloaded file, e.g. <code>xattr -dr com.apple.quarantine /path/to/fuzzyband.vst3</code></li>
-      </ul>
-      <p class="muted">
-        Check packaging: the extensionless <code>fuzzyband</code> / <code>Fairo</code> file
-        inside <span class="mono">Contents/MacOS/</span> should be a self-contained binary
-        (for fuzzyband it references <span class="mono">@rpath/libonnxruntime…</span>).
-        See <a href="https://github.com/niallgiblin/fuzzyband/blob/main/docs/RELEASING.md" target="_blank" rel="noopener">RELEASING.md</a>.
-      </p>
-    </section>
-
-    <!-- About / build -->
-    <section id="build" class="panel">
-      <h3>Build from source</h3>
-      <p class="muted">
-        Every plugin also builds from source — clone the repo, configure with CMake, build.
-        The exact command for each plugin is in its download section above. You'll need
-        <strong>CMake 3.22+</strong>, a C++20 compiler, Git, and (for fuzzyband) ONNX Runtime.
-      </p>
-    </section>
-
-    <section id="about" class="panel">
-      <h3>About</h3>
-      <ul class="muted">
-        <li><strong>fuzzyband</strong> — listens to your guitar and writes drum + bass MIDI in real time, locked to the host tempo.</li>
-        <li><strong>Fairo</strong> — Pharaoh-style fuzz: switchable clipping, coupled Tone/High stack, solved per-sample.</li>
-      </ul>
-      <p class="muted">Both are built with <a href="https://juce.com" target="_blank" rel="noopener">JUCE 8</a> and released for macOS (VST3 + AU + Standalone), Windows (VST3 + Standalone) and Linux (VST3 + Standalone).</p>
-    </section>
   </main>
-
-  <footer class="colophon">
-    <div class="wrap">
-      <p>
-        <strong>fuzzyband</strong> — free &amp; open source.
-        <a href="https://github.com/niallgiblin/fuzzyband" target="_blank" rel="noopener">fuzzyband source</a> ·
-        <a href="https://github.com/niallgiblin/fairo" target="_blank" rel="noopener">Fairo source</a>
-      </p>
-      <p class="muted">Built by Niall Giblin. When a new version of either plugin is tagged, its download links here populate automatically.</p>
-    </div>
-  </footer>
 
   <script src="assets/app.js"></script>
 </body>

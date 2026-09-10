@@ -74,7 +74,7 @@ static std::string patternName(int idx)
 
 } // namespace
 
-TEST_CASE("E2E: multi-section jam produces >=3 distinct groove names", "[e2e][groove]")
+TEST_CASE("E2E: multi-section jam produces >=3 distinct groove names", "[e2e][groove][!mayfail]")
 {
     const double sr    = 48000.0;
     const int    block = 512;
@@ -144,7 +144,10 @@ TEST_CASE("E2E: multi-section jam produces >=3 distinct groove names", "[e2e][gr
     for (const auto& n : seenNames)
         INFO("  \"" << n << "\"");
 
-    REQUIRE(seenNames.size() >= 2);
+    // T0.3 / T4.1: the test title promises ≥3 distinct grooves. The current
+    // Play-mode pool snap stalls on two names; keep the assertion honest and
+    // [!mayfail] until T4.1 wires the rotation. Remove the tag in T4.1.
+    REQUIRE(seenNames.size() >= 3);
 
     bool hasNew = false;
     for (const auto& n : seenNames)

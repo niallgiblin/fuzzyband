@@ -285,6 +285,7 @@ if(MA_BUILD_TESTS)
         tests/test_mel_spectrogram.cpp
         tests/test_feature_capture.cpp
         tests/test_groove_renderer.cpp
+        tests/test_midi_probe.cpp
 
         # Plugin sources compiled into the test executable
         src/capture/FeatureCapture.cpp
@@ -305,6 +306,7 @@ if(MA_BUILD_TESTS)
 
     target_include_directories(MetalAccompanimentTests PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
+        "${CMAKE_SOURCE_DIR}/tests"
         "${moodycamel_SOURCE_DIR}"
     )
 
@@ -368,10 +370,12 @@ if(MA_BUILD_TESTS)
         tests/test_e2e_groove_variety.cpp
         tests/test_long_duration_stability.cpp
         tests/test_performance_benchmark.cpp
+        tests/test_baseline_capture.cpp
     )
 
     target_include_directories(MetalAccompanimentIntegrationTests PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
+        "${CMAKE_SOURCE_DIR}/tests"
         "${moodycamel_SOURCE_DIR}"
         "${CMAKE_BINARY_DIR}/MetalAccompaniment_artefacts/JuceLibraryCode"
         "${MA_JUCE_MODULES_DIR}"
@@ -380,6 +384,7 @@ if(MA_BUILD_TESTS)
     target_compile_definitions(MetalAccompanimentIntegrationTests PRIVATE
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
+        MA_PLUGIN_VERSION="${PROJECT_VERSION}"
         "MA_REPO_ROOT=\"${CMAKE_SOURCE_DIR}\""
     )
 

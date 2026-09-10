@@ -427,7 +427,7 @@ TEST_CASE("armBarFill 17 fromNextBar lands beat-4 toms on the next bar", "[midi]
 
 // ── Musicality pivot: bass engine (A1) ───────────────────────────────────────
 
-TEST_CASE("A1: listen-grid bass is harmonic root from setBassParams", "[midi][A1]")
+TEST_CASE("A1: authored bass intervals leak, transposed to the live root", "[midi][A1][!mayfail]")
 {
     MidiPatternLibrary lib;
     PatternPlayer player;
@@ -450,10 +450,13 @@ TEST_CASE("A1: listen-grid bass is harmonic root from setBassParams", "[midi][A1
         if (msg.isNoteOn() && msg.getChannel() == 2)
             bassNotes.insert(msg.getNoteNumber());
     }
-    // Listen grid is harmonic root from setBassParams, not authored intervals.
-    REQUIRE(bassNotes.count(40) > 0);  // root
-    REQUIRE(bassNotes.count(45) == 0); // library +5 must not leak
-    REQUIRE(bassNotes.count(47) == 0); // library +7 must not leak
+    // T0.3 / T5.1: authored bass lines must play, transposed to the live root
+    // (pattern 4 is C2/F2/C2/G2 at kBassRoot=36 → E2/A2/E2/B2 at root 40).
+    // Currently emitBassRange is unreachable so 45/47 are missing. Keep the
+    // assertion honest and [!mayfail] until T5.1 reconnects it.
+    REQUIRE(bassNotes.count(40) > 0);  // root (kBassRoot + 0 → 40)
+    REQUIRE(bassNotes.count(45) > 0);  // library +5, transposed
+    REQUIRE(bassNotes.count(47) > 0);  // library +7, transposed
 }
 
 TEST_CASE("A1: pattern without bassEvents uses the harmonic fallback (root + dynamics)", "[midi][A1]")

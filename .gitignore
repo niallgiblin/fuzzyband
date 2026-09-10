@@ -86,6 +86,11 @@ training/data/lakh/
 data/processed/*.npy
 data/processed/*.npz
 
+# Phase 0+ scratch (keep committed baseline MIDI/TSV)
+.artifacts/*
+!.artifacts/baseline/
+!.artifacts/baseline/**
+
 # DAW peak files + duplicate root-level sample wavs (canonical copies live under data/raw/)
 peaks/
 *.reapeaks
