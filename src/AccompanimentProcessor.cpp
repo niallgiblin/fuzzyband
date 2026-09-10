@@ -177,8 +177,10 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     enginePhase = EnginePhase::Idle;
     riffA = {};
     riffB = {};
-    riffAPlayOriginSample = -1;
-    riffBPlayOriginSample = -1;
+    riffAPlayOriginMono = -1;
+    riffBPlayOriginMono = -1;
+    lockOriginMono = -1;
+    lockBarPhaseBeats = 0.0;
     drumA = drumB0 = drumB = 0;
     guitarSilentSamples = 0;
     playSectionIndex.store(-1, std::memory_order_relaxed);
@@ -191,8 +193,8 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     // A5.2 post-lock transition state + display scope.
     postLockPhase = PostLockPhase::Idle;
     riffLoopActive = false;
-    transitionStartSample = -1;
-    transitionEndSample = -1;
+    transitionStartMono = -1;
+    transitionEndMono = -1;
     transitionSectionNumberLocal = 0;
     transitionSectionActive.store(false, std::memory_order_relaxed);
     transitionSectionName.store("VERSE", std::memory_order_relaxed);
@@ -228,6 +230,10 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     while (grooveCommitQueue.try_dequeue(staleCommit)) {}
 
     hostSampleTime = 0;
+    lastClockSample = -1;
+    lastClockBlockSamples = 0;
+    grooveLockStartMono = -1;
+    grooveLockEndMono = -1;
     latestPatternIndex.store(0, std::memory_order_relaxed);
 
     inferencePaused.store(false, std::memory_order_release);
@@ -615,14 +621,12 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     if (!(bpmForPlayer > 0.0f) || bpmForPlayer > 1000.0f)
         bpmForPlayer = 120.0f;
 
-    // ── Resolved drum clock ─────────────────────────────────────────────────
-    // The drums quantize to the DAW transport position (rawHostPos), NOT the
-    // plugin's own block counter (hostSampleTime). Every groove-lock /
-    // transition / bass-listening schedule boundary must use this same clock so
-    // the bass's re-entry to the locked riff lands on the audible drum downbeat.
-    // Otherwise a transport offset (plugin inserted mid-session, a loop/seek, or
-    // a stopped transport) shifts the whole A-B-A-C-A schedule off the beat. This
-    // is the same bug class fixed for the scope playhead in v0.9.31.
+    // ── Resolved drum clock vs monotonic lock clock ─────────────────────────
+    // Drums quantize to the DAW transport position (clockSample). Lock /
+    // transition *durations* use the plugin's monotonic hostSampleTime so a
+    // DAW loop wrap cannot freeze the schedule or silence frozen bass. Bar
+    // alignment is captured once at engage (lockBarPhaseBeats) so the bass
+    // re-entry still lands on the audible drum downbeat.
     const int64_t clockSample = patternPlayer.previewResolvedHostSample(rawHostPos, numSamples, hostRolling);
 
     // ── 3. Song form / loop change detection ────────────────────────────────
@@ -728,13 +732,17 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         playCountInStartBeat = 0.0;
         riffA = {};
         riffB = {};
-        riffAPlayOriginSample = -1;
-        riffBPlayOriginSample = -1;
+        riffAPlayOriginMono = -1;
+        riffBPlayOriginMono = -1;
+        lockOriginMono = -1;
+        lockBarPhaseBeats = 0.0;
         phraseLearner.reset();
         phraseLearner.setAutoLockEnabled(false);
         enginePhase = EnginePhase::PlayCountIn;
         grooveLockActive = false;
         riffLoopActive = false;
+        grooveLockStartMono = -1;
+        grooveLockEndMono = -1;
         riffHeld.store(false, std::memory_order_release);
         grooveLocked.store(false, std::memory_order_release);
         playSectionIndex.store(-1, std::memory_order_release);
@@ -955,6 +963,24 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         const double beatStart = static_cast<double>(clockSample) / samplesPerBeat;
         const double beatEnd = beatStart + static_cast<double>(numSamples) / samplesPerBeat;
 
+        // T2.2: a seek / loop wrap while locked re-latches bar phase so frozen
+        // bass stays on the host grid, without restarting the remaining duration.
+        {
+            const int64_t slack = static_cast<int64_t>(numSamples) * 2;
+            if (lastClockSample >= 0)
+            {
+                const int64_t expected = lastClockSample + static_cast<int64_t>(lastClockBlockSamples);
+                const int64_t delta = clockSample - expected;
+                if ((delta < -slack || delta > slack)
+                    && (enginePhase == EnginePhase::RiffA
+                        || enginePhase == EnginePhase::RiffBLocked
+                        || postLockPhase == PostLockPhase::TransitionHold))
+                    reanchorLockClockOnJump(clockSample, samplesPerBeat);
+            }
+            lastClockSample = clockSample;
+            lastClockBlockSamples = numSamples;
+        }
+
         // Scope playhead must track the SAME clock as the drums (the resolved
         // host position, not the plugin's own counter). Otherwise, when the DAW
         // transport isn't at sample 0 (or loops/seeks), the bar-aligned waveform's
@@ -982,8 +1008,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             transitionSectionNumber.store(0, std::memory_order_release);
             transitionSectionNameStr = "VERSE";
             transitionSectionName.store("VERSE", std::memory_order_release);
-            transitionStartSample = -1;
-            transitionEndSample = -1;
+            transitionStartMono = -1;
+            transitionEndMono = -1;
             transitionBarsRemaining.store(0, std::memory_order_relaxed);
             transitionBarsTotal.store(0, std::memory_order_relaxed);
             for (int i = 0; i < kMaxTransitionSlots; ++i)
@@ -1009,20 +1035,21 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         };
 
         // Set true on the block a transition re-engages the locked riff (A).
-        auto enterRiffA = [this, lockDuration, lockBars, clockSample, patternIdx]() noexcept
+        auto enterRiffA = [this, lockDuration, lockBars, clockSample, patternIdx, samplesPerBeat]() noexcept
         {
             if (!riffA.valid)
                 phraseLearner.exportPattern(riffA);
             if (!riffA.valid)
                 return;
             enginePhase = EnginePhase::RiffA;
-            riffAPlayOriginSample = clockSample;
+            latchLockClock(clockSample, samplesPerBeat);
+            riffAPlayOriginMono = frozenRiffOriginMono(samplesPerBeat);
             grooveLockActive = true;
             riffLoopActive = true;
-            grooveLockEndSample = clockSample + lockDuration;
-            grooveLockStartSample = clockSample;
+            grooveLockEndMono = hostSampleTime + lockDuration;
+            grooveLockStartMono = hostSampleTime;
             lockBarsTotal.store(lockBars, std::memory_order_relaxed);
-            lastRiffMatchSample = clockSample;
+            lastRiffMatchSample = hostSampleTime;
             grooveLockReleaseArmed = false;
             drumA = (drumA > 0) ? drumA : patternIdx;
             phraseLearner.setHoldActive(true);
@@ -1063,15 +1090,18 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             resetTransitionCycle();
             riffA = {};
             riffB = {};
-            riffAPlayOriginSample = -1;
-            riffBPlayOriginSample = -1;
+            riffAPlayOriginMono = -1;
+            riffBPlayOriginMono = -1;
+            lockOriginMono = -1;
+            lockBarPhaseBeats = 0.0;
             drumA = drumB0 = drumB = 0;
             phraseLearner.reset();
             phraseLearner.setAutoLockEnabled(false);
             enginePhase = EnginePhase::Idle;
             grooveLockActive = false;
             riffLoopActive = false;
-            grooveLockEndSample = -1;
+            grooveLockStartMono = -1;
+            grooveLockEndMono = -1;
             grooveLockReleaseArmed = false;
             lastRiffMatchSample = std::numeric_limits<int64_t>::min() / 2;
             prevPhraseLocked = false;
@@ -1090,8 +1120,10 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             resetTransitionCycle();
             riffA = {};
             riffB = {};
-            riffAPlayOriginSample = -1;
-            riffBPlayOriginSample = -1;
+            riffAPlayOriginMono = -1;
+            riffBPlayOriginMono = -1;
+            lockOriginMono = -1;
+            lockBarPhaseBeats = 0.0;
             drumA = drumB0 = drumB = 0;
             phraseLearner.beginGridCapture();
             phraseLearner.setAutoLockEnabled(false);
@@ -1103,7 +1135,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             riffCountInStartBeat = 0.0;
             grooveLockActive = false;
             riffLoopActive = false;
-            grooveLockEndSample = -1;
+            grooveLockStartMono = -1;
+            grooveLockEndMono = -1;
             grooveLockReleaseArmed = false;
             grooveLocked.store(false, std::memory_order_release);
             riffHeld.store(false, std::memory_order_release);
@@ -1182,7 +1215,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
 
         if (enginePhase == EnginePhase::RiffBListen && phraseLearner.isGridListening()
-            && samplesPerBeat > 0.0 && transitionStartSample >= 0)
+            && samplesPerBeat > 0.0 && transitionStartMono >= 0)
         {
             int bassMidi = (pcForBass != INT_MIN) ? 36 + pcForBass : 36;
             const float instPitch = pitchEstimator.getMidiNote();
@@ -1192,7 +1225,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 const int pc = ((static_cast<int>(std::round(instPitch)) % 12) + 12) % 12;
                 bassMidi = 36 + pc;
             }
-            const double originBeat = static_cast<double>(transitionStartSample) / samplesPerBeat;
+            const double elapsedMonoBeats =
+                static_cast<double>(hostSampleTime - transitionStartMono) / samplesPerBeat;
+            const double originBeat = beatStart - elapsedMonoBeats;
             stampLearnerGridSlots(in, numSamples, beatStart, beatEnd, samplesPerBeat,
                                   originBeat, bassMidi, true);
         }
@@ -1243,7 +1278,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         if (phraseLearner.justMatchedRiff()
             && enginePhase != EnginePhase::RiffBListen
             && enginePhase != EnginePhase::RiffBLocked)
-            lastRiffMatchSample = clockSample;
+            lastRiffMatchSample = hostSampleTime;
 
         const bool phraseLockEdge = (phraseLocked && !prevPhraseLocked);
         prevPhraseLocked = phraseLocked;
@@ -1253,7 +1288,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         {
             grooveLockActive = false;
             riffLoopActive = false;
-            grooveLockEndSample = -1;
+            grooveLockStartMono = -1;
+            grooveLockEndMono = -1;
             grooveLockReleaseArmed = false;
             if (playStartEdge)
                 resetTransitionCycle();
@@ -1269,11 +1305,11 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
         else if (enginePhase == EnginePhase::RiffA && !capturingHeld)
         {
-            if (grooveLockActive && grooveLockStartSample >= 0 && samplesPerBar > 0)
+            if (grooveLockActive && grooveLockStartMono >= 0 && samplesPerBar > 0)
             {
                 const int total = lockBarsTotal.load(std::memory_order_relaxed);
                 const int current = juce::jlimit(1, juce::jmax(1, total),
-                    static_cast<int>((clockSample - grooveLockStartSample) / samplesPerBar) + 1);
+                    static_cast<int>((hostSampleTime - grooveLockStartMono) / samplesPerBar) + 1);
                 const double spbA = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
                 double beatInBarA = (spbA > 0.0)
                     ? std::fmod(static_cast<double>(clockSample) / spbA, 4.0) : 0.0;
@@ -1282,7 +1318,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 updateOutgoingFill(riffAFillArm, current == total, current == total - 1,
                                    rms, 0u, beatInBarA);
             }
-            if (clockSample >= grooveLockEndSample)
+            if (grooveLockEndMono >= 0 && hostSampleTime >= grooveLockEndMono)
             {
                 grooveLockActive = false;
                 grooveLockReleaseArmed = true;
@@ -1301,7 +1337,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 phraseLearner.setAutoLockEnabled(false);
                 phraseLearner.setHoldActive(true);
                 enginePhase = EnginePhase::RiffBLocked;
-                riffBPlayOriginSample = clockSample;
+                latchLockClock(clockSample, samplesPerBeat);
+                riffBPlayOriginMono = frozenRiffOriginMono(samplesPerBeat);
                 patternPlayer.setBeatGridBassEnabled(false);
                 patternPlayer.setPatternIndex(drumB > 0 ? drumB : drumB0);
                 riffHeld.store(true, std::memory_order_release);
@@ -1320,9 +1357,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // ── Riff-lock hold progress (UI): bar done / bars remaining ───────────
         // While locked, publish the 1-based current bar and the bars left before
         // the transition fires. Zeroed when not locked so the UI hides it.
-        if (grooveLockActive && grooveLockStartSample >= 0 && samplesPerBar > 0)
+        if (grooveLockActive && grooveLockStartMono >= 0 && samplesPerBar > 0)
         {
-            const int64_t elapsed = clockSample - grooveLockStartSample;
+            const int64_t elapsed = hostSampleTime - grooveLockStartMono;
             const int total = lockBarsTotal.load(std::memory_order_relaxed);
             const int current = juce::jlimit(1, juce::jmax(1, total),
                                              static_cast<int>(elapsed / samplesPerBar) + 1);
@@ -1397,7 +1434,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 drumA > 0 ? drumA : lockedPat, ts.pool);
             drumB = drumB0;
             riffB = {};
-            riffBPlayOriginSample = -1;
+            riffBPlayOriginMono = -1;
             if (!riffA.valid)
                 phraseLearner.exportPattern(riffA);
             phraseLearner.reset();
@@ -1416,8 +1453,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             transitionBarsTotalLocal = transitionBars;
             transitionBarsTotal.store(transitionBars, std::memory_order_release);
             transitionBarsRemaining.store(transitionBars, std::memory_order_release);
-            transitionStartSample = clockSample;
-            transitionEndSample = clockSample + static_cast<int64_t>(transitionBars) * samplesPerBarT;
+            latchLockClock(clockSample, samplesPerBeat);
+            transitionStartMono = hostSampleTime;
+            transitionEndMono = hostSampleTime + static_cast<int64_t>(transitionBars) * samplesPerBarT;
             transitionSectionActive.store(true, std::memory_order_release);
 
             patternPlayer.armTransitionCrash();
@@ -1432,12 +1470,12 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             // the recorded riff mid-transition does not interrupt it — the loop is
             // fixed A-B-A-C-A. When it finishes, the riff re-engages for the
             // configured `lockBars`.
-            if (clockSample >= transitionEndSample)
+            if (transitionEndMono >= 0 && hostSampleTime >= transitionEndMono)
             {
                 postLockPhase = PostLockPhase::Idle;
                 transitionSectionActive.store(false, std::memory_order_release);
                 riffB = {};
-                riffBPlayOriginSample = -1;
+                riffBPlayOriginMono = -1;
                 riffBFillArm.clear();
                 phraseLearner.cancelLiveGridListen();
                 patternPlayer.armTransitionCrash();
@@ -1448,7 +1486,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 // Countdown for the UI.
                 const int64_t samplesPerBarC =
                     static_cast<int64_t>(4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
-                const int64_t remaining = transitionEndSample - clockSample;
+                const int64_t remaining = transitionEndMono - hostSampleTime;
                 const int barsLeft = (samplesPerBarC > 0)
                     ? static_cast<int>((remaining + samplesPerBarC - 1) / samplesPerBarC)
                     : 0;
@@ -1515,15 +1553,15 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         if (enginePhase == EnginePhase::RiffA && !guitarStopped
             && !riffCaptureActive.load(std::memory_order_acquire))
         {
-            emitFrozenRiff(riffA, riffAPlayOriginSample, numSamples,
+            emitFrozenRiff(riffA, riffAPlayOriginMono, numSamples,
                            static_cast<double>(bpmForPlayer), sr,
-                           clockSample, bassTranspose);
+                           hostSampleTime, bassTranspose);
         }
         else if (enginePhase == EnginePhase::RiffBLocked && !guitarStopped)
         {
-            emitFrozenRiff(riffB, riffBPlayOriginSample, numSamples,
+            emitFrozenRiff(riffB, riffBPlayOriginMono, numSamples,
                            static_cast<double>(bpmForPlayer), sr,
-                           clockSample, bassTranspose);
+                           hostSampleTime, bassTranspose);
         }
         else if (shouldTrigger && !riffCaptureActive.load(std::memory_order_acquire)
             && !phraseLearner.isGridCapturing()
@@ -1609,9 +1647,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     {
         phase = static_cast<int>(SectionPhase::Transition);
         stTotal = transitionBarsTotalLocal;
-        sb = (samplesPerBarNow > 0 && transitionStartSample >= 0)
+        sb = (samplesPerBarNow > 0 && transitionStartMono >= 0)
             ? juce::jlimit(1, juce::jmax(1, stTotal),
-                           static_cast<int>((clockSample - transitionStartSample) / samplesPerBarNow) + 1)
+                           static_cast<int>((hostSampleTime - transitionStartMono) / samplesPerBarNow) + 1)
             : 1;
         stRemaining = juce::jmax(0, stTotal - sb);
     }
@@ -1619,9 +1657,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     {
         phase = static_cast<int>(SectionPhase::Lock);
         stTotal = lockBarsTotal.load(std::memory_order_relaxed);
-        sb = (samplesPerBarNow > 0 && grooveLockStartSample >= 0)
+        sb = (samplesPerBarNow > 0 && grooveLockStartMono >= 0)
             ? juce::jlimit(1, juce::jmax(1, stTotal),
-                           static_cast<int>((clockSample - grooveLockStartSample) / samplesPerBarNow) + 1)
+                           static_cast<int>((hostSampleTime - grooveLockStartMono) / samplesPerBarNow) + 1)
             : 1;
         stRemaining = juce::jmax(0, stTotal - sb);
     }
@@ -1672,6 +1710,41 @@ void AccompanimentProcessor::updateOutgoingFill(OutgoingFillArm& arm, bool isLas
         arm.lastBar = false;
         arm.deferred19 = false;
     }
+}
+
+void AccompanimentProcessor::latchLockClock(int64_t transportSample, double samplesPerBeat) noexcept
+{
+    if (samplesPerBeat <= 0.0)
+    {
+        lockBarPhaseBeats = 0.0;
+        lockOriginMono = hostSampleTime;
+        return;
+    }
+    lockBarPhaseBeats = std::fmod(static_cast<double>(transportSample) / samplesPerBeat, 4.0);
+    if (lockBarPhaseBeats < 0.0)
+        lockBarPhaseBeats += 4.0;
+    lockOriginMono = hostSampleTime;
+}
+
+int64_t AccompanimentProcessor::frozenRiffOriginMono(double samplesPerBeat) const noexcept
+{
+    if (lockOriginMono < 0)
+        return -1;
+    if (samplesPerBeat <= 0.0)
+        return lockOriginMono;
+    return lockOriginMono - static_cast<int64_t>(std::llround(lockBarPhaseBeats * samplesPerBeat));
+}
+
+void AccompanimentProcessor::reanchorLockClockOnJump(int64_t transportSample, double samplesPerBeat) noexcept
+{
+    // Duration fields stay put: a seek is a musical restart of the riff phase,
+    // not a reset of how many lock/transition bars remain.
+    latchLockClock(transportSample, samplesPerBeat);
+    const int64_t origin = frozenRiffOriginMono(samplesPerBeat);
+    if (riffAPlayOriginMono >= 0)
+        riffAPlayOriginMono = origin;
+    if (riffBPlayOriginMono >= 0)
+        riffBPlayOriginMono = origin;
 }
 
 void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSamples,

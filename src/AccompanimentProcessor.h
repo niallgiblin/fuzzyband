@@ -262,6 +262,12 @@ private:
     void stampLearnerGridSlots(const float* in, int numSamples,
                                double beatStart, double beatEnd, double samplesPerBeat,
                                double originBeat, int bassMidi, bool wrapLoop) noexcept;
+    /** @brief Capture bar phase from the transport clock and stamp lockOriginMono. */
+    void latchLockClock(int64_t transportSample, double samplesPerBeat) noexcept;
+    /** @brief Frozen-riff origin in the monotonic frame (bar-phase aligned). */
+    int64_t frozenRiffOriginMono(double samplesPerBeat) const noexcept;
+    /** @brief On a host seek/loop wrap, re-latch bar phase; keep remaining duration. */
+    void reanchorLockClockOnJump(int64_t transportSample, double samplesPerBeat) noexcept;
     struct OutgoingFillArm
     {
         bool lastBar = false;
@@ -320,6 +326,8 @@ private:
     std::mutex inferenceDrainMutex;
 
     int64_t hostSampleTime = 0;
+    int64_t lastClockSample = -1;          // previous block's resolved transport sample
+    int lastClockBlockSamples = 0;         // previous block size (jump detection)
 
     // Generative groove lock (Phase: lock-in). The audio thread runs the lock
     // state machine; the inference thread and UI read grooveLocked.
@@ -332,8 +340,8 @@ private:
     EnginePhase enginePhase = EnginePhase::Idle;
     PhraseLearner::LearnedRiff riffA{};
     PhraseLearner::LearnedRiff riffB{};
-    int64_t riffAPlayOriginSample = -1;
-    int64_t riffBPlayOriginSample = -1;
+    int64_t riffAPlayOriginMono = -1;   // monotonic hostSampleTime-frame origin
+    int64_t riffBPlayOriginMono = -1;
     int drumA = 0;
     int drumB0 = 0;
     int drumB = 0;
@@ -343,8 +351,10 @@ private:
     int64_t guitarSilentSamples = 0;
     bool grooveLockActive = false;     // derived: enginePhase == RiffA (UI/tests)
     bool riffLoopActive = false;       // derived: any Riff* phase
-    int64_t grooveLockEndSample = -1;  // hold ends here (hostSampleTime frame)
-    int64_t grooveLockStartSample = -1; // hold began here (hostSampleTime frame)
+    int64_t lockOriginMono = -1;       // hostSampleTime when the current A/B cycle began
+    double  lockBarPhaseBeats = 0.0;   // fmod(transport beats at engage, 4) — bar alignment
+    int64_t grooveLockEndMono = -1;    // hold ends here (monotonic hostSampleTime frame)
+    int64_t grooveLockStartMono = -1;  // hold began here (monotonic hostSampleTime frame)
     int64_t lastRiffMatchSample = std::numeric_limits<int64_t>::min() / 2;  // last riff-grid attack
     bool prevPhraseLocked = false;     // phrase-lock edge detection
     bool grooveLockReleaseArmed = false;  // P0/R4: arm a transition fill at lock expiry
@@ -380,8 +390,8 @@ private:
     // the UI can show which contrast we are in.
     enum class PostLockPhase { Idle, TransitionHold };
     PostLockPhase postLockPhase = PostLockPhase::Idle;
-    int64_t transitionEndSample = -1;       // hostSampleTime when the hold ends
-    int64_t transitionStartSample = -1;     // hostSampleTime when the hold began (pool rotation)
+    int64_t transitionEndMono = -1;         // hostSampleTime when the hold ends
+    int64_t transitionStartMono = -1;       // hostSampleTime when the hold began (pool rotation)
     PatternRules::SectionPatternPool transitionPool{};  // patterns to rotate during hold
     const char* transitionSectionNameStr = "VERSE";
     int transitionSectionNumberLocal = 0;   // audio-thread section counter

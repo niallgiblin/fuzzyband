@@ -101,6 +101,17 @@ public:
     int64_t previewResolvedHostSample(int64_t hostSamplePosition, int numSamples,
                                       bool hostRolling = false) const noexcept;
 
+    /**
+     * @brief True if the last process() saw a seek / loop wrap. Clears the flag.
+     *        The processor re-anchors lock/transition clocks from this edge.
+     */
+    bool consumeTransportJumped() noexcept
+    {
+        const bool j = transportJumped_;
+        transportJumped_ = false;
+        return j;
+    }
+
     /** @brief Drops deferred pattern changes; the host grid is authoritative, so no beat reset occurs. */
     void snapToBarStart();
 
@@ -334,6 +345,7 @@ private:
     int64_t expectedHostSample = 0;  // next expected host position (jump detection)
     int64_t lastHostSample = -1;     // raw host position from the previous block (frozen-transport detection)
     bool lastTransportFrozen = true; // previous block used the free-run clock
+    bool transportJumped_ = false;   // set in the seek branch; consumed by the processor (T2.2)
 
     bool structureSilent = false;
     bool wasSilent = false;

@@ -92,6 +92,7 @@ void PatternPlayer::reset()
     expectedHostSample = 0;
     lastHostSample = -1;
     lastTransportFrozen = true;
+    transportJumped_ = false;
 
     // Musicality pivot state (Workstream A / B1)
     swing = 0.0f;
@@ -1048,6 +1049,7 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         const int64_t delta = hostSamplePosition - expectedHostSample;
         if (delta < -slack || delta > slack)
         {
+            transportJumped_ = true;
             flushAllPendingNoteOffs(midi, 0);
             pendingPatternIndex = -1;
             pendingGrooveCommitValid = false;

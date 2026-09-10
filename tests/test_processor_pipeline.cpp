@@ -2850,7 +2850,7 @@ TEST_CASE("Processor pipeline: Record B can lock a second riff without mutating 
         REQUIRE(proc.getRiffASlotMidi(s) == aMidi[s]);
     }
 
-    for (int b = 0; b < static_cast<int>(2.0 * sr / block); ++b)
+    for (int b = 0; b < static_cast<int>(8.0 * sr / block); ++b)
     {
         juce::AudioBuffer<float> buf(2, block);
         fillChugBlock(buf, blockIdx, block, sr, 98.0);

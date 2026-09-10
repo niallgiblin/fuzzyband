@@ -707,6 +707,30 @@ TEST_CASE("stopped-to-rolling: click stays on the host bar grid (no seek dump)",
     REQUIRE(rollingClicks <= 5);
 }
 
+TEST_CASE("T2.2 consumeTransportJumped is set on a host seek and clears on read", "[midi][transport][phase2][t2.2]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.snapBpm(120.0f);
+    player.setPatternIndex(1);
+    player.setStructureSilent(false);
+
+    juce::MidiBuffer midi;
+    player.process(midi, 512, 0, true);
+    REQUIRE_FALSE(player.consumeTransportJumped());
+
+    midi.clear();
+    player.process(midi, 512, 512, true);
+    REQUIRE_FALSE(player.consumeTransportJumped());
+
+    midi.clear();
+    player.process(midi, 512, 512 * 40, true);  // jump well past ±2-block slack
+    REQUIRE(player.consumeTransportJumped());
+    REQUIRE_FALSE(player.consumeTransportJumped());
+}
+
 TEST_CASE("A1.2: live-mirror bass snaps to the section's chord tones", "[midi][A1]")
 {
     // The listening bass follows the guitarist's rhythm but resolves each note to
