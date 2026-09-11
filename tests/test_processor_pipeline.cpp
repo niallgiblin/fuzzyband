@@ -603,7 +603,14 @@ static void collectIfLocked(AccompanimentProcessor& proc, const juce::MidiBuffer
                             BassHitCollector& col)
 {
     if (col.originSample < 0 && proc.isGrooveLocked())
-        col.originSample = static_cast<int64_t>(blockIdx) * block;
+    {
+        // Measure from the processor's bar-locked riff origin, not from the block
+        // that detected the lock: the detecting block can straddle the bar line, so
+        // the two differ by up to one block and every slot index would shift.
+        const int64_t riffOrigin = proc.getRiffAPlayOriginSample();
+        col.originSample = (riffOrigin >= 0) ? riffOrigin
+                                             : static_cast<int64_t>(blockIdx) * block;
+    }
     appendBassHits(midi, blockIdx, block, col.originSample, samplesPerBeat, col.hits);
 }
 
@@ -2797,12 +2804,13 @@ TEST_CASE("Processor pipeline: capture keeps leading rest bars", "[integration][
     REQUIRE(col.originSample >= 0);
 
     // T2.1: frozen-riff playback is bar-phase locked, not lock-time locked.
-    // Measure the 16-beat loop from the bar line so occupied slots 32–63
-    // (beats 8–16) are not scored as "early" when lock engages mid-bar.
+    // Measure the 16-beat loop from the processor's bar-locked origin so occupied
+    // slots 32–63 (beats 8–16) are not scored as "early" when the lock engages
+    // mid-bar. Rounding the detecting block boundary down is not equivalent: when
+    // the block straddles the bar line that lands a whole bar early.
     col.hits.clear();
-    const int64_t barSamps = static_cast<int64_t>(std::llround(4.0 * samplesPerBeat));
-    REQUIRE(barSamps > 0);
-    col.originSample = (col.originSample / barSamps) * barSamps;
+    col.originSample = proc.getRiffAPlayOriginSample();
+    REQUIRE(col.originSample >= 0);
     const int64_t now = static_cast<int64_t>(blockIdx) * block;
     feedChugCollecting(proc, sr, block, 65.406, blockIdx, samplesPerBeat, col,
                        now + static_cast<int64_t>(std::ceil(16.0 * samplesPerBeat)));

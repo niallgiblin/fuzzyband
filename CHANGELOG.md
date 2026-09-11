@@ -2,6 +2,48 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [1.0.1] — Review of Phases 5–9 (riff phase, onset capture, loop wrap)
+
+Follow-up review of the Phase 5–9 implementation. All 45 tasks are present and
+tested; three real defects were found and fixed, one of them severe.
+
+- **Frozen-riff phase was one bar out at most buffer sizes.** `latchLockClock`
+  used `fmod` for the bar phase, which always snaps *backwards*. A detect block
+  starting a few samples before a bar line therefore moved the riff origin back a
+  whole bar, so the locked riff entered on its bar 2 rather than bar 1 — and the
+  phase depended on the host buffer size (128 gave a 0-slot offset, 512/2048 a
+  16-slot offset). It now snaps forward only when the block genuinely straddles
+  the line (<= 0.5 beat), which never leaves the origin in the future.
+- **A bar-aligned DAW loop wrap re-phased the riff on every pass.**
+  `reanchorLockClockOnJump` re-latched unconditionally, moving the origin to
+  whichever block detected the wrap. That dropped one onset per loop and produced
+  a mid-loop phase step (measured). A jump that lands on the same bar phase is now
+  a no-op, so the mono clock keeps the loop continuous; only an off-grid seek
+  re-latches.
+- **Onset capture collapsed at large buffers.** The per-slot end-of-note envelope
+  was measured over the last quarter of the *block*, not of the *16th*, so the
+  onset decision changed with the host buffer size. For the same 4-bar chug the
+  capture produced **9 / 5 / 1** onsets at 128 / 512 / 2048 — at 2048 the whole
+  riff became a single 64-sixteenth note and the locked bass played one note.
+  The tail window is now a fixed fraction of the 16th (its last 20%), giving
+  **53 / 52 / 49** onsets and 52/52 note coverage per loop in a single-lock check.
+- **Test corrections.** `AccompanimentProcessor` exposes
+  `getRiffAPlay{Origin}Sample()`; the collector helpers and the T2.1 loop test
+  measure against the real bar-locked origin instead of the detecting block
+  boundary (which can straddle the bar line), and T2.1 counts one loop's notes
+  against the onset count rather than every sounding 16th.
+- **Lock hold length is measured from the bar-aligned origin**, so `lockBars` of
+  music is the same length at every buffer size.
+
+**Residual, still block-dependent (pre-existing, not regressions):** fill arming
+in the Record session differs at 128 samples (one fill instead of two — T7.2
+follow-up), 3 of ~55 frozen-riff notes differ between 512 and 2048 (capture
+window edge), the click note-off lands on the detecting block boundary, and the
+lock onset itself is detected on a block boundary. Note placement is exact.
+
+Suites: **268** unit / **77** integration, all passing, no `[!mayfail]`. Perf
+unchanged (mean 0.51 ms, p99 0.82 ms).
+
 ## [1.0.0-rc] — Verification and acceptance (Phase 9)
 
 Release candidate after Phases 0–8. See [`docs/PHASE9_ACCEPTANCE.md`](docs/PHASE9_ACCEPTANCE.md).

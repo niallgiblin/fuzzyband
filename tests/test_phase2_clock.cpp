@@ -153,6 +153,7 @@ TEST_CASE("T2.1 lock survives a 4-bar DAW loop and expires on the mono clock",
 
     std::vector<NoteOn> afterLoop;
     int64_t firstWrapSample = -1;
+    int64_t wrapRiffOrigin = -1;
     const int lockBlocks = static_cast<int>(20.0 * samplesPerBar / kBlock);
     bool sawTransition = false;
     int maxLockBar = barAtLock;
@@ -165,7 +166,12 @@ TEST_CASE("T2.1 lock survives a 4-bar DAW loop and expires on the mono clock",
         const int64_t pos = static_cast<int64_t>(blockIdx) * kBlock;
         ph.samples = pos;
         if (firstWrapSample < 0)
+        {
             firstWrapSample = pos;
+            // Read the origin now: every return-to-A re-latches it, so reading it
+            // after the run would give the last re-lock's origin, not this cycle's.
+            wrapRiffOrigin = proc.getRiffAPlayOriginSample();
+        }
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
         collectNoteOns(midi, pos, afterLoop);
@@ -183,7 +189,17 @@ TEST_CASE("T2.1 lock survives a 4-bar DAW loop and expires on the mono clock",
     int bassAfterWrap = 0;
     int bassInFirstCycle = 0;
     int bassOnGrid = 0;
-    const int64_t cycleEnd = firstWrapSample + static_cast<int64_t>(std::ceil(16.25 * samplesPerBeat));
+    // Count exactly one riff loop, measured from the processor's bar-locked riff
+    // origin. `firstWrapSample` is a block boundary, so a block-aligned window can
+    // clip one onset and make a full loop look one note short.
+    const int64_t riffOrigin = wrapRiffOrigin;
+    REQUIRE(riffOrigin >= 0);
+    REQUIRE(firstWrapSample >= riffOrigin);
+    const int64_t loopSamples = static_cast<int64_t>(std::llround(16.0 * samplesPerBeat));
+    REQUIRE(loopSamples > 0);
+    const int64_t cycleStart = riffOrigin
+        + ((firstWrapSample - riffOrigin) / loopSamples + 1) * loopSamples;
+    const int64_t cycleEnd = cycleStart + loopSamples;
     const int64_t sixteenth = static_cast<int64_t>(samplesPerBeat / 4.0);
     const int64_t gridTol = static_cast<int64_t>(0.020 * kSr);
     for (const auto& n : afterLoop)
@@ -191,7 +207,7 @@ TEST_CASE("T2.1 lock survives a 4-bar DAW loop and expires on the mono clock",
         if (n.sample < firstWrapSample || n.channel != 2)
             continue;
         ++bassAfterWrap;
-        if (n.sample < cycleEnd)
+        if (n.sample >= cycleStart && n.sample < cycleEnd)
             ++bassInFirstCycle;
         const int64_t into16 = n.sample % sixteenth;
         if (into16 <= gridTol || sixteenth - into16 <= gridTol)

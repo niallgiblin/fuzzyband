@@ -142,6 +142,17 @@ public:
     int getRiffBSlotMidi(int slot) const noexcept;
     int getRiffBSlotGate(int slot) const noexcept;
 
+    /**
+     * @brief Test/debug: bar-locked playback origin of the frozen riff, in the
+     *        monotonic `hostSampleTime` frame (-1 when the riff is not playing).
+     *
+     *        This is the bar line the loop is measured from. It is NOT the block
+     *        boundary that detected the lock: the detecting block may straddle the
+     *        bar line, so the two can differ by up to one block.
+     */
+    int64_t getRiffAPlayOriginSample() const noexcept;
+    int64_t getRiffBPlayOriginSample() const noexcept;
+
     // ── Post-lock transition grammar (A5.2) ──────────────────────────────────
     // After a groove lock expires, the engine plays a *contrast* section for a
     // few bars before firmly returning to the locked riff (A). UI reads these

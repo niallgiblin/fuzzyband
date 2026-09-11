@@ -410,6 +410,16 @@ int AccompanimentProcessor::getRiffBSlotGate(int slot) const noexcept
     return static_cast<int>(riff.gate16[static_cast<size_t>(slot)]);
 }
 
+int64_t AccompanimentProcessor::getRiffAPlayOriginSample() const noexcept
+{
+    return riffAPlayOriginMono;
+}
+
+int64_t AccompanimentProcessor::getRiffBPlayOriginSample() const noexcept
+{
+    return riffBPlayOriginMono;
+}
+
 void AccompanimentProcessor::releaseResources()
 {
     inferencePaused.store(true, std::memory_order_release);
@@ -1319,8 +1329,11 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             riffAPlayOriginMono = frozenRiffOriginMono(samplesPerBeat);
             grooveLockActive = true;
             riffLoopActive = true;
-            grooveLockEndMono = hostSampleTime + lockDuration;
-            grooveLockStartMono = hostSampleTime;
+            // Measure the hold from the bar-aligned riff origin, not from whichever
+            // block boundary detected the capture, so `lockBars` of music is the
+            // same length at every host buffer size (T9.2).
+            grooveLockStartMono = riffAPlayOriginMono;
+            grooveLockEndMono = riffAPlayOriginMono + lockDuration;
             lockBarsTotal.store(lockBars, std::memory_order_relaxed);
             lastRiffMatchSample = hostSampleTime;
             grooveLockReleaseArmed = false;
@@ -2075,9 +2088,24 @@ void AccompanimentProcessor::latchLockClock(int64_t transportSample, double samp
         lockOriginMono = hostSampleTime;
         return;
     }
-    lockBarPhaseBeats = std::fmod(static_cast<double>(transportSample) / samplesPerBeat, 4.0);
-    if (lockBarPhaseBeats < 0.0)
-        lockBarPhaseBeats += 4.0;
+    // Snap to the bar line, stored signed, in [-2, 2) beats.
+    //
+    // Plain `fmod` always snaps backwards, so a detect block that starts a few
+    // samples *before* a bar line shifted the riff origin back a whole bar: the
+    // locked riff entered on its bar 2 rather than bar 1, and the phase depended on
+    // the host block size (measured: 128 -> 0-slot offset, 512/2048 -> 16-slot /
+    // one-bar offset).
+    //
+    // Snapping forward is only safe when the block merely STRADDLES the line: a
+    // genuine mid-bar engage pushed forward would leave the origin in the future and
+    // silence the bass until it arrived. A block can never start more than one block
+    // before the line (~0.26 beats at 40 BPM / 2048 samples), so a half-beat window
+    // separates the two cases cleanly.
+    constexpr double kMaxForwardSnapBeats = 0.5;
+    const double phaseBack = std::fmod(static_cast<double>(transportSample) / samplesPerBeat, 4.0);
+    const double phaseBackWrapped = (phaseBack < 0.0) ? phaseBack + 4.0 : phaseBack;
+    const double forwardBeats = 4.0 - phaseBackWrapped;
+    lockBarPhaseBeats = (forwardBeats <= kMaxForwardSnapBeats) ? -forwardBeats : phaseBackWrapped;
     lockOriginMono = hostSampleTime;
 }
 
@@ -2092,6 +2120,30 @@ int64_t AccompanimentProcessor::frozenRiffOriginMono(double samplesPerBeat) cons
 
 void AccompanimentProcessor::reanchorLockClockOnJump(int64_t transportSample, double samplesPerBeat) noexcept
 {
+    // A jump that lands on the SAME bar phase — a bar-aligned DAW loop wrap, the
+    // normal case — must not re-phase the riff. The mono clock already keeps the
+    // loop continuous; re-latching would move the origin to whichever block
+    // detected the wrap, nudging the riff by up to a 16th on every pass (measured:
+    // one onset per loop dropped, plus a mid-loop phase step). Only a genuinely
+    // off-grid seek needs the bar phase re-latched.
+    const auto signedBarPhase = [samplesPerBeat](int64_t sample) noexcept -> double
+    {
+        if (samplesPerBeat <= 0.0)
+            return 0.0;
+        double p = std::fmod(static_cast<double>(sample) / samplesPerBeat, 4.0);
+        if (p >= 2.0)
+            p -= 4.0;
+        else if (p < -2.0)
+            p += 4.0;
+        return p;
+    };
+
+    double err = std::fabs(signedBarPhase(transportSample) - signedBarPhase(lastClockSample));
+    if (err > 2.0)
+        err = 4.0 - err;
+    if (err < 0.05)
+        return;   // bar-aligned wrap: keep the continuous mono phase
+
     // Duration fields stay put: a seek is a musical restart of the riff phase,
     // not a reset of how many lock/transition bars remain.
     latchLockClock(transportSample, samplesPerBeat);
@@ -2128,11 +2180,9 @@ void AccompanimentProcessor::flushPendingCaptureSlot() noexcept
             static_cast<double>(captureSlotIndex_) * 0.25 + 0.25,
             captureSlotPeak_, captureSlotMidi_, onset);
         prevSlotPeak_ = captureSlotPeak_;
-        // Only treat the slot as having decayed if its trailing window is
-        // below the occupancy floor. A 10 ms slice of a held sine can sit
-        // near a zero-crossing (~0.08) without the note having ended; using
-        // that as prevSlotEnd_ would re-onset every 16th (T5.2).
-        prevSlotEnd_ = (captureSlotEnd_ < 0.025f) ? captureSlotEnd_ : captureSlotPeak_;
+        // The true end-of-slot envelope. A held note ends near its peak (no onset);
+        // a re-picked 16th decays within the slot and jumps back up (onset).
+        prevSlotEnd_ = captureSlotEnd_;
         prevSlotOccupied_ = true;
     }
     else
@@ -2177,20 +2227,37 @@ void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSampl
             const int i1 = juce::jlimit(1, numSamples,
                 static_cast<int>(std::ceil((ov1 - blockBeat0) * samplesPerBeat)));
             float slotPeak = 0.0f;
-            float slotEnd = 0.0f;
-            const int nSamp = juce::jmax(1, i1 - i0);
-            const int tail0 = i0 + (3 * nSamp) / 4;
             for (int i = i0; i < i1; ++i)
             {
                 const float a = std::abs(in[i]);
                 if (a > slotPeak)
                     slotPeak = a;
-                if (i >= tail0 && a > slotEnd)
-                    slotEnd = a;
             }
-            // Accumulate per 16th, then decide onset once the slot completes.
-            // A 10 ms block of a sine can sit near a zero-crossing and look like
-            // a rest or a re-attack; the whole-slot peak does not.
+
+            // End-of-slot envelope, measured over a FIXED fraction of the 16th
+            // (its last 20%) rather than a fraction of the block. A block-relative
+            // tail spans a different amount of time at each buffer size — at 128
+            // samples it could land near a zero-crossing of a low note, at 2048 it
+            // could not — so the onset decision, and therefore the whole locked-riff
+            // articulation, changed with the host buffer size (measured: 9 / 5 / 1
+            // onsets for the same 4-bar chug at 128 / 512 / 2048).
+            constexpr double kTailFraction = 0.2;
+            const double tailStartBeat = slotB - 0.25 * kTailFraction;
+            float slotEnd = 0.0f;
+            if (ov1 > tailStartBeat)
+            {
+                const double tb0 = juce::jmax(ov0, tailStartBeat);
+                const int j0 = juce::jlimit(0, numSamples - 1,
+                    static_cast<int>(std::floor((tb0 - blockBeat0) * samplesPerBeat)));
+                const int j1 = juce::jlimit(1, numSamples,
+                    static_cast<int>(std::ceil((ov1 - blockBeat0) * samplesPerBeat)));
+                for (int i = j0; i < j1; ++i)
+                {
+                    const float a = std::abs(in[i]);
+                    if (a > slotEnd)
+                        slotEnd = a;
+                }
+            }
             if (s != captureSlotIndex_)
             {
                 if (captureSlotIndex_ >= 0)
@@ -2208,7 +2275,8 @@ void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSampl
             captureSlotMidi_ = bassMidi;
             if (slotPeak > captureSlotPeak_)
                 captureSlotPeak_ = slotPeak;
-            captureSlotEnd_ = slotEnd;
+            if (slotEnd > captureSlotEnd_)
+                captureSlotEnd_ = slotEnd;
         }
     };
 

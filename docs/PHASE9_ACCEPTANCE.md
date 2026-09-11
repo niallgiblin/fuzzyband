@@ -119,3 +119,45 @@ cmake --build build --config Release -j"$(sysctl -n hw.ncpu)"
 strings -a ~/Library/Audio/Plug-Ins/VST3/fuzzyband.vst3/Contents/MacOS/fuzzyband \
   | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$'
 ```
+
+---
+
+## Addendum — review of Phases 5–9 (v1.0.1)
+
+Independently re-verified after the Phase 5–9 commits. All 45 tasks
+(T5.1–T5.3, T6.1–T6.5, T7.1–T7.3, T8.1–T8.5, T9.1–T9.5) are present and tested;
+the previously `[!mayfail]` cases are gone. Three defects were found and fixed.
+
+### Fixed
+
+| # | Defect | Evidence | Fix |
+| --- | --- | --- | --- |
+| R7 | **Riff origin one bar out at most buffer sizes.** `fmod` always snaps the bar phase backwards, so a detect block starting just before a bar line moved the origin back a full bar. | Riff origins were 480 000 (128) vs 384 000 (512/2048) for the same take. | Snap forward only when the block straddles the line (<= 0.5 beat). All three now latch 480 000. |
+| R8 | **Every bar-aligned DAW loop wrap re-phased the riff.** `reanchorLockClockOnJump` re-latched unconditionally to the detecting block boundary. | T2.1 loop coverage was 31 of 32 onsets, with a mid-loop phase step. | A jump landing on the same bar phase is a no-op; the mono clock keeps the loop continuous. Coverage is now 32/32. |
+| R9 | **Onset capture collapsed at large buffers.** The end-of-note envelope was measured over the last quarter of the *block*, not of the *16th*. | Same 4-bar chug captured **9 / 5 / 1** onsets at 128 / 512 / 2048; at 2048 the riff became one 16-beat note. | Tail window is a fixed fraction of the 16th. Now **53 / 52 / 49** onsets; 52/52 notes per loop in a single-lock check. |
+
+Also: the lock hold is measured from the bar-aligned origin (so `lockBars` is the
+same length at every buffer size), `getRiffAPlay{Origin}Sample()` is exposed for
+tests, and the T2.1 loop test measures against the real origin.
+
+### T9.2 re-measured
+
+| Render | Before | After |
+| --- | --- | --- |
+| PatternPlayer golden (full fingerprint) | identical | identical |
+| Processor count-in + capture | identical | identical |
+| Record session, frozen-riff bass notes | 13 / 10 / 6 | **57 / 57 / 54** |
+| Record session, drum events 512 vs 2048 | diverged | **identical** |
+
+`512` vs `2048` now agree on every drum event; `128` still differs in fill arming.
+
+### Still block-dependent (pre-existing, not regressions)
+
+* **Fill arming at 128 samples** — one fill instead of two (the same 2-vs-4 tom
+  pattern is present before this review). T7.2 follow-up.
+* **3 of ~55 frozen-riff notes between 512 and 2048** — capture-window edge
+  (the first/last partial slot of the take reads a truncated tail).
+* **Click note-off** lands on the detecting block boundary.
+* **Lock onset** is detected on a block boundary.
+
+These are arrangement/edge effects; note placement is exact.
