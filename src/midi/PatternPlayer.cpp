@@ -166,7 +166,9 @@ void PatternPlayer::triggerLearnedBassNote(int midiNote, float velocity, int sam
             return;
         }
     }
-    pendingLearned_.back() = note;
+    // T8.2: the queue is full — drop the *newest* note so already-scheduled
+    // hits keep their slots. Overwriting back() used to silence a queued note.
+    DBG("PatternPlayer: pending learned queue full; dropping newest note");
 }
 
 void PatternPlayer::queueGrooveCommit(const GrooveCommit& commit) noexcept
@@ -1259,43 +1261,6 @@ float PatternPlayer::sectionBassGate() const noexcept
         case Groove::SongSectionId::Verse:
         default:                               return kBassGate;    // 0.85
     }
-}
-
-int PatternPlayer::snapBassToSectionHarmony(int rawNote) const noexcept
-{
-    // The guitarist's riff drives the rhythm, but every note resolves to a chord
-    // tone of the current section around the tonic (A1.2), so the listening bass
-    // sounds like it is playing the song's section rather than free-mirroring.
-    // Chorus/solo use the full root-fifth-octave-fourth palette; other sections
-    // stay root-centric (with the occasional fourth). The raw note is the tonic
-    // pitch-class register (36–47); the live root + transpose are folded in here.
-    const int tonicPc = ((bassRootMidi % 12) + 12) % 12;
-    const int pc = ((rawNote % 12) + 12) % 12;
-
-    int bestDeg = 0;
-    int bestDist = 99;
-    for (int deg : { 0, 5, 7 })
-    {
-        // Per-section chord palette (A1.2): verse = root/fourth, chorus/solo =
-        // root/fourth/fifth, breakdown/intro/outro = root only, unknown = root/fifth.
-        if (deg == 5 && sectionId != Groove::SongSectionId::Verse
-            && sectionId != Groove::SongSectionId::Chorus
-            && sectionId != Groove::SongSectionId::Solo)
-            continue;
-        if (deg == 7 && sectionId != Groove::SongSectionId::Chorus
-            && sectionId != Groove::SongSectionId::Solo
-            && sectionId != Groove::SongSectionId::Unknown)
-            continue;
-        const int degPc = (tonicPc + deg) % 12;
-        int dist = std::abs(pc - degPc);
-        if (dist > 6) dist = 12 - dist;
-        if (dist < bestDist) { bestDist = dist; bestDeg = deg; }
-    }
-
-    int out = bassRootMidi + bassSemitoneOffset + bestDeg;
-    while (out < 28) out += 12;
-    while (out > 55) out -= 12;
-    return juce::jlimit(0, 127, out);
 }
 
 void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t hostSamplePosition,

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.9.75)
+project(MetalAccompaniment VERSION 0.9.76)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,6 +15,21 @@ option(MA_BUILD_TESTS       "Build unit tests"                  ON)
 option(MA_BUILD_STANDALONE  "Build standalone app target"       ON)
 option(MA_ENABLE_ONNX       "Enable ONNX Runtime (v0.6.0 default: ON)"     ON)
 option(MA_BUNDLE_GROOVE_RENDERER "Bundle groove_renderer.onnx (Tier-1 learned groove renderer)" ON)
+option(MA_ENABLE_TSAN       "Build with ThreadSanitizer (Clang/GCC)" OFF)
+
+if(MA_ENABLE_TSAN)
+    if(MSVC)
+        message(FATAL_ERROR "MA_ENABLE_TSAN requires Clang or GCC")
+    endif()
+    # Flags must land before FetchContent so JUCE is instrumented too (T8.2).
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=thread -fno-omit-frame-pointer -g -O1")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread -fno-omit-frame-pointer -g -O1")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=thread")
+    set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fsanitize=thread")
+    add_compile_definitions(MA_ENABLE_TSAN=1)
+    message(STATUS "ThreadSanitizer enabled")
+endif()
 
 # ─────────────────────────────────────────────────────────────────
 # JUCE — fetch if not found locally
@@ -204,14 +219,14 @@ if(APPLE)
         -Wall -Wextra -Wpedantic
         -Wno-unused-parameter
         -ffast-math              # safe for audio DSP, big win on FFT
-        -O3
+        $<$<NOT:$<BOOL:${MA_ENABLE_TSAN}>>:-O3>
     )
 elseif(UNIX)
     target_compile_options(MetalAccompaniment PRIVATE
         -Wall -Wextra -Wpedantic
         -Wno-unused-parameter
         -ffast-math
-        -O3
+        $<$<NOT:$<BOOL:${MA_ENABLE_TSAN}>>:-O3>
         -march=native
     )
 elseif(WIN32)

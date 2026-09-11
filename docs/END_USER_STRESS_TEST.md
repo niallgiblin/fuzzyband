@@ -2,7 +2,7 @@
 # Fuzzyband — End-User Stress Test
 
 **Plugin:** Metal Accompaniment / Fuzzyband
-**Written against:** v0.9.48 (`CMakeLists.txt` version string, top-right of the UI)
+**Written against:** v0.9.76 (`CMakeLists.txt` version string, top-right of the UI)
 **Purpose:** Play through every user-facing mode, style, genre, section, and drum pattern. Tick what you hear. Record the session. Hand the recording + this filled log to an agent to double-check.
 
 If a pattern or style **never appears** after you follow the trigger recipe, that is a product bug or a coverage gap — log it as **MISS**, do not skip it.
@@ -204,9 +204,9 @@ The engine is **idle and silent** until you arm it.
 | Mode                           | How you arm                               | What the drums do                                                                                                                                                                                                                                                                                                                          | What the bass does                                                                                                          |
 | ------------------------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
 | **Idle**                 | Load plugin, or press Forget after a take | Silence. Pattern 0. Style → Silence                                                                                                                                                                                                                                                                                                       | Nothing                                                                                                                     |
-| **Play**                 | PLAY button                               | Walks the Sections list**once**. Pool rotation every 2 bars (4 for INTRO/BREAKDOWN/OUTRO). Last bar of each section = fill 17/18/19. Crash into the next section. **Stops and returns to idle after the last section** — it does not wrap to INTRO                                                                            | Follows your live root, in the**section’s harmony** (not a recorded riff). Pickup into section changes               |
+| **Play**                 | PLAY button                               | Walks the Sections list**once**. Pool rotation every 2 bars (4 for INTRO/BREAKDOWN/OUTRO). Last bar of each section = fill 17/18/19 **replacing** the groove for that window (same swing / velocity feel as the bar). Crash into the next section. **Stops and returns to idle after the last section** — it does not wrap to INTRO                                                                            | Authored pattern bass transposed to your live root (harmonic fallback if the pattern has no `bassEvents`). Pickup into section changes               |
 | **Record riff**          | Record riff                               | 1 bar click count-in, then 4 bars of click while you play, then**LOCK** that take for LOCK bars. Drums freeze on the captured groove                                                                                                                                                                                                 | Note-for-note learned riff for the whole lock. Root does**not** chase mid-lock                                        |
-| **Post-lock transition** | Automatic after lock expires              | One contrast (B, then later C…) for TRANSITION BARS. Crash + build-up fill on entry. Status`Transition` (SECTIONS=1) or `Transition B` (SECTIONS>1) plus bar countdown — **not** `Transition B - CHORUS`. **Then back to A.** SECTIONS=1 is **A-B-A-B** (same B). SECTIONS=2 is **A-B-A-C-A**, not A-B-C-A | Leaves the riff; follows you / new section harmony. Returning to the recorded riff**cuts** that contrast and re-locks |
+| **Post-lock transition** | Automatic after lock expires              | One contrast (B, then later C…) for TRANSITION BARS. Crash + build-up fill on entry. Status`Transition` (SECTIONS=1) or `Transition B` (SECTIONS>1) plus bar countdown — **not** `Transition B - CHORUS`. **Then back to A.** SECTIONS=1 is **A-B-A-B** (same B). SECTIONS=2 is **A-B-A-C-A**, not A-B-C-A | Leaves the riff; follows you / new section harmony. Replaying the recorded riff **cuts** that contrast at the **next bar** and re-locks |
 
 Play and Record riff fight: starting Play **cancels** a capture. Do not overlap them.
 
@@ -267,7 +267,7 @@ Phrasing: VERSE / CHORUS / SOLO hold a groove **2 bars** then pick a different p
 | SOLO      | 4, 14, 24      | Chorus Mid, Chorus Open, Rock Shuffle                        |
 | OUTRO     | 16, 26         | Outro Decay, Rock Ballad                                     |
 
-Last bar of **every** section: fill **17 / 18 / 19** chosen by how loud you are (quiet → Short, mid → Medium, loud → Big). Play loud at the end of CHORUS to force Fill Big; play barely-there at the end of INTRO to force Fill Short.
+Last bar of **every** section: fill **17 / 18 / 19** chosen by how loud you are (quiet → Short, mid → Medium, loud → Big). The fill **replaces** the groove from its window start and inherits that bar's swing / velocity. Play loud at the end of CHORUS to force Fill Big; play barely-there at the end of INTRO to force Fill Short. Record A/B section ends use a varying seed so Fill Big is reachable. The fill is armed on the last-bar downbeat (host grid), not a `beatInBar` fudge, so large buffers still land it in the outgoing bar.
 
 ### 5.4 Playing styles (perception head) → groove family
 
@@ -458,12 +458,12 @@ The full shape with TRANSITION SECTIONS = 2 is **A-B-A-C-A**. If you hear A-B-C-
 
 **B4. Cut-on-riff**
 
-Expire the next lock, and **as soon as B (or C) starts**, play Lock Riff A again. That contrast must **cut short** and re-lock. The other contrast in the pair should still be reachable on a later expiry (you already heard both in B3).
+Expire the next lock, and **as soon as B (or C) starts**, play Lock Riff A again. That contrast must **cut short at the next bar** and re-lock. A *different* riff must not cut the contrast. The other contrast in the pair should still be reachable on a later expiry (you already heard both in B3).
 
 | Check             | Expected                                     | Result | Notes |
 | ----------------- | -------------------------------------------- | ------ | ----- |
 | Natural A-B-A-C-A | Heard in B3                                  | ☐     |       |
-| Cut on riff       | Playing A during B or C re-locks immediately | ☐     |       |
+| Cut on riff       | Playing A during B or C re-locks at the next bar | ☐     |       |
 
 **B5. Forget**
 
@@ -482,8 +482,6 @@ This is the **guaranteed** pattern sweep. Host tempo **120** unless a row says o
 For **Metal** and **Rock**: press PLAY, play the matching tab through the whole form, write every Pattern index you see, and **let it stop by itself after OUTRO**. Then next genre.
 
 For the **other 11 genres**: play the same form once at the suggested tempo, confirm the family pools, the feel notes in 5.2, and that Play **stops** after OUTRO. You do not have to fill every index cell again, but you do have to hear the pass.
-
-**Play louder in CHORUS / SOLO** (open chords) and **quieter / tighter in VERSE** so State can go LOUD vs SOFT even though Play ignores State for pattern choice — you still want the Style and State readouts honest, and last-bar fill size follows RMS.
 
 **Play louder in CHORUS / SOLO** (open chords) and **quieter / tighter in VERSE** so State can go LOUD vs SOFT even though Play ignores State for pattern choice — you still want the Style and State readouts honest, and last-bar fill size follows RMS.
 

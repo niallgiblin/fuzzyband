@@ -193,18 +193,6 @@ public:
      */
     void setHoldActive(bool active) noexcept { holdActive_ = active; }
 
-    /**
-     * @brief Deprecated. Record B listen uses the processor mixer; kept as a
-     *        no-op so leftover callers compile. Prefer @ref setAutoLockEnabled.
-     */
-    void setMirrorWhileHeld(bool) noexcept {}
-
-    /**
-     * @brief Deprecated mode switch. No longer releases the riff or changes
-     *        learner state — processor EnginePhase owns A/B playback.
-     */
-    void releaseForTransition() noexcept {}
-
     /** @brief Play = false (never auto-lock). RiffBListen = true. */
     void setAutoLockEnabled(bool enabled) noexcept { autoLockEnabled_ = enabled; }
     bool isAutoLockEnabled() const noexcept { return autoLockEnabled_; }

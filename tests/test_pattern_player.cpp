@@ -758,32 +758,34 @@ TEST_CASE("T2.2 consumeTransportJumped is set on a host seek and clears on read"
     REQUIRE_FALSE(player.consumeTransportJumped());
 }
 
-TEST_CASE("A1.2: live-mirror bass snaps to the section's chord tones", "[midi][A1]")
+TEST_CASE("T8.2 pending learned overrun drops the newest note", "[midi][T8.2]")
 {
-    // The listening bass follows the guitarist's rhythm but resolves each note to
-    // the current section's chord tones around the live root, so it belongs to the
-    // section (A1.2). Render snapBassToSectionHarmony directly.
     MidiPatternLibrary lib;
     PatternPlayer player;
     player.setPatternLibrary(&lib);
     player.prepare(48000.0, 512);
     player.snapBpm(120.0f);
-    player.setBassParams(40, 2);  // E2 live root (pc 4)
+    player.setPatternIndex(0);
+    player.setBeatGridBassEnabled(false);
+    player.setStructureSilent(false);
 
-    player.setSection(Groove::SongSectionId::Verse);
-    // Verse palette {root, fourth}: root stays root; a B (pc 11) snaps to the fourth (A).
-    REQUIRE(player.snapBassToSectionHarmony(40) == 40);  // E → root
-    REQUIRE(player.snapBassToSectionHarmony(59) == 45);  // B → A (fourth)
+    for (int i = 0; i < 8; ++i)
+        player.triggerLearnedBassNote(36 + i, 0.6f, i, 1000);
+    player.triggerLearnedBassNote(50, 0.9f, 8, 1000);
 
-    player.setSection(Groove::SongSectionId::Chorus);
-    // Chorus palette {root, fourth, fifth}: the same B snaps to the fifth (B).
-    REQUIRE(player.snapBassToSectionHarmony(59) == 47);  // B → B (fifth)
-    REQUIRE(player.snapBassToSectionHarmony(43) == 45);  // G# → A (fourth)
+    juce::MidiBuffer midi;
+    player.process(midi, 512, 0, true);
 
-    player.setSection(Groove::SongSectionId::Breakdown);
-    // Breakdown is root-only: every note collapses to the root.
-    REQUIRE(player.snapBassToSectionHarmony(59) == 40);
-    REQUIRE(player.snapBassToSectionHarmony(43) == 40);
+    std::set<int> notes;
+    for (const auto meta : midi)
+    {
+        const auto m = meta.getMessage();
+        if (m.isNoteOn() && m.getChannel() == 2)
+            notes.insert(m.getNoteNumber());
+    }
+    REQUIRE(notes.count(50) == 0);
+    for (int i = 0; i < 8; ++i)
+        REQUIRE(notes.count(36 + i) == 1);
 }
 
 TEST_CASE("A1.2: armed bass lead-in fires a pickup on the bar's last beat", "[midi][A1]")

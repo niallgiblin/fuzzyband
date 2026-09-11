@@ -6,8 +6,11 @@
  */
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <memory>
 #include <set>
 #include <string>
 #include <utility>
@@ -17,6 +20,7 @@
 #include "AccompanimentProcessor.h"
 #include "AccompanimentEditor.h"
 #include "inference/pattern_rules.h"
+#include "midi/GrooveTemplate.h"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1660,6 +1664,55 @@ TEST_CASE("Editor construction smoke test", "[integration][editor]")
         REQUIRE(ed->getHeight() >= 760);
         REQUIRE(ed->getWidth() >= 520);
         delete ed;
+        proc.releaseResources();
+    }
+    juce::MessageManager::deleteInstance();
+}
+
+TEST_CASE("T8.3 genre change notifies host of swing", "[integration][editor][swing]")
+{
+    juce::MessageManager::getInstance();
+    {
+        AccompanimentProcessor proc;
+        proc.prepareToPlay(48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+        REQUIRE(ed != nullptr);
+
+        auto* swing = proc.getApvts().getParameter("swing");
+        REQUIRE(swing != nullptr);
+
+        struct HostTap : juce::AudioProcessorParameter::Listener
+        {
+            std::atomic<int> n{ 0 };
+            void parameterValueChanged(int, float) override { n.fetch_add(1); }
+            void parameterGestureChanged(int, bool) override {}
+        } tap;
+        swing->addListener(&tap);
+
+        juce::ComboBox* genreBox = nullptr;
+        std::vector<juce::Component*> stack{ ed.get() };
+        while (!stack.empty())
+        {
+            juce::Component* c = stack.back();
+            stack.pop_back();
+            if (auto* box = dynamic_cast<juce::ComboBox*>(c))
+            {
+                if (box->getNumItems() == Groove::presetCount())
+                    genreBox = box;
+            }
+            for (auto* ch : c->getChildren())
+                stack.push_back(ch);
+        }
+        REQUIRE(genreBox != nullptr);
+
+        const float before = swing->getValue();
+        genreBox->setSelectedItemIndex(1, juce::sendNotificationSync);  // Hard Rock
+        const float expected = swing->convertTo0to1(Groove::presetFor(1).defaultSwing);
+        REQUIRE(swing->getValue() == Catch::Approx(expected).margin(1.0e-4f));
+        REQUIRE(swing->getValue() != before);
+        REQUIRE(tap.n.load() >= 1);
+
+        swing->removeListener(&tap);
         proc.releaseResources();
     }
     juce::MessageManager::deleteInstance();

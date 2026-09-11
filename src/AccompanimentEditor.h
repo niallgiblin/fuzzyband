@@ -385,6 +385,19 @@ public:
 
 private:
     void timerCallback() override;
+    void applyGenreDefaultSwing() noexcept;
+
+    struct GenreSwingListener final : juce::AudioProcessorParameter::Listener
+    {
+        AccompanimentEditor* owner = nullptr;
+        void parameterValueChanged(int, float) override
+        {
+            if (owner != nullptr)
+                owner->applyGenreDefaultSwing();
+        }
+        void parameterGestureChanged(int, bool) override {}
+    };
+    GenreSwingListener genreSwingListener;
 
     AccompanimentProcessor& audioProcessorRef;
 

@@ -255,7 +255,159 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     grooveLockEndMono = -1;
     latestPatternIndex.store(0, std::memory_order_relaxed);
 
+    lastLoopValue = false;
+    publishRiffUiSnapshot();
+
     inferencePaused.store(false, std::memory_order_release);
+}
+
+void AccompanimentProcessor::publishRiffUiSnapshot() noexcept
+{
+    const int pub = riffUiPublished.load(std::memory_order_relaxed);
+    const int busy = riffUiReading.load(std::memory_order_acquire);
+    int next = 0;
+    while (next == pub || next == busy)
+        ++next;
+    if (next >= kRiffUiSlots)
+        next = (pub == 0) ? 1 : 0;
+    auto& dst = riffUiSlots[static_cast<size_t>(next)];
+    dst.riffA = riffA;
+    dst.riffB = riffB;
+    dst.enginePhase = enginePhase;
+    dst.drumA = drumA;
+    dst.drumB0 = drumB0;
+    dst.drumB = drumB;
+    riffUiPublished.store(next, std::memory_order_release);
+}
+
+AccompanimentProcessor::RiffUiRead::RiffUiRead(const AccompanimentProcessor& p) noexcept
+    : proc(p)
+{
+    int idx = 0;
+    do
+    {
+        idx = proc.riffUiPublished.load(std::memory_order_acquire);
+        proc.riffUiReading.store(idx, std::memory_order_release);
+    }
+    while (idx != proc.riffUiPublished.load(std::memory_order_acquire));
+    slot = idx;
+}
+
+AccompanimentProcessor::RiffUiRead::~RiffUiRead() noexcept
+{
+    proc.riffUiReading.store(-1, std::memory_order_release);
+}
+
+const AccompanimentProcessor::RiffUiSnapshot&
+AccompanimentProcessor::RiffUiRead::get() const noexcept
+{
+    return proc.riffUiSlots[static_cast<size_t>(slot)];
+}
+
+int AccompanimentProcessor::getRiffAOccupiedCount() const noexcept
+{
+    const RiffUiRead read(*this);
+    const auto& riff = read.get().riffA;
+    if (!riff.valid)
+        return 0;
+    int n = 0;
+    for (int i = 0; i < PhraseLearner::kGridSlots; ++i)
+        if (riff.occupied[static_cast<size_t>(i)])
+            ++n;
+    return n;
+}
+
+bool AccompanimentProcessor::getRiffASlotOccupied(int slot) const noexcept
+{
+    const RiffUiRead read(*this);
+    const auto& riff = read.get().riffA;
+    return riff.valid && slot >= 0 && slot < PhraseLearner::kGridSlots
+        && riff.occupied[static_cast<size_t>(slot)];
+}
+
+int AccompanimentProcessor::getRiffASlotMidi(int slot) const noexcept
+{
+    const RiffUiRead read(*this);
+    const auto& riff = read.get().riffA;
+    if (!riff.valid || slot < 0 || slot >= PhraseLearner::kGridSlots
+        || !riff.occupied[static_cast<size_t>(slot)])
+        return -1;
+    return riff.midi[static_cast<size_t>(slot)];
+}
+
+int AccompanimentProcessor::getRiffASlotGate(int slot) const noexcept
+{
+    const RiffUiRead read(*this);
+    const auto& riff = read.get().riffA;
+    if (!riff.valid || slot < 0 || slot >= PhraseLearner::kGridSlots
+        || !riff.occupied[static_cast<size_t>(slot)])
+        return 0;
+    return static_cast<int>(riff.gate16[static_cast<size_t>(slot)]);
+}
+
+int AccompanimentProcessor::getDrumA() const noexcept
+{
+    const RiffUiRead read(*this);
+    return read.get().drumA;
+}
+
+int AccompanimentProcessor::getDrumB0() const noexcept
+{
+    const RiffUiRead read(*this);
+    return read.get().drumB0;
+}
+
+int AccompanimentProcessor::getDrumB() const noexcept
+{
+    const RiffUiRead read(*this);
+    return read.get().drumB;
+}
+
+bool AccompanimentProcessor::isRiffBLocked() const noexcept
+{
+    const RiffUiRead read(*this);
+    return read.get().enginePhase == EnginePhase::RiffBLocked;
+}
+
+int AccompanimentProcessor::getRiffBOccupiedCount() const noexcept
+{
+    const RiffUiRead read(*this);
+    const auto& riff = read.get().riffB;
+    if (!riff.valid)
+        return 0;
+    int n = 0;
+    for (int i = 0; i < PhraseLearner::kGridSlots; ++i)
+        if (riff.occupied[static_cast<size_t>(i)])
+            ++n;
+    return n;
+}
+
+bool AccompanimentProcessor::getRiffBSlotOccupied(int slot) const noexcept
+{
+    const RiffUiRead read(*this);
+    const auto& riff = read.get().riffB;
+    return riff.valid && slot >= 0 && slot < PhraseLearner::kGridSlots
+        && riff.occupied[static_cast<size_t>(slot)];
+}
+
+int AccompanimentProcessor::getRiffBSlotMidi(int slot) const noexcept
+{
+    const RiffUiRead read(*this);
+    const auto& riff = read.get().riffB;
+    if (!riff.valid || slot < 0 || slot >= PhraseLearner::kGridSlots
+        || !riff.occupied[static_cast<size_t>(slot)])
+        return -1;
+    return riff.midi[static_cast<size_t>(slot)];
+}
+
+int AccompanimentProcessor::getRiffBSlotGate(int slot) const noexcept
+{
+    const RiffUiRead read(*this);
+    const auto& riff = read.get().riffB;
+    if (!riff.valid || slot < 0 || slot >= PhraseLearner::kGridSlots
+        || !riff.occupied[static_cast<size_t>(slot)])
+        return 0;
+    return static_cast<int>(riff.gate16[static_cast<size_t>(slot)]);
 }
 
 void AccompanimentProcessor::releaseResources()
@@ -446,7 +598,6 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
             if (!audioOwnsDrums)
             {
                 commit.patternIndex = finalIdx;
-                commit.fillKind = PatternPlayer::TransitionFillKind::None;
                 commit.alignToBeat = gestureOk && !drumHoldExpired;
                 hasGrooveCommit = true;
             }
@@ -683,7 +834,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
     }
     {
-        static bool lastLoopValue = false;
         if (auto* rawLoop = apvts.getRawParameterValue("loop"))
         {
             const bool newLoop = rawLoop->load() > 0.5f;
@@ -1862,6 +2012,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     // Playhead fraction is computed earlier in the block from the resolved host
     // clock (so it aligns with the drums' transport grid).
+    publishRiffUiSnapshot();
 }
 
 void AccompanimentProcessor::updateOutgoingFill(OutgoingFillArm& arm, bool isLast,

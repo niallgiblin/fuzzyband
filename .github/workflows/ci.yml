@@ -102,3 +102,26 @@ jobs:
           python3 training/prep_midi.py --input training/fixtures/minimal.mid --output /tmp/ci_prep_out.json
           test -s /tmp/ci_prep_out.json
         continue-on-error: true
+
+  tsan:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure ThreadSanitizer
+        run: |
+          cmake -B build-tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DMA_ENABLE_TSAN=ON \
+            -DMA_ENABLE_ONNX=OFF \
+            -DMA_BUNDLE_GROOVE_RENDERER=OFF \
+            -DMA_BUILD_STANDALONE=OFF
+
+      - name: Build tests
+        run: cmake --build build-tsan --config RelWithDebInfo --parallel --target MetalAccompanimentTests MetalAccompanimentIntegrationTests
+
+      - name: Run pipeline + learned-queue tests under TSan
+        env:
+          TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
+        run: |
+          ./build-tsan/MetalAccompanimentTests "[midi][T8.2]"
+          ./build-tsan/MetalAccompanimentIntegrationTests "[integration][pipeline]"

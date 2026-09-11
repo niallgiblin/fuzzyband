@@ -25,28 +25,18 @@
  *
  * Musicality pivot (Workstream A): drums render through a groove template
  * (velocity hierarchy + structured microtiming + bounded gaussian, A2), section
- * velocity contrast (A3.1) and ghost notes (A3.2); bass plays the authored
- * `pattern.bassEvents` transposed to the guitarist's root, with a harmonic
- * fallback engine (A1).
+ * velocity contrast (A3.1) and ghost notes (A3.2). Grid bass goes through
+ * emitBassRange: authored `pattern.bassEvents` transpose to the live root when
+ * present (T5.1); empty `bassEvents` fall back to the harmonic engine (A1).
  *
  * Call @ref process from the audio thread; methods are real-time safe when documented.
  */
 class PatternPlayer
 {
 public:
-    enum class TransitionFillKind
-    {
-        None,
-        Entry,
-        BuildUp,
-        Release,
-        BreakdownOrImpact
-    };
-
     struct GrooveCommit
     {
         int patternIndex = 0;
-        TransitionFillKind fillKind = TransitionFillKind::None;
         bool alignToBeat = false;  // T6.1: next beat instead of next bar
     };
 
@@ -132,13 +122,6 @@ public:
         The player emits a brief approach-to-tonic note as a block crosses the last
         beat of the bar, then clears the arm. Audio thread safe. */
     void armBassLeadIn() noexcept { bassLeadInArmed = true; }
-
-    /**
-     * @brief Fold a note into the current section's harmony around the live root
-     *        (A1.2): snap its pitch class to the nearest chord tone and apply the
-     *        bass transpose. Returns a note inside the bass register. Audio thread.
-     */
-    int snapBassToSectionHarmony(int rawNote) const noexcept;
 
     /**
      * @brief Beat-grid / pattern bass (Play + RiffBListen fallback). Off during

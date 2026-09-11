@@ -2,6 +2,7 @@
 #include "AccompanimentProcessor.h"
 #include "analysis/StructureTagger.h"
 #include "analysis/StructureSequencer.h"
+#include "midi/GrooveTemplate.h"
 #include <BinaryData.h>
 #include <functional>
 
@@ -330,17 +331,6 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     for (int i = 0; i < Groove::presetCount(); ++i)
         genreCombo.addItem(Groove::presetFor(i).name, genreCombo.getNumItems() + 1);
     genreCombo.setTooltip("Genre preset: groove feel, velocity profile, section dynamics (B1). Rock is the default; metal and rock subgenres are presets.");
-    genreCombo.onChange = [this]
-    {
-        // Applying a genre also applies its default swing to the swing knob.
-        const int g = genreCombo.getSelectedItemIndex();
-        if (g >= 0 && g < Groove::presetCount())
-        {
-            if (auto* swingParam = dynamic_cast<juce::AudioParameterFloat*>(
-                    audioProcessorRef.getApvts().getParameter("swing")))
-                *swingParam = Groove::presetFor(g).defaultSwing;
-        }
-    };
     addAndMakeVisible(genreLabel);
     addAndMakeVisible(genreCombo);
 
@@ -438,6 +428,13 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
         apvts, "swing", swingSlider);
     humanizeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "humanize", humanizeSlider);
+
+    // ComboBoxAttachment owns genreCombo.onChange, so swing must follow the
+    // genre *parameter* (T8.3). Listen after sendInitialUpdate so opening the
+    // editor does not clobber a persisted swing value.
+    genreSwingListener.owner = this;
+    if (auto* genreParam = apvts.getParameter("genre"))
+        genreParam->addListener(&genreSwingListener);
 
     // Generative groove lock: hold length + live status indicator.
     lockBarsLabel.setJustificationType(juce::Justification::centredLeft);
@@ -543,7 +540,19 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
 
 AccompanimentEditor::~AccompanimentEditor()
 {
+    if (auto* genreParam = audioProcessorRef.getApvts().getParameter("genre"))
+        genreParam->removeListener(&genreSwingListener);
+    genreSwingListener.owner = nullptr;
     setLookAndFeel(nullptr);
+}
+
+void AccompanimentEditor::applyGenreDefaultSwing() noexcept
+{
+    const int g = genreCombo.getSelectedItemIndex();
+    if (g < 0 || g >= Groove::presetCount())
+        return;
+    if (auto* p = audioProcessorRef.getApvts().getParameter("swing"))
+        p->setValueNotifyingHost(p->convertTo0to1(Groove::presetFor(g).defaultSwing));
 }
 
 void AccompanimentEditor::timerCallback()

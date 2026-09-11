@@ -197,8 +197,9 @@ struct FeatureVector {
 
 **File:** `src/inference/IInference.h`  
 **Purpose:** Abstract interface that decouples the inference implementation from
-the rest of the plugin. Phase 1 uses `RuleBasedInference`. Phase 2 swaps in
-`OnnxInference` without touching any other component.
+the rest of the plugin. Production uses `MetalGrooveInference` when
+`MA_ENABLE_ONNX` is on; otherwise `RuleBasedInference`. Either can be swapped
+without touching the audio thread.
 
 ```cpp
 class IInference {
@@ -238,18 +239,26 @@ BREAKDOWN → pattern 6  (half-time, heavy ghost notes)
 
 ---
 
-### `OnnxInference` (Phase 2 — active when `MA_ENABLE_ONNX=ON`)
+### `MetalGrooveInference` (production path when `MA_ENABLE_ONNX=ON`)
 
-**File:** `src/inference/OnnxInference.h/.cpp`  
+**File:** `src/inference/MetalGrooveInference.h/.cpp`  
 **Thread:** Background inference thread  
-**Purpose:** Implements `IInference` using ONNX Runtime against `assets/accompaniment_model.onnx`
-bundled as JUCE `BinaryData` when `MA_ENABLE_ONNX` is enabled at build time.
+**Purpose:** Implements `IInference` using ONNX Runtime against
+`assets/metal_groove.onnx` (22-class mel-CNN), bundled as JUCE `BinaryData`.
 
-`AccompanimentProcessor` constructs `OnnxInference` and calls `tryLoadModel()`. If loading fails
-(or the option is off), it uses `RuleBasedInference` instead — no audio-thread change either way.
+`AccompanimentProcessor` constructs `MetalGrooveInference` and calls
+`tryLoadModel()`. If loading fails (or the option is off), it uses
+`RuleBasedInference` instead — no audio-thread change either way. A failed
+load is loud (Debug `jassert` plus `getActiveInferenceName()` in tests) so a
+stale dylib cannot masquerade as working ML.
 
-Tensor details (input `X` float32 `[1,5]`, output `Y` int64 clamped 0–6) are frozen in
-[`docs/ONNX_IO.md`](docs/ONNX_IO.md); Phase 15 export must target that contract.
+The background drain feeds `selectPatternFromMel()` from a 64×32 (or 64×40)
+mel window. Scalar `selectPattern(FeatureVector)` is the rule-based fallback
+when the mel path is unavailable. Style classification (`classifyStyle`)
+runs from the same drain.
+
+The legacy scalar `OnnxInference` / `assets/accompaniment_model.onnx` path is
+retired; see [`docs/DATA_STRATEGY.md`](docs/DATA_STRATEGY.md).
 
 ---
 
@@ -292,7 +301,7 @@ Pattern indices 0–6 correspond to the outputs of `RuleBasedInference`.
 clock, and fills the JUCE `MidiBuffer` with note-on/off events.
 
 **Key behaviours:**
-- Beat clock derived from the DAW transport BPM (see [Tempo source](#tempo-source-daw-transport)) and sample position
+- Beat clock derived from the DAW **transport** sample position (see [Tempo source](#tempo-source-daw-transport) and [Two clocks](#two-clocks-transport-vs-monotonic))
 - Pattern transitions are quantised to bar boundaries to avoid mid-bar glitches
 - Note velocity is humanised: ±10 random offset per hit
 - Note timing is humanised: ±2ms random offset per hit
@@ -312,6 +321,30 @@ public:
 
 ---
 
+### Two clocks: transport vs monotonic
+
+Lock and transition **schedules** must not share the drum grid's host
+playhead. A DAW loop wrap jumps `getTimeInSamples()` backwards, which used
+to freeze `grooveLockEndSample` and silence frozen bass.
+
+| Clock | Source | Used for |
+|---|---|---|
+| Transport | `PatternPlayer::previewResolvedHostSample` / host `getTimeInSamples()` | Drum + grid-bass placement, click, fills, bar phase |
+| Monotonic | `hostSampleTime` (plugin sample counter, never wraps) | `grooveLockStartMono` / `grooveLockEndMono`, `transitionStartMono` / `transitionEndMono`, frozen-riff origin |
+
+At lock / transition engage, `latchLockClock` stores `lockOriginMono =
+hostSampleTime` and `lockBarPhaseBeats = fmod(transportBeats, 4)` so the
+frozen bass re-enters on the audible drum downbeat. Durations are
+`hostSampleTime` deltas; a loop wrap cannot prevent expiry. A seek
+(`PatternPlayer::consumeTransportJumped`) re-latches bar phase and origin
+while preserving remaining duration.
+
+UI riff snapshots (`riffA` / `riffB` / `enginePhase`) are published through
+a triple buffer so the message thread never races the audio thread on the
+64-slot grids (T8.2).
+
+---
+
 ### `AccompanimentProcessor` (top-level plugin)
 
 **File:** `src/AccompanimentProcessor.h/.cpp`  
@@ -323,7 +356,7 @@ Runs the inference background thread.
 AccompanimentProcessor
 ├── EnergyAnalyser
 ├── StructureTagger
-├── std::unique_ptr<IInference>    ← RuleBasedInference or OnnxInference
+├── std::unique_ptr<IInference>    ← RuleBasedInference or MetalGrooveInference
 ├── MidiPatternLibrary
 ├── PatternPlayer
 ├── std::atomic<int>               ← pattern index handoff (acquire/release with inference/UI)
@@ -453,22 +486,15 @@ The host DAW routes them to separate VSTi tracks.
 
 ---
 
-## Extending to Phase 2
+## Extending inference
 
-To swap in ML inference:
+To swap the pattern selector:
 
-1. Implement `OnnxInference : public IInference`
-2. In `AccompanimentProcessor` constructor, change:
-   ```cpp
-   // Phase 1
-   inference = std::make_unique<RuleBasedInference>();
-
-   // Phase 2
-   inference = std::make_unique<OnnxInference>();
-   ```
+1. Implement a new `IInference` (see `MetalGrooveInference`)
+2. In `AccompanimentProcessor`'s factory (`makeInference()`), construct it
+   and call `tryLoadModel()` if it loads weights
 3. Nothing else changes. The audio thread, pattern player, and MIDI output are
    completely unaware of which inference implementation is active.
 
-Add pitch/chord detection for Phase 2 by inserting a `PitchDetector` component
-between `EnergyAnalyser` and `StructureTagger`, and adding `rootNote` and
-`chordQuality` fields to `FeatureVector`.
+Pitch/chord detection is already in the live path (`PitchEstimator` /
+`StablePitchTracker`); do not re-add a parallel detector.

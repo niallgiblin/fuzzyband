@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.76] — Cleanup, races and docs (Phase 8)
+
+- **T8.1 dead code.** Removed unused `snapBassToSectionHarmony`,
+  `GrooveCommit::fillKind` / `TransitionFillKind`, and the no-op
+  `PhraseLearner::setMirrorWhileHeld` / `releaseForTransition` stubs.
+  `lastRiffMatchSample` stays (T6.2 same-riff cut-short).
+  `barsPerGrooveForSection` and `rmsDelta` stay (T4.1 / T6.1).
+- **T8.2 races.** `lastLoopValue` is a per-instance member. UI riff getters
+  read a triple-buffered snapshot so the audio thread never takes a lock.
+  A full learned-bass queue drops the newest note instead of overwriting a
+  queued one. CI has a ThreadSanitizer job (`MA_ENABLE_TSAN`) that runs the
+  pipeline tests.
+- **T8.3 swing notify.** Changing genre calls `setValueNotifyingHost` on
+  `swing`, so the slider, host automation and session state stay in sync.
+- **T8.4 skipped** (optional groove-template regeneration; data-dependent).
+- **T8.5 docs.** `ARCHITECTURE.md` describes `MetalGrooveInference` and the
+  two-clock model. Stress-test contracts match cut-short, fills and idle
+  Pattern 0. Changelog 0.9.59 / 0.9.12 no longer claim stub APIs or a
+  universal 0.9-beat legato.
+- **T8.6 deferred.** Ornaments-as-library-variants stays a follow-up after
+  T4.3 has been played.
+
 ## [0.9.75] — Fills (Phase 7)
 
 - **T7.1 Record fill seed.** Record A/B pass a varying phrase seed into
@@ -236,9 +258,10 @@ documented as unmet; it now holds end to end.
 - **Play mode has a 1-bar click count-in** (kick on 1, stick on 2/3/4) before
   the form starts, mirroring Record-riff. Pressing PLAY off mid-count cancels it.
 - **Transition sections no longer drop the bass into a detached beat-grid.**
-  `PhraseLearner::setMirrorWhileHeld` keeps the learned riff held (for the A
-  return) while the bass follows the guitarist's live attacks through B/C, with
-  the beat-grid section line as the fallback when you stop picking.
+  The processor mixer keeps the learned riff held for the A return while
+  B/C bass follows live attacks, with the beat-grid section line as the
+  fallback when you stop picking. (`PhraseLearner` no longer exposes a
+  `setMirrorWhileHeld` API — that was a stub.)
 - **Record-riff A re-entry is decisive**: on the transition→A block the stale
   mid-riff note is replaced by the downbeat note at full velocity (0.75) instead
   of a quiet one-block gap.
@@ -343,12 +366,14 @@ into the post-lock contrast section, the drums rotated to the new groove but the
 kept looping the old riff over it. And in Play mode the learned riff was played
 note-for-note, which could pull the bass out of the song's harmony.
 
-- **Transition guitar freedom.** `PhraseLearner::releaseForTransition()` drops the
-  groove-lock hold and stops the autonomous riff loop when the post-lock transition
-  engages, so the bass leaves the old riff and plays the new section's harmony (or
-  live-mirrors your new lines). The learned pattern is retained so the riff is still
-  recognised and the transition is cut short / the riff re-locks when you genuinely
-  return to it. `setHoldActive` now only holds the riff during a real groove lock.
+- **Transition guitar freedom.** The processor mixer drops the groove-lock hold
+  when the post-lock transition engages (`setHoldActive(false)`), so the bass
+  leaves the old riff and plays the new section's harmony (or live-mirrors your
+  new lines). The learned pattern is retained so the riff is still recognised
+  and the transition is cut short / the riff re-locks when you genuinely return
+  to it. (`PhraseLearner::releaseForTransition` was a later no-op stub and is
+  removed in 0.9.76.) `setHoldActive` now only holds the riff during a real
+  groove lock.
 - **In-key bass everywhere else.** The riff is now played note-for-note only while the
   groove is genuinely locked (drums frozen on the riff). During a post-lock transition
   and in Play mode the bass snaps to the current section's harmony, keeping it musical
@@ -604,8 +629,11 @@ or plugin binary changes, so no version bump.
   chug density). The learned loop only sustains when you stop, and the groove
   lock still holds the riff through a solo (the mirror is suppressed only while
   the groove lock is holding).
-- **Legato note length:** bass notes are ~0.9 beat instead of 0.4 — the bass
-  sustains through dense chugs instead of staccato blips.
+- **Bass note length depends on the path:** live-mirror uses `kBassGate`
+  (0.85 of the written duration); frozen-riff playback uses a 90% gate over
+  coalesced 16th slots (T5.2); authored / harmonic grid bass uses
+  `durationBeats × sectionBassGate()`. There is no single 0.9-beat legato
+  on every bass path.
 - v0.9.12 (versioned build per workflow). Also: installs now strip quarantine
   xattrs (`xattr -cr`) — the iCloud-synced build folder was flagging fresh
   builds so macOS refused to load them ("library load disallowed by system

@@ -127,70 +127,20 @@ public:
     bool hasLearnedRiff() const noexcept { return riffHeld.load(std::memory_order_relaxed); }
 
     /** @brief Test/debug: occupied 16ths in the Record A snapshot (0 if none). */
-    int getRiffAOccupiedCount() const noexcept
-    {
-        if (!riffA.valid)
-            return 0;
-        int n = 0;
-        for (int i = 0; i < PhraseLearner::kGridSlots; ++i)
-            if (riffA.occupied[static_cast<size_t>(i)])
-                ++n;
-        return n;
-    }
-    bool getRiffASlotOccupied(int slot) const noexcept
-    {
-        return riffA.valid && slot >= 0 && slot < PhraseLearner::kGridSlots
-            && riffA.occupied[static_cast<size_t>(slot)];
-    }
-    int getRiffASlotMidi(int slot) const noexcept
-    {
-        if (!riffA.valid || slot < 0 || slot >= PhraseLearner::kGridSlots
-            || !riffA.occupied[static_cast<size_t>(slot)])
-            return -1;
-        return riffA.midi[static_cast<size_t>(slot)];
-    }
-    int getRiffASlotGate(int slot) const noexcept
-    {
-        if (!riffA.valid || slot < 0 || slot >= PhraseLearner::kGridSlots
-            || !riffA.occupied[static_cast<size_t>(slot)])
-            return 0;
-        return static_cast<int>(riffA.gate16[static_cast<size_t>(slot)]);
-    }
+    int getRiffAOccupiedCount() const noexcept;
+    bool getRiffASlotOccupied(int slot) const noexcept;
+    int getRiffASlotMidi(int slot) const noexcept;
+    int getRiffASlotGate(int slot) const noexcept;
 
-    int getDrumA() const noexcept { return drumA; }
-    int getDrumB0() const noexcept { return drumB0; }
-    int getDrumB() const noexcept { return drumB; }
-    bool isRiffBLocked() const noexcept { return enginePhase == EnginePhase::RiffBLocked; }
+    int getDrumA() const noexcept;
+    int getDrumB0() const noexcept;
+    int getDrumB() const noexcept;
+    bool isRiffBLocked() const noexcept;
 
-    int getRiffBOccupiedCount() const noexcept
-    {
-        if (!riffB.valid)
-            return 0;
-        int n = 0;
-        for (int i = 0; i < PhraseLearner::kGridSlots; ++i)
-            if (riffB.occupied[static_cast<size_t>(i)])
-                ++n;
-        return n;
-    }
-    bool getRiffBSlotOccupied(int slot) const noexcept
-    {
-        return riffB.valid && slot >= 0 && slot < PhraseLearner::kGridSlots
-            && riffB.occupied[static_cast<size_t>(slot)];
-    }
-    int getRiffBSlotMidi(int slot) const noexcept
-    {
-        if (!riffB.valid || slot < 0 || slot >= PhraseLearner::kGridSlots
-            || !riffB.occupied[static_cast<size_t>(slot)])
-            return -1;
-        return riffB.midi[static_cast<size_t>(slot)];
-    }
-    int getRiffBSlotGate(int slot) const noexcept
-    {
-        if (!riffB.valid || slot < 0 || slot >= PhraseLearner::kGridSlots
-            || !riffB.occupied[static_cast<size_t>(slot)])
-            return 0;
-        return static_cast<int>(riffB.gate16[static_cast<size_t>(slot)]);
-    }
+    int getRiffBOccupiedCount() const noexcept;
+    bool getRiffBSlotOccupied(int slot) const noexcept;
+    int getRiffBSlotMidi(int slot) const noexcept;
+    int getRiffBSlotGate(int slot) const noexcept;
 
     // ── Post-lock transition grammar (A5.2) ──────────────────────────────────
     // After a groove lock expires, the engine plays a *contrast* section for a
@@ -284,6 +234,8 @@ private:
     int64_t frozenRiffOriginMono(double samplesPerBeat) const noexcept;
     /** @brief On a host seek/loop wrap, re-latch bar phase; keep remaining duration. */
     void reanchorLockClockOnJump(int64_t transportSample, double samplesPerBeat) noexcept;
+    /** @brief Publish an immutable riff/phase snapshot for the UI (T8.2). */
+    void publishRiffUiSnapshot() noexcept;
     struct OutgoingFillArm
     {
         bool lastBar = false;
@@ -358,6 +310,34 @@ private:
     EnginePhase enginePhase = EnginePhase::Idle;
     PhraseLearner::LearnedRiff riffA{};
     PhraseLearner::LearnedRiff riffB{};
+    // T8.2: UI/tests read riffA/riffB/enginePhase via a triple-buffer snapshot
+    // so the audio thread never takes a lock. The reader pins the published
+    // slot; the writer always copies into a slot that is neither published
+    // nor currently being read.
+    struct RiffUiSnapshot
+    {
+        PhraseLearner::LearnedRiff riffA{};
+        PhraseLearner::LearnedRiff riffB{};
+        EnginePhase enginePhase = EnginePhase::Idle;
+        int drumA = 0;
+        int drumB0 = 0;
+        int drumB = 0;
+    };
+    static constexpr int kRiffUiSlots = 3;
+    std::array<RiffUiSnapshot, kRiffUiSlots> riffUiSlots{};
+    std::atomic<int> riffUiPublished{ 0 };
+    mutable std::atomic<int> riffUiReading{ -1 };
+    struct RiffUiRead
+    {
+        explicit RiffUiRead(const AccompanimentProcessor& p) noexcept;
+        ~RiffUiRead() noexcept;
+        const RiffUiSnapshot& get() const noexcept;
+        RiffUiRead(const RiffUiRead&) = delete;
+        RiffUiRead& operator=(const RiffUiRead&) = delete;
+    private:
+        const AccompanimentProcessor& proc;
+        int slot = 0;
+    };
     // T5.2: previous 16th's peak / trailing level for re-attack detection.
     float prevSlotPeak_ = 0.0f;
     float prevSlotEnd_ = 0.0f;
@@ -381,7 +361,7 @@ private:
     double  lockBarPhaseBeats = 0.0;   // fmod(transport beats at engage, 4) — bar alignment
     int64_t grooveLockEndMono = -1;    // hold ends here (monotonic hostSampleTime frame)
     int64_t grooveLockStartMono = -1;  // hold began here (monotonic hostSampleTime frame)
-    int64_t lastRiffMatchSample = std::numeric_limits<int64_t>::min() / 2;  // last riff-grid attack
+    int64_t lastRiffMatchSample = std::numeric_limits<int64_t>::min() / 2;  // T6.2: last A-riff match (cut-short)
     bool prevPhraseLocked = false;     // phrase-lock edge detection
     bool grooveLockReleaseArmed = false;  // P0/R4: arm a transition fill at lock expiry
 
@@ -488,6 +468,8 @@ private:
     std::shared_ptr<SongForm> pendingSongForm;
     std::atomic<int> songFormVersion{ 0 };
     int loadedSongFormVersion = -1;
+
+    bool lastLoopValue = false;  // per-instance; was a function-local static (T8.2)
 
     int64_t lastDrumPatternChangeSample = -1;
     StructureState lastCommittedStructureState = StructureState::SILENT;
