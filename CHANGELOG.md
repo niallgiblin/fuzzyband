@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.74] — Reactivity (Phase 6)
+
+- **T6.1 1-bar drum hold + gesture fast path.** Follow/Play commits at most once
+  per bar; in Play, a large RMS step (`|rmsDelta| > 0.6`) may commit at the next
+  **beat** (`GrooveCommit::alignToBeat`) so a hard dynamic change is audible
+  within ~250 ms. Gesture commits stay Play-only so follow/idle and B-listen do
+  not thrash. Inference does not enqueue player commits during Play or B-listen
+  (the audio thread owns pool rotation). The 512 ms mel window is unchanged —
+  `metal_groove.onnx` is trained on 64×40 frames from 22050 samples.
+- **T6.2 same-riff cut-short.** Replaying the locked riff during a contrast
+  snaps the transition to the next bar and re-locks A. Matching uses riff
+  **onsets** (not sustain 16ths), so a held note of the same pitch does not
+  cut the contrast. A different riff still plays the full `transitionBars`.
+- **T6.3 B-listen rotates and can lock.** Contrast drums follow the section
+  pool (`pickPoolPattern`) instead of pinning `drumB0`; the first contrast bar
+  stays on `drumB0` so rotation starts on the next phrase. Auto-lock waits for
+  4 attacks (the first 2-bar repeat). A held lock can drift-unlock after 4 bars
+  of non-matching attacks so a stuck B freeze can escape without Forget.
+- **T6.4 guitar-stop no longer kills a lock.** Riff A / B-locked drums and
+  frozen bass keep playing through a breath; live-mirror bass is still gated.
+- **T6.5 attack detector.** Any RMS decrease arms the next rise (was a 3% drop),
+  so a 200 BPM 16th pulse train records ~4 attacks/beat. A constant tone still
+  produces no attacks.
+
 ## [0.9.73] — Bass musicality (Phase 5)
 
 - **T5.1 authored bass lines play again.** Play / B-listen grid bass goes through

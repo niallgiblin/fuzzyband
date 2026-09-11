@@ -28,6 +28,12 @@ void PhraseLearner::reset() noexcept
     lastTriggerSample_ = 0;
     following_ = false;
     justMatched_ = false;
+    justMatchedRef_ = false;
+    matchPattern_ = {};
+    matchLen_ = 0;
+    matchLenBeats_ = 16.0;
+    mismatchStartSample_ = -1;
+    holdActive_ = false;
     prevRms_ = 0.0f;
     rmsSmooth_ = 0.0f;
     fallCounter_ = 0;
@@ -50,7 +56,9 @@ bool PhraseLearner::detectAttack(float rms) noexcept
 
     // Recent-decay tracking runs even for near-silent blocks: a note decaying
     // into silence IS a fall, and it arms the next note's attack.
-    const bool fell = (rms < prevRms * 0.97f);
+    // T6.5: any decrease counts (was 3%). Fast 16ths at 200 BPM never drop 3%
+    // through the 100 ms RMS window, so the old threshold starved the detector.
+    const bool fell = (rms < prevRms);
     if (fell)
         fallCounter_ = kFallWindowBlocks;
     else if (fallCounter_ > 0)
@@ -60,14 +68,8 @@ bool PhraseLearner::detectAttack(float rms) noexcept
         return false;
 
     // A note attack is a sharp rise that follows a *recent decay* — real picking
-    // produces per-note pulses (rise → fall → rise), and the analyser's 100 ms
-    // RMS window smooths them into a few-% block-to-block swings. Requiring a
-    // recent fall is what separates real attacks from the false positives:
-    //  - a constant tone (no falls, no rises);
-    //  - a slow swell / analyser warm-up ramp (rises, but never falls);
-    //  - the RMS-smoothing warm-up right after audio starts (rms ≈ prevRms).
-    // Modest rise thresholds, because real palm-muted chugs rise only a few %
-    // per block through the RMS window.
+    // produces per-note pulses (rise → fall → rise). Requiring a recent fall
+    // separates real attacks from a constant tone, a slow swell, and RMS warm-up.
     const bool sharpRise = (rms > rmsSmooth_ * 1.15f) || (rms > prevRms * 1.08f);
     return (fallCounter_ > 0) && sharpRise && rms > 0.01f;
 }
@@ -475,6 +477,35 @@ bool PhraseLearner::loadPattern(const LearnedRiff& src) noexcept
     return true;
 }
 
+void PhraseLearner::setMatchReference(const LearnedRiff& src) noexcept
+{
+    matchPattern_ = {};
+    matchLen_ = 0;
+    matchLenBeats_ = src.lenBeats > 0.0 ? src.lenBeats
+                                        : static_cast<double>(kGridBars) * 4.0;
+    if (!src.valid)
+        return;
+    bool anyOnset = false;
+    for (int s = 0; s < kGridSlots; ++s)
+        if (src.gate16[static_cast<size_t>(s)] > 0)
+            anyOnset = true;
+    const int nSlots = std::min(kGridSlots, kMaxPattern);
+    for (int s = 0; s < nSlots && matchLen_ < kMaxPattern; ++s)
+    {
+        if (!src.occupied[static_cast<size_t>(s)])
+            continue;
+        // Sustain slots are 16ths apart; matching those IOIs lets a held note's
+        // block-RMS wobble look like "the same riff" (T6.2 false cut-short).
+        if (anyOnset && src.gate16[static_cast<size_t>(s)] == 0)
+            continue;
+        matchPattern_[static_cast<size_t>(matchLen_)].beatOffset =
+            static_cast<double>(s) * 0.25;
+        matchPattern_[static_cast<size_t>(matchLen_)].midiNote =
+            src.midi[static_cast<size_t>(s)];
+        ++matchLen_;
+    }
+}
+
 void PhraseLearner::coalesceSlotGates() noexcept
 {
     for (int s = 0; s < kGridSlots; ++s)
@@ -549,6 +580,7 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
 
     // Edge-triggered "following the riff": recomputed on every block.
     justMatched_ = false;
+    justMatchedRef_ = false;
 
     if (attack)
     {
@@ -565,30 +597,62 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
         // within a quarter beat of ANY note-to-note interval (cycled). Matching
         // any interval is robust for uniform chugs, whose bar-aligned pattern
         // under-samples the bar. Computed here (before the state machine) so the
-        // live mirror below can distinguish a riff note from a solo lick. Works
-        // whenever a pattern is known — including after releaseForTransition,
-        // where the learner is back in Learning but the riff is still recognised
-        // so a post-lock transition can be cut short when it re-appears.
+        // live mirror below can distinguish a riff note from a solo lick.
         bool matched = false;
-        if (patternLen_ >= 2 && attackCount_ >= 2)
+        bool matchedRef = false;
+        if (attackCount_ >= 2)
         {
             const int prevIdx = (attackWrite_ - 2 + kMaxAttacks) % kMaxAttacks;
             const int curIdx = (attackWrite_ - 1 + kMaxAttacks) % kMaxAttacks;
             const int64_t recentIoi = attacks_[curIdx].sample - attacks_[prevIdx].sample;
-            const double quarterBeatSamples = 0.25 * (60.0 / bpm) * sampleRate_;
-            for (int i = 0; i < patternLen_ && !matched; ++i)
+            const double bpmSafe = (bpm > 0.0) ? static_cast<double>(bpm) : 120.0;
+            const double quarterBeatSamples = 0.25 * (60.0 / bpmSafe) * sampleRate_;
+            auto matchIoi = [&](const PatternNote* notes, int len, double lenBeats) noexcept -> bool
             {
-                const int next = (i + 1) % patternLen_;
-                double ioiBeats = pattern_[next].beatOffset - pattern_[i].beatOffset;
-                if (ioiBeats <= 0.0)
-                    ioiBeats += patternLenBeats_;
-                const double ioiSamples = ioiBeats * (60.0 / bpm) * sampleRate_;
-                matched = std::abs(static_cast<double>(recentIoi) - ioiSamples)
-                    <= quarterBeatSamples;
+                if (notes == nullptr || len < 2)
+                    return false;
+                for (int i = 0; i < len; ++i)
+                {
+                    const int next = (i + 1) % len;
+                    double ioiBeats = notes[next].beatOffset - notes[i].beatOffset;
+                    if (ioiBeats <= 0.0)
+                        ioiBeats += lenBeats;
+                    const double ioiSamples = ioiBeats * (60.0 / bpmSafe) * sampleRate_;
+                    if (std::abs(static_cast<double>(recentIoi) - ioiSamples) <= quarterBeatSamples)
+                        return true;
+                }
+                return false;
+            };
+            matched = matchIoi(pattern_.data(), patternLen_, patternLenBeats_);
+            // T6.2: same-riff cut-short. Ignore sub-16th IOIs — a held note's
+            // block-RMS wobble retriggers at kMinAttackInterval (~40 ms) and
+            // would otherwise match sustain-adjacent 16ths of the same pitch.
+            const double minRiffIoiSamples = 0.2 * (60.0 / bpmSafe) * sampleRate_;
+            if (matchLen_ >= 2 && static_cast<double>(recentIoi) >= minRiffIoiSamples
+                && matchIoi(matchPattern_.data(), matchLen_, matchLenBeats_))
+            {
+                const int pc = ((attackBassNote % 12) + 12) % 12;
+                for (int i = 0; i < matchLen_ && !matchedRef; ++i)
+                {
+                    const int rpc = ((matchPattern_[static_cast<size_t>(i)].midiNote % 12) + 12) % 12;
+                    if (rpc == pc)
+                        matchedRef = true;
+                }
             }
         }
         following_ = matched;
         justMatched_ = matched;
+        justMatchedRef_ = matchedRef;
+
+        if (locked_ && !following_)
+        {
+            if (mismatchStartSample_ < 0)
+                mismatchStartSample_ = sampleTime;
+        }
+        else if (following_)
+        {
+            mismatchStartSample_ = -1;
+        }
 
         // Live riff mirror: follow each attack while Learning (pre-lock).
         // Locked playback of a snapshot is the processor's job (RiffA / RiffBLocked).
@@ -612,12 +676,10 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
             if (userCapturing_ || gridCapturing_ || !autoLockEnabled_)
                 break;
 
-            // P0/§1.4 option A: wait for more evidence, then capture the longest
-            // matching slice in one shot (descending scan) so the loop-fill in
-            // lockPattern has a real riff to replicate — no re-lock churn later.
-            // Minimum 8 attacks (2 notes × 2 repetitions, with headroom) before
-            // attempting a lock; the immediate mirror covers the pre-lock gap.
-            if (attackCount_ >= 8)
+            // T6.3: lock on the first 2-bar repeat (`patternsMatch` already
+            // requires attackCount_ >= len * 2). Four attacks is two notes
+            // repeated twice — enough to pin a figure without waiting for 8.
+            if (attackCount_ >= 4)
             {
                 const int maxLen = std::min({ kMaxPattern, 16, attackCount_ / 2 });
                 for (int len = maxLen; len >= 2; --len)
@@ -671,15 +733,22 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
                 }
             }
 
-            // Drift handling (the "following" match was computed on the attack
-            // block above): rhythm no longer fits → unlock and re-learn —
-            // unless the groove lock is holding the riff (keep looping it).
+            // Drift handling: rhythm no longer fits → unlock and re-learn.
+            // Hold still blocks an immediate unlock, but T6.3 lets a stuck lock
+            // escape after kDriftUnlockBars of non-matching attacks (no Forget).
+            const double bpmSafe = (bpm > 0.0) ? static_cast<double>(bpm) : 120.0;
+            const int64_t mismatchLimit = static_cast<int64_t>(
+                static_cast<double>(kDriftUnlockBars) * 4.0 * (60.0 / bpmSafe) * sampleRate_);
+            const bool mismatchLongEnough = mismatchStartSample_ >= 0
+                && (sampleTime - mismatchStartSample_) >= mismatchLimit;
             if (attack && locked_ && attackCount_ >= 2 && patternLen_ >= 2
-                && !holdActive_ && !following_)
+                && !following_
+                && (!holdActive_ || mismatchLongEnough))
             {
                 state_ = State::Learning;
                 locked_ = false;
                 patternLen_ = 0;
+                mismatchStartSample_ = -1;
             }
             break;
         }

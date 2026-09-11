@@ -1,18 +1,21 @@
 /**
  * E2E: Groove variety — multi-section jam produces ≥3 distinct groove names.
  *
- * Feeds 8 short SOFT sections and 4 LOUD sections separated by silence gaps.
+ * Feeds 8 SOFT sections and 4 LOUD sections separated by silence gaps.
  * The bar-quantized hold guard resets structure state between sections via
  * SILENT entry/exit. With the rock-first genre default (B1), SOFT low-energy
- * sections route to the rock set (Rock Backbeat / Rock Half-Time), while
- * LOUD sections stay on Chorus mid/fast.
+ * sections route to the rock set (Rock Backbeat / Rock Half-Time) as barMod8
+ * flips under the 1-bar hold (T6.1); LOUD sections stay on Chorus mid/open.
+ *
+ * SOFT sections are 5 s so structure hysteresis (~2 s out of SILENT) plus two
+ * 1-bar commits can land both even and odd barMod8 inside one section.
  *
  * Section layout (1.5 s silence gaps between musical sections):
  *   5 s   silence
  *  10 s   LOUD  warmup (skipped)
  *   5 s   silence
- *   8 × (1.5 s silence + 2.5 s SOFT amp 0.013) — collect each
- *   4 × (1.5 s silence + 3.0 s LOUD amp 0.12)  — collect each
+ *   8 × (1.5 s silence + 5.0 s SOFT amp 0.013) — collect throughout
+ *   4 × (1.5 s silence + 3.0 s LOUD amp 0.12)  — collect throughout
  *   5 s   silence
  *
  * Pattern indices (post-A4.1):
@@ -98,14 +101,30 @@ TEST_CASE("E2E: multi-section jam produces >=3 distinct groove names", "[e2e][gr
         ++sectionNum;
         const int n = static_cast<int>(durSec * sr);
         auto sig = sineSection(n, 1500.0, sr, amp);
-        (void)feedSection(proc, sig.data(), n, block);
-        const int patIdx = proc.getLatestPatternIndex();
-        const std::string name = patternName(patIdx);
-        seenNames.insert(name);
+        int patIdx = proc.getLatestPatternIndex();
+        std::set<std::string> sectionNames;
+        for (int start = 0; start + block <= n; start += block)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+                juce::FloatVectorOperations::copy(buf.getWritePointer(ch), sig.data() + start, block);
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            patIdx = proc.getLatestPatternIndex();
+            const std::string name = patternName(patIdx);
+            if (!name.empty() && name != "Silent")
+            {
+                seenNames.insert(name);
+                sectionNames.insert(name);
+            }
+        }
         std::cerr << "[GROOVE] section " << sectionNum
                   << ": patIdx=" << patIdx
-                  << " name=\"" << name << "\""
-                  << " stateIdx=" << proc.getDisplayStateIndex()
+                  << " names=";
+        for (const auto& n : sectionNames)
+            std::cerr << "\"" << n << "\" ";
+        std::cerr << "stateIdx=" << proc.getDisplayStateIndex()
                   << " bpm=" << proc.getDisplayBpm()
                   << " rms=" << proc.getDisplayRms()
                   << std::endl;
@@ -122,11 +141,11 @@ TEST_CASE("E2E: multi-section jam produces >=3 distinct groove names", "[e2e][gr
     }
     runSilence(5.0);
 
-    // ── 8 SOFT sections (2.5 s each, 1.5 s silence gaps) ──────────────────
+    // ── 8 SOFT sections (5.0 s each, 1.5 s silence gaps) ──────────────────
     for (int i = 0; i < 8; ++i)
     {
         runSilence(1.5);
-        runAndCollect(0.013f, 2.5);
+        runAndCollect(0.013f, 5.0);
     }
 
     // ── 4 LOUD sections (3.0 s each, 1.5 s silence gaps) ──────────────────

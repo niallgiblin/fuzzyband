@@ -1355,3 +1355,49 @@ TEST_CASE("T5.3: a pickup on the and-of-4 does not swallow the beat-1 grid root"
     REQUIRE(pickupOns >= 1);
     REQUIRE(beat1Ons >= 1);
 }
+
+TEST_CASE("T6.1: GrooveCommit alignToBeat applies at the next beat, not the next bar",
+          "[midi][t6.1]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.snapBpm(120.0f);
+    player.setStructureSilent(false);
+    player.setPatternIndex(1);
+
+    constexpr int block = 512;
+    constexpr int64_t beat = 24000;  // 1 beat at 120 BPM / 48 kHz
+    int64_t pos = 0;
+    juce::MidiBuffer midi;
+    player.process(midi, block, pos, true);
+    pos += block;
+    REQUIRE(player.getActivePatternIndex() == 1);
+
+    while (pos + block <= beat / 2)
+    {
+        midi.clear();
+        player.process(midi, block, pos, true);
+        pos += block;
+    }
+    REQUIRE(player.getActivePatternIndex() == 1);
+
+    PatternPlayer::GrooveCommit commit{};
+    commit.patternIndex = 4;
+    commit.alignToBeat = true;
+    player.queueGrooveCommit(commit);
+
+    bool applied = false;
+    const int64_t bar = beat * 4;
+    while (pos < beat * 2)
+    {
+        midi.clear();
+        player.process(midi, block, pos, true);
+        if (player.getActivePatternIndex() == 4)
+            applied = true;
+        pos += block;
+    }
+    REQUIRE(applied);
+    REQUIRE(pos < bar);
+}

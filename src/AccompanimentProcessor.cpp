@@ -195,6 +195,12 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     lastPlayedPoolPattern = -1;
     lastPlayGrooveSlot = -1;
     lastFollowStateIndex = -1;
+    lastBListenPoolPattern = -1;
+    lastBListenGrooveSlot = -1;
+    transitionCutShortArmed = false;
+    sameRiffMatchCount = 0;
+    lastRefMatchMono = std::numeric_limits<int64_t>::min() / 2;
+    firstRefMatchMono = std::numeric_limits<int64_t>::min() / 2;
     lastSectionIndex = -1;
     lastSeenBarsElapsed = -1;
     requestBLockPick.store(false, std::memory_order_relaxed);
@@ -308,13 +314,11 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         }
 #endif
 
-        // Pattern selection is frozen in count-in, capture, and Record riff A/B.
-        // PlaySection honors argmax (constrained on the audio thread). Style still updates.
-        // Keep the derived Record flags too so a one-block phase lag cannot reopen
-        // selection during B listen (slice 2 bass grid).
+        // Pattern selection is frozen in count-in, capture, and Record riff A / B-locked.
+        // PlaySection and RiffBListen honor argmax (constrained on the audio thread).
+        // T6.3: B-listen must keep selecting so the contrast pool can rotate.
         if (patternSelectFrozen.load(std::memory_order_acquire)
             || grooveLocked.load(std::memory_order_acquire)
-            || transitionSectionActive.load(std::memory_order_acquire)
             || riffCaptureActive.load(std::memory_order_acquire))
         {
             if (requestBLockPick.load(std::memory_order_acquire))
@@ -392,14 +396,24 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
         bool hasGrooveCommit = false;
         bool acceptedDrumPattern = false;
 
-        // 2-bar hold for drum pattern index. Audio thread sets
-        // resetDrumHoldRequested on Play section change.
+        // T6.1: 1-bar hold (was 2 bars / 8 beats). A large RMS step may commit
+        // at beat rate so a flurry of gestures cannot thrash faster than that.
+        // The 512 ms mel window stays: metal_groove.onnx is trained on 64×40
+        // frames from 22050 samples — a shorter window would need a retrain.
         const float bpmNowDrum = latest.bpm > 0.0f ? latest.bpm : 120.0f;
-        const int64_t phraseHoldSamples =
-            static_cast<int64_t>(8.0 * 60.0 / static_cast<double>(bpmNowDrum) * sr);
-        const bool drumHoldExpired =
-            (lastDrumPatternChangeSample < 0) ||
-            (latest.sampleTimestamp - lastDrumPatternChangeSample >= phraseHoldSamples);
+        const int64_t holdSamples =
+            static_cast<int64_t>(4.0 * 60.0 / static_cast<double>(bpmNowDrum) * sr);
+        const int64_t beatSamples =
+            static_cast<int64_t>(1.0 * 60.0 / static_cast<double>(bpmNowDrum) * sr);
+        const bool gestureChange = std::abs(latest.rmsDelta) > 0.6f;
+        const int64_t sinceChange = (lastDrumPatternChangeSample < 0)
+            ? holdSamples
+            : (latest.sampleTimestamp - lastDrumPatternChangeSample);
+        const bool drumHoldExpired = (lastDrumPatternChangeSample < 0)
+            || (sinceChange >= holdSamples);
+        const bool inPlay = playSectionIndex.load(std::memory_order_acquire) >= 0;
+        const bool gestureOk = inPlay && gestureChange
+            && (lastDrumPatternChangeSample < 0 || sinceChange >= beatSamples);
 
         const int64_t samplesPerBarDiv = static_cast<int64_t>(4.0 * 60.0 / static_cast<double>(latest.bpm) * sr);
         const int barMod8 = (samplesPerBarDiv > 0) ? static_cast<int>((latest.sampleTimestamp / samplesPerBarDiv) % 8) : 0;
@@ -419,24 +433,34 @@ void AccompanimentProcessor::drainFeatureQueueAndRunInference()
                     finalIdx, committedStyle, barMod8, latest.state, genreId);
         }
 
-        if (drumHoldExpired || excludeParam >= 0)
+        if (drumHoldExpired || excludeParam >= 0 || gestureOk)
         {
-            commit.patternIndex = finalIdx;
-        commit.fillKind = PatternPlayer::TransitionFillKind::None;
-            hasGrooveCommit = true;
             acceptedDrumPattern = true;
+            // Play and B-listen drums are owned by the audio thread (pool
+            // rotation). Inference still updates latestPatternIndex as a vote;
+            // a player commit here would change the kit off the bar line and
+            // drop authored bass hits (T5.1 / T6.3).
+            const bool audioOwnsDrums =
+                playSectionIndex.load(std::memory_order_acquire) >= 0
+                || transitionSectionActive.load(std::memory_order_acquire);
+            if (!audioOwnsDrums)
+            {
+                commit.patternIndex = finalIdx;
+                commit.fillKind = PatternPlayer::TransitionFillKind::None;
+                commit.alignToBeat = gestureOk && !drumHoldExpired;
+                hasGrooveCommit = true;
+            }
         }
         // T4.4: audio thread is the only writer of displayPatternIndex.
 
-        if (hasGrooveCommit && grooveCommitQueue.try_enqueue(commit))
+        if (acceptedDrumPattern)
         {
-            if (acceptedDrumPattern)
-            {
-                latestPatternIndex.store(finalIdx, std::memory_order_release);
-                lastDrumPatternChangeSample = latest.sampleTimestamp;
-                lastCommittedStructureState = patternFeatures.state;
-            }
+            latestPatternIndex.store(finalIdx, std::memory_order_release);
+            lastDrumPatternChangeSample = latest.sampleTimestamp;
+            lastCommittedStructureState = patternFeatures.state;
         }
+        if (hasGrooveCommit)
+            (void) grooveCommitQueue.try_enqueue(commit);
         // Live drums use Groove::Template humanize only (no rendered grid enqueue).
     }
 }
@@ -859,11 +883,14 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             lastSeenBarsElapsed = barsElapsedNow;
 
             // T4.1: rotation is the source of truth in Play. Re-pick only when
-            // the groove slot advances so the 2-bar inference hold cannot fight
-            // the phrase length. The mel/rule argmax votes if it is already a
-            // pool member and is not an immediate repeat.
+            // the groove slot advances so the inference hold cannot fight the
+            // phrase length. T6.1: a large RMS step forces one re-pick (applied
+            // at the next beat via alignToBeat) so the kit reacts within ~250 ms.
             const int barsPerGroove = PatternRules::barsPerGrooveForSection(secName);
             const int grooveSlot = barsElapsedNow / juce::jmax(1, barsPerGroove);
+            const bool gestureChange = std::abs(rmsDelta) > 0.6f;
+            if (gestureChange)
+                lastPlayGrooveSlot = -1;
             if (grooveSlot != lastPlayGrooveSlot || lastPlayedPoolPattern < 0)
             {
                 const unsigned seed = static_cast<unsigned>(
@@ -895,11 +922,37 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     {
         playFillArm.clear();
     }
-    if (!playOn && (enginePhase == EnginePhase::RiffBListen || enginePhase == EnginePhase::RiffBLocked
-             || postLockPhase == PostLockPhase::TransitionHold))
+    if (!playOn && enginePhase == EnginePhase::RiffBListen)
     {
-        // Frozen contrast groove — no pool rotation.
-        if (enginePhase == EnginePhase::RiffBLocked && drumB > 0)
+        // T6.3: rotate the contrast pool instead of pinning drumB0.
+        const int64_t spBarB = static_cast<int64_t>(
+            4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
+        const int barsElapsedB = (spBarB > 0 && transitionStartMono >= 0)
+            ? static_cast<int>((hostSampleTime - transitionStartMono) / spBarB) : 0;
+        const int bpg = PatternRules::barsPerGrooveForSection(transitionSectionNameStr);
+        const int grooveSlotB = barsElapsedB / juce::jmax(1, bpg);
+        if (grooveSlotB != lastBListenGrooveSlot || lastBListenPoolPattern < 0)
+        {
+            const unsigned seed = static_cast<unsigned>(
+                transitionSectionNumberLocal * 31
+                + static_cast<unsigned>(transitionStartMono & 0x7fffffff));
+            int picked = PatternRules::pickPoolPattern(
+                transitionPool, seed, grooveSlotB, lastBListenPoolPattern);
+            if (PatternRules::poolContains(transitionPool, patternIdx)
+                && patternIdx != lastBListenPoolPattern
+                && patternIdx > 0)
+                picked = patternIdx;
+            if (picked < 0)
+                picked = PatternRules::constrainToPool(patternIdx, transitionPool, st);
+            lastBListenPoolPattern = picked;
+            lastBListenGrooveSlot = grooveSlotB;
+        }
+        if (lastBListenPoolPattern >= 0)
+            effectivePatternIdx = lastBListenPoolPattern;
+    }
+    else if (!playOn && enginePhase == EnginePhase::RiffBLocked)
+    {
+        if (drumB > 0)
             effectivePatternIdx = drumB;
         else if (drumB0 > 0)
             effectivePatternIdx = drumB0;
@@ -927,10 +980,22 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     }
     {
         const bool freezeSelect = (enginePhase != EnginePhase::Idle
-                                   && enginePhase != EnginePhase::PlaySection);
+                                   && enginePhase != EnginePhase::PlaySection
+                                   && enginePhase != EnginePhase::RiffBListen);
         patternSelectFrozen.store(freezeSelect, std::memory_order_release);
     }
     patternPlayer.setPatternIndex(effectivePatternIdx);
+
+    // T6.1: gesture commits apply at the next beat, not the next bar.
+    if (std::abs(rmsDelta) > 0.6f
+        && playOn
+        && effectivePatternIdx != patternPlayer.getActivePatternIndex())
+    {
+        PatternPlayer::GrooveCommit beatCommit{};
+        beatCommit.patternIndex = effectivePatternIdx;
+        beatCommit.alignToBeat = true;
+        patternPlayer.queueGrooveCommit(beatCommit);
+    }
 
     // Section for velocity contrast (A3.1) and bass harmony (A1.2).
     // Reactive mode maps loud playing to CHORUS so dynamics track the guitarist.
@@ -955,18 +1020,18 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     patternPlayer.setGuitarEnergy(PatternPlayer::guitarEnergyFromRms(guitarEnergyRms_));
 
     // ── 7. Silence gating ───────────────────────────────────────────────────
-    const bool audioActive = (rms > 0.001f);
     // Item: "only starts listening at Record riff / Play" — the plugin is idle
     // (silent, not learning) until the user arms it via Play or a riff capture.
-    // Once armed (song form playing, riff captured/locked, or a post-lock
-    // transition running) it behaves as before. Otherwise it stays quiet.
+    // Once armed it keeps playing through quiet guitar (T6.4: the lock exists
+    // to accompany independently of the player). Transport-level digital silence
+    // still cuts.
     const bool armActive = playOn
         || playCountInActive
         || riffCaptureActive.load(std::memory_order_acquire)
         || riffCaptureStart.load(std::memory_order_acquire)
         || grooveLocked.load(std::memory_order_acquire)
         || transitionSectionActive.load(std::memory_order_acquire);
-    const bool trulySilent = ((!playOn && !audioActive) || digitalSilence || !armActive);
+    const bool trulySilent = digitalSilence || !armActive;
 
     int previewRem = debugPreviewSamplesRemaining.load(std::memory_order_acquire);
     if (previewRem > 0)
@@ -983,7 +1048,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     PatternPlayer::GrooveCommit commit{};
     bool gotCommit = false;
     while (grooveCommitQueue.try_dequeue(commit)) gotCommit = true;
-    (void)gotCommit;  // T4.1: Play rotation is authoritative; commits are vote-only.
+    (void)gotCommit;  // T4.1: Play rotation is authoritative. T6.1 gesture
+                      // commits are queued on the audio thread (alignToBeat).
     // ── 9. Phrase-learning bass ─────────────────────────────────────────────
     // Bass learns guitarist's riff pattern (rhythm + melody), then mirrors it.
     // Gated on the structure state: during SILENT the learner must not lock
@@ -1064,6 +1130,12 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             transitionSectionName.store("VERSE", std::memory_order_release);
             transitionStartMono = -1;
             transitionEndMono = -1;
+            transitionCutShortArmed = false;
+            sameRiffMatchCount = 0;
+            lastRefMatchMono = std::numeric_limits<int64_t>::min() / 2;
+            firstRefMatchMono = std::numeric_limits<int64_t>::min() / 2;
+            lastBListenPoolPattern = -1;
+            lastBListenGrooveSlot = -1;
             transitionBarsRemaining.store(0, std::memory_order_relaxed);
             transitionBarsTotal.store(0, std::memory_order_relaxed);
             for (int i = 0; i < kMaxTransitionSlots; ++i)
@@ -1331,10 +1403,31 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // still exists as a fallback when the user does not record first.
         // P0/R2: the hold is a FIXED `lockBars`-bar window.
 
-        if (phraseLearner.justMatchedRiff()
+        if (postLockPhase == PostLockPhase::TransitionHold)
+        {
+            const int64_t twoBeats = static_cast<int64_t>(
+                2.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
+            if (phraseLearner.justMatchedReference())
+            {
+                if (sameRiffMatchCount == 0)
+                    firstRefMatchMono = hostSampleTime;
+                lastRiffMatchSample = hostSampleTime;
+                lastRefMatchMono = hostSampleTime;
+                ++sameRiffMatchCount;
+            }
+            else if (lastRefMatchMono > 0
+                     && hostSampleTime - lastRefMatchMono > twoBeats)
+            {
+                sameRiffMatchCount = 0;
+                firstRefMatchMono = std::numeric_limits<int64_t>::min() / 2;
+            }
+        }
+        else if (phraseLearner.justMatchedRiff()
             && enginePhase != EnginePhase::RiffBListen
             && enginePhase != EnginePhase::RiffBLocked)
+        {
             lastRiffMatchSample = hostSampleTime;
+        }
 
         const bool phraseLockEdge = (phraseLocked && !prevPhraseLocked);
         prevPhraseLocked = phraseLocked;
@@ -1389,7 +1482,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 const int oneShot = bLockPick.exchange(-1, std::memory_order_acq_rel);
                 drumB = (oneShot >= 0)
                     ? PatternRules::constrainToPool(oneShot, transitionPool, st)
-                    : drumB0;
+                    : (lastBListenPoolPattern > 0 ? lastBListenPoolPattern : drumB0);
                 phraseLearner.cancelLiveGridListen();
                 phraseLearner.setAutoLockEnabled(false);
                 phraseLearner.setHoldActive(true);
@@ -1400,6 +1493,15 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 patternPlayer.setPatternIndex(drumB > 0 ? drumB : drumB0);
                 riffHeld.store(true, std::memory_order_release);
             }
+        }
+        else if (enginePhase == EnginePhase::RiffBLocked && !phraseLearner.isLocked())
+        {
+            // T6.3: drift-unlock after N bars of non-matching attacks unfreezes B.
+            enginePhase = EnginePhase::RiffBListen;
+            phraseLearner.setAutoLockEnabled(true);
+            patternPlayer.setBeatGridBassEnabled(true);
+            riffB = {};
+            riffBPlayOriginMono = -1;
         }
 
         grooveLocked.store(enginePhase == EnginePhase::RiffA, std::memory_order_release);
@@ -1496,9 +1598,19 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 phraseLearner.exportPattern(riffA);
             phraseLearner.reset();
             phraseLearner.beginLiveGridListen();
+            if (riffA.valid)
+                phraseLearner.setMatchReference(riffA);
             resetSlotOnsetTracker();
             phraseLearner.setAutoLockEnabled(true);
             enginePhase = EnginePhase::RiffBListen;
+            // Seed rotation with the first contrast groove so bar 1 is not
+            // immediately re-picked (fills and authored bass stay on drumB0).
+            lastBListenPoolPattern = drumB0;
+            lastBListenGrooveSlot = 0;
+            transitionCutShortArmed = false;
+            sameRiffMatchCount = 0;
+            lastRefMatchMono = std::numeric_limits<int64_t>::min() / 2;
+            firstRefMatchMono = std::numeric_limits<int64_t>::min() / 2;
             grooveLockActive = false;
             riffLoopActive = true;
             requestBLockPick.store(true, std::memory_order_release);
@@ -1523,15 +1635,31 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // ── A5.2: run the transition hold. ────────────────────────────────────
         if (postLockPhase == PostLockPhase::TransitionHold)
         {
-            // Riff-loop determinism: each transition ALWAYS plays its full
-            // `transitionBars` (no cut-short when the riff re-appears). Replaying
-            // the recorded riff mid-transition does not interrupt it — the loop is
-            // fixed A-B-A-C-A. When it finishes, the riff re-engages for the
-            // configured `lockBars`.
+            // T6.2 / END_USER_STRESS_TEST §B4: replaying the *same* riff cuts
+            // the contrast short at the next bar. A different riff does not.
+            // The clock still guarantees an exit at transitionEndMono.
+            const int64_t samplesPerBarC =
+                static_cast<int64_t>(4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
+            const bool sameRiffReturned = sameRiffMatchCount >= 4
+                                       && lastRiffMatchSample > transitionStartMono
+                                       && firstRefMatchMono > 0
+                                       && (lastRefMatchMono - firstRefMatchMono)
+                                            >= static_cast<int64_t>(samplesPerBeat);
+            if (sameRiffReturned && !transitionCutShortArmed && samplesPerBarC > 0)
+            {
+                transitionCutShortArmed = true;
+                const int64_t elapsed = std::max(int64_t{ 0 }, hostSampleTime - transitionStartMono);
+                const int64_t intoBar = elapsed % samplesPerBarC;
+                const int64_t toNextBar = (intoBar == 0) ? 0 : (samplesPerBarC - intoBar);
+                const int64_t cutAt = hostSampleTime + toNextBar;
+                if (transitionEndMono < 0 || cutAt < transitionEndMono)
+                    transitionEndMono = cutAt;
+            }
             if (transitionEndMono >= 0 && hostSampleTime >= transitionEndMono)
             {
                 postLockPhase = PostLockPhase::Idle;
                 transitionSectionActive.store(false, std::memory_order_release);
+                transitionCutShortArmed = false;
                 riffB = {};
                 riffBPlayOriginMono = -1;
                 riffBFillArm.clear();
@@ -1542,8 +1670,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             else
             {
                 // Countdown for the UI.
-                const int64_t samplesPerBarC =
-                    static_cast<int64_t>(4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
                 const int64_t remaining = transitionEndMono - hostSampleTime;
                 const int barsLeft = (samplesPerBarC > 0)
                     ? static_cast<int>((remaining + samplesPerBarC - 1) / samplesPerBarC)
@@ -1570,8 +1696,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // flap back and forth to the drone mid-phrase.
         const bool listenBass = (enginePhase == EnginePhase::PlaySection
                               || enginePhase == EnginePhase::RiffBListen);
-        const bool frozenRiffBass = (enginePhase == EnginePhase::RiffA
-                                  || enginePhase == EnginePhase::RiffBLocked);
         patternPlayer.setBeatGridBassEnabled(listenBass);
 
         int bassRoot = 36;
@@ -1592,30 +1716,28 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         if (playOn && structureSequencer.isLastBar())
             patternPlayer.armBassLeadIn();
 
-        // Guitar-stop MIDI gate: SILENT or RMS below play floor for ~1 s cuts
-        // bass+drums even during RiffA (breaths shorter than 1 s keep the lock).
-        // Play keeps the song-form kit going on quiet input — do not gate it.
+        // Guitar-stop: live-mirror bass stays gated (no ghost notes on a
+        // breath). T6.4: locked A/B accompaniment is independent of picking —
+        // do not silence the kit or skip frozen-riff emission.
         if (silentNow || rms < 0.003f)
             guitarSilentSamples += numSamples;
         else
             guitarSilentSamples = 0;
         const bool guitarStopped = guitarSilentSamples >= static_cast<int64_t>(sr);
-        if (guitarStopped && (frozenRiffBass || enginePhase == EnginePhase::RiffBListen))
-            patternPlayer.setStructureSilent(true);
 
         const double samplesPerBeatQ = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
         const int durationSamples = juce::jmax(1, static_cast<int>(0.85 * samplesPerBeatQ));
         int mirrorNote = bassNote.midiNote;
         float mirrorVel = bassNote.velocity;
         bool shouldTrigger = bassNote.trigger && !guitarStopped;
-        if (enginePhase == EnginePhase::RiffA && !guitarStopped
+        if (enginePhase == EnginePhase::RiffA
             && !riffCaptureActive.load(std::memory_order_acquire))
         {
             emitFrozenRiff(riffA, riffAPlayOriginMono, numSamples,
                            static_cast<double>(bpmForPlayer), sr,
                            hostSampleTime, bassTranspose);
         }
-        else if (enginePhase == EnginePhase::RiffBLocked && !guitarStopped)
+        else if (enginePhase == EnginePhase::RiffBLocked)
         {
             emitFrozenRiff(riffB, riffBPlayOriginMono, numSamples,
                            static_cast<double>(bpmForPlayer), sr,
@@ -1660,10 +1782,14 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     hostSampleTime += numSamples;
 
-    if (!playOn && (enginePhase == EnginePhase::RiffBListen || enginePhase == EnginePhase::RiffBLocked
-             || postLockPhase == PostLockPhase::TransitionHold))
+    if (!playOn && enginePhase == EnginePhase::RiffBListen && lastBListenPoolPattern >= 0)
     {
-        if (enginePhase == EnginePhase::RiffBLocked && drumB > 0)
+        effectivePatternIdx = lastBListenPoolPattern;
+        patternPlayer.setPatternIndex(effectivePatternIdx);
+    }
+    else if (!playOn && enginePhase == EnginePhase::RiffBLocked)
+    {
+        if (drumB > 0)
             effectivePatternIdx = drumB;
         else if (drumB0 > 0)
             effectivePatternIdx = drumB0;

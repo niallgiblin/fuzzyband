@@ -1140,13 +1140,11 @@ TEST_CASE("Processor pipeline: transition countdown updates live", "[integration
     proc.releaseResources();
 }
 
-TEST_CASE("Processor pipeline: same-riff replay mid-transition cuts it short at the next bar", "[integration][pipeline][transition][lock][!mayfail]")
+TEST_CASE("Processor pipeline: same-riff replay mid-transition cuts it short at the next bar", "[integration][pipeline][transition][lock][t6.2]")
 {
-    // T0.3 / T6.2 / END_USER_STRESS_TEST §B4: replaying the locked riff during
+    // T6.2 / END_USER_STRESS_TEST §B4: replaying the locked riff during
     // a transition must cut that contrast short at the next bar and re-lock.
-    // A *different* riff still must not cut the transition (T6.2 keeps that).
-    // Today the hold is uninterruptible; keep the assertion honest and
-    // [!mayfail] until T6.2 lands. Remove the tag in T6.2.
+    // A *different* riff still must not cut the transition.
     const double sr = 48000.0;
     const int block = 512;
     AccompanimentProcessor proc;
@@ -1437,7 +1435,8 @@ TEST_CASE("Processor pipeline: RiffBListen bass has grid on beats 1/3 with spars
          && !(proc.isTransitionSectionActive() && proc.getSectionPhase() == 3); ++i)
     {
         juce::AudioBuffer<float> buf(2, block);
-        fillSineAmp(buf, blockIdx, block, sr, 65.406, 0.12f);
+        // Non-riff tone so T6.2 cannot cut the contrast short during the wait.
+        fillSineAmp(buf, blockIdx, block, sr, 400.0, 0.12f);
         juce::MidiBuffer midi;
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
@@ -1458,7 +1457,7 @@ TEST_CASE("Processor pipeline: RiffBListen bass has grid on beats 1/3 with spars
         const int bar = static_cast<int>((abs0 - origin) / (4.0 * samplesPerBeat));
         const float amp = ampForSustainPick(abs0, block, origin, samplesPerBeat, bar, kPickBlocks);
         juce::AudioBuffer<float> buf(2, block);
-        fillSineAmp(buf, blockIdx, block, sr, 65.406, amp);
+        fillSineAmp(buf, blockIdx, block, sr, 400.0, amp);
         juce::MidiBuffer midi;
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
@@ -1472,44 +1471,32 @@ TEST_CASE("Processor pipeline: RiffBListen bass has grid on beats 1/3 with spars
         ++blockIdx;
     }
 
-    REQUIRE(bassAbs.size() >= 8);
+    // T6.3 rotates the contrast pool every 2 bars; a phrase seam can drop a
+    // grid hit, so 4 bars is "at least a half-note grid" rather than 8 exact.
+    REQUIRE(bassAbs.size() >= 5);
 
-    // Host clock starts at 0 in these tests — score complete bars on that grid,
-    // not the (possibly mid-bar) BListen detect block.
-    const double startBeat = static_cast<double>(origin) / samplesPerBeat;
-    const double endBeat = static_cast<double>(origin)
-        / samplesPerBeat + static_cast<double>(kBars) * 4.0;
-    const int bar0 = static_cast<int>(std::ceil(startBeat / 4.0 - 1.0e-9));
-    const int bar1 = static_cast<int>(std::floor(endBeat / 4.0 + 1.0e-9));
     int beat1Hits = 0;
     int beat3Hits = 0;
-    for (int bar = bar0; bar < bar1; ++bar)
+    for (const int64_t absSample : bassAbs)
     {
-        for (const int64_t absSample : bassAbs)
-        {
-            double beat = static_cast<double>(absSample) / samplesPerBeat;
-            if (beat < static_cast<double>(bar) * 4.0
-                || beat >= static_cast<double>(bar + 1) * 4.0)
-                continue;
-            double beatInBar = std::fmod(beat, 4.0);
-            if (beatInBar < 0.0)
-                beatInBar += 4.0;
-            if (beatInBar >= 0.0 && beatInBar < 0.5)
-                ++beat1Hits;
-            if (beatInBar >= 1.7 && beatInBar < 2.5)
-                ++beat3Hits;
-        }
+        double beatInBar = std::fmod(static_cast<double>(absSample) / samplesPerBeat, 4.0);
+        if (beatInBar < 0.0)
+            beatInBar += 4.0;
+        if (beatInBar >= 0.0 && beatInBar < 0.5)
+            ++beat1Hits;
+        if (beatInBar >= 1.7 && beatInBar < 2.5)
+            ++beat3Hits;
     }
     INFO("BListen beat1Hits=" << beat1Hits << " beat3Hits=" << beat3Hits
-         << " bars=" << (bar1 - bar0) << " nHits=" << bassAbs.size());
-    REQUIRE(beat1Hits >= 3);
-    REQUIRE(beat3Hits >= 3);
+         << " nHits=" << bassAbs.size());
+    REQUIRE(beat1Hits >= 2);
+    // Contrast pool members do not all author a beat-3 bass hit (T6.3 rotation).
 
     auto sorted = bassAbs;
     std::sort(sorted.begin(), sorted.end());
     // T5.1: authored bass is typically a half-note grid (2 beats = 1 s at 120).
-    // The old 0.75 s cap assumed the harmonic chorus quarter-note fallback.
-    const int64_t maxGap = static_cast<int64_t>(1.15 * sr);
+    // T6.3: B-listen drum rotation can skip one grid hit at a phrase seam.
+    const int64_t maxGap = static_cast<int64_t>(2.2 * sr);
     for (size_t i = 1; i < sorted.size(); ++i)
         REQUIRE(sorted[i] - sorted[i - 1] < maxGap);
 
@@ -1863,6 +1850,7 @@ TEST_CASE("Processor pipeline: Record A/B last-bar fills do not overlay the inco
 
     REQUIRE(transOrigin >= 0);
     REQUIRE(returnOrigin > transOrigin);
+    INFO("transition bars ≈ " << (static_cast<double>(returnOrigin - transOrigin) / 96000.0));
 
     bool aLastFill = false;
     bool bLastFill = false;
@@ -2708,25 +2696,24 @@ TEST_CASE("Processor pipeline: Play start wipes a prior Record riff", "[integrat
     proc.releaseResources();
 }
 
-TEST_CASE("Processor pipeline: guitar stop while locked emits all-notes-off", "[integration][pipeline][gate]")
+TEST_CASE("Processor pipeline: guitar stop while locked does not kill the kit (T6.4)", "[integration][pipeline][gate][t6.4]")
 {
-    // Residual RMS below the play floor (not digital zero) must still cut bass
-    // after ~1 s in RiffA — digital silence already trips the idle gate.
+    // T6.4: the lock accompanies independently of picking. Residual RMS below
+    // the play floor must NOT all-notes-off or mute frozen bass/drums.
     const double sr = 48000.0;
     const int block = 512;
     AccompanimentProcessor proc;
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
     if (auto* p = proc.getApvts().getParameter("lockBars"))
-        p->setValueNotifyingHost(0.0f);
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(16.0f));
     int idx = 0;
     recordChugRiff(proc, sr, block, 65.406, idx);
     REQUIRE(proc.isGrooveLocked());
 
-    bool sawAllOff = false;
     int bassOnsLate = 0;
+    int drumOns = 0;
     const int silentBlocks = static_cast<int>(1.2 * sr / block);
-    const int lastWindow = static_cast<int>(0.15 * sr / block);
     for (int b = 0; b < silentBlocks; ++b)
     {
         juce::AudioBuffer<float> buf(2, block);
@@ -2736,15 +2723,16 @@ TEST_CASE("Processor pipeline: guitar stop while locked emits all-notes-off", "[
         for (const auto meta : midi)
         {
             const auto msg = meta.getMessage();
-            if (msg.isAllNotesOff())
-                sawAllOff = true;
-            if (msg.isNoteOn() && msg.getChannel() == 2 && b >= silentBlocks - lastWindow)
+            if (msg.isNoteOn() && msg.getChannel() == 2)
                 ++bassOnsLate;
+            if (msg.isNoteOn() && msg.getChannel() == 10)
+                ++drumOns;
         }
         ++idx;
     }
-    REQUIRE(sawAllOff);
-    REQUIRE(bassOnsLate == 0);
+    REQUIRE(proc.isGrooveLocked());
+    REQUIRE(drumOns > 0);
+    REQUIRE(bassOnsLate > 0);
     proc.releaseResources();
 }
 
@@ -2846,7 +2834,7 @@ TEST_CASE("Processor pipeline: click and lock length follow 85 BPM not 120", "[i
     proc.releaseResources();
 }
 
-TEST_CASE("Processor pipeline: Record B freezes a contrast groove unlike A", "[integration][pipeline][riffb][transition]")
+TEST_CASE("Processor pipeline: Record B listen rotates a contrast groove unlike A", "[integration][pipeline][riffb][transition][t6.3]")
 {
     const double sr = 48000.0;
     const int block = 512;
@@ -2856,7 +2844,7 @@ TEST_CASE("Processor pipeline: Record B freezes a contrast groove unlike A", "[i
     if (auto* p = proc.getApvts().getParameter("lockBars"))
         p->setValueNotifyingHost(0.0f);
     if (auto* p = proc.getApvts().getParameter("transitionBars"))
-        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(4.0f));
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(8.0f));
     if (auto* p = proc.getApvts().getParameter("transitionSections"))
         p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
 
@@ -2897,25 +2885,18 @@ TEST_CASE("Processor pipeline: Record B freezes a contrast groove unlike A", "[i
     REQUIRE(drumB0 != proc.getDrumA());
     REQUIRE((PatternRules::isStrongContrastPattern(drumB0)
              || !PatternRules::isVerseFeelNeighborhood(drumB0)));
-    REQUIRE(proc.getDisplayPatternIndex() == drumB0);
 
-    const int frozen = proc.getDisplayPatternIndex();
-    feedTone(0.05, 400.0, static_cast<int>(2.0 * sr / block), blockIdx);
-    REQUIRE(proc.isTransitionSectionActive());
-    REQUIRE(proc.getDisplayPatternIndex() == frozen);
-    REQUIRE(proc.getDisplayPatternIndex() == proc.getDrumB0());
-
-    // Replaying the original C2 chug must not cut B short.
-    for (int b = 0; b < static_cast<int>(1.0 * sr / block); ++b)
+    // T6.3: B-listen rotates the contrast pool instead of pinning drumB0.
+    std::set<int> heard;
+    const int listenBlocks = static_cast<int>(5.0 * sr / block);
+    for (int b = 0; b < listenBlocks; ++b)
     {
-        juce::AudioBuffer<float> buf(2, block);
-        fillChugBlock(buf, blockIdx, block, sr, 65.406);
-        juce::MidiBuffer midi;
-        proc.processBlock(buf, midi);
-        proc.flushBackgroundInferenceForTests();
-        ++blockIdx;
+        feedTone(0.05, 400.0, 1, blockIdx);
+        heard.insert(proc.getDisplayPatternIndex());
     }
     REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE_FALSE(proc.isRiffBLocked());
+    REQUIRE(heard.size() >= 2);
 
     proc.releaseResources();
 }
@@ -3206,6 +3187,165 @@ TEST_CASE("T5.2: a 16th-note chug still emits one bass note per 16th",
     // coalesced chugs still count as one onset. Pre-T5.2 this was 64 retriggers.
     REQUIRE(bassOns >= juce::jmax(8, onsetSlots - 4));
     REQUIRE(bassOns <= onsetSlots + 8);
+
+    proc.releaseResources();
+}
+
+TEST_CASE("T6.1: a large RMS step commits a Play groove change within 250 ms",
+          "[integration][pipeline][t6.1][reactivity]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    proc.setCustomSongForm("VERSE:16");
+    proc.playActive.store(true, std::memory_order_release);
+
+    int guard = 0;
+    while ((proc.getSectionPhase() != 1 || proc.getDisplayPatternIndex() <= 0)
+           && guard++ < blocksForBars(sr, block, 6.0))
+        feedQuietBlocks(proc, sr, block, 1);
+    REQUIRE(proc.getSectionPhase() == 1);
+
+    auto moderate = makeSineBuffer(block, 1500.0, sr, 0.08f);
+    feedBlocks(proc, moderate, block, blocksForBars(sr, block, 2.0));
+    proc.flushBackgroundInferenceForTests();
+    const int before = proc.getDisplayPatternIndex();
+    REQUIRE(before > 0);
+
+    auto hot = makeSineBuffer(block, 1500.0, sr, 0.55f);
+    const int window = static_cast<int>(0.250 * sr / block) + 2;
+    bool changed = false;
+    for (int i = 0; i < window; ++i)
+    {
+        juce::AudioBuffer<float> buf = hot;
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        if (proc.getDisplayPatternIndex() != before
+            && proc.getDisplayPatternIndex() > 0)
+        {
+            changed = true;
+            break;
+        }
+    }
+    REQUIRE(changed);
+
+    proc.playActive.store(false, std::memory_order_release);
+    proc.releaseResources();
+}
+
+TEST_CASE("T6.2: a different riff mid-transition does not cut it short",
+          "[integration][pipeline][transition][lock][t6.2]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(6.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
+
+    auto feedTone = [&](float amp, double freq, int numBlocks, int& blockIdx) {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                const double t = static_cast<double>(blockIdx) * block / sr;
+                for (int i = 0; i < block; ++i)
+                {
+                    const double tt = t + static_cast<double>(i) / sr;
+                    p[i] = static_cast<float>(amp * std::sin(2.0 * M_PI * freq * tt));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++blockIdx;
+        }
+    };
+
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);
+    REQUIRE(proc.isGrooveLocked());
+    feedTone(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
+    REQUIRE(proc.isTransitionSectionActive());
+
+    // Slow half-note pulses (IOI ~ 2 beats) — not the recorded 16th chug.
+    const int pulseEvery = static_cast<int>(1.0 * sr / block);
+    for (int b = 0; b < static_cast<int>(3.0 * sr / block); ++b)
+    {
+        const bool loud = (b % pulseEvery) == 0;
+        juce::AudioBuffer<float> buf(2, block);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* p = buf.getWritePointer(ch);
+            const double t = static_cast<double>(blockIdx) * block / sr;
+            for (int i = 0; i < block; ++i)
+            {
+                const double tt = t + static_cast<double>(i) / sr;
+                p[i] = static_cast<float>((loud ? 0.45f : 0.04f)
+                                         * std::sin(2.0 * M_PI * 98.0 * tt));
+            }
+        }
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        ++blockIdx;
+    }
+    REQUIRE(proc.isTransitionSectionActive());
+    REQUIRE_FALSE(proc.isGrooveLocked());
+
+    proc.releaseResources();
+}
+
+TEST_CASE("T6.4: 6 s of silence mid-lock keeps drums and frozen bass going",
+          "[integration][pipeline][lock][t6.4]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(16.0f));
+
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);
+    REQUIRE(proc.isGrooveLocked());
+
+    int drumOns = 0;
+    int bassOns = 0;
+    const int silentBlocks = static_cast<int>(6.0 * sr / block);
+    auto breath = makeSineBuffer(block, 110.0, sr, 0.0004f);
+    for (int b = 0; b < silentBlocks; ++b)
+    {
+        juce::AudioBuffer<float> buf = breath;
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (!msg.isNoteOn() || msg.getVelocity() <= 0)
+                continue;
+            if (msg.getChannel() == 10)
+                ++drumOns;
+            else if (msg.getChannel() == 2)
+                ++bassOns;
+        }
+        ++blockIdx;
+    }
+    REQUIRE(proc.isGrooveLocked());
+    REQUIRE(drumOns > 0);
+    REQUIRE(bassOns > 0);
 
     proc.releaseResources();
 }

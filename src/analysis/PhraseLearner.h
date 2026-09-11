@@ -127,6 +127,13 @@ public:
     /** @brief Load a 64-slot snapshot and rewind playback to phase 0. */
     bool loadPattern(const LearnedRiff& src) noexcept;
 
+    /**
+     * @brief Keep a copy of riff A for IOI+pitch matching after a listen reset.
+     *        Used to cut a post-lock transition short when the same riff returns
+     *        (T6.2). Does not lock or alter attack history.
+     */
+    void setMatchReference(const LearnedRiff& src) noexcept;
+
     /** @brief Occupied 16th slots in the current grid take (0 if not capturing). */
     int getGridOccupiedCount() const noexcept { return gridOccupied_; }
 
@@ -221,6 +228,12 @@ public:
 
     /** @brief True on the block where a matching riff attack was just detected. */
     bool justMatchedRiff() const noexcept { return justMatched_; }
+
+    /**
+     * @brief True on the block where the attack matched @ref setMatchReference
+     *        (riff A) by IOI and pitch class. Independent of the live lock.
+     */
+    bool justMatchedReference() const noexcept { return justMatchedRef_; }
 
     /**
      * @brief Whether a note attack was recorded within the last @p windowSamples.
@@ -360,6 +373,12 @@ private:
     bool autoLockEnabled_ = true;   // Play disables; RiffBListen enables
     bool following_ = false;        // Last attack matched the learned riff's grid
     bool justMatched_ = false;      // Edge: matched on the current block
+    bool justMatchedRef_ = false;   // Edge: matched the A-riff match reference (T6.2)
+    std::array<PatternNote, kMaxPattern> matchPattern_{};
+    int matchLen_ = 0;
+    double matchLenBeats_ = 16.0;
+    int64_t mismatchStartSample_ = -1;  // first non-following attack while locked
+    static constexpr int kDriftUnlockBars = 4;  // T6.3: escape a held lock after this
 
     // Attack detection state
     float prevRms_ = 0.0f;

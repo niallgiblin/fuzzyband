@@ -1350,12 +1350,15 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         return;
     }
 
-    // Resolve a pending pattern change at the first bar boundary in this block.
+    // Resolve a pending pattern change at the first bar boundary in this block
+    // (or the first beat when the commit is a T6.1 gesture).
     constexpr double beatsPerBar = 4.0;
     double changeBeat = -1.0;
     if (pendingGrooveCommitValid || pendingPatternIndex >= 0)
     {
-        const double boundary = std::ceil(beatStart / beatsPerBar - 1.0e-9) * beatsPerBar;
+        const double quant = (pendingGrooveCommitValid && pendingGrooveCommit.alignToBeat)
+            ? 1.0 : beatsPerBar;
+        const double boundary = std::ceil(beatStart / quant - 1.0e-9) * quant;
         if (boundary < beatEnd - 1.0e-9)
             changeBeat = boundary;
     }

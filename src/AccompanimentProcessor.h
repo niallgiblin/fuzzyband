@@ -437,12 +437,19 @@ private:
     std::atomic<float> sectionProgress{ 0.0f };  // elapsed fraction [0,1]
 
     // ── Play / post-lock section tracking ────────────────────────────────────
-    // Play rotates the section pool (T4.1); Record B freezes drumB0 then drumB.
+    // Play rotates the section pool (T4.1); Record B-listen rotates the
+    // contrast pool (T6.3) and freezes drumB only after a B lock.
     int lastSectionIndex = -1;      // section we last seeded for
     std::atomic<int> sectionEntryBar{ 0 };  // bar count at section/state entry (mel seed)
     int lastPlayedPoolPattern = -1; // previous Play-slot pick (never immediate-repeat)
     int lastPlayGrooveSlot = -1;    // groove slot last committed in this section
     int lastFollowStateIndex = -1;  // follow-mode structure state for mel seed
+    int lastBListenPoolPattern = -1; // previous B-listen pool pick (T6.3)
+    int lastBListenGrooveSlot = -1;
+    bool transitionCutShortArmed = false;  // T6.2: same-riff exit at next bar
+    int sameRiffMatchCount = 0;            // consecutive A-riff matches during B
+    int64_t lastRefMatchMono = std::numeric_limits<int64_t>::min() / 2;
+    int64_t firstRefMatchMono = std::numeric_limits<int64_t>::min() / 2;
     bool wasPlayOn = false;         // play-start edge detection (re-seed)
     // Play-mode count-in: 1 bar of click (kick 1, stick 2/3/4) before the form
     // starts, mirroring the Record-riff count-in.

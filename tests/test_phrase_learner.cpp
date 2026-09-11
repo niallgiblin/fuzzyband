@@ -697,3 +697,126 @@ TEST_CASE("PhraseLearner: setAutoLockEnabled(false) never auto-locks", "[phrase]
     }
     REQUIRE_FALSE(learner.isLocked());
 }
+
+TEST_CASE("T6.5: 16th pulse train at 200 BPM yields ~4 attacks/beat; constant tone none",
+          "[phrase][bass][t6.5]")
+{
+    PhraseLearner pulses;
+    pulses.prepare(kSr);
+    pulses.setAutoLockEnabled(false);
+    RmsWindow win(kSr);
+    const float bpm = 200.0f;
+    const double sixteenth = 60.0 / static_cast<double>(bpm) / 4.0;
+    const double seconds = 2.0;
+    const int total = static_cast<int>(seconds * kSr / kBlock);
+    for (int blk = 0; blk < total; ++blk)
+    {
+        for (int i = 0; i < kBlock; ++i)
+        {
+            const int n = blk * kBlock + i;
+            const double t = static_cast<double>(n) / kSr;
+            const int ni = static_cast<int>(t / sixteenth);
+            const double env = 0.25 + 0.75 * std::exp(-(t - ni * sixteenth) / 0.018);
+            win.push(static_cast<float>(0.45 * env * std::sin(2.0 * 3.14159265358979 * 65.406 * t)));
+        }
+        pulses.process(static_cast<int64_t>(blk) * kBlock, win.getRms(), 36.0f, 0.0f, bpm, kBlock);
+    }
+    const double beats = seconds * static_cast<double>(bpm) / 60.0;
+    const double attacksPerBeat = static_cast<double>(pulses.getAttackCount()) / beats;
+    REQUIRE(attacksPerBeat >= 2.5);
+    REQUIRE(attacksPerBeat <= 6.0);
+
+    PhraseLearner tone;
+    tone.prepare(kSr);
+    tone.setAutoLockEnabled(false);
+    for (int i = 0; i < 300; ++i)
+        tone.process(static_cast<int64_t>(i) * kBlock, 0.2f, 36.0f, 0.9f, kBpm, kBlock);
+    REQUIRE(tone.getAttackCount() == 0);
+}
+
+TEST_CASE("T6.2: match reference uses onsets only; a held note does not match a chug",
+          "[phrase][bass][t6.2]")
+{
+    PhraseLearner::LearnedRiff riff;
+    riff.valid = true;
+    riff.lenBeats = 16.0;
+    for (int s = 0; s < 32; s += 2)
+    {
+        riff.occupied[static_cast<size_t>(s)] = true;
+        riff.midi[static_cast<size_t>(s)] = 36;
+        riff.gate16[static_cast<size_t>(s)] = 2;
+        riff.occupied[static_cast<size_t>(s + 1)] = true;
+        riff.midi[static_cast<size_t>(s + 1)] = 36;
+        riff.gate16[static_cast<size_t>(s + 1)] = 0;
+    }
+
+    PhraseLearner held;
+    held.prepare(kSr);
+    held.setAutoLockEnabled(false);
+    held.setMatchReference(riff);
+    RmsWindow win(kSr);
+    int heldHits = 0;
+    for (int blk = 0; blk < 400; ++blk)
+    {
+        for (int i = 0; i < kBlock; ++i)
+        {
+            const int n = blk * kBlock + i;
+            const double t = static_cast<double>(n) / kSr;
+            win.push(static_cast<float>(0.08 * std::sin(2.0 * 3.14159265358979 * 65.406 * t)));
+        }
+        held.process(static_cast<int64_t>(blk) * kBlock, win.getRms(), 36.0f, 0.9f, kBpm, kBlock);
+        if (held.justMatchedReference())
+            ++heldHits;
+    }
+    REQUIRE(heldHits < 4);
+
+    PhraseLearner chug;
+    chug.prepare(kSr);
+    chug.setAutoLockEnabled(false);
+    chug.setMatchReference(riff);
+    int chugHits = 0;
+    int blocks = 0;
+    // Prime a decay so the first 8th-note pulse is an attack (T6.5).
+    chug.process(0, 0.03f, 36.0f, 0.8f, kBpm, kBlock);
+    ++blocks;
+    for (int a = 0; a < 8; ++a)
+    {
+        for (int b = 0; b < 18; ++b)
+        {
+            const bool loud = (b == 17);
+            chug.process(static_cast<int64_t>(blocks) * kBlock,
+                         loud ? 0.03f : 0.001f,
+                         36.0f, loud ? 0.8f : 0.0f, kBpm, kBlock);
+            if (chug.justMatchedReference())
+                ++chugHits;
+            ++blocks;
+        }
+    }
+    REQUIRE(chugHits >= 4);
+}
+
+TEST_CASE("T6.3: held lock drift-unlocks after 4 bars of non-matching attacks",
+          "[phrase][bass][lock][t6.3]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    (void)feedUntilLocked(learner, 36.0f);
+    REQUIRE(learner.isLocked());
+    learner.setHoldActive(true);
+    learner.setAutoLockEnabled(false);  // don't re-lock the deviant 1-beat pulse
+
+    auto feedDeviantAttacks = [&](int64_t startSample, int count) {
+        for (int i = 0; i < count; ++i)
+        {
+            const int64_t base = startSample + static_cast<int64_t>(i) * 47 * kBlock;
+            learner.process(base, 0.04f, 40.0f, 0.8f, kBpm, kBlock);
+            learner.process(base + kBlock, 0.09f, 40.0f, 0.8f, kBpm, kBlock);
+        }
+    };
+
+    feedDeviantAttacks(static_cast<int64_t>(1000) * kBlock, 4);
+    REQUIRE(learner.isLocked());
+
+    feedDeviantAttacks(static_cast<int64_t>(2000) * kBlock, 20);
+    REQUIRE_FALSE(learner.isLocked());
+}

@@ -47,6 +47,7 @@ public:
     {
         int patternIndex = 0;
         TransitionFillKind fillKind = TransitionFillKind::None;
+        bool alignToBeat = false;  // T6.1: next beat instead of next bar
     };
 
     /**
@@ -148,7 +149,8 @@ public:
     /** @brief Trigger a single bass note from PhraseLearner. Call from audio thread. */
     void triggerLearnedBassNote(int midiNote, float velocity, int sampleOffset, int durationSamples) noexcept;
 
-    /** @brief Queue a fixed-size drum/bass commit for the next bar boundary. Audio thread safe. */
+    /** @brief Queue a fixed-size drum/bass commit for the next bar (or beat
+     *         when @c commit.alignToBeat). Audio thread safe. */
     void queueGrooveCommit(const GrooveCommit& commit) noexcept;
 
     /** @brief Cancel a deferred groove commit before its bar-boundary activation. Audio thread safe. */
