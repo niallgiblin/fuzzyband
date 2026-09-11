@@ -408,6 +408,24 @@ inline SectionPatternPool stylePatternPoolForGenre(int styleIndex, int genreId) 
 }
 
 /**
+ * @brief Last-bar fill sized to energy, varied by phrase seed (T7.1).
+ *
+ * Loud ends alternate 18/19 so Fill Big is reachable even when the caller
+ * used to pass seed 0 (Record). @p seed is mixed so consecutive phrases
+ * diverge without depending on raw parity of a constant.
+ */
+inline int selectFillPatternForEnergy(float rmsEnergy, unsigned seed = 0) noexcept
+{
+    unsigned h = seed * 0x9E3779B1u + 19u;
+    h ^= h >> 16;
+    h *= 0x7FEB352Du;
+    h ^= h >> 15;
+    if (rmsEnergy >= 0.45f) return (h & 1u) ? 19 : 18;  // loud → big or medium
+    if (rmsEnergy >= 0.20f) return (h & 1u) ? 18 : 17;  // mid  → medium or short
+    return 17;                                          // quiet → short
+}
+
+/**
  * @brief Select a fill pattern index based on transition type.
  *
  * Last-bar fills are sized to the section-end energy (loud → big/medium,
@@ -423,9 +441,7 @@ inline SectionPatternPool stylePatternPoolForGenre(int styleIndex, int genreId) 
 inline int selectFillPattern(int barsRemaining, float rmsEnergy = 1.0f, unsigned seed = 0) noexcept
 {
     if (barsRemaining > 0) return 17;                 // mid-section build: short fill
-    if (rmsEnergy >= 0.45f) return (seed & 1u) ? 19 : 18;  // loud end → big or medium
-    if (rmsEnergy >= 0.20f) return (seed & 1u) ? 18 : 17;  // mid end  → medium or short
-    return 17;                                               // quiet end → short
+    return selectFillPatternForEnergy(rmsEnergy, seed);
 }
 
 // ══════════════════════════════════════════════════════════════════════════

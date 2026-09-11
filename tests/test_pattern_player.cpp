@@ -1401,3 +1401,153 @@ TEST_CASE("T6.1: GrooveCommit alignToBeat applies at the next beat, not the next
     REQUIRE(applied);
     REQUIRE(pos < bar);
 }
+
+TEST_CASE("T7.2 armBarFillAtBeat keeps fill 17 on a late-latched last bar", "[midi][fill][t7.2]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 2048);
+    player.snapBpm(120.0f);
+    player.setStructureSilent(false);
+    player.setPatternIndex(1);
+    player.setHumanize(0.0f);
+    player.setRandomSeed(7);
+
+    auto isTom = [](int note) {
+        return note == 41 || note == 43 || note == 45 || note == 47 || note == 48;
+    };
+
+    constexpr int block = 2048;
+    constexpr int64_t bar = 96000;
+    constexpr double kSamplesPerBeat = 24000.0;
+    int tomsBar0Beat4 = 0;
+    int tomsBar1Beat4 = 0;
+    int64_t pos = 0;
+    bool armed = false;
+
+    while (pos < bar * 2)
+    {
+        if (!armed && pos >= 2048)
+        {
+            player.armBarFillAtBeat(17, 0.0);
+            REQUIRE(player.getBarFillStartBeat() == 0.0);
+            armed = true;
+        }
+        juce::MidiBuffer midi;
+        player.process(midi, block, pos);
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (!msg.isNoteOn() || msg.getChannel() != 10 || !isTom(msg.getNoteNumber()))
+                continue;
+            const int64_t abs = pos + meta.samplePosition;
+            const int hitBar = static_cast<int>(abs / bar);
+            double beatInBar = std::fmod(static_cast<double>(abs) / kSamplesPerBeat, 4.0);
+            if (beatInBar < 0.0)
+                beatInBar += 4.0;
+            if (hitBar == 0 && beatInBar >= 3.0 && beatInBar < 4.0)
+                ++tomsBar0Beat4;
+            if (hitBar == 1 && beatInBar >= 3.0 && beatInBar < 4.0)
+                ++tomsBar1Beat4;
+        }
+        pos += block;
+    }
+
+    REQUIRE(armed);
+    REQUIRE(tomsBar0Beat4 >= 1);
+    REQUIRE(tomsBar1Beat4 == 0);
+}
+
+TEST_CASE("T7.3 fill 18 replaces groove kicks at 3.75 and inherits swing/section vel", "[midi][fill][t7.3]")
+{
+    auto isTom = [](int note) {
+        return note == 41 || note == 43 || note == 45 || note == 47 || note == 48;
+    };
+
+    auto renderFill18 = [&](float swing, Groove::SongSectionId section) {
+        MidiPatternLibrary lib;
+        PatternPlayer player;
+        player.setPatternLibrary(&lib);
+        player.prepare(48000.0, 512);
+        player.setRandomSeed(11);
+        player.snapBpm(120.0f);
+        player.setStructureSilent(false);
+        player.setPatternIndex(21);
+        player.setHumanize(0.0f);
+        player.setSwing(swing);
+        player.setSection(section);
+        player.armBarFill(18, false);
+
+        struct Hit { int64_t sample; int note; int vel; };
+        std::vector<Hit> kicks;
+        std::vector<Hit> toms;
+        int64_t pos = 0;
+        const int block = 512;
+        const int64_t bar = 96000;
+        while (pos < bar)
+        {
+            juce::MidiBuffer midi;
+            player.process(midi, block, pos);
+            for (const auto meta : midi)
+            {
+                const auto msg = meta.getMessage();
+                if (!msg.isNoteOn() || msg.getChannel() != 10)
+                    continue;
+                Hit h{ pos + meta.samplePosition, msg.getNoteNumber(), msg.getVelocity() };
+                if (h.note == 36)
+                    kicks.push_back(h);
+                if (isTom(h.note))
+                    toms.push_back(h);
+            }
+            pos += block;
+        }
+        return std::make_pair(kicks, toms);
+    };
+
+    {
+        const auto kicks = renderFill18(0.0f, Groove::SongSectionId::Chorus).first;
+        int near375 = 0;
+        constexpr int64_t target = 90000;  // beat 3.75 at 120 BPM / 48 kHz
+        constexpr int64_t window = 240;    // 5 ms
+        for (const auto& k : kicks)
+            if (std::llabs(k.sample - target) <= window)
+                ++near375;
+        REQUIRE(near375 <= 1);
+    }
+
+    {
+        const auto straight = renderFill18(0.0f, Groove::SongSectionId::Chorus).second;
+        const auto swung = renderFill18(1.0f, Groove::SongSectionId::Chorus).second;
+        REQUIRE_FALSE(straight.empty());
+        REQUIRE_FALSE(swung.empty());
+        int64_t straightAnd = -1;
+        int64_t swungAnd = -1;
+        constexpr int64_t andOf3 = 60000;  // beat 2.5
+        for (const auto& t : straight)
+            if (std::llabs(t.sample - andOf3) < 6000)
+                if (straightAnd < 0 || std::llabs(t.sample - andOf3) < std::llabs(straightAnd - andOf3))
+                    straightAnd = t.sample;
+        for (const auto& t : swung)
+            if (std::llabs(t.sample - andOf3) < 12000)
+                if (swungAnd < 0 || std::llabs(t.sample - andOf3) < std::llabs(swungAnd - andOf3))
+                    swungAnd = t.sample;
+        REQUIRE(straightAnd >= 0);
+        REQUIRE(swungAnd >= 0);
+        REQUIRE(swungAnd > straightAnd + 1000);
+    }
+
+    {
+        const auto verseToms = renderFill18(0.0f, Groove::SongSectionId::Verse).second;
+        const auto chorusToms = renderFill18(0.0f, Groove::SongSectionId::Chorus).second;
+        REQUIRE_FALSE(verseToms.empty());
+        REQUIRE_FALSE(chorusToms.empty());
+        auto meanVel = [](const auto& hits) {
+            int sum = 0;
+            for (const auto& h : hits)
+                sum += h.vel;
+            return static_cast<double>(sum) / static_cast<double>(hits.size());
+        };
+        REQUIRE(meanVel(chorusToms) > meanVel(verseToms) + 1.0);
+    }
+}

@@ -65,6 +65,12 @@ public:
     /** @brief Total number of bars processed since reset (global bar counter). */
     int getGlobalBarCount() const noexcept { return globalBarCount; }
 
+    /** @brief Samples accumulated into the current bar (pre-advance). T7.2. */
+    double getBarAccumulator() const noexcept { return barAccumulator; }
+
+    /** @brief Sequencer's current samples-per-bar (0 until the first advance). */
+    double getSamplesPerBar() const noexcept { return samplesPerBar; }
+
     /**
      * @brief Advance the sequencer by @p numSamples at the given @p bpm and @p sampleRate.
      *

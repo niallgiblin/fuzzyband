@@ -185,6 +185,16 @@ public:
      */
     void armBarFill(int fillPatternIndex, bool fromNextBar = false) noexcept;
 
+    /**
+     * @brief Arm fill 17/18/19 at an explicit host-grid bar origin (T7.2).
+     *        The origin is snapped to the nearest bar line so a late latch
+     *        inside the last bar still plays that bar, not the next section.
+     */
+    void armBarFillAtBeat(int fillPatternIndex, double originBeat) noexcept;
+
+    double getBarFillStartBeat() const noexcept { return barFillStartBeat_; }
+    int getPendingBarFillIndex() const noexcept { return pendingBarFillIndex_; }
+
     // ── Musicality pivot (Workstream A / B1) ──────────────────────────────────
 
     /** @brief Swing/shuffle ratio in [0,1]; delays off-8th events (A2.3). Audio thread. */

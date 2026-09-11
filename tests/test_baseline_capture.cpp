@@ -208,9 +208,9 @@ TEST_CASE("T9.2 pipeline render is buffer-size invariant (count-in + capture)",
     //
     // Scope: the 1-bar count-in plus the 4-bar capture. The lock's own onset is
     // still block-quantised (the capture is detected finishing on a block
-    // boundary), as are fill arming and the transition start — that is T7.2 and
-    // the sample-accurate state-machine work in Phases 6-7, out of scope here.
-    // Note placement itself is covered end-to-end by the PatternPlayer golden.
+    // boundary), as is the transition start. Fill arming is sample-accurate
+    // (T7.2: last-bar origin beat). Note placement itself is covered end-to-end
+    // by the PatternPlayer golden.
     const int64_t span = static_cast<int64_t>(4.8 * 4.0 * 60.0 / kBpm * kSr);
 
     auto renderSession = [&](int blockSize) {

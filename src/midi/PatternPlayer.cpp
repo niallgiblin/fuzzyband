@@ -44,6 +44,13 @@ constexpr unsigned kSaltGhostVel  = 0xA4u;
 constexpr unsigned kSaltBassTime  = 0xA5u;
 constexpr unsigned kSaltBassVel   = 0xA6u;
 
+double fillGrooveCutBeat(int fillIndex, double fillOrigin) noexcept
+{
+    if (fillIndex == 17) return fillOrigin + 3.0;
+    if (fillIndex == 18) return fillOrigin + 2.0;
+    return fillOrigin;
+}
+
 // SplitMix32-style avalanche (same as PatternRules::hashMix) — kept local so
 // PatternPlayer does not depend on the inference headers.
 inline unsigned barHash(unsigned a, unsigned b) noexcept
@@ -182,6 +189,17 @@ void PatternPlayer::armBarFill(int fillPatternIndex, bool fromNextBar) noexcept
         return;
     pendingBarFillIndex_ = fillPatternIndex;
     barFillStartBeat_ = fromNextBar ? -2.0 : -1.0;
+}
+
+void PatternPlayer::armBarFillAtBeat(int fillPatternIndex, double originBeat) noexcept
+{
+    if (fillPatternIndex < 17 || fillPatternIndex > 19)
+        return;
+    pendingBarFillIndex_ = fillPatternIndex;
+    double snapped = std::round(originBeat / 4.0) * 4.0;
+    if (snapped < 0.0)
+        snapped = 0.0;
+    barFillStartBeat_ = snapped;
 }
 
 void PatternPlayer::setBpm(float newBpm)
@@ -646,27 +664,70 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
         return;
 
     const MidiPattern& fill = library->getPattern(fillPatternIndex);
+    const MidiPattern& groove = library->getPattern(activePatternIndex);
     const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
+    const double samplesPerMs = sampleRate / 1000.0;
+    const double swingDelayMs = static_cast<double>(swing) * (1.0 / 6.0)
+                              * 60000.0 / juce::jmax(1.0f, bpm);
     const double barStart = fillBarStart;
-    const double windowStart = (fillPatternIndex == 17) ? barStart + 3.0
-                             : (fillPatternIndex == 18) ? barStart + 2.0
-                             : barStart;
+    const double windowStart = fillGrooveCutBeat(fillPatternIndex, barStart);
+    const double blockStartBeat = static_cast<double>(sampleCounter) / samplesPerBeat;
+    double earlyBeats = 0.0, lateBeats = 0.0;
+    microtimingSlackBeats(samplesPerBeat, samplesPerMs, swingDelayMs, earlyBeats, lateBeats);
+    const int64_t slackSamples = static_cast<int64_t>(std::llround(lateBeats * samplesPerBeat)) + 1;
+    (void) earlyBeats;
 
     for (const auto& ev : fill.drumEvents)
     {
         const double t = barStart + static_cast<double>(ev.beatOffset);
         if (t < windowStart - 1.0e-9)
             continue;
-        if (t < beatStart - 1.0e-9 || t >= beatEnd - 1.0e-9)
+
+        // T7.3: skip the fill's terminal crash when the incoming bar already
+        // crashes on its downbeat (same ±20 ms window as T1.6).
+        if (ev.note == kCrashNote && ev.beatOffset >= 3.5f
+            && patternCrashesNear(groove, barStart + 4.0))
             continue;
-        const int off = juce::jlimit(0, numSamples - 1,
-            static_cast<int>(std::round((t - beatStart) * samplesPerBeat)));
-        const int durSamps = juce::jmax(1, static_cast<int>(std::round(
-            static_cast<double>(ev.durationBeats) * samplesPerBeat)));
-        scheduleDrumNoteOff(midi, numSamples, sampleCounter, ev.note, off, durSamps);
-        midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, ev.note,
-                                                static_cast<float>(ev.velocity) / 127.0f),
-                      off);
+
+        const int grid16 = Groove::grid16Of(ev.beatOffset);
+        const bool isGhost = ev.isGhost || (ev.velocity <= grooveTemplate.ghostThreshold);
+        const int64_t eventBar = static_cast<int64_t>(std::floor(t / 4.0));
+
+        float timeMs = grooveTemplate.timingMs[grid16];
+        if (swing > 0.0f && (grid16 % 4) == 2)
+            timeMs += static_cast<float>(swingDelayMs);
+        if (isGhost)
+            timeMs += grooveTemplate.ghostTimingMs;
+        timeMs += eventGaussian(eventBar, grid16, ev.note, kSaltDrumTime,
+                                grooveTemplate.timingJitterMs);
+
+        const int64_t absSample = sampleCounter + static_cast<int64_t>(std::llround(
+            (t - blockStartBeat) * samplesPerBeat
+            + static_cast<double>(timeMs) * samplesPerMs));
+        const int absOff = placeEvent(absSample, numSamples, slackSamples);
+        if (absOff < 0)
+            continue;
+
+        const float mul = grooveTemplate.velocityMul[grid16] * sectionVelMul;
+        int vel = static_cast<int>(std::round(static_cast<float>(ev.velocity) * mul
+            + eventGaussian(eventBar, grid16, ev.note, kSaltDrumVel,
+                            grooveTemplate.velocityJitter)));
+        if (isGhost)
+            vel = juce::jlimit(static_cast<int>(grooveTemplate.ghostVelocityLo),
+                               static_cast<int>(grooveTemplate.ghostVelocityHi), vel);
+        else
+            vel = applyVelocityHeadroom(vel);
+
+        int outNote = juce::jlimit(0, 127, static_cast<int>(ev.note));
+        float durBeats = ev.durationBeats;
+        if (outNote == kHatOpen && durBeats < 1.0f)
+            durBeats = 1.0f;
+        const int durSamps = juce::jmax(
+            1, static_cast<int>(std::round(static_cast<double>(durBeats) * samplesPerBeat)));
+        scheduleDrumNoteOff(midi, numSamples, sampleCounter, outNote, absOff, durSamps);
+        midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, outNote,
+                                                static_cast<float>(vel) / 127.0f),
+                      absOff);
     }
 }
 
@@ -1370,17 +1431,19 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         ? ((barFillStartBeat_ >= 0.0) ? barFillStartBeat_ : std::floor(beatStart / 4.0) * 4.0)
         : beatEnd;
     const bool fillEmitting = pendingBarFillIndex_ >= 17 && beatEnd > fillOrigin + 1.0e-12;
-    const bool fill19Live = fillEmitting && pendingBarFillIndex_ == 19;
+    const double fillCut = fillEmitting
+        ? fillGrooveCutBeat(pendingBarFillIndex_, fillOrigin)
+        : beatEnd;
 
     auto emitGroove = [&](double from, double to, int patIdx) noexcept
     {
         if (patIdx == 0 || to <= from + 1.0e-12)
             return;
-        if (fill19Live)
+        if (fillEmitting)
         {
-            if (from >= fillOrigin - 1.0e-12)
+            if (from >= fillCut - 1.0e-12)
                 return;
-            to = std::min(to, fillOrigin);
+            to = std::min(to, fillCut);
             if (to <= from + 1.0e-12)
                 return;
         }
@@ -1446,7 +1509,7 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
 
     // Tier-0 micro-fill: a two-note tom pickup into the next downbeat at the end
     // of a 4-bar phrase (the downbeat's own kick/crash is the pattern's).
-    if (!fill19Live)
+    if (!fillEmitting)
         emitMicroFill(midi, numSamples, beatStart, beatEnd, 0);
 
     // Bass note-offs that expire without a retrigger are flushed after all

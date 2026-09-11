@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.75] — Fills (Phase 7)
+
+- **T7.1 Record fill seed.** Record A/B pass a varying phrase seed into
+  `selectFillPatternForEnergy`, so loud section ends can pick Fill Big (19)
+  instead of always landing on 18. A dedicated energy helper mixes the seed so
+  a constant 0 can never pin the choice.
+- **T7.2 last-bar origin.** Fills arm at the section's last-bar downbeat on the
+  host grid (`armBarFillAtBeat`), not via `beatInBar >= 0.05`. 1024/2048-sample
+  buffers at 120 and 240 BPM keep 17/18/19 inside the outgoing bar.
+- **T7.3 fills replace the groove and inherit feel.** 17 and 18 mute the groove
+  from their window start (as 19 already did), so pattern 21 + fill 18 no longer
+  flams two kicks at beat 3.75. Fill events use the same microtiming, swing,
+  `sectionVelMul` and guitar-energy path as the groove, and a fill's terminal
+  crash is skipped when the incoming bar already crashes.
+
 ## [0.9.74] — Reactivity (Phase 6)
 
 - **T6.1 1-bar drum hold + gesture fast path.** Follow/Play commits at most once

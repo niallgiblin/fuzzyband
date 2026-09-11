@@ -2,6 +2,7 @@
 #include "inference/pattern_rules.h"
 #include "analysis/FeatureVector.h"
 #include "midi/MidiPatternLibrary.h"
+#include <set>
 
 // Helper to build a FeatureVector with the given fields
 static FeatureVector makeF(StructureState state, float bpm, float policyIntensity = 0.5f)
@@ -704,6 +705,25 @@ TEST_CASE("PatternRules::selectFillPattern Fill Medium is reachable (was dead)",
     for (unsigned s = 0; s < 64; ++s)
         if (PatternRules::selectFillPattern(0, 0.8f, s) == 19) { sawBig = true; break; }
     REQUIRE(sawBig);
+}
+
+TEST_CASE("T7.1 selectFillPatternForEnergy hits 17/18/19 over 8 section ends", "[pattern_rules][fill][t7.1]")
+{
+    std::set<int> loud;
+    for (unsigned phrase = 0; phrase < 8; ++phrase)
+        loud.insert(PatternRules::selectFillPatternForEnergy(0.5f, phrase));
+    REQUIRE(loud.count(18));
+    REQUIRE(loud.count(19));
+    REQUIRE(PatternRules::selectFillPatternForEnergy(0.5f, 0)
+         != PatternRules::selectFillPatternForEnergy(0.5f, 1));
+
+    std::set<int> seen = loud;
+    seen.insert(PatternRules::selectFillPatternForEnergy(0.10f, 0));
+    seen.insert(PatternRules::selectFillPatternForEnergy(0.30f, 0));
+    seen.insert(PatternRules::selectFillPatternForEnergy(0.30f, 1));
+    REQUIRE(seen.count(17));
+    REQUIRE(seen.count(18));
+    REQUIRE(seen.count(19));
 }
 
 // ══════════════════════════════════════════════════════════════════════════

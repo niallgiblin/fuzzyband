@@ -851,6 +851,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         const bool fillLast = structureSequencer.isLastBar();
         const bool fillPenultimate =
             structureSequencer.getBarsElapsed() == structureSequencer.getBarsInSection() - 2;
+        const double spbPlay = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
+        const double lastBarOriginBeat = playLastBarOriginBeat(clockSample, spbPlay);
 
         structureSequencer.advance(numSamples, bpmForPlayer, sr);
         if (structureSequencer.isComplete())
@@ -908,14 +910,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             }
             if (lastPlayedPoolPattern >= 0)
                 effectivePatternIdx = lastPlayedPoolPattern;
-            const double spbFill = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
-            double beatInBar = (spbFill > 0.0)
-                ? std::fmod(static_cast<double>(clockSample) / spbFill, 4.0) : 0.0;
-            if (beatInBar < 0.0)
-                beatInBar += 4.0;
             const unsigned seed = static_cast<unsigned>(structureSequencer.getGlobalBarCount())
                                 ^ static_cast<unsigned>(secIndex * 31u);
-            updateOutgoingFill(playFillArm, fillLast, fillPenultimate, rms, seed, beatInBar);
+            updateOutgoingFill(playFillArm, fillLast, fillPenultimate, rms, seed, lastBarOriginBeat);
         }
     }
     else
@@ -1460,12 +1457,16 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 const int current = juce::jlimit(1, juce::jmax(1, total),
                     static_cast<int>((hostSampleTime - grooveLockStartMono) / samplesPerBar) + 1);
                 const double spbA = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
-                double beatInBarA = (spbA > 0.0)
-                    ? std::fmod(static_cast<double>(clockSample) / spbA, 4.0) : 0.0;
-                if (beatInBarA < 0.0)
-                    beatInBarA += 4.0;
+                double currentBarStart = (spbA > 0.0)
+                    ? std::floor(static_cast<double>(clockSample) / spbA / 4.0) * 4.0 : 0.0;
+                if (currentBarStart < 0.0)
+                    currentBarStart += 4.0;
+                const double lastBarOriginA = (current == total)
+                    ? currentBarStart : currentBarStart + 4.0;
+                const unsigned seedA = static_cast<unsigned>(current)
+                                     ^ (static_cast<unsigned>(total) * 31u);
                 updateOutgoingFill(riffAFillArm, current == total, current == total - 1,
-                                   rms, 0u, beatInBarA);
+                                   rms, seedA, lastBarOriginA);
             }
             if (grooveLockEndMono >= 0 && hostSampleTime >= grooveLockEndMono)
             {
@@ -1676,12 +1677,16 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     : 0;
                 transitionBarsRemaining.store(juce::jmax(0, barsLeft), std::memory_order_release);
                 const double spbB = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
-                double beatInBarB = (spbB > 0.0)
-                    ? std::fmod(static_cast<double>(clockSample) / spbB, 4.0) : 0.0;
-                if (beatInBarB < 0.0)
-                    beatInBarB += 4.0;
+                double currentBarStartB = (spbB > 0.0)
+                    ? std::floor(static_cast<double>(clockSample) / spbB / 4.0) * 4.0 : 0.0;
+                if (currentBarStartB < 0.0)
+                    currentBarStartB += 4.0;
+                const double lastBarOriginB = (barsLeft == 1)
+                    ? currentBarStartB : currentBarStartB + 4.0;
+                const unsigned seedB = static_cast<unsigned>(transitionSectionNumberLocal)
+                                     ^ (static_cast<unsigned>(barsLeft) * 17u);
                 updateOutgoingFill(riffBFillArm, barsLeft == 1, barsLeft == 2,
-                                   rms, 0u, beatInBarB);
+                                   rms, seedB, lastBarOriginB);
             }
         }
 
@@ -1861,13 +1866,13 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
 void AccompanimentProcessor::updateOutgoingFill(OutgoingFillArm& arm, bool isLast,
                                                 bool isPenultimate, float rms,
-                                                unsigned seed, double beatInBar) noexcept
+                                                unsigned seed, double lastBarOriginBeat) noexcept
 {
     if (isPenultimate && !arm.penultimate)
     {
-        if (PatternRules::selectFillPattern(0, rms, seed) == 19)
+        if (PatternRules::selectFillPatternForEnergy(rms, seed) == 19)
         {
-            patternPlayer.armBarFill(19, true);
+            patternPlayer.armBarFillAtBeat(19, lastBarOriginBeat);
             arm.deferred19 = true;
         }
         arm.penultimate = true;
@@ -1879,13 +1884,8 @@ void AccompanimentProcessor::updateOutgoingFill(OutgoingFillArm& arm, bool isLas
     {
         if (!arm.deferred19)
         {
-            const int fill = PatternRules::selectFillPattern(0, rms, seed);
-            // Play's sequencer latches isLast on the last block of the
-            // penultimate host bar (beat ~4). fromNextBar puts 17/18/19 on the
-            // real last bar. Record latches at beat 0 of the last bar, so
-            // fromNext stays false.
-            const bool fromNext = (beatInBar >= 0.05);
-            patternPlayer.armBarFill(fill, fromNext);
+            const int fill = PatternRules::selectFillPatternForEnergy(rms, seed);
+            patternPlayer.armBarFillAtBeat(fill, lastBarOriginBeat);
         }
         arm.lastBar = true;
     }
@@ -1894,6 +1894,26 @@ void AccompanimentProcessor::updateOutgoingFill(OutgoingFillArm& arm, bool isLas
         arm.lastBar = false;
         arm.deferred19 = false;
     }
+}
+
+double AccompanimentProcessor::playLastBarOriginBeat(int64_t clockSample, double samplesPerBeat) const noexcept
+{
+    if (samplesPerBeat <= 0.0)
+        return 0.0;
+    const double currentBarStart = std::floor(
+        static_cast<double>(clockSample) / samplesPerBeat / 4.0) * 4.0;
+    const int lastIdx = juce::jmax(0, structureSequencer.getBarsInSection() - 1);
+    const int elapsed = structureSequencer.getBarsElapsed();
+    const int global = structureSequencer.getGlobalBarCount();
+    const double seqSpb = structureSequencer.getSamplesPerBar();
+    const double acc = structureSequencer.getBarAccumulator();
+    if (seqSpb <= 1.0)
+        return currentBarStart + static_cast<double>(lastIdx - elapsed) * 4.0;
+    const double formOrigin = static_cast<double>(clockSample)
+                            - (static_cast<double>(global) * seqSpb + acc);
+    const double lastStartSamples = formOrigin
+        + static_cast<double>(global - elapsed + lastIdx) * seqSpb;
+    return lastStartSamples / samplesPerBeat;
 }
 
 void AccompanimentProcessor::latchLockClock(int64_t transportSample, double samplesPerBeat) noexcept

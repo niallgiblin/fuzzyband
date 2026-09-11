@@ -292,7 +292,9 @@ private:
         void clear() noexcept { lastBar = penultimate = deferred19 = false; }
     };
     void updateOutgoingFill(OutgoingFillArm& arm, bool isLast, bool isPenultimate,
-                            float rms, unsigned seed, double beatInBar) noexcept;
+                            float rms, unsigned seed, double lastBarOriginBeat) noexcept;
+    /** @brief Host-grid beat of the current Play section's last-bar downbeat (T7.2). */
+    double playLastBarOriginBeat(int64_t clockSample, double samplesPerBeat) const noexcept;
 
     juce::AudioProcessorValueTreeState apvts;
 

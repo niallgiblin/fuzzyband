@@ -1880,6 +1880,103 @@ TEST_CASE("Processor pipeline: Record A/B last-bar fills do not overlay the inco
     proc.releaseResources();
 }
 
+TEST_CASE("T7.2 Play last-bar fill lands inside the section at 1024/2048 and 120/240 BPM",
+          "[integration][pipeline][fill][t7.2]")
+{
+    const double sr = 48000.0;
+    auto isTom = [](int note) {
+        return note == 41 || note == 43 || note == 45 || note == 47 || note == 48;
+    };
+
+    struct FakePlayHead final : public juce::AudioPlayHead
+    {
+        juce::Optional<juce::AudioPlayHead::PositionInfo> getPosition() const override
+        {
+            juce::AudioPlayHead::PositionInfo info;
+            info.setBpm(static_cast<double>(bpm));
+            info.setIsPlaying(true);
+            info.setTimeInSamples(samples);
+            return info;
+        }
+        float bpm = 120.0f;
+        int64_t samples = 0;
+    };
+
+    const int blocksizes[] = { 1024, 2048 };
+    const float bpms[] = { 120.0f, 240.0f };
+    for (int block : blocksizes)
+    {
+        for (float bpm : bpms)
+        {
+            INFO("block=" << block << " bpm=" << bpm);
+            AccompanimentProcessor proc;
+            proc.prepareToPlay(sr, block);
+            proc.pauseBackgroundInferenceForTests();
+            FakePlayHead ph;
+            ph.bpm = bpm;
+            proc.setPlayHead(&ph);
+            proc.setCustomSongForm("INTRO:2,VERSE:2");
+            proc.playActive.store(true, std::memory_order_release);
+
+            const double samplesPerBeat = 60.0 / static_cast<double>(bpm) * sr;
+            const int64_t samplesPerBar = static_cast<int64_t>(4.0 * samplesPerBeat);
+            const int totalBlocks = static_cast<int>((8.0 * samplesPerBar + block - 1) / block);
+
+            int lastIntroBar = -1;
+            int firstVerseBar = -1;
+            struct TomHit { int bar; double beatInBar; };
+            std::vector<TomHit> toms;
+            int64_t pos = 0;
+            for (int b = 0; b < totalBlocks; ++b)
+            {
+                ph.samples = pos;
+                auto buf = makeSineBuffer(block, 110.0, sr, 0.12f);
+                juce::MidiBuffer midi;
+                proc.processBlock(buf, midi);
+                const int bar = static_cast<int>(pos / samplesPerBar);
+                const auto name = proc.getCurrentSectionName();
+                if (name == "INTRO" && bar >= 0)
+                    lastIntroBar = bar;
+                if (name == "VERSE" && firstVerseBar < 0 && bar >= 0)
+                    firstVerseBar = bar;
+                for (const auto meta : midi)
+                {
+                    const auto msg = meta.getMessage();
+                    if (!msg.isNoteOn() || msg.getChannel() != 10 || !isTom(msg.getNoteNumber()))
+                        continue;
+                    const int64_t abs = pos + meta.samplePosition;
+                    const int hitBar = static_cast<int>(abs / samplesPerBar);
+                    double beatInBar = std::fmod(static_cast<double>(abs) / samplesPerBeat, 4.0);
+                    if (beatInBar < 0.0)
+                        beatInBar += 4.0;
+                    toms.push_back({ hitBar, beatInBar });
+                }
+                pos += block;
+            }
+
+            REQUIRE(lastIntroBar >= 0);
+            REQUIRE(firstVerseBar >= 0);
+            bool lastIntroFill = false;
+            for (const auto& h : toms)
+            {
+                const bool onLastIntro = (h.bar == lastIntroBar)
+                    || (firstVerseBar == lastIntroBar && h.bar == lastIntroBar);
+                if (onLastIntro && h.beatInBar >= 3.0 && h.beatInBar < 4.0)
+                    lastIntroFill = true;
+            }
+            REQUIRE(lastIntroFill);
+            for (const auto& h : toms)
+            {
+                if (h.bar == firstVerseBar && firstVerseBar != lastIntroBar)
+                    REQUIRE_FALSE((h.beatInBar >= 0.0 && h.beatInBar < 0.25));
+            }
+            proc.playActive.store(false, std::memory_order_release);
+            proc.setPlayHead(nullptr);
+            proc.releaseResources();
+        }
+    }
+}
+
 TEST_CASE("Processor pipeline: play hybrid drums constrain to pool and hold", "[integration][pipeline][play][hybrid]")
 {
     const double sr = 48000.0;
