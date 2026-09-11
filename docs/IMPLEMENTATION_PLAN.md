@@ -2,6 +2,8 @@
 
 **Companion to:** [`docs/PLAYABILITY_REVIEW.md`](PLAYABILITY_REVIEW.md)
 **Target:** v0.9.67 → v1.0.0-rc
+**Working codebase:** `/Users/ng/projects/fuzzyband` (the review doc lives in the Desktop docs folder)
+**Phase 9 report:** [`docs/PHASE9_ACCEPTANCE.md`](PHASE9_ACCEPTANCE.md)
 **Scope:** every defect in the review's §2, plus the playability (§3) and musicality (§4) items.
 **Working codebase:** `/Users/ng/projects/fuzzyband` (the review doc lives in the Desktop docs folder)
 
@@ -991,8 +993,29 @@ Measured residual: 0 differences before the lock onset; a handful of events (up 
 whole fill patterns) from bar 5 onward. Fixing them means scheduling the transitions at the exact
 sample rather than the first block past it — T7.2 plus a small addition to T6.1.
 
-### Recommended next
+### Recommended next (historical)
 
-Proceed to Phase 5 (T5.1 authored `bassEvents`, T5.2 riff note lengths, T5.3 mirror retrigger),
-which is where the remaining bass-musicality work sits, then Phase 6 (reactivity, which also carries
-the two `[!mayfail]` tests).
+Phases 5–8 landed in v0.9.73–v0.9.76. Phase 9 (this document’s T9.1–T9.5) is in
+[`docs/PHASE9_ACCEPTANCE.md`](PHASE9_ACCEPTANCE.md) / v1.0.0-rc.
+
+---
+
+## Post-implementation review — Phase 9 (v1.0.0-rc)
+
+Ran T9.1–T9.5 against the Phase 8 tree (`620d62b`) plus the Phase 9 harness.
+
+### Verified done
+
+| Task | Result |
+| --- | --- |
+| T9.1 | `MetalAccompanimentTests` 268 / 87979; `MetalAccompanimentIntegrationTests` 77 / 1194. All nine review §5 tests present and green. No `[!mayfail]`. |
+| T9.2 | PatternPlayer fingerprint identical at 128 / 512 / 2048. Processor count-in + capture identical. Full Record *after lock onset* still block-quantised (same residual as the Phase 0–4 review). |
+| T9.3 | Listening-matrix MIDI rows in `tests/test_phase9_acceptance.cpp` all pass. Dynamics A/B: current Record 512 is **0 %** at 127 vs pre-Phase-3 **30 %**. |
+| T9.4 | Stations A–H mapped to automated contracts in `docs/PHASE9_ACCEPTANCE.md`. Human DAW pass on the installed **v1.0.0** binary is still required before 1.0.0 final. |
+| T9.5 | `processBlock` mean 0.52 ms / p99 **0.84 ms** (budget 1.5 ms). ONNX `metal_groove` p99 **0.36 ms** (budget 5 ms). |
+
+Plugin installed: VST3 + AU report `1.0.0`. `auval -v aumf MtAc NGAC` **PASS**.
+
+### Residual (not a Phase 9 regression)
+
+Lock onset and transition start remain scheduled on the first block past the musical instant. T7.2 made fill arming sample-accurate. Do not treat a full Record-session TSV diff across buffer sizes as a T9.2 failure — the gate is count-in + capture plus the PatternPlayer golden.

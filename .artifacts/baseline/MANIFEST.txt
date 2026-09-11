@@ -1,8 +1,8 @@
-version 0.9.75
+version 1.0.0
 sampleRate 48000
 bpm 120
 genre Metal (index 3)
 lockBars 4
 transitionBars 4
 riff Drop-C palm-mute (C2 65.406 Hz, 16th envelope)
-purpose T3.1 re-baseline after velocity/humanise retune; pre-Phase-3 corpus is .artifacts/baseline/pre-phase3/
+purpose T9.3 A/B corpus after Phases 0–8 (v1.0.0-rc); pre-Phase-3 wall-of-127 corpus is .artifacts/baseline/pre-phase3/

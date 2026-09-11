@@ -101,7 +101,8 @@ TEST_CASE("Performance: per-block audio processing time < 1ms at 256-sample buff
 
     // Assertions
     CHECK(mean < 1.0);
-    CHECK(p99 < 2.0);            // P99 should stay under 2ms after warmup
+    // T9.5: fail the release if p99 exceeds 1.5 ms (was 2.0; measured ~0.8 ms).
+    CHECK(p99 < 1.5);
     // Max can spike from OS scheduling noise (observed up to ~90ms on a quiet
     // machine while mean stays ~0.4ms). Only flag a real stall: >150ms means
     // something blocked the audio thread (allocation, deadlock, disk IO).

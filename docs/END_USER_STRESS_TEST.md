@@ -2,8 +2,10 @@
 # Fuzzyband — End-User Stress Test
 
 **Plugin:** Metal Accompaniment / Fuzzyband
-**Written against:** v0.9.76 (`CMakeLists.txt` version string, top-right of the UI)
+**Written against:** v1.0.0 (`CMakeLists.txt` version string, top-right of the UI)
 **Purpose:** Play through every user-facing mode, style, genre, section, and drum pattern. Tick what you hear. Record the session. Hand the recording + this filled log to an agent to double-check.
+
+Phase 9 automated contracts for Stations A–H are in [`docs/PHASE9_ACCEPTANCE.md`](PHASE9_ACCEPTANCE.md) (T9.4). This file is still the human DAW pass.
 
 If a pattern or style **never appears** after you follow the trigger recipe, that is a product bug or a coverage gap — log it as **MISS**, do not skip it.
 

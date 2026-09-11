@@ -66,36 +66,26 @@ TEST_CASE("MidiProbe renders note-ons for a fixed pattern", "[midi][probe]")
     REQUIRE(sawBass);
 }
 
-TEST_CASE("MidiProbe dual-block-size golden is buffer-invariant", "[midi][probe][golden]")
+TEST_CASE("MidiProbe dual-block-size golden is buffer-invariant", "[midi][probe][golden][t9.2]")
 {
     // T1.1 / T9.2 / review §5.2: the whole rendered fingerprint — not just crash
     // durations — must be independent of the host block size. Placement is by
     // absolute sample (PatternPlayer::placeEvent), so microtiming is never
-    // clamped to a block boundary.
+    // clamped to a block boundary. T9.2 requires 128 / 512 / 2048.
     MidiPatternLibrary lib;
-    PatternPlayer a, b;
+    PatternPlayer a, b, c;
     prepareFixedPlayer(a, lib, 128);
-    prepareFixedPlayer(b, lib, 2048);
+    prepareFixedPlayer(b, lib, 512);
+    prepareFixedPlayer(c, lib, 2048);
 
-    const int64_t span = 2048 * 188;  // ~4 bars, divisible by 128 and 2048
+    const int64_t span = 2048 * 188;  // ~4 bars, divisible by 128, 512, 2048
     const auto events128  = MidiProbe::render(a, blocksForSpan(span, 128),  128,  0);
-    const auto events2048 = MidiProbe::render(b, blocksForSpan(span, 2048), 2048, 0);
+    const auto events512  = MidiProbe::render(b, blocksForSpan(span, 512),  512,  0);
+    const auto events2048 = MidiProbe::render(c, blocksForSpan(span, 2048), 2048, 0);
 
     REQUIRE_FALSE(events128.empty());
-    REQUIRE_FALSE(events2048.empty());
-    REQUIRE(events128.size() == events2048.size());
-
-    for (size_t i = 0; i < events128.size(); ++i)
-    {
-        INFO("event " << i << ": "
-             << events128[i].sample << "/" << (int) events128[i].note << " vs "
-             << events2048[i].sample << "/" << (int) events2048[i].note);
-        REQUIRE(events128[i].sample == events2048[i].sample);
-        REQUIRE(events128[i].note == events2048[i].note);
-        REQUIRE(events128[i].channel == events2048[i].channel);
-        REQUIRE(events128[i].velocity == events2048[i].velocity);
-        REQUIRE(events128[i].isNoteOn == events2048[i].isNoteOn);
-    }
+    REQUIRE(MidiProbe::fingerprint(events128) == MidiProbe::fingerprint(events512));
+    REQUIRE(MidiProbe::fingerprint(events128) == MidiProbe::fingerprint(events2048));
 
     auto crashHolds = [](const std::vector<MidiProbe::Event>& ev) {
         std::vector<int64_t> holds, ons;

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 0.9.76)
+project(MetalAccompaniment VERSION 1.0.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -389,6 +389,7 @@ if(MA_BUILD_TESTS)
         tests/test_performance_benchmark.cpp
         tests/test_baseline_capture.cpp
         tests/test_phase2_clock.cpp
+        tests/test_phase9_acceptance.cpp
     )
 
     target_include_directories(MetalAccompanimentIntegrationTests PRIVATE
@@ -527,7 +528,21 @@ if(MA_BUILD_TESTS)
         COMMAND MetalAccompanimentIntegrationTests "[perf]"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
-    set_tests_properties(perf_block_processing PROPERTIES LABELS "perf")
+    set_tests_properties(perf_block_processing PROPERTIES LABELS "perf;phase9")
+
+    add_test(
+        NAME t9_2_buffer_invariance
+        COMMAND MetalAccompanimentIntegrationTests "[t9.2]"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(t9_2_buffer_invariance PROPERTIES LABELS "integration;phase9")
+
+    add_test(
+        NAME t9_acceptance
+        COMMAND MetalAccompanimentIntegrationTests "[phase9]"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    set_tests_properties(t9_acceptance PROPERTIES LABELS "integration;phase9")
 endif()
 
 # ─────────────────────────────────────────────────────────────────

@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [1.0.0-rc] — Verification and acceptance (Phase 9)
+
+Release candidate after Phases 0–8. See [`docs/PHASE9_ACCEPTANCE.md`](docs/PHASE9_ACCEPTANCE.md).
+
+- **T9.1** both Catch2 binaries are the release gate; CI runs `[phase9]` and `[t9.2]`.
+- **T9.2** buffer-size invariance now compares **128 / 512 / 2048** (PatternPlayer golden and the processor count-in + capture span).
+- **T9.3** listening-matrix rows are MIDI assertions in `tests/test_phase9_acceptance.cpp` (cymbals, dynamics, grid, Play variety, authored bass). Lock / breath / frozen riff / reactivity / cut-short stay in the pipeline suite.
+- **T9.4** Station A–H contracts are mapped to those tests in the acceptance report. A human DAW pass on the installed **v1.0.0** binary is still required before calling 1.0.0 final.
+- **T9.5** per-block p99 budget is **1.5 ms** (was 2.0 ms); ONNX `metal_groove` p99 stays under 5 ms.
+
 ## [0.9.76] — Cleanup, races and docs (Phase 8)
 
 - **T8.1 dead code.** Removed unused `snapBassToSectionHarmony`,
