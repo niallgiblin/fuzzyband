@@ -2,6 +2,7 @@
 #include <cmath>
 #include <algorithm>
 #include <climits>
+#include <cstdint>
 
 PhraseLearner::PhraseLearner()
 {
@@ -279,7 +280,8 @@ void PhraseLearner::cancelLiveGridListen() noexcept
     gridSlots_.fill({});
 }
 
-void PhraseLearner::stampGridRange(double beat0, double beat1, float peak, int bassMidi) noexcept
+void PhraseLearner::stampGridRange(double beat0, double beat1, float peak, int bassMidi,
+                                   bool onset) noexcept
 {
     if (!gridCapturing_ && !gridListening_)
         return;
@@ -315,7 +317,13 @@ void PhraseLearner::stampGridRange(double beat0, double beat1, float peak, int b
         if (!slot.occupied)
         {
             slot.occupied = true;
+            slot.onset = onset;
+            slot.gate16 = 1;
             ++gridOccupied_;
+        }
+        else if (onset)
+        {
+            slot.onset = true;
         }
         slot.midiNote = midi;
     }
@@ -341,6 +349,7 @@ bool PhraseLearner::commitGridCapture() noexcept
     if (patternLen_ < 2)
         return false;
 
+    coalesceSlotGates();
     patternLenBeats_ = static_cast<double>(kGridBars) * 4.0;
     userCapturing_ = false;
     gridCapturing_ = false;
@@ -358,6 +367,7 @@ void PhraseLearner::exportPattern(LearnedRiff& dest) const noexcept
     dest.lenBeats = static_cast<double>(kGridBars) * 4.0;
     dest.occupied.fill(false);
     dest.midi.fill(36);
+    dest.gate16.fill(0);
     int n = 0;
     for (int s = 0; s < kGridSlots; ++s)
     {
@@ -368,11 +378,31 @@ void PhraseLearner::exportPattern(LearnedRiff& dest) const noexcept
             ++n;
     }
     dest.valid = n >= 2;
-    if (dest.valid || !locked_ || patternLen_ < 2)
+    if (dest.valid)
+    {
+        for (int s = 0; s < kGridSlots; ++s)
+        {
+            const auto& slot = gridSlots_[static_cast<size_t>(s)];
+            if (!slot.occupied || !slot.onset)
+                continue;
+            uint8_t g = 1;
+            for (int t = s + 1; t < kGridSlots; ++t)
+            {
+                const auto& next = gridSlots_[static_cast<size_t>(t)];
+                if (!next.occupied || next.onset)
+                    break;
+                ++g;
+            }
+            dest.gate16[static_cast<size_t>(s)] = g;
+        }
+        return;
+    }
+    if (!locked_ || patternLen_ < 2)
         return;
 
     dest.occupied.fill(false);
     dest.midi.fill(36);
+    dest.gate16.fill(0);
     dest.lenBeats = static_cast<double>(kGridBars) * 4.0;
     n = 0;
     for (int i = 0; i < patternLen_; ++i)
@@ -390,6 +420,7 @@ void PhraseLearner::exportPattern(LearnedRiff& dest) const noexcept
             continue;
         dest.occupied[static_cast<size_t>(slot)] = true;
         dest.midi[static_cast<size_t>(slot)] = pattern_[static_cast<size_t>(i)].midiNote;
+        dest.gate16[static_cast<size_t>(slot)] = 1;
         ++n;
     }
     dest.valid = n >= 2;
@@ -399,6 +430,16 @@ bool PhraseLearner::loadPattern(const LearnedRiff& src) noexcept
 {
     if (!src.valid)
         return false;
+
+    bool anyGate = false;
+    for (int s = 0; s < kGridSlots; ++s)
+    {
+        if (src.gate16[static_cast<size_t>(s)] > 0)
+        {
+            anyGate = true;
+            break;
+        }
+    }
 
     gridSlots_.fill({});
     gridOccupied_ = 0;
@@ -411,6 +452,8 @@ bool PhraseLearner::loadPattern(const LearnedRiff& src) noexcept
         auto& slot = gridSlots_[static_cast<size_t>(s)];
         slot.occupied = true;
         slot.midiNote = src.midi[static_cast<size_t>(s)];
+        slot.gate16 = anyGate ? src.gate16[static_cast<size_t>(s)] : uint8_t{ 1 };
+        slot.onset = anyGate ? (src.gate16[static_cast<size_t>(s)] > 0) : true;
         ++gridOccupied_;
         pattern_[static_cast<size_t>(patternLen_)].beatOffset =
             static_cast<double>(s) * 0.25;
@@ -430,6 +473,28 @@ bool PhraseLearner::loadPattern(const LearnedRiff& src) noexcept
     playbackPhase_ = 0.0;
     playbackStep_ = 0;
     return true;
+}
+
+void PhraseLearner::coalesceSlotGates() noexcept
+{
+    for (int s = 0; s < kGridSlots; ++s)
+    {
+        auto& slot = gridSlots_[static_cast<size_t>(s)];
+        if (!slot.occupied || !slot.onset)
+        {
+            slot.gate16 = 0;
+            continue;
+        }
+        uint8_t g = 1;
+        for (int t = s + 1; t < kGridSlots; ++t)
+        {
+            const auto& next = gridSlots_[static_cast<size_t>(t)];
+            if (!next.occupied || next.onset)
+                break;
+            ++g;
+        }
+        slot.gate16 = g;
+    }
 }
 
 PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, float pitchMidi,

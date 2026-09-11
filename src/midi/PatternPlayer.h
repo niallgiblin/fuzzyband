@@ -272,7 +272,8 @@ private:
                        double beatStart,
                        double beatEnd,
                        const MidiPattern& pattern,
-                       int sampleOffsetBase);
+                       int sampleOffsetBase,
+                       bool clampEarly = false);
 
     /** @brief Emit authored @c pattern.bassEvents transposed to the live root (A1.1). */
     void emitPatternBass(juce::MidiBuffer& midi,
@@ -280,7 +281,8 @@ private:
                          double beatStart,
                          double beatEnd,
                          const MidiPattern& pattern,
-                         int sampleOffsetBase);
+                         int sampleOffsetBase,
+                         bool clampEarly = false);
 
     /** @brief Harmonic bass engine: root/fourth/fifth/octave per section (A1.2). */
     void emitHarmonicBass(juce::MidiBuffer& midi,
@@ -291,10 +293,10 @@ private:
                           bool clampEarly = false);
 
     /**
-     * @brief Emit one bass note. The bass is monophonic (note duration is always
-     * shorter than the note spacing), so this closes any previously scheduled
-     * note before the new note-on, and defers the new note's note-off with the
-     * correct note number — no stuck notes when successive notes differ in pitch.
+     * @brief Emit one bass note. The bass is monophonic: a new note-on always
+     * closes a ringing previous note (at @p off when @p forceRetrigger, else at
+     * the earlier of the scheduled off and @p off) so a pickup cannot swallow
+     * the next grid root (T5.3).
      */
     void emitBassNote(juce::MidiBuffer& midi,
                       int numSamples,
@@ -303,7 +305,8 @@ private:
                       int vel,
                       int off,
                       int durSamps,
-                      int sampleOffsetBase);
+                      int sampleOffsetBase,
+                      bool forceRetrigger = false);
 
     /** @brief Semitone interval for the harmonic bass on a beat within a bar. */
     int harmonyDegree(int beatInBar, int bar) const noexcept;

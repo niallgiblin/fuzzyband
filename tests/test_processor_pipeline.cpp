@@ -1507,8 +1507,9 @@ TEST_CASE("Processor pipeline: RiffBListen bass has grid on beats 1/3 with spars
 
     auto sorted = bassAbs;
     std::sort(sorted.begin(), sorted.end());
-    // Half-note grid at 120 BPM is 0.5 s; a skipped 1/3 hit is ~1 s.
-    const int64_t maxGap = static_cast<int64_t>(0.75 * sr);
+    // T5.1: authored bass is typically a half-note grid (2 beats = 1 s at 120).
+    // The old 0.75 s cap assumed the harmonic chorus quarter-note fallback.
+    const int64_t maxGap = static_cast<int64_t>(1.15 * sr);
     for (size_t i = 1; i < sorted.size(); ++i)
         REQUIRE(sorted[i] - sorted[i - 1] < maxGap);
 
@@ -2532,10 +2533,12 @@ TEST_CASE("Processor pipeline: deterministic riff loop never re-locks onto a NEW
     REQUIRE(proc.getRiffAOccupiedCount() >= 2);
     bool aSlots[64]{};
     int aMidi[64]{};
+    int aGate[64]{};
     for (int s = 0; s < 64; ++s)
     {
         aSlots[s] = proc.getRiffASlotOccupied(s);
         aMidi[s] = proc.getRiffASlotMidi(s);
+        aGate[s] = proc.getRiffASlotGate(s);
     }
     bool a1Occ[64]{};
     int a1Map[64]{};
@@ -2590,6 +2593,7 @@ TEST_CASE("Processor pipeline: deterministic riff loop never re-locks onto a NEW
     {
         REQUIRE(proc.getRiffASlotOccupied(s) == aSlots[s]);
         REQUIRE(proc.getRiffASlotMidi(s) == aMidi[s]);
+        REQUIRE(proc.getRiffASlotGate(s) == aGate[s]);
     }
     bool a2Occ[64]{};
     int a2Map[64]{};
@@ -3055,6 +3059,153 @@ TEST_CASE("Processor pipeline: Record B can lock a second riff without mutating 
         REQUIRE(proc.getRiffASlotOccupied(s) == aSlots[s]);
         REQUIRE(proc.getRiffASlotMidi(s) == aMidi[s]);
     }
+
+    proc.releaseResources();
+}
+
+TEST_CASE("T5.2: a sustained chord plays O(1) bass notes per chord, not eight 16ths",
+          "[integration][pipeline][t5.2][bass]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    const double samplesPerBeat = 60.0 / 120.0 * sr;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(8.0f));
+
+    proc.requestRiffCaptureStart();
+    const int n = static_cast<int>(5.25 * 4.0 * 60.0 / 120.0 * sr / block);
+    int blockIdx = 0;
+    for (int b = 0; b < n; ++b)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, 65.406, 0.40f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        ++blockIdx;
+    }
+    REQUIRE(proc.isGrooveLocked());
+    REQUIRE(proc.getRiffAOccupiedCount() >= 8);
+    int maxGate = 0;
+    int onsetCount = 0;
+    for (int s = 0; s < PhraseLearner::kGridSlots; ++s)
+    {
+        const int g = proc.getRiffASlotGate(s);
+        if (g > maxGate)
+            maxGate = g;
+        if (g > 0)
+            ++onsetCount;
+    }
+    INFO("occupied=" << proc.getRiffAOccupiedCount()
+         << " maxGate=" << maxGate << " onsetCount=" << onsetCount
+         << " slot0=" << proc.getRiffASlotGate(0));
+    REQUIRE(maxGate >= 4);
+    REQUIRE(onsetCount <= 16);
+
+    int bassOns = 0;
+    const int holdBlocks = static_cast<int>(16.0 * samplesPerBeat / block);  // one 4-bar loop
+    for (int b = 0; b < holdBlocks; ++b)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, 65.406, 0.40f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn() && msg.getChannel() == 2 && msg.getVelocity() > 0)
+                ++bassOns;
+        }
+        ++blockIdx;
+    }
+    // One onset covering the whole 4-bar capture: one note per loop.
+    REQUIRE(bassOns >= 1);
+    REQUIRE(bassOns <= 4);
+
+    proc.releaseResources();
+}
+
+TEST_CASE("T5.2: a 16th-note chug still emits one bass note per 16th",
+          "[integration][pipeline][t5.2][bass]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    const double samplesPerBeat = 60.0 / 120.0 * sr;
+    const double sixteenth = 0.25 * samplesPerBeat;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(8.0f));
+
+    auto fill16 = [&](juce::AudioBuffer<float>& buf, int idx)
+    {
+        for (int ch = 0; ch < buf.getNumChannels(); ++ch)
+        {
+            float* p = buf.getWritePointer(ch);
+            for (int i = 0; i < block; ++i)
+            {
+                const double absS = static_cast<double>(idx) * block + i;
+                const double pos = std::fmod(absS, sixteenth);
+                const float amp = (pos < 0.35 * sixteenth) ? 0.5f : 0.008f;
+                p[i] = amp * static_cast<float>(std::sin(2.0 * M_PI * 65.406 * absS / sr));
+            }
+        }
+    };
+
+    proc.requestRiffCaptureStart();
+    const int n = static_cast<int>(5.25 * 4.0 * 60.0 / 120.0 * sr / block);
+    int blockIdx = 0;
+    for (int b = 0; b < n; ++b)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fill16(buf, blockIdx);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        ++blockIdx;
+    }
+    REQUIRE(proc.isGrooveLocked());
+    int onsetSlots = 0;
+    int gateOne = 0;
+    for (int s = 0; s < PhraseLearner::kGridSlots; ++s)
+    {
+        const int g = proc.getRiffASlotGate(s);
+        if (g > 0)
+            ++onsetSlots;
+        if (g == 1)
+            ++gateOne;
+    }
+    REQUIRE(onsetSlots >= 8);
+
+    int bassOns = 0;
+    const int holdBlocks = static_cast<int>(16.0 * samplesPerBeat / block);  // one 4-bar loop
+    for (int b = 0; b < holdBlocks; ++b)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fill16(buf, blockIdx);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn() && msg.getChannel() == 2 && msg.getVelocity() > 0)
+                ++bassOns;
+        }
+        ++blockIdx;
+    }
+    INFO("occupied=" << proc.getRiffAOccupiedCount()
+         << " onsetSlots=" << onsetSlots << " gateOne=" << gateOne
+         << " bassOns=" << bassOns);
+    // One note per onset (gate > 0) per 4-bar loop. gate==1 is a 16th; longer
+    // coalesced chugs still count as one onset. Pre-T5.2 this was 64 retriggers.
+    REQUIRE(bassOns >= juce::jmax(8, onsetSlots - 4));
+    REQUIRE(bassOns <= onsetSlots + 8);
 
     proc.releaseResources();
 }

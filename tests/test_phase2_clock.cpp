@@ -139,6 +139,12 @@ TEST_CASE("T2.1 lock survives a 4-bar DAW loop and expires on the mono clock",
     REQUIRE(proc.getSectionPhase() == 2);
     const int occupied = proc.getRiffAOccupiedCount();
     REQUIRE(occupied >= 2);
+    int onsets = 0;
+    for (int s = 0; s < PhraseLearner::kGridSlots; ++s)
+        if (proc.getRiffASlotGate(s) > 0)
+            ++onsets;
+    if (onsets < 1)
+        onsets = occupied;  // back-compat if gates were not stamped
 
     const int barAtLock = proc.getLockBarCurrent();
     REQUIRE(barAtLock >= 1);
@@ -192,9 +198,9 @@ TEST_CASE("T2.1 lock survives a 4-bar DAW loop and expires on the mono clock",
             ++bassOnGrid;
     }
 
-    REQUIRE(bassAfterWrap >= occupied);
-    REQUIRE(bassInFirstCycle >= occupied);
-    REQUIRE(bassOnGrid >= occupied);
+    REQUIRE(bassAfterWrap >= onsets);
+    REQUIRE(bassInFirstCycle >= onsets);
+    REQUIRE(bassOnGrid >= onsets);
 
     REQUIRE(maxLockBar > barAtLock);
     REQUIRE(sawTransition);

@@ -1,11 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <map>
 #include <set>
 #include <vector>
 #include <utility>
-#include <algorithm>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "midi/MidiPatternLibrary.h"
 #include "midi/PatternPlayer.h"
@@ -428,7 +428,7 @@ TEST_CASE("armBarFill 17 fromNextBar lands beat-4 toms on the next bar", "[midi]
 
 // ── Musicality pivot: bass engine (A1) ───────────────────────────────────────
 
-TEST_CASE("A1: authored bass intervals leak, transposed to the live root", "[midi][A1][!mayfail]")
+TEST_CASE("A1: authored bass intervals leak, transposed to the live root", "[midi][A1][t5.1]")
 {
     MidiPatternLibrary lib;
     PatternPlayer player;
@@ -451,13 +451,39 @@ TEST_CASE("A1: authored bass intervals leak, transposed to the live root", "[mid
         if (msg.isNoteOn() && msg.getChannel() == 2)
             bassNotes.insert(msg.getNoteNumber());
     }
-    // T0.3 / T5.1: authored bass lines must play, transposed to the live root
+    // T5.1: authored bass lines play, transposed to the live root
     // (pattern 4 is C2/F2/C2/G2 at kBassRoot=36 → E2/A2/E2/B2 at root 40).
-    // Currently emitBassRange is unreachable so 45/47 are missing. Keep the
-    // assertion honest and [!mayfail] until T5.1 reconnects it.
     REQUIRE(bassNotes.count(40) > 0);  // root (kBassRoot + 0 → 40)
     REQUIRE(bassNotes.count(45) > 0);  // library +5, transposed
     REQUIRE(bassNotes.count(47) > 0);  // library +7, transposed
+}
+
+TEST_CASE("T5.1: Play verse pattern 22 leaks authored +5 at a live E root", "[midi][A1][t5.1]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.setRandomSeed(3);
+    player.snapBpm(120.0f);
+    player.setPatternIndex(22);  // Rock Backbeat — last event is kBassRoot + 5
+    player.setSection(Groove::SongSectionId::Verse);
+    player.setStructureSilent(false);
+    player.setBeatGridBassEnabled(true);
+    player.setBassParams(40, 2);  // E2
+
+    juce::MidiBuffer midi;
+    player.process(midi, 192000, 0);
+
+    std::set<int> bassNotes;
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOn() && msg.getChannel() == 2)
+            bassNotes.insert(msg.getNoteNumber());
+    }
+    REQUIRE(bassNotes.count(40) > 0);  // authored root → E
+    REQUIRE(bassNotes.count(45) > 0);  // authored +5 → E+5
 }
 
 TEST_CASE("A1: pattern without bassEvents uses the harmonic fallback (root + dynamics)", "[midi][A1]")
@@ -1276,4 +1302,56 @@ TEST_CASE("T4.3: humanize=0 MIDI matches a second render and differs from humani
     const auto fc = MidiProbe::fingerprint(MidiProbe::render(c, kBlocks, kBlock, 0));
     REQUIRE(fa == fb);
     REQUIRE(fa != fc);
+}
+
+TEST_CASE("T5.3: a pickup on the and-of-4 does not swallow the beat-1 grid root", "[midi][bass][t5.3]")
+{
+    // Live-mirror notes are 0.85 beat long. A pick on beat 3.5 rings 0.35 beat
+    // past the next downbeat; before T5.3 the grid hit at beat 1 was skipped.
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.setRandomSeed(1);
+    player.snapBpm(120.0f);
+    player.setPatternIndex(11);  // Intro Build — empty bassEvents, harmonic fallback
+    player.setSection(Groove::SongSectionId::Verse);
+    player.setStructureSilent(false);
+    player.setBeatGridBassEnabled(true);
+    player.setBassParams(40, 2);  // E2, beats 1 and 3
+    player.setHumanize(0.0f);
+    player.setSwing(0.0f);
+
+    constexpr double kSr = 48000.0;
+    constexpr float kBpm = 120.0f;
+    const double spb = 60.0 / static_cast<double>(kBpm) * kSr;
+    const int block = 512;
+    const int duration = juce::jmax(1, static_cast<int>(0.85 * spb));
+    const int pickup = static_cast<int>(std::lround(3.5 * spb));  // and of 4
+    const int downbeat = static_cast<int>(std::lround(4.0 * spb)); // next bar beat 1
+    const int64_t span = static_cast<int64_t>(8.0 * spb);
+
+    int pickupOns = 0;
+    int beat1Ons = 0;
+    const int64_t win = static_cast<int64_t>(0.080 * kSr);
+    for (int64_t pos = 0; pos < span; pos += block)
+    {
+        if (pos <= pickup && pos + block > pickup)
+            player.triggerLearnedBassNote(40, 0.58f, static_cast<int>(pickup - pos), duration);
+        juce::MidiBuffer midi;
+        player.process(midi, block, pos, true);
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (!msg.isNoteOn() || msg.getChannel() != 2 || msg.getVelocity() <= 0)
+                continue;
+            const int64_t abs = pos + meta.samplePosition;
+            if (std::llabs(abs - pickup) <= win)
+                ++pickupOns;
+            if (msg.getNoteNumber() == 40 && std::llabs(abs - downbeat) <= win)
+                ++beat1Ons;
+        }
+    }
+    REQUIRE(pickupOns >= 1);
+    REQUIRE(beat1Ons >= 1);
 }

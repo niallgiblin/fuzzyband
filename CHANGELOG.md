@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [0.9.73] — Bass musicality (Phase 5)
+
+- **T5.1 authored bass lines play again.** Play / B-listen grid bass goes through
+  `emitBassRange`, so a pattern's `bassEvents` transpose to the live root instead
+  of being skipped for a harmonic root drone. Empty `bassEvents` still use the
+  harmonic fallback.
+- **T5.2 frozen-riff note lengths.** Capture stamps an onset vs sustain per 16th
+  (peak rise over the previous slot, or first occupied after a rest). Playback
+  triggers only onsets, with a 90% gate covering consecutive sustain slots, so a
+  held chord is one note rather than eight 16th retriggers.
+- **T5.3 grid bass retriggers over a ringing mirror.** A pickup on the and-of-4
+  no longer swallows the next downbeat root.
+
 ## [0.9.72] — Buffer-invariant render (review of Phases 0–4)
 
 Follow-up review of the `docs/IMPLEMENTATION_PLAN.md` Phases 0–4. The plan's

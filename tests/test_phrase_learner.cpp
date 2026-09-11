@@ -629,6 +629,60 @@ TEST_CASE("PhraseLearner: 2 silent bars + 2 occupied keep rests in slots 0-31", 
     REQUIRE(restored.getGridSlotOccupied(32));
 }
 
+TEST_CASE("T5.2: export/load preserves coalesced gates", "[phrase][bass][capture][t5.2]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    learner.beginGridCapture();
+
+    // Two-bar held chord: onset on slot 0, sustain through slot 7, then a rest,
+    // then a second onset at slot 16 lasting 4 sixteenths.
+    learner.stampGridRange(0.0, 0.24, 0.2f, 36, true);
+    for (int s = 1; s < 8; ++s)
+        learner.stampGridRange(static_cast<double>(s) * 0.25,
+                               static_cast<double>(s) * 0.25 + 0.24, 0.18f, 36, false);
+    learner.stampGridRange(4.0, 4.24, 0.2f, 40, true);
+    for (int s = 17; s < 20; ++s)
+        learner.stampGridRange(static_cast<double>(s) * 0.25,
+                               static_cast<double>(s) * 0.25 + 0.24, 0.18f, 40, false);
+
+    REQUIRE(learner.commitGridCapture());
+    PhraseLearner::LearnedRiff snap;
+    learner.exportPattern(snap);
+    REQUIRE(snap.valid);
+    REQUIRE(snap.gate16[0] == 8);
+    for (int s = 1; s < 8; ++s)
+        REQUIRE(snap.gate16[static_cast<size_t>(s)] == 0);
+    REQUIRE(snap.gate16[16] == 4);
+    for (int s = 17; s < 20; ++s)
+        REQUIRE(snap.gate16[static_cast<size_t>(s)] == 0);
+
+    PhraseLearner restored;
+    restored.prepare(kSr);
+    REQUIRE(restored.loadPattern(snap));
+    PhraseLearner::LearnedRiff roundTrip;
+    restored.exportPattern(roundTrip);
+    REQUIRE(roundTrip.gate16[0] == 8);
+    REQUIRE(roundTrip.gate16[16] == 4);
+    REQUIRE(roundTrip.midi[0] == 36);
+    REQUIRE(roundTrip.midi[16] == 40);
+}
+
+TEST_CASE("T5.2: 16th-note chug stamps one onset per slot", "[phrase][bass][capture][t5.2]")
+{
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    learner.beginGridCapture();
+    for (int s = 0; s < 16; ++s)
+        learner.stampGridRange(static_cast<double>(s) * 0.25,
+                               static_cast<double>(s) * 0.25 + 0.24, 0.2f, 36, true);
+    REQUIRE(learner.commitGridCapture());
+    PhraseLearner::LearnedRiff snap;
+    learner.exportPattern(snap);
+    for (int s = 0; s < 16; ++s)
+        REQUIRE(snap.gate16[static_cast<size_t>(s)] == 1);
+}
+
 TEST_CASE("PhraseLearner: setAutoLockEnabled(false) never auto-locks", "[phrase][bass][autolock]")
 {
     PhraseLearner learner;

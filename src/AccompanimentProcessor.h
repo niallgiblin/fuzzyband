@@ -149,6 +149,13 @@ public:
             return -1;
         return riffA.midi[static_cast<size_t>(slot)];
     }
+    int getRiffASlotGate(int slot) const noexcept
+    {
+        if (!riffA.valid || slot < 0 || slot >= PhraseLearner::kGridSlots
+            || !riffA.occupied[static_cast<size_t>(slot)])
+            return 0;
+        return static_cast<int>(riffA.gate16[static_cast<size_t>(slot)]);
+    }
 
     int getDrumA() const noexcept { return drumA; }
     int getDrumB0() const noexcept { return drumB0; }
@@ -176,6 +183,13 @@ public:
             || !riffB.occupied[static_cast<size_t>(slot)])
             return -1;
         return riffB.midi[static_cast<size_t>(slot)];
+    }
+    int getRiffBSlotGate(int slot) const noexcept
+    {
+        if (!riffB.valid || slot < 0 || slot >= PhraseLearner::kGridSlots
+            || !riffB.occupied[static_cast<size_t>(slot)])
+            return 0;
+        return static_cast<int>(riffB.gate16[static_cast<size_t>(slot)]);
     }
 
     // ── Post-lock transition grammar (A5.2) ──────────────────────────────────
@@ -255,13 +269,15 @@ private:
     void drainFeatureQueueAndRunInference();
     /** @brief Smooth a raw style classification into the committed style used downstream. */
     void updateCommittedStyle(int rawStyle) noexcept;
-    /** @brief Emit occupied 16ths from a learned-riff snapshot in this block. */
+    /** @brief Emit onset slots from a learned-riff snapshot, gated by T5.2. */
     void emitFrozenRiff(const PhraseLearner::LearnedRiff& riff, int64_t originSample,
                         int numSamples, double bpm, double sr,
                         int64_t clockSample, int bassTranspose) noexcept;
     void stampLearnerGridSlots(const float* in, int numSamples,
                                double beatStart, double beatEnd, double samplesPerBeat,
                                double originBeat, int bassMidi, bool wrapLoop) noexcept;
+    void resetSlotOnsetTracker() noexcept;
+    void flushPendingCaptureSlot() noexcept;
     /** @brief Capture bar phase from the transport clock and stamp lockOriginMono. */
     void latchLockClock(int64_t transportSample, double samplesPerBeat) noexcept;
     /** @brief Frozen-riff origin in the monotonic frame (bar-phase aligned). */
@@ -340,6 +356,14 @@ private:
     EnginePhase enginePhase = EnginePhase::Idle;
     PhraseLearner::LearnedRiff riffA{};
     PhraseLearner::LearnedRiff riffB{};
+    // T5.2: previous 16th's peak / trailing level for re-attack detection.
+    float prevSlotPeak_ = 0.0f;
+    float prevSlotEnd_ = 0.0f;
+    bool prevSlotOccupied_ = false;
+    int captureSlotIndex_ = -1;
+    float captureSlotPeak_ = 0.0f;
+    float captureSlotEnd_ = 0.0f;
+    int captureSlotMidi_ = 36;
     int64_t riffAPlayOriginMono = -1;   // monotonic hostSampleTime-frame origin
     int64_t riffBPlayOriginMono = -1;
     int drumA = 0;

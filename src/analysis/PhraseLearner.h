@@ -76,6 +76,7 @@ public:
         double lenBeats = 16.0;
         std::array<bool, kGridSlots> occupied{};
         std::array<int, kGridSlots> midi{};
+        std::array<uint8_t, kGridSlots> gate16{};  // 16th counts; 0 = sustain continuation
     };
 
     /**
@@ -108,8 +109,10 @@ public:
      *        above the guitar-playing floor. Each overlapping slot is tested
      *        independently — a ringing palm-mute must not paint neighbors.
      *        Beats are relative to riff start (0 = bar 1 beat 1, 16 = end of bar 4).
+     *        @p onset is a re-attack (D6); false marks a sustain continuation.
      */
-    void stampGridRange(double beat0, double beat1, float peak, int bassMidi) noexcept;
+    void stampGridRange(double beat0, double beat1, float peak, int bassMidi,
+                        bool onset = true) noexcept;
 
     /**
      * @brief Lock occupied 16th slots as a 4-bar (16-beat) bass loop.
@@ -139,6 +142,21 @@ public:
         if (i < 0 || i >= kGridSlots || !gridSlots_[static_cast<size_t>(i)].occupied)
             return -1;
         return gridSlots_[static_cast<size_t>(i)].midiNote;
+    }
+
+    /** @brief True when slot @p i was stamped as a re-attack (T5.2). */
+    bool getGridSlotOnset(int i) const noexcept
+    {
+        return i >= 0 && i < kGridSlots && gridSlots_[static_cast<size_t>(i)].occupied
+            && gridSlots_[static_cast<size_t>(i)].onset;
+    }
+
+    /** @brief Coalesced gate in 16ths for slot @p i, or 0 when empty/sustain. */
+    uint8_t getGridSlotGate(int i) const noexcept
+    {
+        if (i < 0 || i >= kGridSlots || !gridSlots_[static_cast<size_t>(i)].occupied)
+            return 0;
+        return gridSlots_[static_cast<size_t>(i)].gate16;
     }
 
     /** True when pattern is locked and bass is actively playing. */
@@ -295,6 +313,7 @@ private:
     int mapToBassRange(float midiNote) const noexcept;
     int resolveBassNote(float pitchMidi, int stablePitchClassOffset) const noexcept;
     static float bassVelocityForRms(float rms) noexcept;
+    void coalesceSlotGates() noexcept;
 
     double sampleRate_ = 48000.0;
     State state_ = State::Learning;
@@ -332,6 +351,8 @@ private:
     struct GridSlot {
         bool occupied = false;
         int midiNote = 36;
+        uint8_t gate16 = 1;
+        bool onset = true;
     };
     std::array<GridSlot, kGridSlots> gridSlots_{};
     int gridOccupied_ = 0;

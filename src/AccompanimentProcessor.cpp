@@ -10,6 +10,7 @@
 #include <chrono>
 #include <climits>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 
 namespace
@@ -1116,6 +1117,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
         auto finishRiffCapture = [this, enterRiffA, abortRiffCapture]() noexcept
         {
+            flushPendingCaptureSlot();
             const bool ok = phraseLearner.commitGridCapture();
             riffCaptureActive.store(false, std::memory_order_release);
             riffCapturePhase = RiffCapturePhase::Idle;
@@ -1179,6 +1181,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             lockBarPhaseBeats = 0.0;
             drumA = drumB0 = drumB = 0;
             phraseLearner.beginGridCapture();
+            resetSlotOnsetTracker();
             phraseLearner.setAutoLockEnabled(false);
             riffCaptureActive.store(true, std::memory_order_release);
             riffCaptureNoteCount.store(0, std::memory_order_relaxed);
@@ -1379,6 +1382,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
         else if (enginePhase == EnginePhase::RiffBListen && phraseLockEdge)
         {
+            flushPendingCaptureSlot();
             phraseLearner.exportPattern(riffB);
             if (riffB.valid)
             {
@@ -1492,6 +1496,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 phraseLearner.exportPattern(riffA);
             phraseLearner.reset();
             phraseLearner.beginLiveGridListen();
+            resetSlotOnsetTracker();
             phraseLearner.setAutoLockEnabled(true);
             enginePhase = EnginePhase::RiffBListen;
             grooveLockActive = false;
@@ -1800,6 +1805,48 @@ void AccompanimentProcessor::reanchorLockClockOnJump(int64_t transportSample, do
         riffBPlayOriginMono = origin;
 }
 
+void AccompanimentProcessor::resetSlotOnsetTracker() noexcept
+{
+    prevSlotPeak_ = 0.0f;
+    prevSlotEnd_ = 0.0f;
+    prevSlotOccupied_ = false;
+    captureSlotIndex_ = -1;
+    captureSlotPeak_ = 0.0f;
+    captureSlotEnd_ = 0.0f;
+    captureSlotMidi_ = 36;
+}
+
+void AccompanimentProcessor::flushPendingCaptureSlot() noexcept
+{
+    if (captureSlotIndex_ < 0)
+        return;
+    const bool occupied = captureSlotPeak_ >= 0.025f;
+    if (occupied)
+    {
+        const bool onset = !prevSlotOccupied_
+            || captureSlotPeak_ > prevSlotPeak_ * 1.15f + 0.01f
+            || captureSlotPeak_ > prevSlotEnd_ * 1.15f + 0.01f;
+        phraseLearner.stampGridRange(
+            static_cast<double>(captureSlotIndex_) * 0.25,
+            static_cast<double>(captureSlotIndex_) * 0.25 + 0.25,
+            captureSlotPeak_, captureSlotMidi_, onset);
+        prevSlotPeak_ = captureSlotPeak_;
+        // Only treat the slot as having decayed if its trailing window is
+        // below the occupancy floor. A 10 ms slice of a held sine can sit
+        // near a zero-crossing (~0.08) without the note having ended; using
+        // that as prevSlotEnd_ would re-onset every 16th (T5.2).
+        prevSlotEnd_ = (captureSlotEnd_ < 0.025f) ? captureSlotEnd_ : captureSlotPeak_;
+        prevSlotOccupied_ = true;
+    }
+    else
+    {
+        prevSlotPeak_ = captureSlotPeak_;
+        prevSlotEnd_ = 0.0f;
+        prevSlotOccupied_ = false;
+    }
+    captureSlotIndex_ = -1;
+}
+
 void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSamples,
                                                    double beatStart, double beatEnd,
                                                    double samplesPerBeat, double originBeat,
@@ -1833,16 +1880,38 @@ void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSampl
             const int i1 = juce::jlimit(1, numSamples,
                 static_cast<int>(std::ceil((ov1 - blockBeat0) * samplesPerBeat)));
             float slotPeak = 0.0f;
+            float slotEnd = 0.0f;
+            const int nSamp = juce::jmax(1, i1 - i0);
+            const int tail0 = i0 + (3 * nSamp) / 4;
             for (int i = i0; i < i1; ++i)
             {
                 const float a = std::abs(in[i]);
                 if (a > slotPeak)
                     slotPeak = a;
+                if (i >= tail0 && a > slotEnd)
+                    slotEnd = a;
             }
-            phraseLearner.stampGridRange(
-                static_cast<double>(s) * 0.25,
-                static_cast<double>(s) * 0.25 + 0.25,
-                slotPeak, bassMidi);
+            // Accumulate per 16th, then decide onset once the slot completes.
+            // A 10 ms block of a sine can sit near a zero-crossing and look like
+            // a rest or a re-attack; the whole-slot peak does not.
+            if (s != captureSlotIndex_)
+            {
+                if (captureSlotIndex_ >= 0)
+                {
+                    const int expected = captureSlotIndex_ + 1;
+                    const int wrapped = (captureSlotIndex_ == PhraseLearner::kGridSlots - 1) ? 0 : expected;
+                    flushPendingCaptureSlot();
+                    if (s != expected && s != wrapped)
+                        prevSlotOccupied_ = false;
+                }
+                captureSlotIndex_ = s;
+                captureSlotPeak_ = 0.0f;
+                captureSlotEnd_ = 0.0f;
+            }
+            captureSlotMidi_ = bassMidi;
+            if (slotPeak > captureSlotPeak_)
+                captureSlotPeak_ = slotPeak;
+            captureSlotEnd_ = slotEnd;
         }
     };
 
@@ -1882,7 +1951,6 @@ void AccompanimentProcessor::emitFrozenRiff(const PhraseLearner::LearnedRiff& ri
     if (spb <= 0.0)
         return;
     const int64_t origin = (originSample >= 0) ? originSample : 0;
-    const int duration = juce::jmax(1, static_cast<int>(0.25 * spb));
     const int64_t blockEnd = clockSample + static_cast<int64_t>(numSamples);
 
     // Buffer-invariance (review T9.2): place each slot by its ABSOLUTE sample
@@ -1895,10 +1963,26 @@ void AccompanimentProcessor::emitFrozenRiff(const PhraseLearner::LearnedRiff& ri
     if (loopSamples <= 0)
         return;
 
+    bool anyGate = false;
+    for (int s = 0; s < PhraseLearner::kGridSlots; ++s)
+    {
+        if (riff.gate16[static_cast<size_t>(s)] > 0)
+        {
+            anyGate = true;
+            break;
+        }
+    }
+
     for (int s = 0; s < PhraseLearner::kGridSlots; ++s)
     {
         if (!riff.occupied[static_cast<size_t>(s)])
             continue;
+        const uint8_t gate = riff.gate16[static_cast<size_t>(s)];
+        if (anyGate && gate == 0)
+            continue;   // sustain continuation — already covered by the onset's gate
+        const int gate16 = anyGate ? juce::jmax(1, static_cast<int>(gate)) : 1;
+        const int duration = juce::jmax(1, static_cast<int>(std::lround(
+            static_cast<double>(gate16) * 0.25 * spb * 0.9)));
         const int64_t slotOffset = static_cast<int64_t>(
             std::llround(static_cast<double>(s) * 0.25 * spb));
         // Smallest k with origin + slotOffset + k*loopSamples >= clockSample.
