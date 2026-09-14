@@ -2,6 +2,62 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [1.0.2] — Editor fits the screen, and stops reading as generated
+
+### It fits the screen instead of running off it
+
+The editor was a fixed 520×1100 window whose layout needed 968px, opened on a
+956px laptop desktop, and had no scrollbar of its own — so the bottom of the UI
+(scope, BPM/State/Pattern/Style readouts) was unreachable. Three changes:
+
+- **The panel scrolls.** Every control now lives in one `ContentComponent` inside
+  a vertical `juce::Viewport`, so a host window shorter than the layout scrolls
+  rather than clipping. Below 635px the whole panel scrolls; at and above it
+  nothing is clipped. The section list is given its full content height so the UI
+  has exactly one scrollbar rather than a nested pair that fight over the wheel.
+  The section-list and SWING/HUMANIZE/LOCK/TRANSITION sliders no longer consume
+  the wheel (`setScrollWheelEnabled(false)`), which is what would otherwise make
+  scrolling over a slider silently edit its value instead.
+- **The layout adapts.** Fixed pixel heights were replaced with three metric
+  tiers chosen from the height actually available: full (with the scope) at
+  ≥751px, scope collapsed at 635–750px, and tightened rows/gaps at the bottom of
+  that range. The resize floor dropped from 900 to 460. At the 826px this machine
+  opens at, the whole panel fits with no scrolling.
+- **The opening size is clamped to the display.** `fitEditorToScreen()` asks for
+  860px but never more than `Displays::getPrimaryDisplay()->userArea` minus host
+  chrome, so it opens at 826px on a 922px desktop instead of 1100px. The same
+  figure becomes the editor's advertised maximum height, so a VST3 host clamping
+  a restored window size (`checkSizeConstraint`) cannot re-open a session taller
+  than the screen it is opened on. `setResizable` now enables the corner grip,
+  which guarantees a resize affordance in hosts that offer none of their own.
+
+Guarded by a new integration test that asserts the panel needs no scrolling at
+800px, still scrolls at 460px, and never lays a control out past the panel's
+bottom edge.
+
+### It stops reading as generated
+
+The panel carried a label for everything, an identical 1px sage outline around
+every nested box, and sentences where a word would do:
+
+- **One status row replaces three widgets.** "Groove: &lt;mode&gt;" and
+  "Section: &lt;name&gt; - bar 3/8 - 5 left" were two lines describing two axes of the
+  same moment, and the segment progress bar re-drew the same "bar 3/8". Now a
+  phase-coloured dot, the phase/section text ("VERSE 3/8", "Locked - Riff A 3/16",
+  "Recording 1/4 - 3 hits") and the progress bar share one row.
+- **Outlines flattened.** The panel, section rows, scope and progress bar each
+  drew the same hairline rounded rectangle; all four are now fill-only, so the
+  panel reads as a surface rather than a wireframe. The horizontal rule above the
+  status lines is gone.
+- **Labels removed.** "CONTROLS" and "SECTIONS" headings are gone (the rows name
+  themselves and "+ Add section" anchors the list); the BPM/State/Pattern/Style
+  fields are one quiet line — `120.0 bpm · SILENT · P23 · Open Chord` — with the
+  legend in its tooltip.
+- **Copy shortened and casing unified.** "LOCK (BARS)" → "LOCK"; "TRANSITION
+  (BARS)" → "TRANSITION"; "PLAY" → "Play"; "idle - press Play or Record riff" →
+  "Idle". "+ Add section" is anchored to the bottom of the list well so spare
+  window height reads as room for more sections.
+
 ## [1.0.1] — Review of Phases 5–9 (riff phase, onset capture, loop wrap)
 
 Follow-up review of the Phase 5–9 implementation. All 45 tasks are present and

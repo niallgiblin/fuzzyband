@@ -12,6 +12,15 @@ namespace
 
 constexpr int kSectionRowH = 32;
 
+// Editor frame: the margin around the content, the title row, and the gap
+// between it and the CONTROLS panel. Fixed regardless of window size — these
+// are the only chrome the adaptive layout cannot reclaim.
+constexpr int kEditorMargin = 12;
+constexpr int kTitleRowH    = 28;
+constexpr int kTitleGap     = 8;
+constexpr int kRowLabelW    = 140;   // label column of a label+control row
+constexpr int kEditorChromeH = 2 * kEditorMargin + kTitleRowH + kTitleGap;
+
 /** One row: drag handle + section type + bar count + remove. */
 class SectionRow final : public juce::Component
 {
@@ -42,6 +51,9 @@ public:
         barsSlider.setRange(1.0, 64.0, 1.0);
         barsSlider.setValue(static_cast<double>(sec.bars), juce::dontSendNotification);
         barsSlider.setTooltip("Bars in this section");
+        // The section list sits inside the editor's scrolling panel; leave the
+        // wheel to the viewport instead of editing bars by accident.
+        barsSlider.setScrollWheelEnabled(false);
 
         removeButton.setButtonText("x");
         removeButton.setComponentID("sect-remove");
@@ -69,11 +81,11 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        auto r = getLocalBounds().toFloat().reduced(1.0f);
-        g.setColour(juce::Colour(0xcc0e1a0c));
-        g.fillRoundedRectangle(r, 4.0f);
-        g.setColour(juce::Colour(0x886a9a50));
-        g.drawRoundedRectangle(r, 4.0f, 1.0f);
+        // Fill only — no outline. Every box carrying the same 1px sage stroke is
+        // what made the panel read as a wireframe; the rows are separated by
+        // tone and spacing instead.
+        g.setColour(juce::Colour(0xd0162411));
+        g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 4.0f);
     }
 
     void resized() override
@@ -239,11 +251,15 @@ private:
 
     void layoutRows()
     {
+        // Rows stack from the top; "+ Add section" is anchored to the bottom of
+        // the well. The panel hands the list any spare window height, and pinning
+        // the button means that slack reads as room for more sections rather than
+        // as a gap with a button floating in the middle of it.
         auto r = getLocalBounds();
+        addButton.setBounds(r.removeFromBottom(28));
+        r.removeFromBottom(4);
         for (auto* row : rows)
             row->setBounds(r.removeFromTop(kSectionRowH));
-        r.removeFromTop(4);
-        addButton.setBounds(r.removeFromTop(28));
     }
 
     void wireRow(SectionRow* row)
@@ -290,6 +306,14 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
 {
     setLookAndFeel(&lookAndFeel);
 
+    // Everything the user sees goes inside `content`, which we then put in a
+    // vertical viewport. The editor may be shorter than the panel needs; when it
+    // is, the panel scrolls instead of losing its bottom edge off-screen.
+    addAndMakeVisible(contentViewport);
+    contentViewport.setViewedComponent(&content, false);
+    contentViewport.setScrollBarsShown(true, false);
+    contentViewport.setScrollBarThickness(10);
+
     // Install the bundled OFL typefaces (warm humanist Alegreya Sans for UI,
     // IBM Plex Mono for the numeric/status readouts). Must happen before any
     // label font is applied so the helpers below have a typeface to build on.
@@ -310,20 +334,14 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     titleLabel.setJustificationType(juce::Justification::centredLeft);
     titleLabel.setFont(lookAndFeel.displayFont(24.0f));
     titleLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::moss));
-    addAndMakeVisible(titleLabel);
+    content.addAndMakeVisible(titleLabel);
 
     versionLabel.setText(juce::String("v") + ProjectInfo::versionString, juce::dontSendNotification);
     versionLabel.setJustificationType(juce::Justification::centredRight);
     versionLabel.setFont(lookAndFeel.monoFont(11.0f));
     versionLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkMuted));
     versionLabel.setTooltip("Plugin version (CMake project VERSION). Rebuild after bumping it in CMakeLists.txt.");
-    addAndMakeVisible(versionLabel);
-
-    userPolicyHeading.setText("CONTROLS", juce::dontSendNotification);
-    userPolicyHeading.setFont(lookAndFeel.labelFont(11.0f));
-    userPolicyHeading.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkMuted));
-    userPolicyHeading.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(userPolicyHeading);
+    content.addAndMakeVisible(versionLabel);
 
     genreLabel.setJustificationType(juce::Justification::centredLeft);
     genreLabel.setFont(lookAndFeel.labelFont(12.0f));
@@ -331,8 +349,8 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     for (int i = 0; i < Groove::presetCount(); ++i)
         genreCombo.addItem(Groove::presetFor(i).name, genreCombo.getNumItems() + 1);
     genreCombo.setTooltip("Genre preset: groove feel, velocity profile, section dynamics (B1). Rock is the default; metal and rock subgenres are presets.");
-    addAndMakeVisible(genreLabel);
-    addAndMakeVisible(genreCombo);
+    content.addAndMakeVisible(genreLabel);
+    content.addAndMakeVisible(genreCombo);
 
     swingLabel.setJustificationType(juce::Justification::centredLeft);
     swingLabel.setFont(lookAndFeel.labelFont(12.0f));
@@ -342,8 +360,8 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     swingSlider.setRange(0.0, 1.0, 0.01);
     swingSlider.setDoubleClickReturnValue(true, 0.0);
     swingSlider.setTooltip("Swing/shuffle ratio: delays off-8th drum events (0-100%).");
-    addAndMakeVisible(swingLabel);
-    addAndMakeVisible(swingSlider);
+    content.addAndMakeVisible(swingLabel);
+    content.addAndMakeVisible(swingSlider);
 
     humanizeLabel.setJustificationType(juce::Justification::centredLeft);
     humanizeLabel.setFont(lookAndFeel.labelFont(12.0f));
@@ -353,19 +371,16 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     humanizeSlider.setRange(0.0, 1.0, 0.01);
     humanizeSlider.setDoubleClickReturnValue(true, 0.35);
     humanizeSlider.setTooltip("Ornament amount: scales open-hat, ghost, kick-drop and micro-fill probability. 0 is a literal groove.");
-    addAndMakeVisible(humanizeLabel);
-    addAndMakeVisible(humanizeSlider);
-
-    songSectionsLabel.setJustificationType(juce::Justification::centredLeft);
-    songSectionsLabel.setFont(lookAndFeel.labelFont(13.0f));
-    songSectionsLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::moss));
-    addAndMakeVisible(songSectionsLabel);
+    content.addAndMakeVisible(humanizeLabel);
+    content.addAndMakeVisible(humanizeSlider);
 
     // Editable section list inside a viewport so the rows are always visible
     // (the previous layout called resized() before this existed, so the list
     // had 0×0 bounds — heading visible, no items).
     // Default custom form: INTRO → VERSE → CHORUS → VERSE → CHORUS → OUTRO
     // (single dropdown removed; the editable section list is the song form).
+    // No "SECTIONS" heading: each row names its own section, and "+ Add section"
+    // anchors the bottom of the list.
     sectionListEditor = std::make_unique<SectionListEditor>();
     sectionListEditor->setForm(SongForm{ "Custom",
         { SongSection{ "INTRO", 4 },
@@ -385,7 +400,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     songSectionsViewport.setViewedComponent(sectionListEditor.get(), false);
     songSectionsViewport.setScrollBarsShown(true, false);
     songSectionsViewport.setScrollBarThickness(8);
-    addAndMakeVisible(songSectionsViewport);
+    content.addAndMakeVisible(songSectionsViewport);
 
     playButton.setComponentID("play");
     playButton.setClickingTogglesState(true);
@@ -398,7 +413,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
         if (playButton.getToggleState() && audioProcessorRef.isRiffCapturing())
             audioProcessorRef.requestRiffCaptureStop();
     };
-    addAndMakeVisible(playButton);
+    content.addAndMakeVisible(playButton);
 
     recordRiffButton.setClickingTogglesState(true);
     recordRiffButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff7a3a3a));
@@ -411,7 +426,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
         else
             audioProcessorRef.requestRiffCaptureStop();
     };
-    addAndMakeVisible(recordRiffButton);
+    content.addAndMakeVisible(recordRiffButton);
 
     forgetRiffButton.setTooltip("Clear the recorded riff and go silent. Record again to capture a new take.");
     forgetRiffButton.onClick = [this]
@@ -419,7 +434,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
         audioProcessorRef.requestRiffForget();
         recordRiffButton.setToggleState(false, juce::dontSendNotification);
     };
-    addAndMakeVisible(forgetRiffButton);
+    content.addAndMakeVisible(forgetRiffButton);
 
     auto& apvts = audioProcessorRef.getApvts();
     genreAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
@@ -436,7 +451,7 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     if (auto* genreParam = apvts.getParameter("genre"))
         genreParam->addListener(&genreSwingListener);
 
-    // Generative groove lock: hold length + live status indicator.
+    // Generative groove lock: hold length.
     lockBarsLabel.setJustificationType(juce::Justification::centredLeft);
     lockBarsLabel.setFont(lookAndFeel.labelFont(12.0f));
     lockBarsLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::ink));
@@ -444,17 +459,11 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     lockBarsSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 18);
     lockBarsSlider.setRange(4.0, 64.0, 4.0);
     lockBarsSlider.setDoubleClickReturnValue(true, 16.0);
-    lockBarsSlider.setTooltip("Generative mode: how many bars the auto-lock holds after you stop playing the riff (returning to the riff extends it).");
+    lockBarsSlider.setTooltip("Lock length in bars: how long the auto-lock holds after you stop playing the riff (returning to the riff extends it).");
     lockBarsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "lockBars", lockBarsSlider);
-    addAndMakeVisible(lockBarsLabel);
-    addAndMakeVisible(lockBarsSlider);
-
-    grooveStatusLabel.setJustificationType(juce::Justification::centredLeft);
-    grooveStatusLabel.setFont(lookAndFeel.labelFont(13.0f));
-    grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkMuted));
-    grooveStatusLabel.setText("Groove: follow", juce::dontSendNotification);
-    addAndMakeVisible(grooveStatusLabel);
+    content.addAndMakeVisible(lockBarsLabel);
+    content.addAndMakeVisible(lockBarsSlider);
 
     // ── A5.2: post-lock transition grammar controls ─────────────────────────
     transitionBarsLabel.setJustificationType(juce::Justification::centredLeft);
@@ -467,8 +476,8 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     transitionBarsSlider.setTooltip("After the riff lock expires, how many bars each transition section holds before returning to the locked riff.");
     transitionBarsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "transitionBars", transitionBarsSlider);
-    addAndMakeVisible(transitionBarsLabel);
-    addAndMakeVisible(transitionBarsSlider);
+    content.addAndMakeVisible(transitionBarsLabel);
+    content.addAndMakeVisible(transitionBarsSlider);
 
     transitionSectionsLabel.setJustificationType(juce::Justification::centredLeft);
     transitionSectionsLabel.setFont(lookAndFeel.labelFont(12.0f));
@@ -480,42 +489,32 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     transitionSectionsSlider.setTooltip("How many distinct contrast sections to visit. Each returns to the locked riff (A) first, and each slot keeps the same groove every cycle: 1 = A-B-A-B, 2 = A-B-A-C-A.");
     transitionSectionsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "transitionSections", transitionSectionsSlider);
-    addAndMakeVisible(transitionSectionsLabel);
-    addAndMakeVisible(transitionSectionsSlider);
+    content.addAndMakeVisible(transitionSectionsLabel);
+    content.addAndMakeVisible(transitionSectionsSlider);
 
-    transitionStatusLabel.setJustificationType(juce::Justification::centredLeft);
-    transitionStatusLabel.setFont(lookAndFeel.labelFont(13.0f));
-    transitionStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::amber));
-    transitionStatusLabel.setText("Section: -", juce::dontSendNotification);
-    addAndMakeVisible(transitionStatusLabel);
+    // ── One-line status: phase dot + text, section progress on the same row ──
+    statusLabel.setJustificationType(juce::Justification::centredLeft);
+    statusLabel.setFont(lookAndFeel.labelFont(13.0f));
+    statusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::moss));
+    statusLabel.setText("Idle", juce::dontSendNotification);
+    statusLabel.setTooltip("Left: what the engine is doing (idle / playing / recording / locked to your riff). Right: progress through the current section.");
+    content.addAndMakeVisible(statusDot);
+    content.addAndMakeVisible(statusLabel);
 
     // ── DAW-style input scope ───────────────────────────────────────────────
     scopeComponent.setOpaque(false);
-    addAndMakeVisible(scopeComponent);
+    content.addAndMakeVisible(scopeComponent);
 
     // ── Section-bar progress (Play / riff lock / transition) ────────────────
     sectionProgressComponent.setOpaque(false);
-    addAndMakeVisible(sectionProgressComponent);
+    content.addAndMakeVisible(sectionProgressComponent);
 
-    for (auto* l : { &bpmLabel, &stateLabel, &patternLabel, &styleLabel })
-    {
-        l->setJustificationType(juce::Justification::centredLeft);
-        l->setFont(lookAndFeel.monoFont(11.0f));
-        l->setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkWarm));
-    }
-
-    addAndMakeVisible(bpmLabel);
-    addAndMakeVisible(stateLabel);
-    addAndMakeVisible(patternLabel);
-    addAndMakeVisible(styleLabel);
-
-    // ASCII placeholders until the first timer tick (and if style is still
-    // unclassified). Do not use Unicode dashes — juce::String(const char*)
-    // treats them as Latin-1 and the UI shows "Style: â€".
-    bpmLabel.setText("BPM: -", juce::dontSendNotification);
-    stateLabel.setText("State: -", juce::dontSendNotification);
-    patternLabel.setText("Pattern: -", juce::dontSendNotification);
-    styleLabel.setText("Style: -", juce::dontSendNotification);
+    // ── Engine readout: one quiet line instead of four labelled fields ──────
+    readoutLabel.setJustificationType(juce::Justification::centredLeft);
+    readoutLabel.setFont(lookAndFeel.monoFont(11.0f));
+    readoutLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkMuted));
+    readoutLabel.setTooltip("Live engine readout: tempo, dynamic state, pattern index, detected input style.");
+    content.addAndMakeVisible(readoutLabel);
 
     // Restore a persisted custom form (the editable section list is the form);
     // otherwise default to the practice form INTRO → VERSE → CHORUS → VERSE →
@@ -531,9 +530,19 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
             "INTRO:4,VERSE:8,CHORUS:8,VERSE:8,CHORUS:8,OUTRO:4");
     }
 
-    setResizable(true, false);
-    setResizeLimits(520, 900, 720, 1800);
-    setSize(520, 1100);
+    // Sliders must not eat the mouse wheel: inside the scrolling panel the wheel
+    // belongs to the viewport. Without this, hovering a slider scrolls nothing
+    // (and silently edits the value instead).
+    for (auto* s : { &swingSlider, &humanizeSlider, &lockBarsSlider,
+                     &transitionBarsSlider, &transitionSectionsSlider })
+        s->setScrollWheelEnabled(false);
+
+    // The corner grip guarantees a resize affordance even in hosts that offer
+    // none of their own. fitEditorToScreen() then sets the size limits (capped
+    // at the screen) and the size we open at; below the height floor the panel
+    // scrolls rather than clipping.
+    setResizable(true, true);
+    fitEditorToScreen();
     timerCallback();
     startTimerHz(20);
 }
@@ -558,122 +567,95 @@ void AccompanimentEditor::applyGenreDefaultSwing() noexcept
 void AccompanimentEditor::timerCallback()
 {
     playButton.setToggleState(audioProcessorRef.playActive.load(std::memory_order_acquire), juce::dontSendNotification);
-    const float bpm = audioProcessorRef.getDisplayBpm();
-    bpmLabel.setText("BPM: " + juce::String(bpm, 1), juce::dontSendNotification);
-    stateLabel.setText("State: " + juce::String(stateName(audioProcessorRef.getDisplayStateIndex())), juce::dontSendNotification);
-    patternLabel.setText("Pattern: " + juce::String(audioProcessorRef.getDisplayPatternIndex()), juce::dontSendNotification);
 
+    // ── Engine readout: one line, no per-field labels ────────────────────────
+    const float bpm = audioProcessorRef.getDisplayBpm();
     static const char* kStyleNames[] = {"Palm Mute", "Open Chord", "Single Note", "Sustain", "Silence"};
     const int si = audioProcessorRef.getDisplayStyle();
-    if (si >= 0 && si <= 4)
-        styleLabel.setText("Style: " + juce::String(kStyleNames[si]), juce::dontSendNotification);
-    else
-        styleLabel.setText("Style: -", juce::dontSendNotification);
+    const juce::String style = (si >= 0 && si <= 4) ? juce::String(kStyleNames[si]) : juce::String("-");
 
-    // Generative groove-lock / riff-capture status.
+    // A middle dot keeps the fields apart without four "Label:" prefixes. It has
+    // to go through fromUTF8: juce::String(const char*) reads bytes as Latin-1,
+    // so a UTF-8 literal would render as mojibake.
+    static const juce::String kSep = juce::String::fromUTF8("\xc2\xb7");
+
+    readoutLabel.setText(juce::String(bpm, 1) + " bpm" + kSep + " "
+                             + juce::String(stateName(audioProcessorRef.getDisplayStateIndex()))
+                             + kSep + " P" + juce::String(audioProcessorRef.getDisplayPatternIndex())
+                             + kSep + " " + style,
+                         juce::dontSendNotification);
+
     recordRiffButton.setToggleState(audioProcessorRef.isRiffCapturing(), juce::dontSendNotification);
     const bool riffLoopArmed = audioProcessorRef.hasLearnedRiff()
         || audioProcessorRef.isRiffCapturing()
         || audioProcessorRef.isGrooveLocked()
         || audioProcessorRef.isTransitionSectionActive();
     forgetRiffButton.setEnabled(riffLoopArmed);
-    if (audioProcessorRef.isRiffCapturing())
-    {
-        const int n = audioProcessorRef.getRiffCaptureNoteCount();
-        const int bar = audioProcessorRef.getRiffCaptureBar();
-        if (bar <= 0)
-        {
-            recordRiffButton.setButtonText("Count-in...");
-            grooveStatusLabel.setText("Groove: COUNT-IN - play on 1", juce::dontSendNotification);
-        }
-        else
-        {
-            recordRiffButton.setButtonText("Rec " + juce::String(bar) + "/4 - " + juce::String(n));
-            grooveStatusLabel.setText("Groove: RECORDING bar " + juce::String(bar)
-                                          + "/4 - " + juce::String(n) + " hits",
-                                      juce::dontSendNotification);
-        }
-        grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::amber));
-    }
-    else if (audioProcessorRef.isTransitionSectionActive())
-    {
-        recordRiffButton.setButtonText("Record riff");
-        grooveStatusLabel.setText("Groove: transition", juce::dontSendNotification);
-        grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::amber));
-    }
-    else if (audioProcessorRef.isGrooveLocked() || audioProcessorRef.hasLearnedRiff())
-    {
-        recordRiffButton.setButtonText("Record riff");
-        // The bar countdown lives in the unified section display below.
-        grooveStatusLabel.setText("Groove: LOCKED (riff A)", juce::dontSendNotification);
-        grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ade78));
-    }
-    else
-    {
-        recordRiffButton.setButtonText("Record riff");
-        // The engine only listens once armed (Play or Record riff); otherwise it
-        // is idle and silent.
-        if (audioProcessorRef.playActive.load(std::memory_order_acquire))
-            grooveStatusLabel.setText("Groove: PLAYING", juce::dontSendNotification);
-        else
-            grooveStatusLabel.setText("Groove: idle - press Play or Record riff",
-                                      juce::dontSendNotification);
-        grooveStatusLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::inkMuted));
-    }
+    recordRiffButton.setButtonText(audioProcessorRef.isRiffCapturing() ? "Stop" : "Record riff");
 
-    // ── Unified section countdown + progress (Play / riff lock / transition) ──
-    // One consistent "SECTION - bar X/Y - N left" read so the guitarist always
-    // knows when to anticipate a change, with a bar-segment progress bar under it.
+    // ── One status row: phase dot + phase/section + bar-segment progress ─────
+    // "Groove" and "Section" were two lines describing two axes of the same
+    // moment (what the engine is doing, and where we are in the form). They fit
+    // on one row, and the segment bar already draws the "bar X/Y" countdown, so
+    // the text no longer repeats it.
     const int phase = audioProcessorRef.getSectionPhase();
     const int bar = audioProcessorRef.getSectionBar();
     const int tot = audioProcessorRef.getSectionBarsTotal();
     const int rem = audioProcessorRef.getSectionBarsRemaining();
     const float frac = audioProcessorRef.getSectionProgress();
 
-    juce::String sectionText;
-    juce::Colour sectionColour;
-    if (phase == static_cast<int>(AccompanimentProcessor::SectionPhase::Play))
+    auto position = [bar, tot]() -> juce::String
     {
-        const juce::String sec = audioProcessorRef.getCurrentSectionName();
-        sectionText = (bar > 0 && tot > 0)
-            ? sec + " - bar " + juce::String(bar) + "/" + juce::String(tot)
-                + " - " + juce::String(rem) + " left"
-            : sec;
-        sectionColour = juce::Colour(FuzzybandPalette::moss);
+        return (bar > 0 && tot > 0) ? " " + juce::String(bar) + "/" + juce::String(tot)
+                                    : juce::String();
+    };
+
+    juce::String statusText;
+    juce::Colour statusColour;
+
+    if (audioProcessorRef.isRiffCapturing())
+    {
+        const int n = audioProcessorRef.getRiffCaptureNoteCount();
+        const int capBar = audioProcessorRef.getRiffCaptureBar();
+        statusText = (capBar <= 0)
+            ? juce::String("Count-in - play on 1")
+            : "Recording " + juce::String(capBar) + "/4 - " + juce::String(n) + " hits";
+        statusColour = juce::Colour(FuzzybandPalette::amber);
     }
     else if (phase == static_cast<int>(AccompanimentProcessor::SectionPhase::Transition))
     {
-        const int num = audioProcessorRef.getTransitionSectionNumber();
         int maxSections = 2;
         if (auto* raw = audioProcessorRef.getApvts().getRawParameterValue("transitionSections"))
             maxSections = juce::jlimit(1, 4, juce::roundToInt(raw->load()));
+
         juce::String tag = "Transition";
         if (maxSections > 1)
         {
-            const char letter = static_cast<char>('B' + juce::jmax(0, num - 1));
-            tag += juce::String(" ") + letter;
+            const int num = audioProcessorRef.getTransitionSectionNumber();
+            tag += juce::String(" ") + static_cast<char>('B' + juce::jmax(0, num - 1));
         }
-        sectionText = (bar > 0 && tot > 0)
-            ? tag + " - bar " + juce::String(bar) + "/" + juce::String(tot)
-                + " - " + juce::String(rem) + " left"
-            : tag;
-        sectionColour = juce::Colour(FuzzybandPalette::amber);
+        statusText = tag + position();
+        statusColour = juce::Colour(FuzzybandPalette::amber);
     }
     else if (phase == static_cast<int>(AccompanimentProcessor::SectionPhase::Lock))
     {
-        sectionText = (bar > 0 && tot > 0)
-            ? juce::String("Riff A - bar ") + juce::String(bar) + "/"
-                + juce::String(tot) + " - " + juce::String(rem) + " left"
-            : juce::String("Riff A");
-        sectionColour = juce::Colour(0xff9ade78);
+        statusText = "Locked - Riff A" + position();
+        statusColour = juce::Colour(0xff9ade78);
+    }
+    else if (phase == static_cast<int>(AccompanimentProcessor::SectionPhase::Play))
+    {
+        statusText = audioProcessorRef.getCurrentSectionName() + position();
+        statusColour = juce::Colour(FuzzybandPalette::moss);
     }
     else
     {
-        sectionText = "-";
-        sectionColour = juce::Colour(FuzzybandPalette::inkMuted);
+        statusText = "Idle";
+        statusColour = juce::Colour(FuzzybandPalette::inkMuted);
     }
-    transitionStatusLabel.setText("Section: " + sectionText, juce::dontSendNotification);
-    transitionStatusLabel.setColour(juce::Label::textColourId, sectionColour);
+
+    statusLabel.setText(statusText, juce::dontSendNotification);
+    statusLabel.setColour(juce::Label::textColourId, statusColour);
+    statusDot.setDotColour(statusColour);
     sectionProgressComponent.setProgress(bar, tot, rem, frac);
 
     // ── DAW-style scope: copy ring + playhead, repaint ───────────────────────
@@ -688,11 +670,10 @@ void AccompanimentEditor::ScopeComponent::paint(juce::Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
 
-    // Panel background — dark frosted panel matching the theme.
+    // Panel background — dark frosted panel matching the theme (fill only; the
+    // outline is left to the beat grid drawn below).
     g.setColour(juce::Colour(0xd0081208));
     g.fillRoundedRectangle(bounds, 6.0f);
-    g.setColour(juce::Colour(0x886a9a50));
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 6.0f, 1.0f);
 
     const float width = bounds.getWidth();
     const float midY = bounds.getCentreY();
@@ -788,15 +769,25 @@ void AccompanimentEditor::ScopeComponent::paint(juce::Graphics& g)
     g.fillPath(cap);
 }
 
+void AccompanimentEditor::StatusDot::paint(juce::Graphics& g)
+{
+    const auto b = getLocalBounds().toFloat();
+
+    // Soft halo + solid core, so the phase reads at a glance without a word.
+    g.setColour(colour_.withAlpha(0.22f));
+    g.fillEllipse(b);
+    g.setColour(colour_);
+    g.fillEllipse(b.reduced(b.getWidth() * 0.28f));
+}
+
 void AccompanimentEditor::SectionProgressComponent::paint(juce::Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
 
-    // Panel background — dark frosted panel matching the theme.
-    g.setColour(juce::Colour(0xd0081208));
+    // Track background only — the lit segments carry the progress, so the
+    // rounded outline just added another box to the stack.
+    g.setColour(juce::Colour(0x66050f04));
     g.fillRoundedRectangle(bounds, 5.0f);
-    g.setColour(juce::Colour(0x886a9a50));
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 5.0f, 1.0f);
 
     if (total_ <= 0)
         return;
@@ -827,9 +818,86 @@ void AccompanimentEditor::SectionProgressComponent::paint(juce::Graphics& g)
     }
 }
 
+int AccompanimentEditor::LayoutMetrics::fixedHeight() const noexcept
+{
+    // The six group gaps and six label+control rows, then the diagnostics: gap
+    // to the status row, the status row itself, a gap, the scope, a 4px pad and
+    // the single engine readout line.
+    return 6 * gap + 6 * rowH
+         + diagGap + statusH + gap + scopeH + 4 + readoutH;
+}
+
+AccompanimentEditor::LayoutMetrics
+AccompanimentEditor::metricsForBodyHeight(int bodyH, int listContent) noexcept
+{
+    // Three candidates, most generous first. Each is accepted only when the
+    // whole panel (including the section list) genuinely fits the height we were
+    // given, so "does it need to scroll?" stays monotonic in the window height —
+    // a taller window never suddenly needs a scrollbar the shorter one did not.
+    LayoutMetrics compact;
+    compact.rowH     = 40;
+    compact.statusH  = 24;
+    compact.diagGap  = 8;
+    compact.gap      = 8;
+    compact.readoutH = 19;
+
+    LayoutMetrics withoutScope;   // defaults: full sizes, scope collapsed
+
+    LayoutMetrics full = withoutScope;
+    full.scopeH = 80;             // the scope is a readout, so it shrinks first
+
+    if (bodyH >= full.fixedHeight() + listContent)         return full;
+    if (bodyH >= withoutScope.fixedHeight() + listContent)  return withoutScope;
+    return compact;
+}
+
+void AccompanimentEditor::fitEditorToScreen()
+{
+    // Ask for a height that shows the whole panel, but never more than the
+    // display can actually show: the old 1100px default on a 956px laptop
+    // desktop opened with the bottom of the UI past the edge of the screen, and
+    // some hosts (AU on macOS in particular) do not clamp that for us.
+    constexpr int kDesignW    = 520;
+    constexpr int kMinW       = 520;
+    constexpr int kMaxW       = 720;
+    constexpr int kDesignH    = 860;
+    constexpr int kMinH       = 460;
+    constexpr int kHostChrome = 96;    // host window frame + title bar
+
+    // The usable height (menu bar and dock excluded) caps both the size we ask
+    // for and the maximum we advertise. A VST3 host clamps a restored window
+    // size to these limits via checkSizeConstraint, so a session saved on a
+    // large monitor cannot re-open taller than the screen it is opened on.
+    int maxH = 1800;
+
+    if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        if (display->userArea.getHeight() > 0)
+            maxH = juce::jmax(kMinH, display->userArea.getHeight() - kHostChrome);
+
+    setResizeLimits(kMinW, kMinH, kMaxW, maxH);
+    setSize(kDesignW, juce::jmin(kDesignH, maxH));
+}
+
+void AccompanimentEditor::ContentComponent::paint(juce::Graphics& g)
+{
+    owner.paintContent(g);
+}
+
+void AccompanimentEditor::ContentComponent::resized()
+{
+    owner.layoutContent(getLocalBounds());
+}
+
 void AccompanimentEditor::paint(juce::Graphics& g)
 {
-    const auto bounds = getLocalBounds().toFloat();
+    // The viewport paints nothing and the content covers it completely; this is
+    // only a fallback so no frame is ever left unpainted.
+    g.fillAll(juce::Colour(0xff111a10));
+}
+
+void AccompanimentEditor::paintContent(juce::Graphics& g)
+{
+    const auto bounds = content.getLocalBounds().toFloat();
 
     // ── 1. Background image, scaled to fill ──────────────────────────────────
     if (backgroundImage.isValid())
@@ -847,24 +915,45 @@ void AccompanimentEditor::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xbb050f04));
     g.fillAll();
 
-    // ── 3. Control panel — semi-transparent frosted-glass panel ──────────────
-    g.setColour(juce::Colour(0xb0081208));
+    // ── 3. Control panel — a frosted surface, no outline ─────────────────────
+    // The panel used to carry a 1px sage stroke, and so did every row, the scope
+    // and the progress bar — four nested boxes in the same pen. The fill alone
+    // separates the panel from the photograph; the horizontal rule that used to
+    // sit under it separated nothing and is gone.
+    g.setColour(juce::Colour(0xc4081208));
     g.fillRoundedRectangle(userPolicyArea.toFloat(), 6.0f);
-    g.setColour(juce::Colour(0x886a9a50));
-    g.drawRoundedRectangle(userPolicyArea.toFloat().reduced(0.5f), 6.0f, 1.0f);
-
-    // ── 4. Thin separator between controls and diagnostics ────────────────────
-    const int sepY = userPolicyArea.getBottom() + 10;
-    g.setColour(juce::Colour(0x556a9a50));
-    g.drawLine(12.0f, (float)sepY, (float)getWidth() - 12.0f, (float)sepY, 1.0f);
 }
 
 void AccompanimentEditor::resized()
 {
-    auto r = getLocalBounds().reduced(12);
+    contentViewport.setBounds(getLocalBounds());
+
+    const int listContent = sectionListEditor ? sectionListEditor->getHeightHint() : 0;
+    const int viewH = juce::jmax(1, contentViewport.getHeight());
+
+    // Choose the metrics once per resize and reuse them in layoutContent, so the
+    // tier cannot change between deciding the content height and laying it out.
+    metrics = metricsForBodyHeight(viewH - kEditorChromeH, listContent);
+
+    const int naturalH = metrics.fixedHeight() + listContent + kEditorChromeH;
+    const int contentH = juce::jmax(naturalH, viewH);
+
+    // Reserve the scrollbar's width up front. The content height does not depend
+    // on the content width, so predicting whether the scrollbar will appear
+    // avoids a feedback loop that would leave the panel one scrollbar too wide.
+    const bool willScroll = contentH > viewH;
+    const int contentW = juce::jmax(1, contentViewport.getWidth()
+                                         - (willScroll ? contentViewport.getScrollBarThickness() : 0));
+
+    content.setSize(contentW, contentH);
+}
+
+void AccompanimentEditor::layoutContent(juce::Rectangle<int> bounds)
+{
+    auto r = bounds.reduced(kEditorMargin);
 
     // ── Title row (fixed) ────────────────────────────────────────────────────
-    auto titleRow = r.removeFromTop(28);
+    auto titleRow = r.removeFromTop(kTitleRowH);
     playButton.setBounds(titleRow.removeFromRight(92));
     titleRow.removeFromRight(6);
     recordRiffButton.setBounds(titleRow.removeFromRight(100));
@@ -873,90 +962,82 @@ void AccompanimentEditor::resized()
     titleRow.removeFromRight(6);
     versionLabel.setBounds(titleRow.removeFromRight(64));
     titleLabel.setBounds(titleRow);
-    r.removeFromTop(8);
+    r.removeFromTop(kTitleGap);
 
     const int userTop = r.getY();
 
     // ── Adaptive vertical layout ─────────────────────────────────────────────
-    // Fixed heights for the rows/headings and the diagnostics. The editable
-    // sections list is the flexible element: it grows to absorb extra vertical
-    // space so the controls spread to fill the window instead of leaving a
-    // large empty band at the bottom. Inter-group gaps stay modest and even.
-    constexpr int rowH     = 52;    // label+control row
-    constexpr int headH    = 20;    // panel heading
-    constexpr int sectionH = 18;    // "SECTIONS" heading
-    constexpr int scopeH   = 110;   // waveform scope
-    constexpr int diagH    = 24;    // status/readout line
-    constexpr int progH    = 18;    // section bar-segment progress
-    constexpr int gap      = 12;    // breathing room between control groups
-    constexpr int diagGap  = 14;    // panel → diagnostics
-    constexpr int listMin  = 170;   // sections list never collapses below this
-    constexpr int nGaps    = 8;     // gaps inside the panel
+    // Fixed heights for the rows and the diagnostics; the editable sections list
+    // is the only variable-height group. It is given its *full* content height so
+    // the panel has exactly one scrollbar (the page) rather than a nested pair
+    // that would fight over the mouse wheel; it still grows to absorb spare
+    // height so the panel fills a taller window.
+    const int listContent = sectionListEditor ? sectionListEditor->getHeightHint() : 0;
+    const int sectionsH = juce::jmax(listContent, r.getHeight() - metrics.fixedHeight());
 
-    const int panelFixed = headH + 6 * rowH + sectionH;                 // heading, 6 rows, sections head
-    const int diagFixed  = diagGap + 2 * diagH + progH + scopeH + 4 * diagH;  // status x2, progress, scope, readouts
-    const int other      = panelFixed + nGaps * gap + diagFixed;        // everything except the list
-    const int availH     = r.getHeight();
-
-    // Give the list everything left over, with a small margin so the last
-    // readout isn't flush against the window edge; clamp so the list never
-    // collapses and never pushes the other rows off the bottom.
-    const int sectionsH = juce::jmax(listMin, availH - other - 6);
-
-    userPolicyHeading.setBounds(r.removeFromTop(headH));
-    r.removeFromTop(gap);
-
-    auto row = r.removeFromTop(rowH);
-    genreLabel.setBounds(row.removeFromLeft(140));
+    auto row = r.removeFromTop(metrics.rowH);
+    genreLabel.setBounds(row.removeFromLeft(kRowLabelW));
     genreCombo.setBounds(row);
-    r.removeFromTop(gap);
+    r.removeFromTop(metrics.gap);
 
-    row = r.removeFromTop(rowH);
-    swingLabel.setBounds(row.removeFromLeft(140));
+    row = r.removeFromTop(metrics.rowH);
+    swingLabel.setBounds(row.removeFromLeft(kRowLabelW));
     swingSlider.setBounds(row);
-    r.removeFromTop(gap);
+    r.removeFromTop(metrics.gap);
 
-    row = r.removeFromTop(rowH);
-    humanizeLabel.setBounds(row.removeFromLeft(140));
+    row = r.removeFromTop(metrics.rowH);
+    humanizeLabel.setBounds(row.removeFromLeft(kRowLabelW));
     humanizeSlider.setBounds(row);
-    r.removeFromTop(gap);
-
-    songSectionsLabel.setBounds(r.removeFromTop(sectionH));
-    r.removeFromTop(2);
+    r.removeFromTop(metrics.gap);
 
     auto listArea = r.removeFromTop(sectionsH);
     songSectionsViewport.setBounds(listArea);
     if (sectionListEditor)
         sectionListEditor->setSize(juce::jmax(1, songSectionsViewport.getMaximumVisibleWidth()),
                                    juce::jmax(listArea.getHeight(), sectionListEditor->getHeightHint()));
-    r.removeFromTop(gap);
+    r.removeFromTop(metrics.gap);
 
-    row = r.removeFromTop(rowH);
-    lockBarsLabel.setBounds(row.removeFromLeft(140));
+    row = r.removeFromTop(metrics.rowH);
+    lockBarsLabel.setBounds(row.removeFromLeft(kRowLabelW));
     lockBarsSlider.setBounds(row);
-    r.removeFromTop(gap);
+    r.removeFromTop(metrics.gap);
 
-    row = r.removeFromTop(rowH);
-    transitionBarsLabel.setBounds(row.removeFromLeft(140));
+    row = r.removeFromTop(metrics.rowH);
+    transitionBarsLabel.setBounds(row.removeFromLeft(kRowLabelW));
     transitionBarsSlider.setBounds(row);
-    r.removeFromTop(gap);
+    r.removeFromTop(metrics.gap);
 
-    row = r.removeFromTop(rowH);
-    transitionSectionsLabel.setBounds(row.removeFromLeft(140));
+    row = r.removeFromTop(metrics.rowH);
+    transitionSectionsLabel.setBounds(row.removeFromLeft(kRowLabelW));
     transitionSectionsSlider.setBounds(row);
 
     const int userBottom = r.getY();
-    userPolicyArea = juce::Rectangle<int>(12, userTop, getWidth() - 24, juce::jmax(1, userBottom - userTop));
+    userPolicyArea = juce::Rectangle<int>(kEditorMargin, userTop,
+                                          juce::jmax(1, bounds.getWidth() - 2 * kEditorMargin),
+                                          juce::jmax(1, userBottom - userTop));
 
-    r.removeFromTop(diagGap);
+    r.removeFromTop(metrics.diagGap);
 
-    grooveStatusLabel.setBounds(r.removeFromTop(diagH));
-    transitionStatusLabel.setBounds(r.removeFromTop(diagH));
-    sectionProgressComponent.setBounds(r.removeFromTop(progH));
-    scopeComponent.setBounds(r.removeFromTop(scopeH));
+    // ── Status row: dot + phase/section text, section progress on the right ──
+    auto statusRow = r.removeFromTop(metrics.statusH);
+    const int progressW = juce::jmin(220, statusRow.getWidth() * 45 / 100);
+    sectionProgressComponent.setBounds(statusRow.removeFromRight(progressW));
+    statusRow.removeFromRight(12);
+    statusDot.setBounds(statusRow.removeFromLeft(14).withSizeKeepingCentre(9, 9));
+    statusRow.removeFromLeft(7);
+    statusLabel.setBounds(statusRow);
+
+    r.removeFromTop(metrics.gap);
+
+    // The scope is the first thing to give up its space when the window is
+    // short: it is a readout, not a control.
+    scopeComponent.setVisible(metrics.scopeH > 0);
+    scopeComponent.setBounds(r.removeFromTop(metrics.scopeH));
+
     r.removeFromTop(4);
-    bpmLabel.setBounds(r.removeFromTop(diagH));
-    stateLabel.setBounds(r.removeFromTop(diagH));
-    patternLabel.setBounds(r.removeFromTop(diagH));
-    styleLabel.setBounds(r.removeFromTop(diagH));
+
+    // One quiet line of engine internals; leave the resize grip's corner clear.
+    auto readoutRow = r.removeFromTop(metrics.readoutH);
+    readoutRow.removeFromRight(18);
+    readoutLabel.setBounds(readoutRow);
 }

@@ -1668,9 +1668,63 @@ TEST_CASE("Editor construction smoke test", "[integration][editor]")
         proc.prepareToPlay(48000.0, 512);
         juce::AudioProcessorEditor* ed = proc.createEditor();
         REQUIRE(ed != nullptr);
-        REQUIRE(ed->getHeight() >= 760);
+        // The default height is clamped to the display (see
+        // fitEditorToScreen), so only the resize floor is guaranteed here.
+        REQUIRE(ed->getHeight() >= 460);
         REQUIRE(ed->getWidth() >= 520);
         delete ed;
+        proc.releaseResources();
+    }
+    juce::MessageManager::deleteInstance();
+}
+
+TEST_CASE("Editor panel fits a laptop-height window without clipping", "[integration][editor]")
+{
+    juce::MessageManager::getInstance();
+    {
+        AccompanimentProcessor proc;
+        proc.prepareToPlay(48000.0, 512);
+        // Pin the song form so the section list's height is deterministic.
+        proc.setCustomSongForm("INTRO:4,VERSE:8,CHORUS:8,VERSE:8,CHORUS:8,OUTRO:4");
+
+        std::unique_ptr<juce::AudioProcessorEditor> ed(proc.createEditor());
+        REQUIRE(ed != nullptr);
+
+        // The size we open at must respect the limits we advertise to the host,
+        // otherwise a host that clamps a restored window to those limits would
+        // disagree with the size we started at.
+        REQUIRE(ed->getConstrainer() != nullptr);
+        CHECK(ed->getHeight() <= ed->getConstrainer()->getMaximumHeight());
+        CHECK(ed->getHeight() >= ed->getConstrainer()->getMinimumHeight());
+        CHECK(ed->getWidth()  <= ed->getConstrainer()->getMaximumWidth());
+        CHECK(ed->getWidth()  >= ed->getConstrainer()->getMinimumWidth());
+
+        // The panel is a single scrolling viewport; find it.
+        juce::Viewport* panel = nullptr;
+        for (auto* c : ed->getChildren())
+            if (auto* v = dynamic_cast<juce::Viewport*>(c))
+                panel = v;
+        REQUIRE(panel != nullptr);
+        auto* viewed = panel->getViewedComponent();
+        REQUIRE(viewed != nullptr);
+
+        // ~800px is what a 13" laptop leaves a DAW with the dock visible. At
+        // this size the whole panel must fit: when the viewed component is
+        // taller than the viewport the bottom of the UI is off-screen, which is
+        // exactly the bug this guards.
+        ed->setSize(520, 800);
+        CHECK(viewed->getHeight() <= panel->getHeight());
+        for (auto* c : viewed->getChildren())
+            CHECK(c->getBottom() <= viewed->getHeight());
+
+        // Shrinking further must scroll, not drop controls: the panel keeps its
+        // content height and the viewport becomes scrollable.
+        ed->setSize(520, 460);
+        CHECK(viewed->getHeight() > panel->getHeight());
+        CHECK(panel->canScrollVertically());
+        for (auto* c : viewed->getChildren())
+            CHECK(c->getBottom() <= viewed->getHeight());
+
         proc.releaseResources();
     }
     juce::MessageManager::deleteInstance();

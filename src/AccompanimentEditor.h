@@ -60,6 +60,11 @@ public:
         setColour(juce::PopupMenu::textColourId,                  juce::Colour(FuzzybandPalette::ink));
         setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xff2a4028));
         setColour(juce::PopupMenu::highlightedTextColourId,       juce::Colour(0xff9ade78));
+        // ScrollBar — the editor scrolls when the host window is short, so this
+        // is now a visible control rather than a never-seen default.
+        setColour(juce::ScrollBar::backgroundColourId,            juce::Colour(0x40050f04));
+        setColour(juce::ScrollBar::trackColourId,                 juce::Colour(0x552a4028));
+        setColour(juce::ScrollBar::thumbColourId,                 juce::Colour(0xcc6a9a50));
     }
 
     void drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height,
@@ -292,7 +297,7 @@ public:
         g.setFont(getTextButtonFont(button, button.getHeight()));
 
         // Draw a Path icon instead of a Unicode glyph — plugin fonts often
-        // lack ▶, which then shows as mojibake (â¶ PLAY).
+        // lack ▶, which then shows as mojibake (â¶ Play).
         if (button.getComponentID() == "play")
         {
             auto bounds = button.getLocalBounds().reduced(8, 4);
@@ -310,7 +315,7 @@ public:
                 tri.addTriangle(cx - 4.0f, cy - 6.0f, cx - 4.0f, cy + 6.0f, cx + 6.0f, cy);
                 g.fillPath(tri);
             }
-            g.drawFittedText("PLAY", bounds, juce::Justification::centredLeft, 1);
+            g.drawFittedText("Play", bounds, juce::Justification::centredLeft, 1);
             return;
         }
 
@@ -387,6 +392,66 @@ private:
     void timerCallback() override;
     void applyGenreDefaultSwing() noexcept;
 
+    /**
+     * @brief Holds the entire UI so the editor can scroll it.
+     *
+     * Every control is a child of one of these, which the editor puts inside a
+     * juce::Viewport. When the host gives the editor less height than the
+     * layout needs, the panel scrolls instead of silently clipping its bottom
+     * (see AccompanimentEditor::resized).
+     */
+    class ContentComponent final : public juce::Component
+    {
+    public:
+        explicit ContentComponent(AccompanimentEditor& o) noexcept : owner(o) {}
+
+        void paint(juce::Graphics& g) override;
+        void resized() override;
+
+    private:
+        AccompanimentEditor& owner;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ContentComponent)
+    };
+
+    /**
+     * @brief Adaptive vertical metrics for the control panel.
+     *
+     * The layout used to be a fixed stack of pixel heights that needed 968px,
+     * while setResizeLimits allowed the window down to 900px — so the bottom
+     * readouts were laid out past the edge and lost (juce::Rectangle::
+     * removeFromTop clamps to the space left, it does not complain). These
+     * metrics shrink to fit the height the host actually gave us.
+     */
+    struct LayoutMetrics
+    {
+        int rowH     = 44;   // one label + control row
+        int statusH  = 26;   // status row: dot + text + section progress
+        int scopeH   = 0;    // waveform scope (0 collapses it)
+        int diagGap  = 10;   // panel -> status row
+        int gap      = 9;    // breathing room between groups
+        int readoutH = 20;   // the single diagnostic line
+
+        /** Height of everything except the variable-height section list. */
+        int fixedHeight() const noexcept;
+    };
+
+    /** Picks metrics that fit @p bodyH with a section list of @p listContent. */
+    static LayoutMetrics metricsForBodyHeight(int bodyH, int listContent) noexcept;
+
+    /** Positions every control inside @p bounds (content-local coordinates). */
+    void layoutContent(juce::Rectangle<int> bounds);
+    void paintContent(juce::Graphics& g);
+
+    /**
+     * Requests a default size that fits the display we are opening on, and caps
+     * the advertised maximum height to it, so a host cannot restore a window
+     * taller than the screen.
+     */
+    void fitEditorToScreen();
+
+    LayoutMetrics metrics;   // set by resized(), consumed by layoutContent()
+
     struct GenreSwingListener final : juce::AudioProcessorParameter::Listener
     {
         AccompanimentEditor* owner = nullptr;
@@ -403,7 +468,6 @@ private:
 
     juce::Label titleLabel;
     juce::Label versionLabel;
-    juce::Label userPolicyHeading;
 
     juce::Label genreLabel{ {}, "GENRE" };
     juce::ComboBox genreCombo;
@@ -412,20 +476,46 @@ private:
     juce::Label humanizeLabel{ {}, "HUMANIZE" };
     juce::Slider humanizeSlider;
 
-    juce::Label songSectionsLabel{ {}, "SECTIONS" };
     juce::Viewport songSectionsViewport;
     std::unique_ptr<SectionListEditor> sectionListEditor;  // editable custom form
 
-    juce::Label lockBarsLabel{ {}, "LOCK (BARS)" };
+    juce::Label lockBarsLabel{ {}, "LOCK" };
     juce::Slider lockBarsSlider;
-    juce::Label grooveStatusLabel;  // generative lock indicator
 
-    // A5.2: post-lock transition grammar controls + live status.
-    juce::Label transitionBarsLabel{ {}, "TRANSITION (BARS)" };
+    // A5.2: post-lock transition grammar controls.
+    juce::Label transitionBarsLabel{ {}, "TRANSITION" };
     juce::Slider transitionBarsSlider;
     juce::Label transitionSectionsLabel{ {}, "TRANSITION SECTIONS" };
     juce::Slider transitionSectionsSlider;
-    juce::Label transitionStatusLabel;  // live "Section: VERSE - bar 3/8 - 5 left"
+
+    /**
+     * @brief One-line status: a phase dot, the phase/section, and the section
+     * bar-segment progress, all on a single row.
+     *
+     * This used to be three widgets for one fact — "Groove: <mode>" on one line,
+     * "Section: <name> - bar 3/8 - 5 left" on the next, and a segment bar that
+     * re-drew the same "bar 3/8". The dot carries the mode, the text carries the
+     * position, the bar carries the countdown.
+     */
+    class StatusDot final : public juce::Component
+    {
+    public:
+        StatusDot() { setInterceptsMouseClicks(false, false); }
+
+        void setDotColour(juce::Colour c)
+        {
+            if (c != colour_) { colour_ = c; repaint(); }
+        }
+
+        void paint(juce::Graphics&) override;
+
+    private:
+        juce::Colour colour_ { FuzzybandPalette::inkMuted };
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StatusDot)
+    };
+    StatusDot statusDot;
+
+    juce::Label statusLabel;   // "Locked - Riff A 3/16", "VERSE 2/8", "Idle"
 
     // Bar-segment progress for the active section (Play / riff lock / transition).
     class SectionProgressComponent final : public juce::Component
@@ -485,7 +575,7 @@ private:
     };
     ScopeComponent scopeComponent;
 
-    juce::TextButton playButton{ "PLAY" };
+    juce::TextButton playButton{ "Play" };
     juce::TextButton recordRiffButton{ "Record riff" };
     juce::TextButton forgetRiffButton{ "Forget" };
 
@@ -498,10 +588,16 @@ private:
 
     juce::Rectangle<int> userPolicyArea;
 
-    juce::Label bpmLabel{ {}, "BPM: -" };
-    juce::Label stateLabel{ {}, "State: -" };
-    juce::Label patternLabel{ {}, "Pattern: -" };
-    juce::Label styleLabel{ {}, "Style: -" };
+    // The whole panel lives in `content`, inside a vertical viewport, so a host
+    // window shorter than the layout's natural height scrolls rather than
+    // clipping the bottom of the UI. Declared before the viewport so the
+    // viewport (which references it) is destroyed first.
+    ContentComponent content{ *this };
+    juce::Viewport contentViewport;
+
+    // One quiet line of engine internals (tempo · state · pattern · style)
+    // rather than four labelled fields. The tooltip carries the legend.
+    juce::Label readoutLabel;
 
     FuzzybandLookAndFeel lookAndFeel;
 
