@@ -1,6 +1,10 @@
 # Changelog
 
-All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
+All notable changes to this project are documented here. This file is a *narrative*, not a reliable version-order record — see [`docs/PROJECT_TIMELINE.md`](docs/PROJECT_TIMELINE.md) §0.3 before citing any version number.
+
+For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md) and its evidence base [`docs/ARCHITECTURE_DETAIL.md`](docs/ARCHITECTURE_DETAIL.md). For pitfalls, invariants and the canonical doc set, start at [`docs/CONTEXT_HANDOFF.md`](docs/CONTEXT_HANDOFF.md).
+
+Milestone/phase status lives in [`.planning/`](.planning) (`.planning/STATE.md`, `.planning/ROADMAP.md`). **Do not read `.gsd/` — it is a stale, untracked local artifact.**
 
 ## [1.0.3] — The bass mirrors again
 
@@ -147,7 +151,7 @@ unchanged (mean 0.51 ms, p99 0.82 ms).
 
 ## [1.0.0-rc] — Verification and acceptance (Phase 9)
 
-Release candidate after Phases 0–8. See [`docs/PHASE9_ACCEPTANCE.md`](docs/PHASE9_ACCEPTANCE.md).
+Release candidate after Phases 0–8. See [`docs/archive/PHASE9_ACCEPTANCE-1.0.0-rc.md`](docs/archive/PHASE9_ACCEPTANCE-1.0.0-rc.md).
 
 - **T9.1** both Catch2 binaries are the release gate; CI runs `[phase9]` and `[t9.2]`.
 - **T9.2** buffer-size invariance now compares **128 / 512 / 2048** (PatternPlayer golden and the processor count-in + capture span).

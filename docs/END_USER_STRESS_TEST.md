@@ -1,3 +1,6 @@
+> **PARTIALLY STALE (audited 2026-09-14).** Written against v0.9.62 and not refreshed for the
+> 1.0.x bass-mirror changes; some expected results no longer match. Useful as a playtest script.
+
 
 # Fuzzyband — End-User Stress Test
 
@@ -5,7 +8,7 @@
 **Written against:** v1.0.0 (`CMakeLists.txt` version string, top-right of the UI)
 **Purpose:** Play through every user-facing mode, style, genre, section, and drum pattern. Tick what you hear. Record the session. Hand the recording + this filled log to an agent to double-check.
 
-Phase 9 automated contracts for Stations A–H are in [`docs/PHASE9_ACCEPTANCE.md`](PHASE9_ACCEPTANCE.md) (T9.4). This file is still the human DAW pass.
+Phase 9 automated contracts for Stations A–H are in [`docs/archive/PHASE9_ACCEPTANCE-1.0.0-rc.md`](archive/PHASE9_ACCEPTANCE-1.0.0-rc.md) (T9.4). This file is still the human DAW pass.
 
 If a pattern or style **never appears** after you follow the trigger recipe, that is a product bug or a coverage gap — log it as **MISS**, do not skip it.
 
@@ -239,7 +242,7 @@ Two **families** share pattern pools. Every preset still has its own velocity, g
 | 11 | Alternative  | Rock        | 0.35   | 60–220   | 120            | Slight swing 0.05, same pools as Rock                                                        |
 | 12 | Grunge       | Rock        | 0.25   | 50–200   | 90             | Heavier half-time bias, max 200                                                              |
 
-The 22-class ONNX model still has **five feel slots** (Rock / Hard Rock / Punk / Metal / Sludge). Broader presets map onto the closest slot — Thrash/Death/Black/Djent → Metal slot, Doom → Sludge slot, Classic/Alternative/Grunge → Rock slot. You are still testing the **preset** (velocity, ghosts, BPM clamp), not a new model class.
+The 28-class ONNX model still has **five feel slots** (Rock / Hard Rock / Punk / Metal / Sludge). Broader presets map onto the closest slot — Thrash/Death/Black/Djent → Metal slot, Doom → Sludge slot, Classic/Alternative/Grunge → Rock slot. You are still testing the **preset** (velocity, ghosts, BPM clamp), not a new model class.
 
 **Metal-family Play must be able to produce Blast (21). Rock-family Play must be able to produce Shuffle (24) and D-Beat (25).** Confirm that on the family representatives (Metal, Rock); subgenres use the same pools so the feel check is the extra work.
 

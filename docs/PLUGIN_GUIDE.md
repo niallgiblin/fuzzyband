@@ -1,3 +1,7 @@
+> **PARTIALLY STALE (audited 2026-09-14).** The **tempo** and **onset/tempo-tracking** sections
+> describe a pipeline that no longer exists: tempo is host-authoritative and `BeatTracker` was
+> deleted. Other sections are broadly accurate. See [`CONTEXT_HANDOFF.md`](CONTEXT_HANDOFF.md) §5.
+
 # Fuzzyband Plugin Guide
 
 A practical reference for understanding, tuning, and extending the plugin as a daily songwriting tool.

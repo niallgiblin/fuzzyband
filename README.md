@@ -1,13 +1,16 @@
-# fuzzyband (formerly Metal Accompaniment) — v0.9.29
+# fuzzyband (formerly Metal Accompaniment) — v1.0.3
 
 A JUCE **8** **VST3 / AU** plugin for guitarists. You play guitar into it; it listens, and it writes **drum + bass MIDI** in real time so a drum kit and a bass instrument in your DAW can play along with you.
 
 It does **not** guess your tempo from the guitar. It accompanies you at the **DAW’s global project tempo**, locked to the host transport and the project grid.
 
-Current plugin version (shown top-right in the UI): **v0.9.29**. Full history: [`CHANGELOG.md`](CHANGELOG.md).
+Current plugin version (shown top-right in the UI): **v1.0.3** — always confirm against
+`CMakeLists.txt` line 4, which is the only authoritative source. Full history: [`CHANGELOG.md`](CHANGELOG.md).
 
-> **v0.9.29** is the latest on the download page. New releases are tagged and the
-> website populates itself — see [`docs/RELEASING.md`](docs/RELEASING.md).
+> **New here, or picking this up to fix a bug?** Read
+> [`docs/CONTEXT_HANDOFF.md`](docs/CONTEXT_HANDOFF.md) first — it states the real
+> architecture, what is *not* wired up, and the active bug — then
+> [`docs/PITFALLS_AND_INVARIANTS.md`](docs/PITFALLS_AND_INVARIANTS.md).
 
 ---
 
@@ -164,22 +167,34 @@ Scripted **song form** (intro / verse / chorus / …) at the DAW tempo. The sequ
 
 ---
 
-## Controls (v0.9.29)
+## Controls (v1.0.3)
+
+Verified against the editor at v1.0.3. Only the controls in this table actually
+have a widget in the panel:
 
 | Control | What it does |
 |---------|----------------|
-| **Genre** | Rock (default), Hard Rock, Punk, Metal, Sludge — groove feel, velocities, pattern pool. |
-| **Swing** | Delays off-8th drum events (0–100%). Genre can set a default. |
-| **Bass octave** | −12 / 0 / +12 for bass VSTs with a limited or mis-labelled range. MIDI 36 = C2 (some instruments display that as C1). |
-| **Song form** | Presets (Standard Metal, Sludge/Drone, Short Punk, …) plus an editable custom section list. |
-| **Loop** | Repeat the song form in Play mode. |
-| **Lock (bars)** | How long a riff lock holds after you stop playing the riff (returning to it extends it). |
-| **Transition (bars / sections)** | After lock expires: length and count of contrast sections before follow. |
-| **PLAY** | On = song-form playback. Off = follow/listen. |
-| **Record riff / Forget** | Capture or clear a 4-bar riff lock. |
-| **Output Gain** | Guitar pass-through level only. |
+| **Genre** | 13 presets: Rock (default), Hard Rock, Punk, Metal, Sludge, Thrash Metal, Death Metal, Black Metal, Doom Metal, Djent, Classic Rock, Alternative, Grunge. Sets groove feel, velocity profile, swing default, half-time bias and BPM range (`GrooveTemplate.h:254-266`). |
+| **Swing** | Delays off-8th drum events (0–100%). The genre supplies a default. |
+| **Humanize** | Scales the per-bar ornament probabilities (open hat, extra ghost, micro-fill, ride switch). At 0 the bar is played verbatim. |
+| **Lock** | How long a riff lock holds after you stop playing the riff. |
+| **Transition** (bars / sections) | After lock expires: how long each contrast section lasts, and how many distinct contrast families rotate (`A→B→A→C→A…`). |
+| **Play** | On = song-form playback. Off = follow/listen. |
+| **Record riff / Forget** | Capture or clear a riff lock. |
+| **Section list** | The custom song form, editable in place. |
 
-Live readouts: **BPM** (host tempo), **State**, **Pattern**, **Style**, **RMS**, **Centroid**, **HF Flux**, **noise floor**, groove/lock status.
+Live readouts: one quiet line — `120.0 bpm · SILENT · P23 · Open Chord`
+(BPM · structure state · pattern index · playing style).
+
+> **Parameters without an editor widget.** `bassTranspose`, `songForm`, `loop`
+> and `outputGain` exist in the APVTS (so they are saved with the session and
+> automatable) but have **no control in the panel**. An earlier version of this
+> README listed them as UI controls; it was wrong.
+
+> **Bass mirroring.** In Play and Riff-listening the intent is that the bass plays
+> what *you* play, with the authored/harmonic line filling only the gaps. That
+> contract is implemented but has regressed repeatedly and is **currently
+> unreliable** — see [`docs/BASS_MIRRORING.md`](docs/BASS_MIRRORING.md).
 
 ---
 
@@ -202,12 +217,23 @@ Live readouts: **BPM** (host tempo), **State**, **Pattern**, **Style**, **RMS**,
 
 ---
 
-## What’s new in v0.9.26
+## What's new in v1.0.3
 
-- **Follow-mode style steering** — palm-mute / open-chord / single-note / sustain actually biases which groove family you get (still gated by SOFT/LOUD and the 2-bar commit hold).
-- **Play-mode phrase rotation** — grooves hold for a phrase (not one pattern per bar); verse 1 ≠ verse 2.
-- **Fill variety** — last-bar fills scale with section energy (Fill Medium is now used).
-- **Riff-lock progress** in the UI — “bar X/Y · N left before transition.”
+- **Bass mirror owns the voice.** The live mirror no longer plays *underneath* the
+  authored/harmonic line. A mirrored note claims the monophonic bass voice and the
+  grid line is muted while it rings, so Play mode tracks your playing instead of
+  sounding like a root/fifth drone. (Whether this is reliable on a real distorted
+  guitar is still open — see [`docs/BASS_MIRRORING.md`](docs/BASS_MIRRORING.md).)
+- **A 20 ms onset envelope.** `EnergyAnalyser` gained `getOnsetRmsEnergy()`; the
+  attack detector now sees a real decay→rise edge instead of leaning on stale
+  state, which had made one sustained note mirror as 2–3 notes.
+- **Editor fits the screen** (v1.0.2) — the panel scrolls, the layout adapts down
+  to a 460 px window, and the opening size is clamped to the display.
+- **Riff phase and DAW loop fixes** (v1.0.1) — the frozen riff no longer enters a
+  bar late, a bar-aligned loop wrap is a no-op instead of re-phasing the riff, and
+  onset capture no longer collapses at large buffer sizes.
+
+Full detail: [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -235,11 +261,20 @@ Training the mel-CNN and exporting `assets/metal_groove.onnx` is documented unde
 
 ## Documentation
 
+**Start here:** [`docs/CONTEXT_HANDOFF.md`](docs/CONTEXT_HANDOFF.md) — a
+self-contained briefing (architecture, build, the active bug, what is not wired).
+
 | Doc | Content |
 |-----|---------|
-| [`CHANGELOG.md`](CHANGELOG.md) | Version history |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Threading, DAW-tempo clock, inference |
-| [`docs/ONNX_IO.md`](docs/ONNX_IO.md) | ONNX tensor contracts |
-| [`docs/DATA_STRATEGY.md`](docs/DATA_STRATEGY.md) | Data / model improvement |
+| [`docs/CONTEXT_HANDOFF.md`](docs/CONTEXT_HANDOFF.md) | **Start here.** What the project is, what actually works, active bug |
+| [`docs/PITFALLS_AND_INVARIANTS.md`](docs/PITFALLS_AND_INVARIANTS.md) | Traps that keep recurring; contracts not to break; pre-flight checklist |
+| [`docs/BASS_MIRRORING.md`](docs/BASS_MIRRORING.md) | The hard active bug: contract, history of nine attempts, ranked hypotheses |
+| [`docs/PROJECT_TIMELINE.md`](docs/PROJECT_TIMELINE.md) | Every era: what was tried, what failed, what was reverted |
+| [`docs/TEST_AUDIT.md`](docs/TEST_AUDIT.md) | Suite state (348 cases green) and its six real coverage gaps |
+| [`docs/DOCS_INDEX.md`](docs/DOCS_INDEX.md) | Which docs are current, which are archived, and why |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Source-verified architecture (+ [`docs/ARCHITECTURE_DETAIL.md`](docs/ARCHITECTURE_DETAIL.md) for citations) |
+| [`CHANGELOG.md`](CHANGELOG.md) | Version history (a narrative, not a version-order record) |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | Cut a release; how the download site populates itself |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Source build and tests |
+
+Archived, superseded material is in [`docs/archive/`](docs/archive/).

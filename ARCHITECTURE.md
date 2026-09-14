@@ -1,504 +1,169 @@
-# Architecture — Fuzzyband (Metal Accompaniment)
+# Architecture — fuzzyband (MetalAccompaniment)
 
-> This document describes the component boundaries, threading model, and data
-> flow for the current implementation. Originally written for Phase 1 rule-based;
-> updated to reflect **ONNX inference**, **feature capture**, and **extracted
-> modules** from v0.5.0 Phase 31 (PlaybackGate, StablePitchTracker,
-> PatternRules). Tempo is sourced from the DAW transport; the audio-derived tempo path
-> (`OnsetDetector`) has been retired. Current focus: **Data Improvement Strategy**
-> ([`docs/DATA_STRATEGY.md`](docs/DATA_STRATEGY.md)).
+**Verified against source at v1.0.3 (`5d5f410`).** Every statement here was read
+out of `src/`, not out of the older docs. Where the previous version of this file
+was wrong, the correction is noted.
 
----
-
-## High-Level Overview
-
-```mermaid
-flowchart LR
-    Guitarist["Guitarist plays dry guitar"] --> HostTrack["DAW guitar track"]
-    HostTrack --> Plugin["Metal Accompaniment<br/>JUCE VST3 / AU"]
-    Plugin --> DryOut["Dry guitar pass-through<br/>with output gain"]
-    Plugin --> MidiOut["MIDI out<br/>drums ch.10 + bass ch.2"]
-    MidiOut --> DrumInstrument["Drum instrument"]
-    MidiOut --> BassInstrument["Bass instrument"]
-    DryOut --> AmpFx["Amp / cab / FX after plugin"]
-
-    subgraph PluginInternals["AccompanimentProcessor owns the runtime"]
-        Params["APVTS parameters<br/>outputGain, intensity,<br/>structureBlend, generativeBassMode"]
-        Editor["AccompanimentEditor<br/>diagnostics + debug controls"]
-
-        subgraph AudioThread["Audio thread: processBlock, real-time"]
-            InputGuard["Scrub NaN / clip input"]
-            Transport["DAW transport → BPM"]
-            Energy["EnergyAnalyser"]
-            Structure["StructureTagger"]
-            Pitch["PitchEstimator"]
-            StablePitch["StablePitchTracker"]
-            Gate["PlaybackGate"]
-            Features["FeatureVector snapshot"]
-            Player["PatternPlayer"]
-        end
-
-        subgraph SharedState["Lock-free / atomic handoff"]
-            Queue["ReaderWriterQueue&lt;FeatureVector&gt;"]
-            PatternAtomic["latestPatternIndex atomic"]
-            BassHandoff["generative bass handoff"]
-            DisplayAtomics["display atomics"]
-        end
-
-        subgraph InferenceThread["Background inference thread: about 50 Hz"]
-            Drain["Drain newest FeatureVector"]
-            StructureShadow["Rule/ONNX structure shadow"]
-            PatternInference["IInference<br/>RuleBased or ONNX pattern"]
-            BassInference["Optional ONNX bass proposal"]
-            CaptureRows["FeatureCapture row builder"]
-        end
-
-        subgraph CaptureThread["Capture writer thread, optional"]
-            CaptureQueue["Bounded capture queue"]
-            Jsonl["feature_capture JSONL"]
-        end
-    end
-
-    Plugin --> InputGuard
-    InputGuard --> Energy
-    InputGuard --> Pitch
-    Energy --> Structure
-    Structure --> Gate
-    Transport --> Features
-    Transport --> Player
-    Energy --> Features
-    Structure --> Features
-    Pitch --> Features
-    Pitch --> StablePitch
-    StablePitch --> Player
-    Gate --> Player
-    Features --> Queue
-    Queue --> Drain
-    Drain --> StructureShadow
-    StructureShadow --> PatternInference
-    Drain --> PatternInference
-    Drain --> BassInference
-    PatternInference --> PatternAtomic
-    BassInference --> BassHandoff
-    PatternAtomic --> Player
-    BassHandoff --> Player
-    Player --> MidiOut
-    Params --> Features
-    Params --> PatternInference
-    Params --> BassInference
-    Editor --> Params
-    Editor --> DisplayAtomics
-    Features --> DisplayAtomics
-    PatternInference --> DisplayAtomics
-    Drain --> CaptureRows
-    CaptureRows --> CaptureQueue
-    CaptureQueue --> Jsonl
-```
+- **Evidence base with `file:line` citations for everything below:**
+  [`docs/ARCHITECTURE_DETAIL.md`](docs/ARCHITECTURE_DETAIL.md).
+- **Do not trust** the archived `docs/archive/ARCHITECTURE-pre-1.0.3.md` or
+  `docs/RUNTIME_ARCHITECTURE.md` — see
+  [`docs/PITFALLS_AND_INVARIANTS.md`](docs/PITFALLS_AND_INVARIANTS.md) §1.
 
 ---
 
-## Component Reference
+## 1. What it is
 
-### Tempo source (DAW transport)
-
-**Where:** `AccompanimentProcessor::processBlock` (audio thread)  
-**Purpose:** Provide the beat clock BPM for `PatternPlayer` and `FeatureVector`.
-
-The DAW transport is the single source of tempo: `getPlayHead()->getPosition()->getBpm()`.
-If no valid host BPM is available (e.g. the standalone build, or a stopped transport),
-the manual `bpm` APVTS parameter is used, falling back to 120 BPM. There is **no
-audio-derived tempo estimator** — the earlier `OnsetDetector` (spectral-flux onset +
-inter-onset-interval BPM) has been retired.
+A JUCE 8 VST3/AU plugin (macOS-first) that takes a live guitar input and emits
+**drum MIDI on channel 10** and **bass MIDI on channel 2**. Bundle
+`com.ng.fuzzyband`, product `fuzzyband`, `NEEDS_MIDI_OUTPUT TRUE`,
+`NEEDS_MIDI_INPUT FALSE`. VST3 always; AU + Standalone on Apple.
 
 ---
 
-### `EnergyAnalyser`
+## 2. Thread model
 
-**File:** `src/analysis/EnergyAnalyser.h/.cpp`  
-**Thread:** Audio (called from `processBlock`)  
-**Purpose:** Computes RMS energy and spectral features used to classify the
-current guitar state.
+**Three threads. There is no capture thread.**
 
-**Outputs:**
-- `rmsEnergy` — 100ms rolling RMS, normalised 0..1 (structure / loudness)
-- `onsetRmsEnergy` — 20ms rolling RMS, same scale; the signal fed to
-  `PhraseLearner` for note-onset detection (a 100ms window cannot resolve a 16th
-  note at 120 BPM)
-- `spectralCentroid` — weighted mean frequency (distinguishes palm mute from open chord)
-- `highFreqFlux` — flux in 2kHz+ band (presence / attack content)
-
-**Public interface:**
-```cpp
-class EnergyAnalyser {
-public:
-    void prepare(double sampleRate, int blockSize);
-    void process(const float* audioData, int numSamples);
-    float getRmsEnergy()       const;
-    float getOnsetRmsEnergy()  const;
-    float getSpectralCentroid() const;
-    float getHighFreqFlux()    const;
-};
-```
-
----
-
-### `StructureTagger`
-
-**File:** `src/analysis/StructureTagger.h/.cpp`  
-**Thread:** Audio (called from `processBlock`)  
-**Purpose:** Converts raw energy/spectral features into a discrete structural
-state with hysteresis to prevent flickering.
-
-**States:**
-```cpp
-enum class StructureState { SILENT, VERSE, CHORUS, BREAKDOWN };
-```
-
-**State transitions (threshold-based):**
-
-```
-rmsEnergy < 0.05                    → SILENT
-rmsEnergy >= 0.05, centroid < 1200Hz → BREAKDOWN (half-time feel)
-rmsEnergy >= 0.05, centroid < 2400Hz → VERSE
-rmsEnergy >= 0.05, centroid >= 2400Hz → CHORUS
-```
-
-Hysteresis: minimum 2 seconds in any state before a transition is allowed.
-This prevents a single quiet moment mid-riff from dropping to SILENT.
-
-**Public interface:**
-```cpp
-class StructureTagger {
-public:
-    void prepare(double sampleRate);
-    StructureState update(float rms, float centroid, float highFreqFlux);
-    StructureState getCurrentState() const;
-};
-```
-
----
-
-### `FeatureVector`
-
-**File:** `src/analysis/FeatureVector.h`  
-**Purpose:** Plain data struct passed from the audio thread to the inference
-background thread via the lock-free queue. Must be trivially copyable.
-
-```cpp
-struct FeatureVector {
-    float bpm;
-    float rmsEnergy;
-    float spectralCentroid;
-    float highFreqFlux;
-    StructureState state;
-    int64_t sampleTimestamp; // for latency measurement
-};
-```
-
----
-
-### `IInference` (interface)
-
-**File:** `src/inference/IInference.h`  
-**Purpose:** Abstract interface that decouples the inference implementation from
-the rest of the plugin. Production uses `MetalGrooveInference` when
-`MA_ENABLE_ONNX` is on; otherwise `RuleBasedInference`. Either can be swapped
-without touching the audio thread.
-
-```cpp
-class IInference {
-public:
-    virtual ~IInference() = default;
-
-    // Called once at startup. May allocate, load models, etc.
-    virtual void prepare(double sampleRate) = 0;
-
-    // Called at ~50Hz on the background thread. Must not block indefinitely.
-    // Returns a pattern index into the MidiPatternLibrary.
-    virtual int selectPattern(const FeatureVector& features) = 0;
-
-    // Human-readable name for debug UI
-    virtual std::string getName() const = 0;
-};
-```
-
----
-
-### `RuleBasedInference` (Phase 1)
-
-**File:** `src/inference/RuleBasedInference.h/.cpp`  
-**Thread:** Background inference thread  
-**Purpose:** Implements `IInference` using hand-authored rules. No ML.
-
-**Logic:**
-```
-SILENT    → pattern index 0  (all-off / silence)
-VERSE     + bpm < 120 → pattern 1  (slow verse groove)
-VERSE     + bpm < 160 → pattern 2  (mid verse groove)
-VERSE     + bpm >= 160 → pattern 3 (fast verse groove)
-CHORUS    + bpm < 160 → pattern 4  (mid chorus, open hi-hat)
-CHORUS    + bpm >= 160 → pattern 5 (fast chorus, double kick)
-BREAKDOWN → pattern 6  (half-time, heavy ghost notes)
-```
-
----
-
-### `MetalGrooveInference` (production path when `MA_ENABLE_ONNX=ON`)
-
-**File:** `src/inference/MetalGrooveInference.h/.cpp`  
-**Thread:** Background inference thread  
-**Purpose:** Implements `IInference` using ONNX Runtime against
-`assets/metal_groove.onnx` (22-class mel-CNN), bundled as JUCE `BinaryData`.
-
-`AccompanimentProcessor` constructs `MetalGrooveInference` and calls
-`tryLoadModel()`. If loading fails (or the option is off), it uses
-`RuleBasedInference` instead — no audio-thread change either way. A failed
-load is loud (Debug `jassert` plus `getActiveInferenceName()` in tests) so a
-stale dylib cannot masquerade as working ML.
-
-The background drain feeds `selectPatternFromMel()` from a 64×32 (or 64×40)
-mel window. Scalar `selectPattern(FeatureVector)` is the rule-based fallback
-when the mel path is unavailable. Style classification (`classifyStyle`)
-runs from the same drain.
-
-The legacy scalar `OnnxInference` / `assets/accompaniment_model.onnx` path is
-retired; see [`docs/DATA_STRATEGY.md`](docs/DATA_STRATEGY.md).
-
----
-
-### `MidiPatternLibrary`
-
-**File:** `src/midi/MidiPatternLibrary.h/.cpp`  
-**Purpose:** Stores all drum and bass patterns as `constexpr` data. No file I/O.
-
-```cpp
-struct MidiEvent {
-    uint8_t note;
-    uint8_t velocity;
-    float   beatOffset;   // in beats, e.g. 0.5 = eighth note into bar
-    float   durationBeats;
-};
-
-struct MidiPattern {
-    std::string          name;
-    float                lengthInBars;
-    std::vector<MidiEvent> drumEvents; // channel 10
-    std::vector<MidiEvent> bassEvents; // channel 2
-};
-
-class MidiPatternLibrary {
-public:
-    const MidiPattern& getPattern(int index) const;
-    int                patternCount() const;
-};
-```
-
-Pattern indices 0–6 correspond to the outputs of `RuleBasedInference`.
-
----
-
-### `PatternPlayer`
-
-**File:** `src/midi/PatternPlayer.h/.cpp`  
-**Thread:** Audio (called from `processBlock`)  
-**Purpose:** Reads the current pattern index (via atomic), maintains a beat
-clock, and fills the JUCE `MidiBuffer` with note-on/off events.
-
-**Key behaviours:**
-- Beat clock derived from the DAW **transport** sample position (see [Tempo source](#tempo-source-daw-transport) and [Two clocks](#two-clocks-transport-vs-monotonic))
-- Pattern transitions are quantised to bar boundaries to avoid mid-bar glitches
-- Note velocity is humanised: ±10 random offset per hit
-- Note timing is humanised: ±2ms random offset per hit
-- Sends a note-off flush when switching to SILENT state
-
-**Public interface:**
-```cpp
-class PatternPlayer {
-public:
-    void prepare(double sampleRate, int blockSize);
-    void setPatternIndex(int index);      // called by audio thread
-    void process(MidiBuffer& midi,
-                 int numSamples,
-                 int64_t hostSamplePosition);
-};
-```
-
----
-
-### Two clocks: transport vs monotonic
-
-Lock and transition **schedules** must not share the drum grid's host
-playhead. A DAW loop wrap jumps `getTimeInSamples()` backwards, which used
-to freeze `grooveLockEndSample` and silence frozen bass.
-
-| Clock | Source | Used for |
+| Thread | Entry | Responsibility |
 |---|---|---|
-| Transport | `PatternPlayer::previewResolvedHostSample` / host `getTimeInSamples()` | Drum + grid-bass placement, click, fills, bar phase |
-| Monotonic | `hostSampleTime` (plugin sample counter, never wraps) | `grooveLockStartMono` / `grooveLockEndMono`, `transitionStartMono` / `transitionEndMono`, frozen-riff origin |
+| **Audio** | `AccompanimentProcessor::processBlock` (`AccompanimentProcessor.cpp:724`) | **All DSP**, including the mel spectrogram. Emits all MIDI. Never blocks; never allocates on the audio thread. |
+| **Background inference** | `inferenceLoop` (`:662-679`), 20 ms poll, holds `inferenceDrainMutex` (never taken by audio) | Drains `featureQueue` + `melQueue`; the **only** place `Ort::Session::Run` runs (`:494`, `:530`). |
+| **Message/UI** | editor `Timer`, 20 Hz (`:547`) | Readouts, scope, controls. |
 
-At lock / transition engage, `latchLockClock` stores `lockOriginMono =
-hostSampleTime` and `lockBarPhaseBeats = fmod(transportBeats, 4)` so the
-frozen bass re-enters on the audible drum downbeat. Durations are
-`hostSampleTime` deltas; a loop wrap cannot prevent expiry. A seek
-(`PatternPlayer::consumeTransportJumped`) re-latches bar phase and origin
-while preserving remaining duration.
+**Handoff primitives (the real ones):** atomics; three `moodycamel` queues —
+`featureQueue`, `melQueue`, `grooveCommitQueue`; and a 3-slot riff triple buffer.
 
-UI riff snapshots (`riffA` / `riffB` / `enginePhase`) are published through
-a triple buffer so the message thread never races the audio thread on the
-64-slot grids (T8.2).
-
----
-
-### `AccompanimentProcessor` (top-level plugin)
-
-**File:** `src/AccompanimentProcessor.h/.cpp`  
-**Purpose:** The `juce::AudioProcessor` subclass. Owns all components.
-Runs the inference background thread.
-
-**Ownership:**
-```
-AccompanimentProcessor
-├── EnergyAnalyser
-├── StructureTagger
-├── std::unique_ptr<IInference>    ← RuleBasedInference or MetalGrooveInference
-├── MidiPatternLibrary
-├── PatternPlayer
-├── std::atomic<int>               ← pattern index handoff (acquire/release with inference/UI)
-├── std::atomic<int>               ← debug preview sample countdown (paired with pattern index)
-├── std::atomic<double>            ← cached sample rate (UI thread reads for debug pattern length)
-├── moodycamel::ReaderWriterQueue  ← feature handoff
-└── std::thread                    ← inference loop
-```
-
-**Lifecycle:** The inference thread is created in the constructor but stays idle (`inferencePaused == true`) until `prepareToPlay()` finishes, so `IInference::prepare(sampleRate)` always runs before the loop calls `selectPattern()`.
-
-**Input path:** Non-finite samples are cleared to 0, then the buffer is clipped to `[-2, 2]` (SIMD `clip` alone is not sufficient for NaN on all targets).
-
-**Sample rate:** `prepareToPlay` clamps a non-positive rate to 44100 Hz before wiring components; `EnergyAnalyser` and `StructureTagger` each guard again if `prepare()` is ever called with an invalid rate.
-
-**Soft bypass:** `processBlockBypassed()` clears MIDI, sends all-notes-off, resets the pattern player, and copies mono input to the right channel so the dry guitar still reaches the output.
+**Real-time hazard, previously undocumented:** the **mel spectrogram is computed
+on the audio thread** — `audioRingBuffer.isWindowReady()` → `melExtractor.process()`
+(`:764-773`), i.e. ~40 × 2048-point FFTs plus the 64×32×1025 filterbank, once per
+22050 samples. This is the dominant per-block cost and the reason p99 headroom is
+thin (measured 1.44 ms against a 1.5 ms budget).
 
 ---
 
-## Threading Model
+## 3. One audio block, in order
 
-This is the most important section. Get this wrong and you get either audio
-glitches (audio thread blocked) or crashes (data races).
+Full 43-step table with line numbers in
+[`docs/ARCHITECTURE_DETAIL.md`](docs/ARCHITECTURE_DETAIL.md) §2. The shape:
 
-### Audio thread
+1. Scrub non-finite input, clip in place (`:735-740`).
+2. `energyAnalyser.process` — RMS (0.1 s), onset RMS (0.02 s), centroid, HF flux,
+   sub-bass ratio, peak RMS (`:759`).
+3. `pitchEstimator.process` — YIN (`:760`); `audioRingBuffer.write` (`:761`).
+4. Mel window → `melQueue` (`:764-773`) — **on the audio thread**.
+5. `structureTagger.update(...)` → `{SILENT, SOFT, LOUD}` (`:793-794`).
+6. BPM resolution, host-authoritative (`:803-823`); `clockSample` in the transport
+   frame (`:831`).
+7. Song form, playback gate, `FeatureVector` → `featureQueue` (`:869-893`).
+8. Play / Record / Riff phase machine and pattern ownership (`:928-1209`).
+9. `patternPlayer.process(midi, ...)` (`:1943-1944`) — emits **all** drum and bass
+   MIDI.
+10. Gain passthrough (`:1947-1955`); `hostSampleTime += numSamples` (`:1957`);
+    display atomics and section progress (`:1979-2030`).
 
-Runs in `processBlock()`. Has a hard real-time deadline (~5ms at 256 samples /
-48kHz). **Must never:**
-- Allocate or free heap memory
-- Acquire a mutex
-- Call any OS blocking primitive
-- Access the filesystem
-- Call ONNX Runtime directly
+The engine core (`:1215-1941`) is the largest and most stateful region: stable-pitch
+update, loop-wrap re-anchor, riff capture, generative groove lock, post-lock
+transition hold, `emitFrozenRiff`, and the live mirror trigger.
 
-**What it does:**
-1. Scrubs non-finite input samples, then clips to `[-2, 2]`
-2. Reads the DAW transport BPM (manual-knob / 120 fallback) and calls `EnergyAnalyser::process()`
-3. Calls `StructureTagger::update()` to get current state
-4. Pushes a `FeatureVector` onto the lock-free queue (non-blocking, always succeeds)
-5. Reads `latestPatternIndex` via `std::atomic::load(memory_order_acquire)` (pairs with inference/UI stores)
-6. Decrements `debugPreviewSamplesRemaining` with acquire load / release store when the debug pattern preview is active
-7. Calls `PatternPlayer::process()` to fill `MidiBuffer`
+**`PatternPlayer::process`** (`PatternPlayer.cpp:1279-1595`) resolves the
+frozen-transport clock, detects seek/loop and flushes note-offs, handles silence
+and the click track, resolves a bar-quantised (or beat-quantised) pattern commit,
+emits crashes/fills/micro-fills, the bass lead-in pickup, the learned/mirrored
+bass notes, then the grid bass gated on `mirrorVoiceEndSample_`, and finally
+flushes due drum note-offs.
 
-### Background inference thread
+---
 
-Runs in a `std::thread` at ~50Hz (20ms sleep between iterations).
-**Responsibilities:**
-1. Pop `FeatureVector` from the lock-free queue
-2. Call `IInference::selectPattern()` (may take 1–10ms, that's fine here)
-3. If the debug preview countdown is not active, write result to `latestPatternIndex` via `std::atomic::store(memory_order_release)`
+## 4. Engine phases — four nested state variables, not one enum
 
-### Handoff primitives
+**`EnginePhase`** (`AccompanimentProcessor.h:316-320`) — nine values:
 
-| Data | Mechanism | Rationale |
+```cpp
+Idle, PlayCountIn, PlaySection,
+RecWaitBar, RecCountIn, RecCapture,
+RiffA, RiffBListen, RiffBLocked
+```
+
+Plus two sub-machines and one derived projection:
+
+| Variable | Values | Role |
 |---|---|---|
-| Feature vector (audio → inference) | `moodycamel::ReaderWriterQueue` | Single-producer single-consumer, wait-free, no allocation |
-| Pattern index (inference/UI → audio) | `std::atomic<int>` with acquire/release | Coordinates with UI-driven debug pattern + preview countdown |
-| Preview countdown (UI ↔ audio ↔ inference) | `std::atomic<int>` with acquire/release | Prevents inference from overwriting the pattern while preview is active |
-| Sample rate (audio → UI) | `std::atomic<double>` | `bumpDebugPattern()` runs on the message thread |
+| `RiffCapturePhase` (`h:395`) | `Idle, WaitBar, CountIn, Recording` | Record-riff capture |
+| `PostLockPhase` (`h:408`) | `Idle, TransitionHold` | Post-lock contrast section |
+| `SectionPhase` (`h:176`) | `Idle=0, Play=1, Lock=2, Transition=3` | **Purely derived** for the UI |
 
-### Why not a mutex?
+Every transition with its real condition is tabulated in
+[`docs/ARCHITECTURE_DETAIL.md`](docs/ARCHITECTURE_DETAIL.md) §3.2. Key ones:
 
-A mutex on the audio thread means the OS can preempt it while it holds the lock,
-causing a priority inversion that produces an audible glitch or xrun. Lock-free
-primitives have bounded, allocation-free operation that is safe on a real-time
-thread.
+- `Idle → PlayCountIn` on the Play rising edge; `PlayCountIn → PlaySection` after a
+  bar-aligned 4-beat click.
+- `RecCapture → RiffA` when `commitGridCapture()` succeeds with ≥2 occupied slots.
+- `RiffA → (armed) → RiffBListen` on lock expiry; always via the transition cycle,
+  which **always re-enters `RiffA`** — never back to follow mode.
+- `RiffBListen → RiffBLocked` when the learner locks; back on drift unlock.
 
----
+**Pattern ownership** (`ARCHITECTURE_DETAIL.md` §3.5): `PlaySection` uses the audio
+thread's section pool rotation; `RiffBListen` the transition pool; `RiffBLocked`
+and `RiffA` frozen snapshots; Idle/follow uses the inference thread's
+`latestPatternIndex`.
 
-## Data Flow (per audio block)
-
-```
-processBlock() called by host
-        │
-        ├─► scrub non-finite samples; clip to [-2, 2]
-        │
-        ├─► read DAW transport BPM (manual-knob / 120 fallback)
-        │
-        ├─► EnergyAnalyser::process(audioData)
-        │       └─► updates rms, centroid, highFreqFlux
-        │
-        ├─► StructureTagger::update(rms, centroid, flux)
-        │       └─► returns current StructureState
-        │
-        ├─► Build FeatureVector { bpm, rms, centroid, flux, state }
-        │
-        ├─► featureQueue.try_enqueue(featureVector)   [non-blocking]
-        │
-        ├─► int pattern = latestPatternIndex.load(acquire)
-        │
-        └─► PatternPlayer::process(midiBuffer, numSamples, hostPosition)
-                └─► fills MidiBuffer with drum + bass MIDI events
-
-
-[Background thread, ~50Hz]
-        │
-        ├─► featureQueue.try_dequeue(featureVector)
-        │
-        ├─► if preview inactive: int pattern = inference->selectPattern(featureVector)
-        │
-        └─► latestPatternIndex.store(pattern, release)   [when preview countdown == 0]
-```
+**Derived flags** (`:1677-1684`): `isGrooveLocked()` means "engine is in `RiffA`".
+`RiffBListen`/`RiffBLocked` are **not** reported as locked by that getter, though
+they are `riffLoopActive`.
 
 ---
 
-## MIDI Channel Convention
+## 5. Bass: one monophonic voice, three producers
 
-| Channel | Content | Notes |
+This is the project's most regression-prone area — see
+[`docs/BASS_MIRRORING.md`](docs/BASS_MIRRORING.md).
+
+| Producer | Where | Active when |
 |---|---|---|
-| 10 | Drums | GM standard drum channel |
-| 2 | Bass | Arbitrary, configurable in future UI |
+| **Mirror** (live) | `AccompanimentProcessor.cpp:1920-1940` → `PatternPlayer::triggerLearnedBassNote` → consumed `PatternPlayer.cpp:1522-1550` | `PlaySection` or `RiffBListen`, and `BassNote.trigger` |
+| **Grid** (authored / harmonic) | `PatternPlayer.cpp:1561-1580` → `emitBassRange` → `emitPatternBass` (`:1100`) / `emitHarmonicBass` (`:1160`) | `beatGridBassEnabled_` |
+| **Frozen riff** | `AccompanimentProcessor.cpp:1910-1918` → `emitFrozenRiff` | `RiffA` / `RiffBLocked` |
 
-Both channels are emitted into the same `MidiBuffer` returned from `processBlock`.
-The host DAW routes them to separate VSTi tracks.
+Ownership is arbitrated by `mirrorVoiceEndSample_` (`PatternPlayer.h:436-440`):
+when the mirror emits, it claims the voice until the note ends, and the grid
+producers skip every event before that sample (`:1131`, `:1227`). Cleared by
+`flushAllPendingNoteOffs` (`:534-544`) on seek/silence/bypass, and by `reset()`.
+
+**Attack chain:** clip → `EnergyAnalyser` 20 ms onset RMS → `PitchEstimator` YIN →
+`StablePitchTracker` pitch class → `PhraseLearner::process` →
+`detectAttack` (`PhraseLearner.cpp:53-93`) → `BassNote.trigger` (`:691-696`).
+
+**Structure state** is three-valued — `{SILENT, SOFT, LOUD}`
+(`StructureTagger.h:14-19`). The previous version of this file claimed
+VERSE/CHORUS/BREAKDOWN with centroid thresholds; that was wrong, and the centroid
+argument is in fact unused (`StructureTagger.cpp:11`).
 
 ---
 
-## Build Targets
+## 6. Subsystems that are documented but not wired
 
-| Target | Description |
+Do not "fix" these without deciding first whether they are meant to be live:
+
+| Subsystem | Status |
 |---|---|
-| `MetalAccompaniment_VST3` | VST3 plugin binary |
-| `MetalAccompaniment_AU` | Audio Unit (macOS only) |
-| `MetalAccompaniment_Standalone` | Standalone app for testing without a DAW |
-| `PluginData` | BinaryData library (ONNX model, future assets) |
-| `MetalAccompanimentTests` | Unit test binary (Catch2) |
+| `FeatureCapture` | Compiled **only into the test binary** (`CMakeLists.txt:308`); not in the plugin |
+| Bass ONNX | No live path |
+| Structure ONNX | No live path |
+| `GrooveRenderer` (Tier-1) | Fully implemented, ships a 1.45 MB model, **never instantiated** |
+| `grooveCommitQueue` (inference → audio) | Enqueued (`:624`), then **drained and discarded** (`:1205-1209`) — intentional, T4.1 |
+| `snapBpm()`, `consumeTransportJumped()` | Unreachable |
+| `OnsetDetector`, `TempoStabiliser`, `OnnxInference`, `BeatTracker` | **Do not exist in `src/`** (named in the generated agent profiles) |
 
 ---
 
-## Extending inference
+## 7. Hidden state and hazards
 
-To swap the pattern selector:
+- Process-wide `Ort::Env` statics.
+- `std::atomic_load` on a `shared_ptr` from the audio thread — not lock-free in libc++.
+- Non-atomic audio→UI data behind only a relaxed index (`scopeSamples`,
+  `StructureSequencer` reads).
+- Two clocks, implemented twice: transport frame for the drum grid, monotonic for
+  lock schedules. Do not merge them.
 
-1. Implement a new `IInference` (see `MetalGrooveInference`)
-2. In `AccompanimentProcessor`'s factory (`makeInference()`), construct it
-   and call `tryLoadModel()` if it loads weights
-3. Nothing else changes. The audio thread, pattern player, and MIDI output are
-   completely unaware of which inference implementation is active.
-
-Pitch/chord detection is already in the live path (`PitchEstimator` /
-`StablePitchTracker`); do not re-add a parallel detector.
+Full list with citations: [`docs/ARCHITECTURE_DETAIL.md`](docs/ARCHITECTURE_DETAIL.md) §8.

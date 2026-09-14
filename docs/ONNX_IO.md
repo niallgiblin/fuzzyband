@@ -1,3 +1,7 @@
+> **STALE (audited 2026-09-14).** Describes a tensor contract for a path that is not wired into
+> the shipping plugin, and class counts that no longer match. See
+> [`CONTEXT_HANDOFF.md`](CONTEXT_HANDOFF.md) §5.
+
 # ONNX I/O Contract — Metal Accompaniment (v0.8.x)
 
 > **Status:** Updated for **v0.8.0** unified Mel-CNN pipeline.
@@ -39,7 +43,7 @@ A single ONNX model with a shared MelCNN backbone (3 conv blocks → 128-dim bot
 3. Mel data enqueued to `melQueue` (lock-free SPSC)
 4. Background thread drains `melQueue`, calls `MetalGrooveInference::selectPatternFromMel()`
 5. ONNX session runs, returns `bottleneck` [1, 128]
-6. Cosine similarity computed against 22 precomputed centroids (`pattern_embeddings.h`)
+6. Cosine similarity computed against 28 precomputed centroids (`pattern_embeddings.h`)
 7. Best-match pattern index [0–21] stored in `latestPatternIndex` atomic
 8. `PatternPlayer` emits MIDI on next bar boundary
 
@@ -48,7 +52,7 @@ A single ONNX model with a shared MelCNN backbone (3 conv blocks → 128-dim bot
 | Property | Value |
 |----------|-------|
 | File | `src/inference/pattern_embeddings.h` (auto-generated) |
-| Format | `std::array<std::array<float, 128>, 22>` — 22 patterns × 128-dim |
+| Format | `std::array<std::array<float, 128>, 28>` — 28 patterns × 128-dim |
 | Generation | `training/export_centroids.py` — runs training data through trained backbone, computes per-class mean bottleneck |
 | Lookup | Cosine similarity nearest-neighbor (argmax dot product / norms) |
 

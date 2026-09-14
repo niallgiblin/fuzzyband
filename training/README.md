@@ -192,7 +192,7 @@ Use `--offset-seconds` if the annotation clock differs from the WAV start, and
 
 ```bash
 python3 scripts/build_mel_dataset.py         # perception (5-class) → X.npy / meta.csv
-python3 scripts/build_mel_groove_dataset.py  # groove (22-class)   → X_groove.npy / meta_groove.csv
+python3 scripts/build_mel_groove_dataset.py  # groove (28-class)   → X_groove.npy / meta_groove.csv
 ```
 
 Both assign a **grouped train/val/test split by source recording** (§5.1):

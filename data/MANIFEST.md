@@ -100,7 +100,7 @@ python3 training/scripts/build_mel_dataset.py \
   --raw-dir data/raw --out-dir data/processed
 ```
 
-### Groove dataset (22-class) → `X_groove.npy`, `y_groove.npy`, `meta_groove.csv`, `class_map.json`
+### Groove dataset (28-class) → `X_groove.npy`, `y_groove.npy`, `meta_groove.csv`, `class_map.json`
 ```bash
 python3 training/scripts/build_mel_groove_dataset.py \
   --raw-dir data/raw --out-dir data/processed
@@ -113,7 +113,7 @@ of a take can leak across train/val. The trainers read that frozen split back.
 ### Train (reads the frozen grouped split)
 ```bash
 python3 training/scripts/train_classifier.py            # perception (5-class)
-python3 training/train_groove_model.py                  # groove (22-class)
+python3 training/train_groove_model.py                  # groove (28-class)
 ```
 
 Both fail their quality gate on any **dead (zero-recall) class** on the held-out

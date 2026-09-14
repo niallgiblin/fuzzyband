@@ -1,9 +1,35 @@
+<!-- ─────────────────────────────────────────────────────────────────────────────
+     CANONICAL CONTEXT — READ BEFORE TRUSTING THE GENERATED SECTIONS BELOW.
+
+     The sections in this file between GSD:* markers are AUTO-GENERATED and are
+     stale in several places (they name classes that do not exist). Verify
+     everything against source, and read these first:
+
+       docs/CONTEXT_HANDOFF.md        start here — build/test, real architecture,
+                                      the active bug, what is NOT wired
+       docs/PITFALLS_AND_INVARIANTS.md traps, contracts, pre-flight checklist
+       docs/BASS_MIRRORING.md         the hard active bug (bass live mirror)
+       docs/PROJECT_TIMELINE.md       every era, what failed and was retried
+       docs/TEST_AUDIT.md             what the suite covers and misses
+       ARCHITECTURE.md                current, source-verified architecture
+
+     HARD RULES
+       * `.planning/` is the only planning authority. NEVER read `.gsd/` — it is
+         a stale, untracked symlink whose STATE.md says the project is blocked on
+         a milestone that finished months ago.
+       * The architecture summary below names `OnsetDetector`, `TempoStabiliser`
+         and `OnnxInference`. NONE of those exist in `src/`. The real inference
+         classes are `MetalGrooveInference` and `RuleBasedInference`.
+       * The project version is authoritative only in `CMakeLists.txt` line 4.
+       * Never weaken a test assertion or add `[!mayfail]` to make a fix pass.
+     ───────────────────────────────────────────────────────────────────────────── -->
+
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
 **Metal Accompaniment**
 
-A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and outputs rhythmically appropriate drum and bass MIDI in real time. Ships with a rule-based signal analysis pipeline (onset detection, tempo tracking, energy/structure classification) and an ONNX ML pipeline (pattern selector, structure classifier, generative bass) behind `MA_ENABLE_ONNX` (default **ON** — the production inference path). Current focus: **Data Improvement Strategy** (`docs/DATA_STRATEGY.md`) — the 22-class mel-CNN (`assets/metal_groove.onnx`) is the single production model; the legacy scalar model is being retired.
+A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and outputs rhythmically appropriate drum and bass MIDI in real time. **Tempo is host-authoritative** (read from the DAW playhead; there is no in-plugin tempo chasing). The shipping path is rule-based signal analysis (`src/analysis/`) plus a 28-class mel-CNN pattern selector (`assets/metal_groove.onnx`, `MA_ENABLE_ONNX` default **ON**). The generative-bass and structure ONNX heads are built but **not wired** into the plugin. See [`docs/CONTEXT_HANDOFF.md`](docs/CONTEXT_HANDOFF.md) for what is actually live.
 
 **Core Value:** A guitarist can play into the plugin and hear a musically reactive metal drum groove fire in time — with zero manual tempo tapping or pattern selection.
 
@@ -55,9 +81,9 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 - Platform-specific compiler flags in `CMakeLists.txt` lines 178-197
 - `MA_BUILD_TESTS` (default: ON) - Build unit test executable
 - `MA_BUILD_STANDALONE` (default: ON) - Build standalone app target
-- `MA_ENABLE_ONNX` (default: OFF) - Enable ONNX Runtime integration
+- `MA_ENABLE_ONNX` (default: ON, `CMakeLists.txt:16`) - Enable ONNX Runtime integration
 - `ONNXRUNTIME_ROOT` - Required when `MA_ENABLE_ONNX=ON`
-- ONNX model file: `assets/accompaniment_model.onnx` (bundled via JUCE BinaryData when `MA_ENABLE_ONNX=ON`)
+- ONNX model file: `assets/metal_groove.onnx` (bundled via JUCE BinaryData when `MA_ENABLE_ONNX=ON`)
 ## Platform Requirements
 - CMake 3.22+
 - C++20 compatible compiler:
@@ -187,7 +213,7 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 ## Layers
 - Purpose: Extract audio features from incoming guitar signal in real-time
 - Location: `src/analysis/`
-- Contains: `OnsetDetector`, `EnergyAnalyser`, `StructureTagger`, `PlaybackGate`, `StablePitchTracker`, `TempoStabiliser`
+- Contains: `EnergyAnalyser`, `PhraseLearner`, `PitchEstimator`, `StablePitchTracker`, `StructureSequencer`, `StructureTagger`, `PlaybackGate`, `MelSpectrogramExtractor`, `AudioRingBuffer` (verified against `src/analysis/`; this list previously named `OnsetDetector` and `TempoStabiliser`, which do not exist)
 - Depends on: JUCE audio processing library, FFT primitives
 - Used by: `AccompanimentProcessor.processBlock()` on audio thread
 - Purpose: Plain data structure for passing analysis results to inference thread
@@ -197,7 +223,7 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 - Used by: Inference layer via lock-free queue
 - Purpose: Map audio features to pattern selection (rule-based or ML)
 - Location: `src/inference/`
-- Contains: `IInference` interface, `RuleBasedInference` implementation, `OnnxInference` stub
+- Contains: `IInference` interface, `RuleBasedInference`, `MetalGrooveInference` (the real ML path), `pattern_rules.h`. `GrooveRenderer` exists but is never instantiated in the live path. There is no `OnnxInference` class.
 - Depends on: `FeatureVector`
 - Used by: `AccompanimentProcessor.inferenceLoop()` on background thread
 - Purpose: Convert pattern indices and timing to MIDI note events on drum (ch. 10) and bass (ch. 2) tracks
@@ -216,10 +242,9 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 - **Local mutable state:** BPM history, FFT buffers, beat position tracking in `PatternPlayer`
 - **JUCE APVTS:** Plugin parameter state (saved/loaded with session)
 ## Key Abstractions
-- Purpose: Estimates current BPM via spectral flux peak detection and inter-onset interval analysis
-- Location: `src/analysis/OnsetDetector.h/.cpp`
-- Pattern: State machine tracking FFT frame buffer, onset history ring buffer, inter-onset interval smoothing
-- Public interface: `process()` (audio thread), `getCurrentBpm()` (atomic read)
+- Purpose: Tempo is **host-authoritative** — read from the DAW playhead (`getBpm()`, `getTimeInSamples()`, `getIsPlaying()||getIsRecording()`), falling back to the APVTS `bpm` parameter and then 120 (`AccompanimentProcessor.cpp:803-823`). There is no in-plugin BPM chasing: `BeatTracker` was tried (Phase 28), rejected by UAT, and deleted in `40cc331`. `snapBpm()` is now unreachable.
+- Location: `AccompanimentProcessor.cpp` (BPM resolution); no `OnsetDetector` exists
+- Pattern: host playhead → cached BPM → `previewResolvedHostSample()` for the transport-frame clock
 - Purpose: Extracts three complementary audio descriptors for state classification
 - Location: `src/analysis/EnergyAnalyser.h/.cpp`
 - Pattern: Rolling window RMS, spectral moment computation, high-frequency band energy tracking
@@ -268,7 +293,7 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 <!-- GSD:skills-start source:skills/ -->
 ## Project Skills
 
-No project skills found. Add skills to any of: `.Codex/skills/`, `.agents/skills/`, `.cursor/skills/`, or `.github/skills/` with a `SKILL.md` index file.
+No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, or `.github/skills/` with a `SKILL.md` index file.
 <!-- GSD:skills-end -->
 
 ## Version Bumping Rule
@@ -276,7 +301,7 @@ No project skills found. Add skills to any of: `.Codex/skills/`, `.agents/skills
 **Every time a new build is made for testing/debugging, bump the patch version in `CMakeLists.txt` line 4 before building.**
 
 - Format: `project(MetalAccompaniment VERSION X.Y.Z)`
-- Current: `0.9.16` — increment the patch number (Z) for each debug/test build
+- Current: read it from `CMakeLists.txt` line 4 — never from this file (this line previously said 0.9.16 while the project was at 1.0.3). Increment the patch number (Z) for each debug/test build.
 - Milestone releases get a minor bump (Y) when a milestone is completed
 - The version shows in the plugin UI top-right as `vX.Y.Z` — this is the primary way to confirm the correct build is loaded in the DAW
 - **Always rebuild after bumping** so the new version string is baked into the plugin binary
