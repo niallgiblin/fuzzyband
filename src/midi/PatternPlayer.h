@@ -16,6 +16,7 @@
 #include "MidiPatternLibrary.h"
 #include "GrooveTemplate.h"
 #include "GrooveGrid.h"
+#include "BassVoice.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -39,6 +40,9 @@ public:
         int patternIndex = 0;
         bool alignToBeat = false;  // T6.1: next beat instead of next bar
     };
+
+    /** @brief Which producer emitted a bass note (see @ref BassVoice::Producer). */
+    using BassSource = BassVoice::Producer;
 
     /**
      * @brief Per-bar score-level ornaments (Tier-0): subtle, deterministic
@@ -138,12 +142,17 @@ public:
      * released, so a missed attack can never open the harmony underneath the
      * player (the recurring "bass goes into harmony" regression).
      */
-    void setGuitarAudible(bool audible) noexcept { guitarAudible_ = audible; }
+    void setGuitarAudible(bool audible) noexcept { bassVoice.setGuitarAudible(audible); }
 
     /** @brief Trigger a single bass note from PhraseLearner. Call from audio thread.
-     *  @param hold sustain until the guitar stops, instead of a fixed gate. */
+     *  @param hold sustain until the guitar stops, instead of a fixed gate.
+     *  @param source provenance tag (live mirror vs frozen snapshot). */
     void triggerLearnedBassNote(int midiNote, float velocity, int sampleOffset,
-                                int durationSamples, bool hold = false) noexcept;
+                                int durationSamples, bool hold = false,
+                                BassSource source = BassSource::Mirror) noexcept
+    {
+        bassVoice.requestLearned(midiNote, velocity, sampleOffset, durationSamples, hold, source);
+    }
 
     /**
      * @brief Diagnostic counters: which producer emitted each bass note-on.
@@ -154,9 +163,23 @@ public:
      * `learned`, the fallback is the bass part and the mirror is being drowned.
      * Plain ints: written on the audio thread, read by tests/diagnostics only.
      */
-    int getLearnedBassNoteCount() const noexcept { return learnedBassNotes_; }
-    int getGridBassNoteCount() const noexcept { return gridBassNotes_; }
-    void resetBassSourceCounters() noexcept { learnedBassNotes_ = 0; gridBassNotes_ = 0; }
+    int getLearnedBassNoteCount() const noexcept { return bassVoice.getLearnedCount(); }
+    int getGridBassNoteCount() const noexcept { return bassVoice.getGridCount(); }
+    void resetBassSourceCounters() noexcept { bassVoice.resetCounters(); }
+
+    // ── Bass-voice provenance (BassVoice) ────────────────────────────────────
+    /** @brief Producer of the most recent bass note-on. */
+    BassSource getLastBassProducer() const noexcept { return bassVoice.getLastProducer(); }
+    /** @brief Most-recent-first bass note-ons. Returns how many were written. */
+    int getRecentBassNoteOns(BassVoice::NoteOn* out, int maxCount) const noexcept
+    {
+        return bassVoice.getRecentNoteOns(out, maxCount);
+    }
+    /** @brief Note-ons emitted by @p source (provenance). */
+    int getBassProducerCount(BassSource source) const noexcept
+    {
+        return bassVoice.getProducerCount(source);
+    }
 
     /** @brief Queue a fixed-size drum/bass commit for the next bar (or beat
      *         when @c commit.alignToBeat). Audio thread safe. */
@@ -262,7 +285,7 @@ public:
 
     float getSwing() const noexcept { return swing; }
 
-    static constexpr int kBassChannel = 2;
+    static constexpr int kBassChannel = BassVoice::kBassChannel;
 
 private:
     /** Emit drum events from a pattern for an absolute beat range. */
@@ -290,10 +313,8 @@ private:
     /**
      * @brief Route bass for a range: authored pattern bass, else harmonic fallback.
      *
-     * @param suppressBeforeAbs Skip every event whose absolute sample is earlier
-     *        than this. The live riff mirror owns the monophonic bass voice while
-     *        it rings, so the grid line is a gap-filler, not a layer (pass the
-     *        mirror's ring end). -1 disables the gate.
+     * The mirror-owned voice is gated inside @ref BassVoice::emitGrid, so the
+     * grid line is a pure gap-filler.
      */
     void emitBassRange(juce::MidiBuffer& midi,
                        int numSamples,
@@ -301,8 +322,7 @@ private:
                        double beatEnd,
                        const MidiPattern& pattern,
                        int sampleOffsetBase,
-                       bool clampEarly = false,
-                       int64_t suppressBeforeAbs = -1);
+                       bool clampEarly = false);
 
     /** @brief Emit authored @c pattern.bassEvents transposed to the live root (A1.1). */
     void emitPatternBass(juce::MidiBuffer& midi,
@@ -311,8 +331,7 @@ private:
                          double beatEnd,
                          const MidiPattern& pattern,
                          int sampleOffsetBase,
-                         bool clampEarly = false,
-                         int64_t suppressBeforeAbs = -1);
+                         bool clampEarly = false);
 
     /** @brief Harmonic bass engine: root/fourth/fifth/octave per section (A1.2). */
     void emitHarmonicBass(juce::MidiBuffer& midi,
@@ -320,29 +339,7 @@ private:
                           double beatStart,
                           double beatEnd,
                           int sampleOffsetBase,
-                          bool clampEarly = false,
-                          int64_t suppressBeforeAbs = -1);
-
-    /**
-     * @brief Emit one bass note. The bass is monophonic: a new note-on always
-     * closes a ringing previous note (at @p off when @p forceRetrigger, else at
-     * the earlier of the scheduled off and @p off) so a pickup cannot swallow
-     * the next grid root (T5.3).
-     *
-     * @param hold Sustain the note until the guitar stops instead of gating it
-     *        at @p durSamps. `bassNoteOffSample` is set to "never" and the note
-     *        is released by setGuitarAudible(false) or a flush.
-     */
-    void emitBassNote(juce::MidiBuffer& midi,
-                      int numSamples,
-                      int64_t blockStart,
-                      int outNote,
-                      int vel,
-                      int off,
-                      int durSamps,
-                      int sampleOffsetBase,
-                      bool forceRetrigger = false,
-                      bool hold = false);
+                          bool clampEarly = false);
 
     /** @brief Semitone interval for the harmonic bass on a beat within a bar. */
     int harmonyDegree(int beatInBar, int bar) const noexcept;
@@ -453,9 +450,6 @@ private:
     // Simple beat-aligned bass
     int bassRootMidi = 40;      // E2 (drop-C metal root)
     int bassNotesPerBar = 2;    // default: half notes (beats 1 and 3)
-    int bassLastMidiNote = 40;
-    int bassNoteOffMidi = 40;       // note whose note-off is pending (monophonic bass)
-    int64_t bassNoteOffSample = -1;  // scheduled note-off sample position
 
     // Section hand-off: a short bass pickup armed by the processor on a section's
     // last bar. The player emits it once as a block crosses the bar's last beat.
@@ -463,37 +457,15 @@ private:
 
     bool beatGridBassEnabled_ = true;   // Play / BListen grid fallback; off for frozen riffs
     bool beatGridBassPrev_ = false;     // previous block's grid-bass state (phase onset)
-    bool guitarAudible_ = false;        // guitarist is sounding (see setGuitarAudible)
-    bool bassNoteHeld_ = false;         // the ringing bass note is a sustain (no gate)
 
-    // Absolute sample until which the learned/mirrored bass voice is still
-    // ringing. While `sampleCounter < mirrorVoiceEndSample_` the grid line is
-    // muted so the mirror is the bass part and the harmony engine only fills
-    // the gaps (the riff mirror is the primary bass — user contract).
-    int64_t mirrorVoiceEndSample_ = -1;
+    // The one monophonic bass voice: producer arbitration, the grid gate, and
+    // per-note provenance. See BassVoice and docs/BASS_MIRRORING.md §2/§6.
+    BassVoice bassVoice;
 
-    // Diagnostics only (see getLearnedBassNoteCount).
-    int learnedBassNotes_ = 0;
-    int gridBassNotes_ = 0;
     int pendingBarFillIndex_ = -1;      // 17/18/19 overlay; -1 = none
     double barFillStartBeat_ = -1.0;    // >=0: defer emit until this beat; -1 now; -2 resolve next process
 
-    // Pending learned-bass note-ons (set by triggerLearnedBassNote, consumed in process).
-    // A large block can contain more than one 16th; keep a fixed queue, no heap.
-    static constexpr int kMaxPendingLearned = 8;
-    struct PendingLearnedNote
-    {
-        bool active = false;
-        int midi = 40;
-        float vel = 0.58f;
-        int offset = 0;
-        int duration = 10000;
-        // Sustain until the guitarist stops (live mirror). A held note has no
-        // scheduled note-off; it is released when the guitar goes silent, or
-        // closed by the next attack / a seek flush.
-        bool hold = false;
-    };
-    std::array<PendingLearnedNote, kMaxPendingLearned> pendingLearned_{};
+    // Pending learned-bass note-ons live in BassVoice (fixed queue, no heap).
 
     // Transition crash state. The sounding note-off lives on drumNoteOffSample[kCrashNote]
     // (T1.1); crashNoteOffSample mirrors that slot so seek/silence flushes stay explicit

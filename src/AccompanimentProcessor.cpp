@@ -2383,7 +2383,8 @@ void AccompanimentProcessor::emitFrozenRiff(const PhraseLearner::LearnedRiff& ri
             continue;
         const int offset = static_cast<int>(absSample - clockSample);
         const int note = riff.midi[static_cast<size_t>(s)] + bassTranspose;
-        patternPlayer.triggerLearnedBassNote(note, 0.58f, offset, duration);
+        patternPlayer.triggerLearnedBassNote(note, 0.58f, offset, duration,
+                                             /*hold=*/false, PatternPlayer::BassSource::Frozen);
     }
 }
 

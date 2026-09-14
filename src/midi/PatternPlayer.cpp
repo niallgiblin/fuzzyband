@@ -86,9 +86,6 @@ void PatternPlayer::reset()
     bassSemitoneOffset = 0;
     bassRootMidi = 40;  // E2
     bassNotesPerBar = 2;
-    bassLastMidiNote = 40;
-    bassNoteOffMidi = 40;
-    bassNoteOffSample = -1;
     crashNoteOffSample = -1;
     clickNoteOffSample = -1;
     clickNoteOffNote = kClickStickNote;
@@ -98,17 +95,11 @@ void PatternPlayer::reset()
     bassLeadInArmed = false;
     beatGridBassEnabled_ = true;
     beatGridBassPrev_ = false;
-    guitarAudible_ = false;
-    bassNoteHeld_ = false;
-    mirrorVoiceEndSample_ = -1;
-    learnedBassNotes_ = 0;
-    gridBassNotes_ = 0;
+    bassVoice.reset();
     pendingBarFillIndex_ = -1;
     barFillStartBeat_ = -1.0;
     clearDrumNoteOffTable();
     grooveGrid = {};
-    for (auto& n : pendingLearned_)
-        n = {};
     sampleCounter = 0;
     expectedHostSample = 0;
     lastHostSample = -1;
@@ -151,32 +142,6 @@ void PatternPlayer::setBassParams(int rootMidi, int notesPerBar) noexcept
 {
     bassRootMidi = juce::jlimit(28, 55, rootMidi);  // E1 (28) to G3 (55)
     bassNotesPerBar = juce::jlimit(1, 8, notesPerBar);
-}
-
-void PatternPlayer::triggerLearnedBassNote(int midiNote, float velocity, int sampleOffset, int durationSamples, bool hold) noexcept
-{
-    PendingLearnedNote note;
-    note.active = true;
-    int n = midiNote;
-    while (n < 28) n += 12;
-    while (n > 55) n -= 12;
-    note.midi = juce::jlimit(28, 55, n);
-    note.vel = juce::jlimit(0.0f, 1.0f, velocity);
-    note.offset = sampleOffset;
-    note.duration = juce::jmax(100, durationSamples);
-    note.hold = hold;
-    for (auto& slot : pendingLearned_)
-    {
-        if (!slot.active)
-        {
-            slot = note;
-            ++learnedBassNotes_;   // diagnostics (see getLearnedBassNoteCount)
-            return;
-        }
-    }
-    // T8.2: the queue is full — drop the *newest* note so already-scheduled
-    // hits keep their slots. Overwriting back() used to silence a queued note.
-    DBG("PatternPlayer: pending learned queue full; dropping newest note");
 }
 
 void PatternPlayer::queueGrooveCommit(const GrooveCommit& commit) noexcept
@@ -541,15 +506,9 @@ void PatternPlayer::clearDrumNoteOffTable() noexcept
 void PatternPlayer::flushAllPendingNoteOffs(juce::MidiBuffer& midi, int sampleOffset) noexcept
 {
     const int off = juce::jmax(0, sampleOffset);
-    if (bassNoteOffSample >= 0)
-    {
-        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassNoteOffMidi), off);
-        bassNoteOffSample = -1;
-    }
     // A seek/silence drops the mirror's claim on the bass voice, so the grid
     // fallback is not left muted against a stale timeline position.
-    mirrorVoiceEndSample_ = -1;
-    bassNoteHeld_ = false;
+    bassVoice.flushAll(midi, off);
     if (clickNoteOffSample >= 0)
     {
         midi.addEvent(juce::MidiMessage::noteOff(kDrumChannel, clickNoteOffNote), off);
@@ -1024,8 +983,7 @@ void PatternPlayer::emitBassRange(juce::MidiBuffer& midi,
                                   double beatEnd,
                                   const MidiPattern& pattern,
                                   int sampleOffsetBase,
-                                  bool clampEarly,
-                                  int64_t suppressBeforeAbs)
+                                  bool clampEarly)
 {
     if (beatEnd <= beatStart + 1.0e-9 || numSamples <= 0)
         return;
@@ -1034,69 +992,10 @@ void PatternPlayer::emitBassRange(juce::MidiBuffer& midi,
     // engine (A1.2) builds one from the guitarist's root.
     if (!pattern.bassEvents.empty())
         emitPatternBass(midi, numSamples, beatStart, beatEnd, pattern,
-                        sampleOffsetBase, clampEarly, suppressBeforeAbs);
+                        sampleOffsetBase, clampEarly);
     else
         emitHarmonicBass(midi, numSamples, beatStart, beatEnd,
-                         sampleOffsetBase, clampEarly, suppressBeforeAbs);
-}
-
-void PatternPlayer::emitBassNote(juce::MidiBuffer& midi,
-                                 int numSamples,
-                                 int64_t blockStart,
-                                 int outNote,
-                                 int vel,
-                                 int off,
-                                 int durSamps,
-                                 int sampleOffsetBase,
-                                 bool forceRetrigger,
-                                 bool hold)
-{
-    // Monophonic bass: close any previously scheduled note before the new one.
-    // The deferred note-off carries the correct note number (bassNoteOffMidi),
-    // so alternating/interval bass lines never leave a note stuck on.
-    if (bassNoteOffSample >= 0)
-    {
-        const int64_t newOnAbs = blockStart + static_cast<int64_t>(off);
-        // Close at the earlier of the scheduled end and the new onset so a
-        // ringing mirror is cut at the grid hit (T5.3) and a note that already
-        // ended in this block is not held past its gate.
-        const int64_t closeAbs = (forceRetrigger && bassNoteOffSample > newOnAbs)
-            ? newOnAbs
-            : juce::jmin(bassNoteOffSample, newOnAbs);
-        const int closeAt = juce::jlimit(0, numSamples - 1,
-                                         static_cast<int>(closeAbs - blockStart));
-        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassNoteOffMidi),
-                      sampleOffsetBase + closeAt);
-        bassNoteOffSample = -1;
-        bassNoteHeld_ = false;
-    }
-
-    midi.addEvent(juce::MidiMessage::noteOn(kBassChannel, outNote, static_cast<float>(vel) / 127.0f),
-                  sampleOffsetBase + off);
-    bassLastMidiNote = outNote;
-
-    if (hold)
-    {
-        // Sustain: no scheduled note-off. Released when the guitarist stops
-        // (or closed by the next attack / a flush).
-        bassNoteOffMidi = outNote;
-        bassNoteOffSample = std::numeric_limits<int64_t>::max();
-        bassNoteHeld_ = true;
-        return;
-    }
-
-    const int64_t noteOffAbs = blockStart + static_cast<int64_t>(off) + static_cast<int64_t>(durSamps);
-    if (noteOffAbs < blockStart + numSamples)
-    {
-        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, outNote),
-                      sampleOffsetBase + juce::jlimit(0, numSamples - 1,
-                          static_cast<int>(noteOffAbs - blockStart)));
-    }
-    else
-    {
-        bassNoteOffMidi = outNote;
-        bassNoteOffSample = noteOffAbs;
-    }
+                         sampleOffsetBase, clampEarly);
 }
 
 void PatternPlayer::emitPatternBass(juce::MidiBuffer& midi,
@@ -1105,8 +1004,7 @@ void PatternPlayer::emitPatternBass(juce::MidiBuffer& midi,
                                     double beatEnd,
                                     const MidiPattern& pattern,
                                     int sampleOffsetBase,
-                                    bool clampEarly,
-                                    int64_t suppressBeforeAbs)
+                                    bool clampEarly)
 {
     const double patternLenBeats = static_cast<double>(pattern.lengthInBars) * 4.0;
     const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
@@ -1148,8 +1046,6 @@ void PatternPlayer::emitPatternBass(juce::MidiBuffer& midi,
             const int off = placeEvent(absSample, numSamples, slackSamples, clampEarly);
             if (off < 0)
                 continue;   // belongs to a neighbouring block
-            if (suppressBeforeAbs >= 0 && absSample < suppressBeforeAbs)
-                continue;   // live mirror owns the voice here — this is a gap note
 
             // Transpose the authored interval pattern to the live root, folding
             // back into the playable bass register.
@@ -1171,9 +1067,11 @@ void PatternPlayer::emitPatternBass(juce::MidiBuffer& midi,
                 static_cast<double>(ev.durationBeats) * sectionBassGate() * samplesPerBeat)));
 
             // T5.3: retrigger — close a ringing mirror/previous grid note at this
-            // hit rather than dropping the authored event.
-            ++gridBassNotes_;   // diagnostics (see getGridBassNoteCount)
-            emitBassNote(midi, numSamples, blockStart, outNote, vel, off, durSamps, 0, true);
+            // hit rather than dropping the authored event. BassVoice gates the
+            // event out when the mirror/frozen voice still owns the instant.
+            bassVoice.emitGrid(midi, numSamples, blockStart, absSample, outNote, vel,
+                               off, durSamps, 0, /*forceRetrigger=*/true,
+                               BassSource::GridAuthored);
         }
     }
 }
@@ -1183,8 +1081,7 @@ void PatternPlayer::emitHarmonicBass(juce::MidiBuffer& midi,
                                      double beatStart,
                                      double beatEnd,
                                      int sampleOffsetBase,
-                                     bool clampEarly,
-                                     int64_t suppressBeforeAbs)
+                                     bool clampEarly)
 {
     if (beatEnd <= beatStart + 1.0e-9 || bassNotesPerBar <= 0)
         return;
@@ -1245,8 +1142,6 @@ void PatternPlayer::emitHarmonicBass(juce::MidiBuffer& midi,
         const int off = placeEvent(absSample, numSamples, slackSamples, clampEarly);
         if (off < 0)
             continue;   // belongs to a neighbouring block
-        if (suppressBeforeAbs >= 0 && absSample < suppressBeforeAbs)
-            continue;   // live mirror owns the voice here — this is a gap note
 
         // 85% gate (kept from the old engine, now a named parameter scaled by section).
         const double noteDuration = beatsPerNote * sectionBassGate();
@@ -1254,8 +1149,9 @@ void PatternPlayer::emitHarmonicBass(juce::MidiBuffer& midi,
 
         // T5.3: retrigger a ringing mirror at the grid hit so a pickup on the
         // "and of 4" cannot swallow the next downbeat root.
-        ++gridBassNotes_;   // diagnostics (see getGridBassNoteCount)
-        emitBassNote(midi, numSamples, blockStart, outNote, vel, off, durSamps, 0, true);
+        bassVoice.emitGrid(midi, numSamples, blockStart, absSample, outNote, vel,
+                           off, durSamps, 0, /*forceRetrigger=*/true,
+                           BassSource::GridHarmonic);
     }
 }
 
@@ -1365,8 +1261,7 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
             pendingPatternIndex = -1;
             pendingGrooveCommitValid = false;
             pendingGrooveCommit = GrooveCommit{};
-            for (auto& p : pendingLearned_)
-                p = {};
+            bassVoice.clearPending();
             armCrashPending = false;
         }
     }
@@ -1386,8 +1281,7 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         pendingBarFillIndex_ = -1;
         barFillStartBeat_ = -1.0;
         bassLeadInArmed = false;
-        for (auto& p : pendingLearned_)
-            p = {};
+        bassVoice.clearPending();
         wasClickTrack_ = false;
         return;
     }
@@ -1513,9 +1407,9 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         emitMicroFill(midi, numSamples, beatStart, beatEnd, 0);
 
     // Bass note-offs that expire without a retrigger are flushed after all
-    // bass emission (below). emitBassNote closes a ringing note at the new
-    // onset when a grid/mirror hit arrives first (T5.3), so an early flush
-    // here would leave a later off that kills the retriggered root.
+    // bass emission (below). BassVoice closes a ringing note at the new onset
+    // when a grid/mirror hit arrives first (T5.3), so an early flush here would
+    // leave a later off that kills the retriggered root.
 
     // Section hand-off bass pickup (A1.2 lead-in): when armed (set by the
     // processor on a section's last bar), play a short approach note on the "and"
@@ -1536,99 +1430,53 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
             int pickupNote = bassRootMidi + bassSemitoneOffset - 5;
             while (pickupNote < 28) pickupNote += 12;
             while (pickupNote > 55) pickupNote -= 12;
-            emitBassNote(midi, numSamples, sampleCounter, pickupNote, 96, off, durSamps, 0, true);
+            bassVoice.emitPickup(midi, numSamples, sampleCounter, pickupNote, 96, off, durSamps);
             bassLeadInArmed = false;
         }
     }
 
     // Learned bass note-ons (RiffA / RiffBLocked snapshots, or live listen).
     // Duration is already gated by the caller (T5.2: onset × gate16 × 90%,
-    // kBassGate for live mirror). Do not multiply sectionBassGate() again.
-    {
-        PendingLearnedNote notes[kMaxPendingLearned];
-        int n = 0;
-        for (auto& p : pendingLearned_)
-        {
-            if (!p.active)
-                continue;
-            notes[n++] = p;
-            p.active = false;
-        }
-        std::sort(notes, notes + n, [](const PendingLearnedNote& a, const PendingLearnedNote& b) {
-            return a.offset < b.offset;
-        });
-        for (int i = 0; i < n; ++i)
-        {
-            const int off = juce::jlimit(0, numSamples - 1, notes[i].offset);
-            const int vel = juce::jlimit(1, 127, static_cast<int>(std::lround(notes[i].vel * 127.0f)));
-            const int durSamps = juce::jmax(1, notes[i].duration);
-            const bool hold = notes[i].hold && guitarAudible_;
-            emitBassNote(midi, numSamples, sampleCounter, notes[i].midi, vel, off, durSamps, 0,
-                         true, hold);
-            // The learned/mirrored note owns the monophonic bass voice until it
-            // ends; a held note owns it until the guitar stops.
-            mirrorVoiceEndSample_ = hold
-                ? std::numeric_limits<int64_t>::max()
-                : juce::jmax(mirrorVoiceEndSample_,
-                             sampleCounter + static_cast<int64_t>(off) + static_cast<int64_t>(durSamps));
-        }
-    }
+    // kBassGate for live mirror). BassVoice owns the queue, the monophonic
+    // close/retrigger and the grid gate.
+    bassVoice.flushLearned(midi, numSamples, sampleCounter);
 
     // Guitar-stop release. A held mirror note sustains through the player's
     // sustain; when the guitarist actually stops, the note ends so the harmony
     // fallback below can take over. This is the whole point of the
     // "harmony is a total fallback" contract: a *sustain* is not a gap.
-    if (bassNoteHeld_ && !guitarAudible_)
-    {
-        if (bassNoteOffSample >= 0)
-        {
-            midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassNoteOffMidi), 0);
-            bassNoteOffSample = -1;
-        }
-        bassNoteHeld_ = false;
-        mirrorVoiceEndSample_ = sampleCounter;
-    }
+    bassVoice.releaseHeldIfStopped(midi, sampleCounter);
 
     // Listen mixer (Play / RiffBListen): authored pattern bass when present,
     // harmonic fallback otherwise (T5.1). Frozen riffs leave this off and play
     // only the snapshot via triggerLearnedBassNote. Pattern 0 must not mute
     // this path — phase owns the grid, not the kit index.
     //
-    // The live mirror is the primary bass part: while its note is sounding the
-    // grid is muted (`suppressBeforeAbs`), so the harmony engine is heard only
-    // in the gaps between mirrored notes — the fallback the guitarist wants
-    // before a riff is learned, not a layer under it.
+    // The live mirror is the primary bass part: while its note is sounding,
+    // BassVoice gates the grid out, so the harmony engine is heard only in the
+    // gaps between mirrored notes — the fallback the guitarist wants before a
+    // riff is learned, not a layer under it.
     if (beatGridBassEnabled_)
     {
         // A phase that switches the grid bass on has no earlier block to own an
         // event microtiming pulled before this one, so allow a one-block clamp.
         const bool gridBassOnset = !beatGridBassPrev_;
         const MidiPattern& bassPat = library->getPattern(activePatternIndex);
-        const int64_t suppressBefore = mirrorVoiceEndSample_;
         if (changeBeat < 0.0)
-            emitBassRange(midi, numSamples, beatStart, beatEnd, bassPat, 0, gridBassOnset,
-                          suppressBefore);
+            emitBassRange(midi, numSamples, beatStart, beatEnd, bassPat, 0, gridBassOnset);
         else
         {
-            emitBassRange(midi, numSamples, beatStart, changeBeat, bassPat, 0, gridBassOnset,
-                          suppressBefore);
+            emitBassRange(midi, numSamples, beatStart, changeBeat, bassPat, 0, gridBassOnset);
             const int bassBase = juce::jmax(0,
                 static_cast<int>(std::llround((changeBeat - beatStart) * samplesPerBeat)));
-            emitBassRange(midi, numSamples, changeBeat, beatEnd, bassPat, bassBase, false,
-                          suppressBefore);
+            emitBassRange(midi, numSamples, changeBeat, beatEnd, bassPat, bassBase, false);
         }
     }
     beatGridBassPrev_ = beatGridBassEnabled_;
 
     // Close a ringing bass note whose natural end falls in this block and was
     // not cut short by a later retrigger.
-    if (bassNoteOffSample >= 0 && bassNoteOffSample < sampleCounter + numSamples)
-    {
-        const int off = juce::jlimit(0, numSamples - 1,
-                                     static_cast<int>(bassNoteOffSample - sampleCounter));
-        midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassNoteOffMidi), off);
-        bassNoteOffSample = -1;
-    }
+    bassVoice.closeNaturalNoteOff(midi, numSamples, sampleCounter);
 
     // Release drum notes whose gate expires in this block, at their exact sample.
     flushDueDrumNoteOffs(midi, numSamples, sampleCounter);
