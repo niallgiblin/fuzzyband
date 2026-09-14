@@ -21,6 +21,18 @@ public:
     void process(const float* audioData, int numSamples);
 
     float getRmsEnergy() const { return rmsEnergy; }
+
+    /**
+     * @brief Fast (~20 ms) RMS for note-onset detection.
+     *
+     * `getRmsEnergy()` uses a 0.1 s window: stable enough to be the loudness
+     * signal for the structure tagger, but far too long to resolve note attacks
+     * — at 120 BPM a 16th note lasts 125 ms, so a 100 ms window never sees a
+     * trough between notes and the attack detector had to lean on stale-state
+     * artefacts to fire at all (and then fired several times per note). This
+     * window is the onset signal; it keeps the same ×4 scale and clamp.
+     */
+    float getOnsetRmsEnergy() const { return onsetRmsEnergy; }
     float getSpectralCentroid() const { return spectralCentroid; }
     float getHighFreqFlux() const { return highFreqFlux; }
     float getPeakRms() const noexcept { return peakRmsEnvelope; }
@@ -45,9 +57,16 @@ private:
     int rmsWrite = 0;
     int rmsFill = 0;
 
+    // Fast onset-detection window (see getOnsetRmsEnergy). Fixed in time, so it
+    // does not change with the host buffer size.
+    std::vector<float> onsetWindow;
+    int onsetWrite = 0;
+    int onsetFill = 0;
+
     double sampleRate = 44100.0;
 
     float rmsEnergy = 0.0f;
+    float onsetRmsEnergy = 0.0f;
     float spectralCentroid = 0.0f;
     float highFreqFlux = 0.0f;
     float peakRmsEnvelope = 0.0f;     // slow-decay peak of rmsEnergy

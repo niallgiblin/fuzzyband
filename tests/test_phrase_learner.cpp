@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <set>
 #include <vector>
 
 #include "analysis/PhraseLearner.h"
@@ -41,12 +42,18 @@ int feedUntilLocked(PhraseLearner& learner, float pitch, int maxAttacks = 12)
     return blocks;
 }
 
-/** @brief EnergyAnalyser-style 0.1 s RMS window over raw audio. */
+/**
+ * @brief EnergyAnalyser-style fast onset RMS window over raw audio.
+ *
+ * Matches `EnergyAnalyser::getOnsetRmsEnergy()` (a 0.02 s window, ×4). The
+ * learner is fed the FAST window, not the 0.1 s structure RMS: a 0.1 s window
+ * cannot show the trough between 16ths at 120 BPM.
+ */
 class RmsWindow
 {
 public:
     explicit RmsWindow(double sampleRate)
-        : win(static_cast<size_t>(static_cast<int>(0.1 * sampleRate)), 0.0f) {}
+        : win(static_cast<size_t>(static_cast<int>(0.02 * sampleRate)), 0.0f) {}
 
     float push(float s)
     {
@@ -819,4 +826,53 @@ TEST_CASE("T6.3: held lock drift-unlocks after 4 bars of non-matching attacks",
 
     feedDeviantAttacks(static_cast<int64_t>(2000) * kBlock, 20);
     REQUIRE_FALSE(learner.isLocked());
+}
+
+TEST_CASE("Mirror note follows the played pitch contour, one note per attack",
+          "[phrase][bass][mirror]")
+{
+    // The bass mirror must reproduce what the guitarist plays: the pitch class
+    // of each attack, and one bass note per attack. Two regressions are guarded:
+    //  - the pitch collapsing to a root drone, and
+    //  - the attack detector re-firing through a single note's rise (the live
+    //    mirror machine-gunned ~4 notes per guitar note).
+    PhraseLearner learner;
+    learner.prepare(kSr);
+    learner.setAutoLockEnabled(false);  // Play: mirror, never freeze
+
+    RmsWindow win(kSr);
+    const double eighth = 0.25;                 // 8th note at 120 BPM (seconds)
+    const int notes = 24;
+    const int64_t total = static_cast<int64_t>(notes) * static_cast<int64_t>(eighth * kSr);
+    std::vector<int> mirrored;
+
+    int64_t sample = 0;
+    while (sample < total)
+    {
+        const int noteIndex = static_cast<int>(static_cast<double>(sample) / (eighth * kSr));
+        const bool loud = (noteIndex % 2) == 0;
+        const float pitch = loud ? 36.0f : 43.0f;   // C2 / G2
+        float rms = 0.0f;
+        for (int i = 0; i < kBlock; ++i)
+        {
+            const int64_t abs = sample + i;
+            const double intoNote = std::fmod(static_cast<double>(abs), eighth * kSr) / kSr;
+            const float env = static_cast<float>(std::exp(-intoNote / 0.03));
+            const double f = loud ? 65.406 : 98.0;
+            rms = win.push(static_cast<float>(0.5 * env
+                        * std::sin(2.0 * M_PI * f * static_cast<double>(abs) / kSr)));
+        }
+        const auto bass = learner.process(sample, rms, pitch, 0.8f, kBpm, kBlock);
+        if (bass.trigger)
+            mirrored.push_back(bass.midiNote);
+        sample += kBlock;
+    }
+
+    std::set<int> distinct(mirrored.begin(), mirrored.end());
+    INFO("mirrored " << mirrored.size() << " notes for " << notes << " attacks");
+    REQUIRE(distinct.count(36) > 0);   // the low note of the contour
+    REQUIRE(distinct.count(43) > 0);   // the high note of the contour
+    // One bass note per attack, not a machine-gun burst through each rise.
+    REQUIRE(mirrored.size() >= static_cast<size_t>(notes) / 2);
+    REQUIRE(mirrored.size() <= static_cast<size_t>(notes + notes / 3));
 }

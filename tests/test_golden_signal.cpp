@@ -1,7 +1,7 @@
 /**
  * @file
  * @brief Golden-signal tests — real recorded guitar through the exact analysis
- *        pipeline (0.1 s RMS window + PitchEstimator + PhraseLearner).
+ *        pipeline (0.02 s onset RMS window + PitchEstimator + PhraseLearner).
  *
  * These catch the recurring *layer* regressions invisible to synthetic tests:
  * a too-strict attack detector, a pitch-confidence gate that starved attacks,
@@ -97,12 +97,16 @@ bool readWav16Mono(const std::string& path, PcmMono& out)
     return true;
 }
 
-/** @brief EnergyAnalyser-equivalent 0.1 s RMS window (×4, clamped [0,1]). */
+/**
+ * @brief EnergyAnalyser-equivalent fast onset RMS window (0.02 s, ×4, clamped).
+ *
+ * The learner is fed `getOnsetRmsEnergy()`, not the 0.1 s structure RMS.
+ */
 class RmsWindow
 {
 public:
     explicit RmsWindow(double sampleRate)
-        : win(static_cast<size_t>(static_cast<int>(0.1 * sampleRate)), 0.0f) {}
+        : win(static_cast<size_t>(static_cast<int>(0.02 * sampleRate)), 0.0f) {}
 
     void push(float s)
     {

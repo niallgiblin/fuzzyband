@@ -25,6 +25,14 @@ void EnergyAnalyser::prepare(double newSampleRate, int maxBlockSize)
     rmsWrite = 0;
     rmsFill = 0;
 
+    // ~20 ms: short enough to show the trough between 16ths at 120 BPM (125 ms)
+    // so the attack detector sees a real decay→rise edge.
+    const int onsetLen = juce::jmax(1, static_cast<int>(0.02 * sampleRate));
+    onsetWindow.assign(static_cast<size_t>(onsetLen), 0.0f);
+    onsetWrite = 0;
+    onsetFill = 0;
+    onsetRmsEnergy = 0.0f;
+
     fifo.assign(static_cast<size_t>(fftSize), 0.0f);
     fifoWrite = 0;
     hopCounter = 0;
@@ -106,6 +114,11 @@ void EnergyAnalyser::process(const float* audioData, int numSamples)
         if (rmsFill < static_cast<int>(rmsWindow.size()))
             ++rmsFill;
 
+        onsetWindow[static_cast<size_t>(onsetWrite)] = s * s;
+        onsetWrite = (onsetWrite + 1) % static_cast<int>(onsetWindow.size());
+        if (onsetFill < static_cast<int>(onsetWindow.size()))
+            ++onsetFill;
+
         fifo[static_cast<size_t>(fifoWrite)] = s;
         fifoWrite = (fifoWrite + 1) % fftSize;
         ++hopCounter;
@@ -130,6 +143,17 @@ void EnergyAnalyser::process(const float* audioData, int numSamples)
     else
     {
         rmsEnergy = 0.0f;
+    }
+
+    // Fast onset RMS over the same scale.
+    {
+        float onsetAcc = 0.0f;
+        const int onsetLen = onsetFill;
+        for (int i = 0; i < onsetLen; ++i)
+            onsetAcc += onsetWindow[static_cast<size_t>(i)];
+        onsetRmsEnergy = (onsetLen > 0)
+            ? juce::jlimit(0.0f, 1.0f, std::sqrt(onsetAcc / static_cast<float>(onsetLen)) * 4.0f)
+            : 0.0f;
     }
 
     // Slow-decay peak envelope tracking for relative SILENT detection

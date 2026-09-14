@@ -97,6 +97,7 @@ void PatternPlayer::reset()
     bassLeadInArmed = false;
     beatGridBassEnabled_ = true;
     beatGridBassPrev_ = false;
+    mirrorVoiceEndSample_ = -1;
     pendingBarFillIndex_ = -1;
     barFillStartBeat_ = -1.0;
     clearDrumNoteOffTable();
@@ -538,6 +539,9 @@ void PatternPlayer::flushAllPendingNoteOffs(juce::MidiBuffer& midi, int sampleOf
         midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassNoteOffMidi), off);
         bassNoteOffSample = -1;
     }
+    // A seek/silence drops the mirror's claim on the bass voice, so the grid
+    // fallback is not left muted against a stale timeline position.
+    mirrorVoiceEndSample_ = -1;
     if (clickNoteOffSample >= 0)
     {
         midi.addEvent(juce::MidiMessage::noteOff(kDrumChannel, clickNoteOffNote), off);
@@ -1012,7 +1016,8 @@ void PatternPlayer::emitBassRange(juce::MidiBuffer& midi,
                                   double beatEnd,
                                   const MidiPattern& pattern,
                                   int sampleOffsetBase,
-                                  bool clampEarly)
+                                  bool clampEarly,
+                                  int64_t suppressBeforeAbs)
 {
     if (beatEnd <= beatStart + 1.0e-9 || numSamples <= 0)
         return;
@@ -1020,9 +1025,11 @@ void PatternPlayer::emitBassRange(juce::MidiBuffer& midi,
     // T5.1: authored bass lines play when present; otherwise the harmonic
     // engine (A1.2) builds one from the guitarist's root.
     if (!pattern.bassEvents.empty())
-        emitPatternBass(midi, numSamples, beatStart, beatEnd, pattern, sampleOffsetBase, clampEarly);
+        emitPatternBass(midi, numSamples, beatStart, beatEnd, pattern,
+                        sampleOffsetBase, clampEarly, suppressBeforeAbs);
     else
-        emitHarmonicBass(midi, numSamples, beatStart, beatEnd, sampleOffsetBase, clampEarly);
+        emitHarmonicBass(midi, numSamples, beatStart, beatEnd,
+                         sampleOffsetBase, clampEarly, suppressBeforeAbs);
 }
 
 void PatternPlayer::emitBassNote(juce::MidiBuffer& midi,
@@ -1078,7 +1085,8 @@ void PatternPlayer::emitPatternBass(juce::MidiBuffer& midi,
                                     double beatEnd,
                                     const MidiPattern& pattern,
                                     int sampleOffsetBase,
-                                    bool clampEarly)
+                                    bool clampEarly,
+                                    int64_t suppressBeforeAbs)
 {
     const double patternLenBeats = static_cast<double>(pattern.lengthInBars) * 4.0;
     const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
@@ -1120,6 +1128,8 @@ void PatternPlayer::emitPatternBass(juce::MidiBuffer& midi,
             const int off = placeEvent(absSample, numSamples, slackSamples, clampEarly);
             if (off < 0)
                 continue;   // belongs to a neighbouring block
+            if (suppressBeforeAbs >= 0 && absSample < suppressBeforeAbs)
+                continue;   // live mirror owns the voice here — this is a gap note
 
             // Transpose the authored interval pattern to the live root, folding
             // back into the playable bass register.
@@ -1152,7 +1162,8 @@ void PatternPlayer::emitHarmonicBass(juce::MidiBuffer& midi,
                                      double beatStart,
                                      double beatEnd,
                                      int sampleOffsetBase,
-                                     bool clampEarly)
+                                     bool clampEarly,
+                                     int64_t suppressBeforeAbs)
 {
     if (beatEnd <= beatStart + 1.0e-9 || bassNotesPerBar <= 0)
         return;
@@ -1213,6 +1224,8 @@ void PatternPlayer::emitHarmonicBass(juce::MidiBuffer& midi,
         const int off = placeEvent(absSample, numSamples, slackSamples, clampEarly);
         if (off < 0)
             continue;   // belongs to a neighbouring block
+        if (suppressBeforeAbs >= 0 && absSample < suppressBeforeAbs)
+            continue;   // live mirror owns the voice here — this is a gap note
 
         // 85% gate (kept from the old engine, now a named parameter scaled by section).
         const double noteDuration = beatsPerNote * sectionBassGate();
@@ -1528,28 +1541,41 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
             const int vel = juce::jlimit(1, 127, static_cast<int>(std::lround(notes[i].vel * 127.0f)));
             const int durSamps = juce::jmax(1, notes[i].duration);
             emitBassNote(midi, numSamples, sampleCounter, notes[i].midi, vel, off, durSamps, 0, true);
+            // The learned/mirrored note owns the monophonic bass voice until it
+            // ends; the grid line below only fills the gaps after that.
+            mirrorVoiceEndSample_ = juce::jmax(
+                mirrorVoiceEndSample_,
+                sampleCounter + static_cast<int64_t>(off) + static_cast<int64_t>(durSamps));
         }
     }
 
     // Listen mixer (Play / RiffBListen): authored pattern bass when present,
     // harmonic fallback otherwise (T5.1). Frozen riffs leave this off and play
-    // only the snapshot via triggerLearnedBassNote. A ringing mirror retriggers
-    // at the grid hit (T5.3) instead of swallowing it. Pattern 0 must not mute
+    // only the snapshot via triggerLearnedBassNote. Pattern 0 must not mute
     // this path — phase owns the grid, not the kit index.
+    //
+    // The live mirror is the primary bass part: while its note is sounding the
+    // grid is muted (`suppressBeforeAbs`), so the harmony engine is heard only
+    // in the gaps between mirrored notes — the fallback the guitarist wants
+    // before a riff is learned, not a layer under it.
     if (beatGridBassEnabled_)
     {
         // A phase that switches the grid bass on has no earlier block to own an
         // event microtiming pulled before this one, so allow a one-block clamp.
         const bool gridBassOnset = !beatGridBassPrev_;
         const MidiPattern& bassPat = library->getPattern(activePatternIndex);
+        const int64_t suppressBefore = mirrorVoiceEndSample_;
         if (changeBeat < 0.0)
-            emitBassRange(midi, numSamples, beatStart, beatEnd, bassPat, 0, gridBassOnset);
+            emitBassRange(midi, numSamples, beatStart, beatEnd, bassPat, 0, gridBassOnset,
+                          suppressBefore);
         else
         {
-            emitBassRange(midi, numSamples, beatStart, changeBeat, bassPat, 0, gridBassOnset);
+            emitBassRange(midi, numSamples, beatStart, changeBeat, bassPat, 0, gridBassOnset,
+                          suppressBefore);
             const int bassBase = juce::jmax(0,
                 static_cast<int>(std::llround((changeBeat - beatStart) * samplesPerBeat)));
-            emitBassRange(midi, numSamples, changeBeat, beatEnd, bassPat, bassBase, false);
+            emitBassRange(midi, numSamples, changeBeat, beatEnd, bassPat, bassBase, false,
+                          suppressBefore);
         }
     }
     beatGridBassPrev_ = beatGridBassEnabled_;

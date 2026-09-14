@@ -2475,18 +2475,25 @@ TEST_CASE("Processor pipeline: bass leaves the locked riff during a post-lock tr
 }
 
 // ── Play-mode bass: reflects the guitarist's root in the song's key ───────────
-TEST_CASE("Processor pipeline: play-mode bass follows the guitarist's root", "[integration][pipeline][play][bass]")
+TEST_CASE("Processor pipeline: play-mode bass mirrors the guitarist, harmony only fills gaps",
+          "[integration][pipeline][play][bass][mirror]")
 {
-    // Play mixer: a pick produces bass near the attack; between sparse picks,
-    // beats 1 and 3 still have the live root (C2=36). Not a leftover Record riff.
+    // Mirror-primary contract: while the guitarist is picking, the monophonic
+    // bass voice plays the mirrored notes. The authored/harmonic grid line is a
+    // gap-filler, so it must NOT layer a root/fifth line underneath the mirror
+    // (which made Play sound like root/harmony instead of a mirror).
     const double sr = 48000.0;
     const int block = 512;
-    const double samplesPerBeat = 60.0 / 120.0 * sr;
+    const double bpm = 120.0;
+    const double samplesPerBeat = 60.0 / bpm * sr;
+    const double eighth = samplesPerBeat / 2.0;
+
     AccompanimentProcessor proc;
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
-
-    proc.setCustomSongForm("VERSE:8");
+    if (auto* p = proc.getApvts().getParameter("genre"))
+        p->setValueNotifyingHost(p->convertTo0to1(0.0f));  // Rock
+    proc.setCustomSongForm("VERSE:32");
     proc.playActive.store(true, std::memory_order_release);
 
     int blockIdx = 0;
@@ -2502,7 +2509,7 @@ TEST_CASE("Processor pipeline: play-mode bass follows the guitarist's root", "[i
     }
     REQUIRE(proc.getSectionPhase() == 1);
 
-    // Decay so detectAttack's fall window is armed before the first pick.
+    // Arm the decay window before the riff starts.
     for (int i = 0; i < 16; ++i)
     {
         juce::AudioBuffer<float> buf(2, block);
@@ -2513,25 +2520,34 @@ TEST_CASE("Processor pipeline: play-mode bass follows the guitarist's root", "[i
         ++blockIdx;
     }
 
+    // 12 bars of 8th-note chugs alternating C2 (36) and G2 (43), each with a
+    // plucked envelope so the RMS onset detector sees independent attacks.
     const int64_t origin = static_cast<int64_t>(blockIdx) * block;
-    constexpr int kBars = 6;
-    constexpr int kPickBlocks = 4;
+    const int kBars = 12;
+    const int64_t collectSamples = static_cast<int64_t>(kBars * 4.0 * samplesPerBeat);
+    const int collectBlocks = static_cast<int>(std::ceil(
+        static_cast<double>(collectSamples) / block));
     std::set<int> bassNotes;
     std::vector<int64_t> bassAbs;
-    std::vector<int64_t> pickStarts;
-    for (int bar = 0; bar < kBars; ++bar)
-        pickStarts.push_back(origin
-            + static_cast<int64_t>(bar) * static_cast<int64_t>(4.0 * samplesPerBeat)
-            + static_cast<int64_t>(1.0 * samplesPerBeat));
-    const int collectBlocks = static_cast<int>(
-        std::ceil(static_cast<double>(kBars) * 4.0 * samplesPerBeat / block));
     for (int b = 0; b < collectBlocks; ++b)
     {
         const int64_t abs0 = static_cast<int64_t>(blockIdx) * block;
-        const int bar = static_cast<int>((abs0 - origin) / (4.0 * samplesPerBeat));
-        const float amp = ampForSustainPick(abs0, block, origin, samplesPerBeat, bar, kPickBlocks);
         juce::AudioBuffer<float> buf(2, block);
-        fillSineAmp(buf, blockIdx, block, sr, 65.406, amp);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* p = buf.getWritePointer(ch);
+            for (int i = 0; i < block; ++i)
+            {
+                const int64_t abs = abs0 + i;
+                const double relToOrigin = static_cast<double>(abs - origin);
+                const int eighthIdx = static_cast<int>(std::floor(relToOrigin / eighth));
+                const double freq = (eighthIdx % 2 == 0) ? 65.406 : 98.0;
+                const double intoNote = std::fmod(relToOrigin, eighth) / sr;
+                const double env = std::exp(-intoNote * 9.0);
+                p[i] = static_cast<float>(0.55 * env
+                       * std::sin(2.0 * M_PI * freq * static_cast<double>(abs) / sr));
+            }
+        }
         juce::MidiBuffer midi;
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
@@ -2546,47 +2562,102 @@ TEST_CASE("Processor pipeline: play-mode bass follows the guitarist's root", "[i
         ++blockIdx;
     }
 
+    const int numAttacks = static_cast<int>(std::floor(collectSamples / eighth));
+    // 1) The mirror pitches are present: both notes of the played contour.
+    {
+        std::string noteList;
+        for (int n : bassNotes) noteList += std::to_string(n) + " ";
+        INFO("bass notes: " << noteList);
+    }
     REQUIRE(bassNotes.count(36) > 0);
+    REQUIRE(bassNotes.count(43) > 0);
 
-    bool nearPick = false;
-    const int64_t window150 = static_cast<int64_t>(0.150 * sr);
-    for (const int64_t pick : pickStarts)
+    // 2) Every guitar attack is mirrored promptly (within 30 ms).
+    const int64_t window30 = static_cast<int64_t>(0.030 * sr);
+    int mirrored = 0;
+    for (int k = 0; k < numAttacks; ++k)
     {
+        const int64_t attack = origin + static_cast<int64_t>(k * eighth);
         for (const int64_t hit : bassAbs)
-        {
-            if (std::llabs(hit - pick) <= window150)
-                nearPick = true;
-        }
+            if (std::llabs(hit - attack) <= window30) { ++mirrored; break; }
     }
-    REQUIRE(nearPick);
+    INFO("mirrored " << mirrored << "/" << numAttacks);
+    REQUIRE(mirrored >= (numAttacks * 9) / 10);
 
-    const double startBeat = static_cast<double>(origin) / samplesPerBeat;
-    const double endBeat = startBeat + static_cast<double>(kBars) * 4.0;
-    const int bar0 = static_cast<int>(std::ceil(startBeat / 4.0 - 1.0e-9));
-    const int bar1 = static_cast<int>(std::floor(endBeat / 4.0 + 1.0e-9));
-    int beat1Hits = 0;
-    int beat3Hits = 0;
-    for (int bar = bar0; bar < bar1; ++bar)
+    // 3) No harmony layer: the bass is not ~4x denser than the guitar. With the
+    //    grid muted under the mirror, one attack produces ~one bass note (plus
+    //    occasional gap-fill), not a root/fifth line on every beat.
+    INFO("bassOns=" << bassAbs.size() << " attacks=" << numAttacks);
+    REQUIRE(bassAbs.size() <= static_cast<size_t>(numAttacks + numAttacks / 3));
+
+    proc.playActive.store(false, std::memory_order_release);
+    proc.releaseResources();
+}
+
+TEST_CASE("Processor pipeline: play-mode harmony resumes when the guitarist stops",
+          "[integration][pipeline][play][bass][mirror]")
+{
+    // The other half of the contract: the root/harmony line is the fallback, so
+    // it must come back in the gaps — before a riff is learned and after the
+    // guitarist stops — instead of the bass simply going silent.
+    const double sr = 48000.0;
+    const int block = 512;
+    const double samplesPerBeat = 60.0 / 120.0 * sr;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    proc.setCustomSongForm("VERSE:16");
+    proc.playActive.store(true, std::memory_order_release);
+
+    int blockIdx = 0;
+    const int maxWait = static_cast<int>(4.0 * sr / block);
+    for (int i = 0; i < maxWait && proc.getSectionPhase() != 1; ++i)
     {
-        for (const int64_t absSample : bassAbs)
-        {
-            double beat = static_cast<double>(absSample) / samplesPerBeat;
-            if (beat < static_cast<double>(bar) * 4.0
-                || beat >= static_cast<double>(bar + 1) * 4.0)
-                continue;
-            double beatInBar = std::fmod(beat, 4.0);
-            if (beatInBar < 0.0)
-                beatInBar += 4.0;
-            if (beatInBar >= 0.0 && beatInBar < 0.5)
-                ++beat1Hits;
-            if (beatInBar >= 1.7 && beatInBar < 2.5)
-                ++beat3Hits;
-        }
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, 65.406, 0.12f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        ++blockIdx;
     }
-    INFO("beat1Hits=" << beat1Hits << " beat3Hits=" << beat3Hits
-         << " bars=" << (bar1 - bar0));
-    REQUIRE(beat1Hits >= 3);
-    REQUIRE(beat3Hits >= 2);
+    REQUIRE(proc.getSectionPhase() == 1);
+
+    // One pick, then hold a quiet sustained tone: no further attacks.
+    auto feed = [&](float amp, int numBlocks, std::vector<int64_t>* bassAbs)
+    {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            fillSineAmp(buf, blockIdx, block, sr, 65.406, amp);
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            if (bassAbs != nullptr)
+                for (const auto meta : midi)
+                {
+                    const auto msg = meta.getMessage();
+                    if (msg.isNoteOn() && msg.getChannel() == 2 && msg.getVelocity() > 0)
+                        bassAbs->push_back(static_cast<int64_t>(blockIdx) * block
+                                           + meta.samplePosition);
+                }
+            ++blockIdx;
+        }
+    };
+
+    feed(0.04f, 16, nullptr);          // arm the decay window
+    feed(0.55f, 8, nullptr);           // the pick (one attack)
+    std::vector<int64_t> gapAbs;
+    const int64_t gapStart = static_cast<int64_t>(blockIdx) * block;
+    feed(0.12f, static_cast<int>(std::ceil(3.0 * samplesPerBeat / block)), &gapAbs);
+
+    // The mirror note was already sounding; in the following ~2.5 beats of no
+    // picking, the grid fallback must add notes.
+    int late = 0;
+    for (int64_t hit : gapAbs)
+        if (hit - gapStart > static_cast<int64_t>(0.9 * samplesPerBeat))
+            ++late;
+    INFO("gap bass onsets after the mirror note = " << late);
+    REQUIRE(late >= 1);
 
     proc.playActive.store(false, std::memory_order_release);
     proc.releaseResources();

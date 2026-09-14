@@ -1306,10 +1306,14 @@ TEST_CASE("T4.3: humanize=0 MIDI matches a second render and differs from humani
     REQUIRE(fa != fc);
 }
 
-TEST_CASE("T5.3: a pickup on the and-of-4 does not swallow the beat-1 grid root", "[midi][bass][t5.3]")
+TEST_CASE("T5.3: a ringing mirror owns the bass; the grid resumes after its gate", "[midi][bass][t5.3]")
 {
-    // Live-mirror notes are 0.85 beat long. A pick on beat 3.5 rings 0.35 beat
-    // past the next downbeat; before T5.3 the grid hit at beat 1 was skipped.
+    // Mirror-primary contract. Live-mirror notes are 0.85 beat long, so a pick
+    // on the "and of 4" rings past the next downbeat. The monophonic bass voice
+    // belongs to the mirror for that whole gate — the grid must not double it —
+    // and the grid fallback returns at the first grid hit after the gate.
+    // (Supersedes the pre-mirror-primary rule, which retriggered the grid at the
+    // downbeat and made Play sound like a root/harmony line, not a mirror.)
     MidiPatternLibrary lib;
     PatternPlayer player;
     player.setPatternLibrary(&lib);
@@ -1331,10 +1335,12 @@ TEST_CASE("T5.3: a pickup on the and-of-4 does not swallow the beat-1 grid root"
     const int duration = juce::jmax(1, static_cast<int>(0.85 * spb));
     const int pickup = static_cast<int>(std::lround(3.5 * spb));  // and of 4
     const int downbeat = static_cast<int>(std::lround(4.0 * spb)); // next bar beat 1
+    const int nextGrid = static_cast<int>(std::lround(6.0 * spb)); // bar 2 beat 3
     const int64_t span = static_cast<int64_t>(8.0 * spb);
 
     int pickupOns = 0;
-    int beat1Ons = 0;
+    int downbeatOns = 0;
+    int nextGridOns = 0;
     const int64_t win = static_cast<int64_t>(0.080 * kSr);
     for (int64_t pos = 0; pos < span; pos += block)
     {
@@ -1350,12 +1356,15 @@ TEST_CASE("T5.3: a pickup on the and-of-4 does not swallow the beat-1 grid root"
             const int64_t abs = pos + meta.samplePosition;
             if (std::llabs(abs - pickup) <= win)
                 ++pickupOns;
-            if (msg.getNoteNumber() == 40 && std::llabs(abs - downbeat) <= win)
-                ++beat1Ons;
+            if (std::llabs(abs - downbeat) <= win)
+                ++downbeatOns;
+            if (std::llabs(abs - nextGrid) <= win)
+                ++nextGridOns;
         }
     }
-    REQUIRE(pickupOns >= 1);
-    REQUIRE(beat1Ons >= 1);
+    REQUIRE(pickupOns >= 1);      // the mirrored pickup sounds
+    REQUIRE(downbeatOns == 0);    // no grid doubled inside the mirror's gate
+    REQUIRE(nextGridOns >= 1);    // the fallback resumes once the gate expires
 }
 
 TEST_CASE("T6.1: GrooveCommit alignToBeat applies at the next beat, not the next bar",

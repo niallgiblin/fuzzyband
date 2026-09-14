@@ -372,6 +372,14 @@ private:
     float prevRms_ = 0.0f;
     float rmsSmooth_ = 0.0f;    // fast EMA for the rise-vs-level ratio
     int fallCounter_ = 0;       // blocks since the last meaningful RMS decay
+    // Bottom of the current decay trough. A rise must clear this by a margin to
+    // count as an attack, so the ~7% ripple of a low note through the RMS window
+    // cannot retrigger the mirror part-way into a sustained pick.
+    float rmsFloorSinceArm_ = 0.0f;
+    // A decay→rise edge seen while the min-interval gate was still closed. Held
+    // until the gate opens (or silence), so a fast attack whose whole rise fits
+    // inside the gate is not lost.
+    bool risePending_ = false;
     int64_t lastAttackSample_ = 0;
     static constexpr int kMinAttackIntervalSamples = 2000;  // ~40ms min between attacks
     static constexpr int kFallWindowBlocks = 20;  // ~200 ms at 512/48k — decay recency window

@@ -2,6 +2,51 @@
 
 All notable changes to this project are documented here. For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Milestone/phase status: [`.gsd/STATE.md`](.gsd/STATE.md), [`.gsd/ROADMAP.md`](.gsd/ROADMAP.md).
 
+## [1.0.3] — The bass mirrors again
+
+Play-mode bass had drifted back to sounding like a root/harmony line. It was not
+a pitch problem: the mirror was firing on every attack, but the authored/harmonic
+grid line was playing **on top of it** — in a 12-bar 8th-note test, 128 guitar
+attacks produced **512** bass note-ons, three quarters of them the fixed harmony
+part. Because the bass voice is monophonic, that line kept retriggering and
+cutting the mirrored notes, so the guitarist heard root/fifth instead of a mirror.
+
+### The mirror owns the bass voice; harmony fills the gaps
+
+- **`PatternPlayer` now gates the grid line on the mirror's ring.** A learned or
+  mirrored note stamps `mirrorVoiceEndSample_` (onset + gate), and
+  `emitBassRange`/`emitPatternBass`/`emitHarmonicBass` skip any grid event that
+  falls before it. While the guitarist is picking, the bass plays the mirrored
+  rhythm/pitch; the authored/harmonic line is heard only in the gaps — before a
+  riff is learned and after the guitarist stops. The same 12-bar test now
+  produces one bass note per attack (120 notes for 128 attacks), tracking the
+  played two-note contour (C/G) with no third pitch. A seek or silence flushes
+  the claim so the fallback is never muted against a stale timeline position.
+- **Onset detection got its own fast envelope.** `EnergyAnalyser` now exposes
+  `getOnsetRmsEnergy()` (0.02 s) alongside the 0.1 s structure RMS, and
+  `PhraseLearner` is fed the fast one. A 0.1 s window cannot resolve a 16th note
+  at 120 BPM (125 ms), so the attack detector used to lean on a stale-state
+  artefact: it only evaluated the envelope while the min-interval gate was open,
+  which made the first block after the gate read as a rise. That fired ~4 times
+  through a single sustained note (the "bass machine-gun"). The envelope now
+  advances every block, a detected decay→rise edge is latched across the gate,
+  the edge is consumed on the accepted attack (one attack per fall), and a rise
+  must clear the trough so window ripple cannot retrigger it.
+- **Per-note mirror, verified.** New tests cover: Play-mode mirror density and
+  contour with harmony only in gaps; the harmony returning after the guitarist
+  stops; the `PhraseLearner` mirror following an alternating pitch contour at one
+  note per attack; and the pickup/mirror gate contract that supersedes T5.3.
+  Fixtures that simulated the learner's input now use the 0.02 s onset window to
+  match the engine.
+
+Suites: **269** unit / **79** integration, all passing. Perf unchanged
+(mean 0.50 ms, p99 0.81 ms).
+
+**Still open (investigated, not changed):** Play-mode drum selection rotates a
+precomputed per-section pool and only partly reacts to the guitarist, and the
+idle (unarmed) pattern readout is pinned to `P0` by design (T4.4). Both are
+unchanged in this release.
+
 ## [1.0.2] — Editor fits the screen, and stops reading as generated
 
 ### It fits the screen instead of running off it

@@ -261,14 +261,22 @@ private:
                        double beatEnd,
                        int sampleOffsetBase) noexcept;
 
-    /** @brief Route bass for a range: authored pattern bass, else harmonic fallback. */
+    /**
+     * @brief Route bass for a range: authored pattern bass, else harmonic fallback.
+     *
+     * @param suppressBeforeAbs Skip every event whose absolute sample is earlier
+     *        than this. The live riff mirror owns the monophonic bass voice while
+     *        it rings, so the grid line is a gap-filler, not a layer (pass the
+     *        mirror's ring end). -1 disables the gate.
+     */
     void emitBassRange(juce::MidiBuffer& midi,
                        int numSamples,
                        double beatStart,
                        double beatEnd,
                        const MidiPattern& pattern,
                        int sampleOffsetBase,
-                       bool clampEarly = false);
+                       bool clampEarly = false,
+                       int64_t suppressBeforeAbs = -1);
 
     /** @brief Emit authored @c pattern.bassEvents transposed to the live root (A1.1). */
     void emitPatternBass(juce::MidiBuffer& midi,
@@ -277,7 +285,8 @@ private:
                          double beatEnd,
                          const MidiPattern& pattern,
                          int sampleOffsetBase,
-                         bool clampEarly = false);
+                         bool clampEarly = false,
+                         int64_t suppressBeforeAbs = -1);
 
     /** @brief Harmonic bass engine: root/fourth/fifth/octave per section (A1.2). */
     void emitHarmonicBass(juce::MidiBuffer& midi,
@@ -285,7 +294,8 @@ private:
                           double beatStart,
                           double beatEnd,
                           int sampleOffsetBase,
-                          bool clampEarly = false);
+                          bool clampEarly = false,
+                          int64_t suppressBeforeAbs = -1);
 
     /**
      * @brief Emit one bass note. The bass is monophonic: a new note-on always
@@ -422,6 +432,12 @@ private:
 
     bool beatGridBassEnabled_ = true;   // Play / BListen grid fallback; off for frozen riffs
     bool beatGridBassPrev_ = false;     // previous block's grid-bass state (phase onset)
+
+    // Absolute sample until which the learned/mirrored bass voice is still
+    // ringing. While `sampleCounter < mirrorVoiceEndSample_` the grid line is
+    // muted so the mirror is the bass part and the harmony engine only fills
+    // the gaps (the riff mirror is the primary bass — user contract).
+    int64_t mirrorVoiceEndSample_ = -1;
     int pendingBarFillIndex_ = -1;      // 17/18/19 overlay; -1 = none
     double barFillStartBeat_ = -1.0;    // >=0: defer emit until this beat; -1 now; -2 resolve next process
 

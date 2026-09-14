@@ -37,6 +37,8 @@ void PhraseLearner::reset() noexcept
     prevRms_ = 0.0f;
     rmsSmooth_ = 0.0f;
     fallCounter_ = 0;
+    rmsFloorSinceArm_ = 0.0f;
+    risePending_ = false;
     lastAttackSample_ = 0;
     lastGoodPitchMidi_ = 36.0f;
     lastGoodPitchValid_ = false;
@@ -57,21 +59,38 @@ bool PhraseLearner::detectAttack(float rms) noexcept
     // Recent-decay tracking runs even for near-silent blocks: a note decaying
     // into silence IS a fall, and it arms the next note's attack.
     // T6.5: any decrease counts (was 3%). Fast 16ths at 200 BPM never drop 3%
-    // through the 100 ms RMS window, so the old threshold starved the detector.
+    // between notes of the onset envelope, so the old threshold starved the
+    // detector.
     const bool fell = (rms < prevRms);
     if (fell)
+    {
         fallCounter_ = kFallWindowBlocks;
+        // Start a fresh trough on the first falling block, then track its bottom.
+        rmsFloorSinceArm_ = rms;
+    }
     else if (fallCounter_ > 0)
+    {
         --fallCounter_;
+        if (rms < rmsFloorSinceArm_)
+            rmsFloorSinceArm_ = rms;
+    }
 
     if (rms < 0.002f)
+    {
+        risePending_ = false;
         return false;
+    }
 
     // A note attack is a sharp rise that follows a *recent decay* — real picking
     // produces per-note pulses (rise → fall → rise). Requiring a recent fall
     // separates real attacks from a constant tone, a slow swell, and RMS warm-up.
+    // `clearsFloor` additionally demands the rise be a real jump out of the
+    // trough: a low (drop-C) note ripples through the sliding onset window, and
+    // `rms > prevRms * 1.08` alone fired on that ripple, so a single pick
+    // mirrored as two or three notes.
     const bool sharpRise = (rms > rmsSmooth_ * 1.15f) || (rms > prevRms * 1.08f);
-    return (fallCounter_ > 0) && sharpRise && rms > 0.01f;
+    const bool clearsFloor = (rms > rmsFloorSinceArm_ * 1.15f + 0.005f);
+    return (fallCounter_ > 0) && sharpRise && clearsFloor && rms > 0.01f;
 }
 
 bool PhraseLearner::patternsMatch(int len, double bpm) const noexcept
@@ -556,8 +575,16 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
         silentBlockCount_ = 0;
     }
 
-    // Minimum interval between attacks
+    // Minimum interval between attacks. The envelope is advanced on EVERY block
+    // (otherwise the frozen prevRms_/rmsSmooth_ made the first block after the
+    // gate read as a rise and the mirror machine-gunned); the gate only decides
+    // *when* a latched edge is accepted, so a fast attack whose whole rise fits
+    // inside the gate is not lost.
     const bool canAttack = (sampleTime - lastAttackSample_) > kMinAttackIntervalSamples;
+    const bool riseEdge = detectAttack(rms);
+    if (riseEdge)
+        risePending_ = true;
+    const bool attack = canAttack && risePending_;
 
     // Hold the last confidently-estimated pitch: YIN confidence collapses at
     // loud/quiet transitions, so attacks there use the held pitch instead of
@@ -574,7 +601,6 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
     // minute and the mirror played a skeletal riff. The riff mirror is a rhythm
     // mirror; the note value comes from the held/confident pitch when available
     // and is corrected later by the live-root retune.
-    const bool attack = canAttack && detectAttack(rms);
     const float attackPitch = (pitchConf > 0.05f) ? pitchMidi : lastGoodPitchMidi_;
     const int attackBassNote = resolveBassNote(attackPitch, stablePitchClassOffset);
 
@@ -585,6 +611,11 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
     if (attack)
     {
         lastAttackSample_ = sampleTime;
+        // Consume the decay→rise edge: one attack per fall, so a slow swell or a
+        // long sustained note cannot retrigger the mirror while its level climbs.
+        fallCounter_ = 0;
+        risePending_ = false;
+        rmsFloorSinceArm_ = rms;
 
         // Record attack
         attacks_[attackWrite_].sample = sampleTime;

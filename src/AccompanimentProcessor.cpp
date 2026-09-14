@@ -1521,11 +1521,17 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
 
         // Do not wipe a user take on phrase-breath silence.
+        // The learner is fed the FAST onset RMS, not the 0.1 s structure RMS:
+        // note attacks live at 10-100 ms, and a 100 ms window cannot show the
+        // trough between 16ths (the attack detector then re-fired several times
+        // per note, so the mirror machine-gunned). Structure/loudness keeps the
+        // slow RMS.
+        const float onsetRms = energyAnalyser.getOnsetRmsEnergy();
         const auto bassNote = ((silentNow || !armActive) && !capturingNow)
             ? PhraseLearner::BassNote{}
             : phraseLearner.process(
                 hostSampleTime,
-                rms,
+                onsetRms,
                 pitchEstimator.getMidiNote(),
                 pitchEstimator.getConfidence(),
                 bpmForPlayer,

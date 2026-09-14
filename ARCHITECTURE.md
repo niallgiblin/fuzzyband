@@ -120,7 +120,10 @@ inter-onset-interval BPM) has been retired.
 current guitar state.
 
 **Outputs:**
-- `rmsEnergy` — 100ms rolling RMS, normalised 0..1
+- `rmsEnergy` — 100ms rolling RMS, normalised 0..1 (structure / loudness)
+- `onsetRmsEnergy` — 20ms rolling RMS, same scale; the signal fed to
+  `PhraseLearner` for note-onset detection (a 100ms window cannot resolve a 16th
+  note at 120 BPM)
 - `spectralCentroid` — weighted mean frequency (distinguishes palm mute from open chord)
 - `highFreqFlux` — flux in 2kHz+ band (presence / attack content)
 
@@ -131,6 +134,7 @@ public:
     void prepare(double sampleRate, int blockSize);
     void process(const float* audioData, int numSamples);
     float getRmsEnergy()       const;
+    float getOnsetRmsEnergy()  const;
     float getSpectralCentroid() const;
     float getHighFreqFlux()    const;
 };
