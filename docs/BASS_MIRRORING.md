@@ -90,6 +90,17 @@ attack detector stops firing, `mirrorVoiceEndSample_` stays `-1`, nothing is
 suppressed, and the grid line plays unfettered. **That is exactly the "bass is
 not mirroring, it's a root/harmony line" symptom.**
 
+**Update (1.0.6) — the grid is no longer gated on `mirrorVoiceEndSample_` alone.**
+`AccompanimentProcessor` also requires the guitarist to be **silent**:
+`setBeatGridBassEnabled(listenBass && !guitarAudible)`, where `guitarAudible` is
+the structure tagger's not-SILENT state. A live mirror note is emitted in `hold`
+mode (`triggerLearnedBassNote(..., hold=true)`) and sustained until the guitar
+stops, so a missed attack holds the last mirrored pitch instead of opening the
+harmony underneath the player. `mirrorVoiceEndSample_` is now only the
+pre-learning fallback *within* a silence; it no longer decides mirror-vs-harmony
+while the guitarist is playing. Measured effect: harmony is 0 in every audible
+window across the raw takes (was up to 26 notes per 30 s). See §3 (1.0.6).
+
 ---
 
 ## 3. The regression cycle — the attempts, in order
@@ -111,6 +122,7 @@ not mirroring, it's a root/harmony line" symptom.**
 | 1.0.1 | `db31dd7` | Riff phase / loop wrap / onset capture | — |
 | 1.0.3 | `5d5f410` | **Mirror fired on every attack but the grid line played on top** — 128 attacks produced 512 bass ons; the monophonic voice kept retriggering | Mirror owns the voice; grid gated on `mirrorVoiceEndSample_`. Onset window 0.1 s → 0.02 s |
 | — | `cf88acd` | — | **`mirrorWhileHeld_` removed again** — back to `state_ != State::Locked` (`PhraseLearner.cpp:691`) |
+| 1.0.6 | — | **Harmony played during audible sustains.** On `data/raw/sustain/sustain.wav`, a 30 s window with the guitar audible 41 % of the time produced **7 mirror notes vs 25 harmony notes** — "no attack detected" was being treated as a gap, so any sustain/legato phrase (or missed detection) opened the harmony | Grid/harmony gated on guitar **SILENCE** (`!guitarAudible`), not on attack absence; live mirror notes are **held** until the guitar stops; the fallback remembers the last played key |
 
 Two commits are literally named for the churn: `1d36e47 "Fix bass regression"`
 and `a898b06 "Still chasing bass regression"` (2026-09-04).

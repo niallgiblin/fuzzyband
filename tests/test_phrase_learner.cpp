@@ -3,7 +3,9 @@
 #include <set>
 #include <vector>
 
+#include "analysis/EnergyAnalyser.h"
 #include "analysis/PhraseLearner.h"
+#include "analysis/RmsWindow.h"
 
 namespace
 {
@@ -43,43 +45,6 @@ int feedUntilLocked(PhraseLearner& learner, float pitch, int maxAttacks = 12)
 }
 
 /**
- * @brief EnergyAnalyser-style fast onset RMS window over raw audio.
- *
- * Matches `EnergyAnalyser::getOnsetRmsEnergy()` (a 0.02 s window, ×4). The
- * learner is fed the FAST window, not the 0.1 s structure RMS: a 0.1 s window
- * cannot show the trough between 16ths at 120 BPM.
- */
-class RmsWindow
-{
-public:
-    explicit RmsWindow(double sampleRate)
-        : win(static_cast<size_t>(static_cast<int>(0.02 * sampleRate)), 0.0f) {}
-
-    float push(float s)
-    {
-        win[w] = s * s;
-        w = (w + 1) % static_cast<int>(win.size());
-        if (fill < static_cast<int>(win.size()))
-            ++fill;
-        return getRms();
-    }
-
-    /** @brief Current analyser-scaled RMS (×4, like EnergyAnalyser). */
-    float getRms() const
-    {
-        float acc = 0.0f;
-        for (int i = 0; i < fill; ++i)
-            acc += win[static_cast<size_t>(i)];
-        return (fill > 0) ? std::sqrt(acc / static_cast<float>(fill)) * 4.0f : 0.0f;
-    }
-
-private:
-    std::vector<float> win;
-    int w = 0;
-    int fill = 0;
-};
-
-/**
  * @brief Feed a realistic palm-muted 16th chug (sharp attack + decay through
  *        the analyser's RMS window) until the learner locks.
  * Pitch confidence is fed as 0 (distorted palm-mute guitar collapses YIN
@@ -90,7 +55,7 @@ private:
 bool lockOnRealisticChug(PhraseLearner& learner)
 {
     learner.prepare(kSr);
-    RmsWindow win(kSr);
+    RmsWindow win(kSr, EnergyAnalyser::kOnsetWindowSeconds);
     const double sixteenth = 0.125;  // 16th at 120 BPM
     const int total = static_cast<int>(3.0 * kSr / kBlock);
     for (int blk = 0; blk < total; ++blk)
@@ -119,7 +84,7 @@ bool lockOnRealisticChug(PhraseLearner& learner)
 int countImmediateTriggers(PhraseLearner& learner)
 {
     learner.prepare(kSr);
-    RmsWindow win(kSr);
+    RmsWindow win(kSr, EnergyAnalyser::kOnsetWindowSeconds);
     const double sixteenth = 0.125;
     const int total = static_cast<int>(3.0 * kSr / kBlock);
     int triggers = 0;
@@ -316,7 +281,8 @@ TEST_CASE("PhraseLearner: silence resets learning state", "[phrase][bass]")
     (void)feedUntilLocked(learner, 36.0f);
     REQUIRE(learner.isLocked());
 
-    // 200+ blocks of silence (kSilenceResetBlocks = 200) resets the learner.
+    // >2.0 s of silence (silenceResetSamples_, now time-based) resets the learner.
+    // 210 * 512 / 48000 = 2.24 s > 2.0 s.
     for (int i = 0; i < 210; ++i)
     {
         learner.process(static_cast<int64_t>(i) * kBlock, 0.0001f, 40.0f, 0.0f, kBpm, kBlock);
@@ -337,7 +303,7 @@ TEST_CASE("PhraseLearner: hold keeps the locked riff through silence (no reset)"
     REQUIRE(learner.isLocked());
     learner.setHoldActive(true);
 
-    // 210 blocks of silence (> kSilenceResetBlocks = 200) — held, so no reset.
+    // >2.0 s of silence (210 * 512 / 48000 = 2.24 s) — held, so no reset.
     for (int i = 0; i < 210; ++i)
         learner.process(static_cast<int64_t>(i) * kBlock, 0.0001f, 40.0f, 0.0f, kBpm, kBlock);
 
@@ -711,7 +677,7 @@ TEST_CASE("T6.5: 16th pulse train at 200 BPM yields ~4 attacks/beat; constant to
     PhraseLearner pulses;
     pulses.prepare(kSr);
     pulses.setAutoLockEnabled(false);
-    RmsWindow win(kSr);
+    RmsWindow win(kSr, EnergyAnalyser::kOnsetWindowSeconds);
     const float bpm = 200.0f;
     const double sixteenth = 60.0 / static_cast<double>(bpm) / 4.0;
     const double seconds = 2.0;
@@ -761,7 +727,7 @@ TEST_CASE("T6.2: match reference uses onsets only; a held note does not match a 
     held.prepare(kSr);
     held.setAutoLockEnabled(false);
     held.setMatchReference(riff);
-    RmsWindow win(kSr);
+    RmsWindow win(kSr, EnergyAnalyser::kOnsetWindowSeconds);
     int heldHits = 0;
     for (int blk = 0; blk < 400; ++blk)
     {
@@ -840,7 +806,7 @@ TEST_CASE("Mirror note follows the played pitch contour, one note per attack",
     learner.prepare(kSr);
     learner.setAutoLockEnabled(false);  // Play: mirror, never freeze
 
-    RmsWindow win(kSr);
+    RmsWindow win(kSr, EnergyAnalyser::kOnsetWindowSeconds);
     const double eighth = 0.25;                 // 8th note at 120 BPM (seconds)
     const int notes = 24;
     const int64_t total = static_cast<int64_t>(notes) * static_cast<int64_t>(eighth * kSr);
@@ -851,17 +817,17 @@ TEST_CASE("Mirror note follows the played pitch contour, one note per attack",
     {
         const int noteIndex = static_cast<int>(static_cast<double>(sample) / (eighth * kSr));
         const bool loud = (noteIndex % 2) == 0;
-        const float pitch = loud ? 36.0f : 43.0f;   // C2 / G2
-        float rms = 0.0f;
+        const float pitch = loud ? 36.0f : 43.0f;
         for (int i = 0; i < kBlock; ++i)
         {
             const int64_t abs = sample + i;
             const double intoNote = std::fmod(static_cast<double>(abs), eighth * kSr) / kSr;
             const float env = static_cast<float>(std::exp(-intoNote / 0.03));
             const double f = loud ? 65.406 : 98.0;
-            rms = win.push(static_cast<float>(0.5 * env
+            win.push(static_cast<float>(0.5 * env
                         * std::sin(2.0 * M_PI * f * static_cast<double>(abs) / kSr)));
         }
+        const float rms = win.getRms();
         const auto bass = learner.process(sample, rms, pitch, 0.8f, kBpm, kBlock);
         if (bass.trigger)
             mirrored.push_back(bass.midiNote);

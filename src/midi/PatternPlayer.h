@@ -129,8 +129,34 @@ public:
      */
     void setBeatGridBassEnabled(bool enabled) noexcept { beatGridBassEnabled_ = enabled; }
 
-    /** @brief Trigger a single bass note from PhraseLearner. Call from audio thread. */
-    void triggerLearnedBassNote(int midiNote, float velocity, int sampleOffset, int durationSamples) noexcept;
+    /**
+     * @brief Whether the guitarist is currently sounding (not SILENT).
+     *
+     * The harmony/grid line is a *total fallback*: it is heard only when the
+     * guitarist has stopped. A sustain is not a gap — while this is true the
+     * mirror owns the bass, and a held mirror note is sustained rather than
+     * released, so a missed attack can never open the harmony underneath the
+     * player (the recurring "bass goes into harmony" regression).
+     */
+    void setGuitarAudible(bool audible) noexcept { guitarAudible_ = audible; }
+
+    /** @brief Trigger a single bass note from PhraseLearner. Call from audio thread.
+     *  @param hold sustain until the guitar stops, instead of a fixed gate. */
+    void triggerLearnedBassNote(int midiNote, float velocity, int sampleOffset,
+                                int durationSamples, bool hold = false) noexcept;
+
+    /**
+     * @brief Diagnostic counters: which producer emitted each bass note-on.
+     *
+     * `learned` counts mirror/frozen-snapshot notes (triggerLearnedBassNote),
+     * `grid` counts the authored/harmonic fallback line. The recurring
+     * "bass doesn't mirror" bug is a *ratio* question — if `grid` dominates
+     * `learned`, the fallback is the bass part and the mirror is being drowned.
+     * Plain ints: written on the audio thread, read by tests/diagnostics only.
+     */
+    int getLearnedBassNoteCount() const noexcept { return learnedBassNotes_; }
+    int getGridBassNoteCount() const noexcept { return gridBassNotes_; }
+    void resetBassSourceCounters() noexcept { learnedBassNotes_ = 0; gridBassNotes_ = 0; }
 
     /** @brief Queue a fixed-size drum/bass commit for the next bar (or beat
      *         when @c commit.alignToBeat). Audio thread safe. */
@@ -302,6 +328,10 @@ private:
      * closes a ringing previous note (at @p off when @p forceRetrigger, else at
      * the earlier of the scheduled off and @p off) so a pickup cannot swallow
      * the next grid root (T5.3).
+     *
+     * @param hold Sustain the note until the guitar stops instead of gating it
+     *        at @p durSamps. `bassNoteOffSample` is set to "never" and the note
+     *        is released by setGuitarAudible(false) or a flush.
      */
     void emitBassNote(juce::MidiBuffer& midi,
                       int numSamples,
@@ -311,7 +341,8 @@ private:
                       int off,
                       int durSamps,
                       int sampleOffsetBase,
-                      bool forceRetrigger = false);
+                      bool forceRetrigger = false,
+                      bool hold = false);
 
     /** @brief Semitone interval for the harmonic bass on a beat within a bar. */
     int harmonyDegree(int beatInBar, int bar) const noexcept;
@@ -432,12 +463,18 @@ private:
 
     bool beatGridBassEnabled_ = true;   // Play / BListen grid fallback; off for frozen riffs
     bool beatGridBassPrev_ = false;     // previous block's grid-bass state (phase onset)
+    bool guitarAudible_ = false;        // guitarist is sounding (see setGuitarAudible)
+    bool bassNoteHeld_ = false;         // the ringing bass note is a sustain (no gate)
 
     // Absolute sample until which the learned/mirrored bass voice is still
     // ringing. While `sampleCounter < mirrorVoiceEndSample_` the grid line is
     // muted so the mirror is the bass part and the harmony engine only fills
     // the gaps (the riff mirror is the primary bass — user contract).
     int64_t mirrorVoiceEndSample_ = -1;
+
+    // Diagnostics only (see getLearnedBassNoteCount).
+    int learnedBassNotes_ = 0;
+    int gridBassNotes_ = 0;
     int pendingBarFillIndex_ = -1;      // 17/18/19 overlay; -1 = none
     double barFillStartBeat_ = -1.0;    // >=0: defer emit until this beat; -1 now; -2 resolve next process
 
@@ -451,6 +488,10 @@ private:
         float vel = 0.58f;
         int offset = 0;
         int duration = 10000;
+        // Sustain until the guitarist stops (live mirror). A held note has no
+        // scheduled note-off; it is released when the guitar goes silent, or
+        // closed by the next attack / a seek flush.
+        bool hold = false;
     };
     std::array<PendingLearnedNote, kMaxPendingLearned> pendingLearned_{};
 

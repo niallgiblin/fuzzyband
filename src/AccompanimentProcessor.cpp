@@ -1860,22 +1860,30 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
 
         // ── 9c. Live riff mirror ─────────────────────────────────────────────
-        // While the guitarist is audible, the bass mirrors each detected attack
-        // immediately — "play along with what I'm playing". Previously this
-        // required a dense chug (≥2 attacks in the last 2 bars); below that the
-        // bass dropped to a fixed beat 1/3 root drone that played ON TOP of the
-        // mirrored notes, so sparse or pattern-following figures sounded
-        // disconnected. Now ANY audible picking arms the listening bass, and a
-        // short grace window keeps it armed across brief pauses so it does not
-        // flap back and forth to the drone mid-phrase.
+        // The mirror is the bass part. While the guitarist is sounding, the bass
+        // follows them — one note per detected attack, held through a sustain —
+        // and the authored/harmonic grid line is muted entirely.
+        //
+        // The harmony line is a *total fallback*: it is heard only when the
+        // guitarist has stopped (`silentNow`). Gating it on "no attack detected"
+        // instead was the recurring regression: a sustained note, a legato
+        // phrase or any missed detection looked like a gap, so the harmony line
+        // played constantly under the player ("the bass goes into harmony and
+        // stays there"). Silence, not the absence of attacks, is the gap.
         const bool listenBass = (enginePhase == EnginePhase::PlaySection
                               || enginePhase == EnginePhase::RiffBListen);
-        patternPlayer.setBeatGridBassEnabled(listenBass);
+        const bool guitarAudible = !silentNow;
+        patternPlayer.setGuitarAudible(guitarAudible);
+        patternPlayer.setBeatGridBassEnabled(listenBass && !guitarAudible);
 
+        // The fallback keeps the key the guitarist last played (the live tracker
+        // reports nothing once they stop), so the harmony line is not stuck on C.
+        const int rootOffset = (semitoneOffset != INT_MIN) ? semitoneOffset
+                                                           : lastBassPitchClassOffset;
         int bassRoot = 36;
-        if (semitoneOffset != INT_MIN)
+        if (rootOffset != INT_MIN)
         {
-            bassRoot = 36 + semitoneOffset;
+            bassRoot = 36 + rootOffset;
             while (bassRoot < 28) bassRoot += 12;
             while (bassRoot > 55) bassRoot -= 12;
         }
@@ -1936,7 +1944,16 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     offset = static_cast<int>(delta);
                 // else offset 0: never add sixteenthQ to chase the next 16th.
             }
-            patternPlayer.triggerLearnedBassNote(note, mirrorVel, offset, durationSamples);
+            // Hold the mirror note through the player's sustain: it is released
+            // only when the guitarist actually stops.
+            patternPlayer.triggerLearnedBassNote(note, mirrorVel, offset, durationSamples,
+                                                 /*hold=*/true);
+            // Musical memory for the fallback: the harmony line now plays only
+            // when the guitarist has stopped, and the pitch tracker resets on
+            // silence. Remember the key they actually played (from a real
+            // mirrored attack — not from a quiet-tail estimate) so the fallback
+            // does not revert to C.
+            lastBassPitchClassOffset = ((mirrorNote % 12) + 12) % 12;
         }
     }
 

@@ -1,6 +1,7 @@
 #include "PatternPlayer.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <type_traits>
 
 static_assert(std::is_trivially_copyable_v<PatternPlayer::GrooveCommit>);
@@ -97,7 +98,11 @@ void PatternPlayer::reset()
     bassLeadInArmed = false;
     beatGridBassEnabled_ = true;
     beatGridBassPrev_ = false;
+    guitarAudible_ = false;
+    bassNoteHeld_ = false;
     mirrorVoiceEndSample_ = -1;
+    learnedBassNotes_ = 0;
+    gridBassNotes_ = 0;
     pendingBarFillIndex_ = -1;
     barFillStartBeat_ = -1.0;
     clearDrumNoteOffTable();
@@ -148,7 +153,7 @@ void PatternPlayer::setBassParams(int rootMidi, int notesPerBar) noexcept
     bassNotesPerBar = juce::jlimit(1, 8, notesPerBar);
 }
 
-void PatternPlayer::triggerLearnedBassNote(int midiNote, float velocity, int sampleOffset, int durationSamples) noexcept
+void PatternPlayer::triggerLearnedBassNote(int midiNote, float velocity, int sampleOffset, int durationSamples, bool hold) noexcept
 {
     PendingLearnedNote note;
     note.active = true;
@@ -159,11 +164,13 @@ void PatternPlayer::triggerLearnedBassNote(int midiNote, float velocity, int sam
     note.vel = juce::jlimit(0.0f, 1.0f, velocity);
     note.offset = sampleOffset;
     note.duration = juce::jmax(100, durationSamples);
+    note.hold = hold;
     for (auto& slot : pendingLearned_)
     {
         if (!slot.active)
         {
             slot = note;
+            ++learnedBassNotes_;   // diagnostics (see getLearnedBassNoteCount)
             return;
         }
     }
@@ -542,6 +549,7 @@ void PatternPlayer::flushAllPendingNoteOffs(juce::MidiBuffer& midi, int sampleOf
     // A seek/silence drops the mirror's claim on the bass voice, so the grid
     // fallback is not left muted against a stale timeline position.
     mirrorVoiceEndSample_ = -1;
+    bassNoteHeld_ = false;
     if (clickNoteOffSample >= 0)
     {
         midi.addEvent(juce::MidiMessage::noteOff(kDrumChannel, clickNoteOffNote), off);
@@ -1040,7 +1048,8 @@ void PatternPlayer::emitBassNote(juce::MidiBuffer& midi,
                                  int off,
                                  int durSamps,
                                  int sampleOffsetBase,
-                                 bool forceRetrigger)
+                                 bool forceRetrigger,
+                                 bool hold)
 {
     // Monophonic bass: close any previously scheduled note before the new one.
     // The deferred note-off carries the correct note number (bassNoteOffMidi),
@@ -1059,11 +1068,22 @@ void PatternPlayer::emitBassNote(juce::MidiBuffer& midi,
         midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassNoteOffMidi),
                       sampleOffsetBase + closeAt);
         bassNoteOffSample = -1;
+        bassNoteHeld_ = false;
     }
 
     midi.addEvent(juce::MidiMessage::noteOn(kBassChannel, outNote, static_cast<float>(vel) / 127.0f),
                   sampleOffsetBase + off);
     bassLastMidiNote = outNote;
+
+    if (hold)
+    {
+        // Sustain: no scheduled note-off. Released when the guitarist stops
+        // (or closed by the next attack / a flush).
+        bassNoteOffMidi = outNote;
+        bassNoteOffSample = std::numeric_limits<int64_t>::max();
+        bassNoteHeld_ = true;
+        return;
+    }
 
     const int64_t noteOffAbs = blockStart + static_cast<int64_t>(off) + static_cast<int64_t>(durSamps);
     if (noteOffAbs < blockStart + numSamples)
@@ -1152,6 +1172,7 @@ void PatternPlayer::emitPatternBass(juce::MidiBuffer& midi,
 
             // T5.3: retrigger — close a ringing mirror/previous grid note at this
             // hit rather than dropping the authored event.
+            ++gridBassNotes_;   // diagnostics (see getGridBassNoteCount)
             emitBassNote(midi, numSamples, blockStart, outNote, vel, off, durSamps, 0, true);
         }
     }
@@ -1233,6 +1254,7 @@ void PatternPlayer::emitHarmonicBass(juce::MidiBuffer& midi,
 
         // T5.3: retrigger a ringing mirror at the grid hit so a pickup on the
         // "and of 4" cannot swallow the next downbeat root.
+        ++gridBassNotes_;   // diagnostics (see getGridBassNoteCount)
         emitBassNote(midi, numSamples, blockStart, outNote, vel, off, durSamps, 0, true);
     }
 }
@@ -1540,13 +1562,31 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
             const int off = juce::jlimit(0, numSamples - 1, notes[i].offset);
             const int vel = juce::jlimit(1, 127, static_cast<int>(std::lround(notes[i].vel * 127.0f)));
             const int durSamps = juce::jmax(1, notes[i].duration);
-            emitBassNote(midi, numSamples, sampleCounter, notes[i].midi, vel, off, durSamps, 0, true);
+            const bool hold = notes[i].hold && guitarAudible_;
+            emitBassNote(midi, numSamples, sampleCounter, notes[i].midi, vel, off, durSamps, 0,
+                         true, hold);
             // The learned/mirrored note owns the monophonic bass voice until it
-            // ends; the grid line below only fills the gaps after that.
-            mirrorVoiceEndSample_ = juce::jmax(
-                mirrorVoiceEndSample_,
-                sampleCounter + static_cast<int64_t>(off) + static_cast<int64_t>(durSamps));
+            // ends; a held note owns it until the guitar stops.
+            mirrorVoiceEndSample_ = hold
+                ? std::numeric_limits<int64_t>::max()
+                : juce::jmax(mirrorVoiceEndSample_,
+                             sampleCounter + static_cast<int64_t>(off) + static_cast<int64_t>(durSamps));
         }
+    }
+
+    // Guitar-stop release. A held mirror note sustains through the player's
+    // sustain; when the guitarist actually stops, the note ends so the harmony
+    // fallback below can take over. This is the whole point of the
+    // "harmony is a total fallback" contract: a *sustain* is not a gap.
+    if (bassNoteHeld_ && !guitarAudible_)
+    {
+        if (bassNoteOffSample >= 0)
+        {
+            midi.addEvent(juce::MidiMessage::noteOff(kBassChannel, bassNoteOffMidi), 0);
+            bassNoteOffSample = -1;
+        }
+        bassNoteHeld_ = false;
+        mirrorVoiceEndSample_ = sampleCounter;
     }
 
     // Listen mixer (Play / RiffBListen): authored pattern bass when present,

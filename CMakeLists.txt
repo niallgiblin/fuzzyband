@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 1.0.3)
+project(MetalAccompaniment VERSION 1.0.6)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -172,6 +172,7 @@ target_sources(MetalAccompaniment PRIVATE
     src/analysis/PlaybackGate.cpp
     src/analysis/PitchEstimator.cpp
     src/analysis/StablePitchTracker.cpp
+    src/analysis/AttackDetector.cpp
     src/analysis/PhraseLearner.cpp
 
     # Inference
@@ -294,8 +295,10 @@ if(MA_BUILD_TESTS)
         tests/test_playback_gate.cpp
         tests/test_stable_pitch_tracker.cpp
         tests/test_pitch_estimator.cpp
+        tests/test_attack_detector.cpp
         tests/test_phrase_learner.cpp
         tests/test_golden_signal.cpp
+        tests/test_bass_mirror_realaudio.cpp
         tests/test_structure_sequencer.cpp
         tests/test_mel_spectrogram.cpp
         tests/test_feature_capture.cpp
@@ -314,6 +317,7 @@ if(MA_BUILD_TESTS)
         src/analysis/PlaybackGate.cpp
         src/analysis/PitchEstimator.cpp
         src/analysis/StablePitchTracker.cpp
+        src/analysis/AttackDetector.cpp
         src/analysis/PhraseLearner.cpp
         src/inference/RuleBasedInference.cpp
         src/inference/GrooveRenderer.cpp
@@ -380,6 +384,8 @@ if(MA_BUILD_TESTS)
         tests/test_structure_shadow_integration.cpp
         # Integration test (full processor pipeline)
         tests/test_processor_pipeline.cpp
+        # Real-audio bass mirror (mirror vs harmony producer split)
+        tests/test_bass_mirror_play_realaudio.cpp
         # E2E tests
         tests/test_e2e_silent_section.cpp
         tests/test_e2e_bpm_tracking.cpp

@@ -16,6 +16,7 @@
 #include <fstream>
 #include <vector>
 
+#include "analysis/EnergyAnalyser.h"
 #include "analysis/PhraseLearner.h"
 #include "analysis/PitchEstimator.h"
 
@@ -97,41 +98,6 @@ bool readWav16Mono(const std::string& path, PcmMono& out)
     return true;
 }
 
-/**
- * @brief EnergyAnalyser-equivalent fast onset RMS window (0.02 s, ×4, clamped).
- *
- * The learner is fed `getOnsetRmsEnergy()`, not the 0.1 s structure RMS.
- */
-class RmsWindow
-{
-public:
-    explicit RmsWindow(double sampleRate)
-        : win(static_cast<size_t>(static_cast<int>(0.02 * sampleRate)), 0.0f) {}
-
-    void push(float s)
-    {
-        win[w] = s * s;
-        w = (w + 1) % static_cast<int>(win.size());
-        if (fill < static_cast<int>(win.size()))
-            ++fill;
-    }
-
-    float getRms() const
-    {
-        float acc = 0.0f;
-        for (int i = 0; i < fill; ++i)
-            acc += win[static_cast<size_t>(i)];
-        if (fill <= 0)
-            return 0.0f;
-        return std::clamp(std::sqrt(acc / static_cast<float>(fill)) * 4.0f, 0.0f, 1.0f);
-    }
-
-private:
-    std::vector<float> win;
-    int w = 0;
-    int fill = 0;
-};
-
 struct GoldenResult
 {
     bool locked = false;
@@ -147,11 +113,12 @@ GoldenResult runPipeline(const std::string& path)
     if (!readWav16Mono(path, audio))
         return r;
 
+    EnergyAnalyser energy;          // production onset-RMS front end (0.02 s window)
+    energy.prepare(kSr, kBlock);
     PitchEstimator pitch;
     pitch.prepare(kSr, kBlock);
     PhraseLearner learner;
     learner.prepare(kSr);
-    RmsWindow rms(kSr);
 
     const size_t totalSamples = audio.samples.size();
     int64_t lockSample = -1;
@@ -165,13 +132,12 @@ GoldenResult runPipeline(const std::string& path)
 
         std::vector<float> block(audio.samples.begin() + static_cast<ptrdiff_t>(start),
                                  audio.samples.begin() + static_cast<ptrdiff_t>(start + n));
-        for (float s : block)
-            rms.push(s);
+        energy.process(block.data(), static_cast<int>(n));
         pitch.process(block.data(), static_cast<int>(n));
 
         const auto note = learner.process(
             sampleTime,
-            rms.getRms(),
+            energy.getOnsetRmsEnergy(),
             pitch.getMidiNote(),
             pitch.getConfidence(),
             kBpm, static_cast<int>(n));

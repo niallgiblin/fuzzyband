@@ -15,6 +15,8 @@
 #include <climits>
 #include <cstdint>
 
+#include "AttackDetector.h"
+
 class PhraseLearner
 {
 public:
@@ -169,6 +171,16 @@ public:
     /** True when pattern is locked and bass is actively playing. */
     bool isLocked() const noexcept { return state_ == State::Locked; }
 
+    /**
+     * @brief Detector instrumentation: why attacks were or were not accepted.
+     *
+     * The predicate and its counters now live in @ref AttackDetector; this is an
+     * alias so existing callers keep the `PhraseLearner::AttackDebug` spelling.
+     */
+    using AttackDebug = AttackDetector::AttackDebug;
+    const AttackDebug& getAttackDebug() const noexcept { return attackDetector.getDebug(); }
+    void resetAttackDebug() noexcept { attackDetector.resetDebug(); }
+
     /** Number of notes in the learned pattern (0 if not locked). */
     int getPatternLength() const noexcept { return locked_ ? patternLen_ : 0; }
 
@@ -232,7 +244,7 @@ public:
         // `attackCount_ > 0` guards the pre-first-attack state: lastAttackSample_
         // defaults to 0, so without it the very first few seconds would read as
         // "recently attacked" even though nothing has been picked yet.
-        return attackCount_ > 0 && (now - lastAttackSample_) < windowSamples;
+        return attackCount_ > 0 && (now - attackDetector.getLastAttackSample()) < windowSamples;
     }
 
     /**
@@ -308,7 +320,6 @@ public:
 private:
     enum class State { Learning, Locked };
 
-    bool detectAttack(float rms) noexcept;
     bool patternsMatch(int len, double bpm) const noexcept;
     void lockPattern(double bpm, int64_t sampleTime) noexcept;
     int mapToBassRange(float midiNote) const noexcept;
@@ -368,21 +379,9 @@ private:
     int64_t mismatchStartSample_ = -1;  // first non-following attack while locked
     static constexpr int kDriftUnlockBars = 4;  // T6.3: escape a held lock after this
 
-    // Attack detection state
-    float prevRms_ = 0.0f;
-    float rmsSmooth_ = 0.0f;    // fast EMA for the rise-vs-level ratio
-    int fallCounter_ = 0;       // blocks since the last meaningful RMS decay
-    // Bottom of the current decay trough. A rise must clear this by a margin to
-    // count as an attack, so the ~7% ripple of a low note through the RMS window
-    // cannot retrigger the mirror part-way into a sustained pick.
-    float rmsFloorSinceArm_ = 0.0f;
-    // A decay→rise edge seen while the min-interval gate was still closed. Held
-    // until the gate opens (or silence), so a fast attack whose whole rise fits
-    // inside the gate is not lost.
-    bool risePending_ = false;
-    int64_t lastAttackSample_ = 0;
-    static constexpr int kMinAttackIntervalSamples = 2000;  // ~40ms min between attacks
-    static constexpr int kFallWindowBlocks = 20;  // ~200 ms at 512/48k — decay recency window
+    // Attack detection (predicate, envelope, trough, min-interval gate) lives in
+    // its own module so it can be measured per block; see AttackDetector.
+    AttackDetector attackDetector;
 
     // Last confidently-estimated pitch. YIN's confidence collapses to ~0 at
     // loud/quiet transitions (the analysis ring mixes loud + quiet samples) —
@@ -391,7 +390,11 @@ private:
     float lastGoodPitchMidi_ = 36.0f;
     bool  lastGoodPitchValid_ = false;
 
-    // Silence detection - longer threshold to avoid premature reset
-    int silentBlockCount_ = 0;
-    static constexpr int kSilenceResetBlocks = 200;  // ~4 seconds at 512 samples/block
+    // Silence detection as *time* (converted to samples in prepare()), so the
+    // follow-mode reset fires after the same musical duration at every host
+    // buffer size (was `kSilenceResetBlocks`, block-counted: ~2.1 s @512 but
+    // ~8.5 s @2048).
+    int64_t silentSamples_ = 0;
+    int64_t silenceResetSamples_ = 96000;   // set in prepare() (~2.0 s @48k)
+    static constexpr double kSilenceResetSeconds = 2.0;
 };

@@ -9,6 +9,8 @@
 #include <memory>
 #include <vector>
 
+#include "RmsWindow.h"
+
 /**
  * @brief Per-block spectral features used by @ref StructureTagger.
  *
@@ -43,6 +45,11 @@ public:
     /** Sub-bass energy ratio: subBassEnergy / totalSpectralEnergy. High for chugs, low for clean. */
     float getSubBassRatio() const { return subBassRatio; }
 
+    // Window lengths in seconds. The tests build their RMS window from this
+    // constant, so the window definition has one home (see RmsWindow).
+    static constexpr double kStructureWindowSeconds = 0.1;
+    static constexpr double kOnsetWindowSeconds = 0.02;
+
 private:
     void runSpectrum();
 
@@ -53,15 +60,10 @@ private:
     std::vector<float> fftScratch;
     std::vector<float> prevHighMagnitudes;
 
-    std::vector<float> rmsWindow;
-    int rmsWrite = 0;
-    int rmsFill = 0;
-
-    // Fast onset-detection window (see getOnsetRmsEnergy). Fixed in time, so it
-    // does not change with the host buffer size.
-    std::vector<float> onsetWindow;
-    int onsetWrite = 0;
-    int onsetFill = 0;
+    // Fixed-in-time RMS windows: the 0.1 s structure window and the ~20 ms onset
+    // window. Shared with the tests via RmsWindow so the definition cannot drift.
+    RmsWindow rmsWindow;
+    RmsWindow onsetWindow;
 
     double sampleRate = 44100.0;
 

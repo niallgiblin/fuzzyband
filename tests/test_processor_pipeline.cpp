@@ -646,19 +646,6 @@ static void fillSineAmp(juce::AudioBuffer<float>& buf, int blockIdx, int block,
     }
 }
 
-// Loud sustain (so RMS ≫ 0.003) plus a short pick that is NOT on beat 0 or 2.
-static float ampForSustainPick(int64_t abs0, int block, int64_t origin,
-                               double samplesPerBeat, int bar, int pickBlocks)
-{
-    const int64_t barSamples = static_cast<int64_t>(4.0 * samplesPerBeat);
-    const int64_t pickStart = origin + static_cast<int64_t>(bar) * barSamples
-                            + static_cast<int64_t>(1.0 * samplesPerBeat);
-    const int64_t pickEnd = pickStart + static_cast<int64_t>(pickBlocks) * block;
-    if (abs0 + block > pickStart && abs0 < pickEnd)
-        return 0.5f;
-    return 0.12f;
-}
-
 static void fillChugBlock(juce::AudioBuffer<float>& buf, int blockIdx, int block,
                           double sr, double freq)
 {
@@ -1365,11 +1352,12 @@ TEST_CASE("Processor pipeline: fixed hold releases even while the riff continues
     proc.releaseResources();
 }
 
-TEST_CASE("Processor pipeline: bass root maps C2→36, E2→40, G2→43", "[integration][pipeline]")
+TEST_CASE("Processor pipeline: the live mirror folds the played root C2→36, E2→40, G2→43",
+          "[integration][pipeline][bass][mirror]")
 {
-    // Regression #1: the fallback harmonic bass root must fold onto the correct
-    // pitch class (not anchor to E). Sustained tones (no riff) exercise the
-    // root-following fallback when the phrase learner is not locked.
+    // The bass mirror must fold every played root onto the C2–B2 register. This
+    // is the mirror's pitch contract; the harmonic fallback's root mapping is
+    // covered by the Play-mode authored-bass test in the phase-9 suite.
     const double sr = 48000.0;
     const int block = 512;
     AccompanimentProcessor proc;
@@ -1377,23 +1365,29 @@ TEST_CASE("Processor pipeline: bass root maps C2→36, E2→40, G2→43", "[inte
     proc.pauseBackgroundInferenceForTests();
     proc.playActive.store(true, std::memory_order_release);
 
+    int blockIdx = 0;
+    const int maxWait = static_cast<int>(4.0 * sr / block);
+    for (int i = 0; i < maxWait && proc.getSectionPhase() != 1; ++i)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, 65.406, 0.12f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        ++blockIdx;
+    }
+    REQUIRE(proc.getSectionPhase() == 1);
+
     auto collectRoot = [&](double freq)
     {
         std::set<int> notes;
-        const int n = static_cast<int>(4.0 * sr);
-        for (int start = 0; start + block <= n; start += block)
+        // A plucked cycle (loud burst + decay) gives the onset detector real
+        // decay→rise edges; a steady tone has no attacks and would not mirror.
+        const int n = static_cast<int>(4.0 * sr / block);
+        for (int b = 0; b < n; ++b)
         {
             juce::AudioBuffer<float> buf(2, block);
-            for (int ch = 0; ch < 2; ++ch)
-            {
-                float* p = buf.getWritePointer(ch);
-                for (int i = 0; i < block; ++i)
-                {
-                    const double t = static_cast<double>(start + i) / sr;
-                    p[i] = static_cast<float>(0.15 * std::sin(2.0 * M_PI * freq * t)
-                                            + 0.06 * std::sin(2.0 * M_PI * freq * 2.0 * t));
-                }
-            }
+            fillChugBlock(buf, blockIdx, block, sr, freq);
             juce::MidiBuffer midi;
             proc.processBlock(buf, midi);
             proc.flushBackgroundInferenceForTests();
@@ -1403,6 +1397,7 @@ TEST_CASE("Processor pipeline: bass root maps C2→36, E2→40, G2→43", "[inte
                 if (msg.isNoteOn() && msg.getChannel() == 2)
                     notes.insert(msg.getNoteNumber());
             }
+            ++blockIdx;
         }
         return notes;
     };
@@ -1416,11 +1411,12 @@ TEST_CASE("Processor pipeline: bass root maps C2→36, E2→40, G2→43", "[inte
     auto g2 = collectRoot(98.0);
     REQUIRE(g2.count(43) > 0);
 
+    proc.playActive.store(false, std::memory_order_release);
     proc.releaseResources();
 }
 
-TEST_CASE("Processor pipeline: RiffBListen bass has grid on beats 1/3 with sparse attacks",
-          "[integration][pipeline][bass][blisten]")
+TEST_CASE("Processor pipeline: RiffBListen mirrors the player (no grid, no holes)",
+          "[integration][pipeline][bass][blisten][mirror]")
 {
     // Oracle 2026-09-09: B/C had digital-silence holes at 26/29/32 s while the
     // guitar was loud. Listen mixer = attack mirror then beats 1/3 root grid.
@@ -1456,19 +1452,20 @@ TEST_CASE("Processor pipeline: RiffBListen bass has grid on beats 1/3 with spars
     REQUIRE(proc.isTransitionSectionActive());
     REQUIRE(proc.getSectionPhase() == 3);
 
-    const int64_t origin = static_cast<int64_t>(blockIdx) * block;
     constexpr int kBars = 4;
-    constexpr int kPickBlocks = 4;
     std::vector<int64_t> bassAbs;
+    std::set<int> bassNotes;
+    const int gridAtStart = proc.getGridBassNoteCount();
+    const int learnedAtStart = proc.getLearnedBassNoteCount();
     const int collectBlocks = static_cast<int>(
         std::ceil(static_cast<double>(kBars) * 4.0 * samplesPerBeat / block));
     for (int b = 0; b < collectBlocks; ++b)
     {
         const int64_t abs0 = static_cast<int64_t>(blockIdx) * block;
-        const int bar = static_cast<int>((abs0 - origin) / (4.0 * samplesPerBeat));
-        const float amp = ampForSustainPick(abs0, block, origin, samplesPerBeat, bar, kPickBlocks);
         juce::AudioBuffer<float> buf(2, block);
-        fillSineAmp(buf, blockIdx, block, sr, 400.0, amp);
+        // Plucked 400 Hz phrases: audibly *playing*, but a different pitch and
+        // rhythm from the frozen C2 riff.
+        fillChugBlock(buf, blockIdx, block, sr, 400.0);
         juce::MidiBuffer midi;
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
@@ -1478,38 +1475,22 @@ TEST_CASE("Processor pipeline: RiffBListen bass has grid on beats 1/3 with spars
             if (!msg.isNoteOn() || msg.getChannel() != 2 || msg.getVelocity() <= 0)
                 continue;
             bassAbs.push_back(abs0 + meta.samplePosition);
+            bassNotes.insert(msg.getNoteNumber());
         }
         ++blockIdx;
     }
 
-    // T6.3 rotates the contrast pool every 2 bars; a phrase seam can drop a
-    // grid hit, so 4 bars is "at least a half-note grid" rather than 8 exact.
-    REQUIRE(bassAbs.size() >= 5);
+    INFO("BListen nHits=" << bassAbs.size()
+         << " learned+" << (proc.getLearnedBassNoteCount() - learnedAtStart)
+         << " grid+" << (proc.getGridBassNoteCount() - gridAtStart));
 
-    int beat1Hits = 0;
-    int beat3Hits = 0;
-    for (const int64_t absSample : bassAbs)
-    {
-        double beatInBar = std::fmod(static_cast<double>(absSample) / samplesPerBeat, 4.0);
-        if (beatInBar < 0.0)
-            beatInBar += 4.0;
-        if (beatInBar >= 0.0 && beatInBar < 0.5)
-            ++beat1Hits;
-        if (beatInBar >= 1.7 && beatInBar < 2.5)
-            ++beat3Hits;
-    }
-    INFO("BListen beat1Hits=" << beat1Hits << " beat3Hits=" << beat3Hits
-         << " nHits=" << bassAbs.size());
-    REQUIRE(beat1Hits >= 2);
-    // Contrast pool members do not all author a beat-3 bass hit (T6.3 rotation).
-
-    auto sorted = bassAbs;
-    std::sort(sorted.begin(), sorted.end());
-    // T5.1: authored bass is typically a half-note grid (2 beats = 1 s at 120).
-    // T6.3: B-listen drum rotation can skip one grid hit at a phrase seam.
-    const int64_t maxGap = static_cast<int64_t>(2.2 * sr);
-    for (size_t i = 1; i < sorted.size(); ++i)
-        REQUIRE(sorted[i] - sorted[i - 1] < maxGap);
+    // No digital-silence holes: while the guitarist is audible the bass sounds.
+    REQUIRE(bassAbs.size() >= 4);
+    // The mirror is the source, not the authored/harmonic grid.
+    REQUIRE(proc.getLearnedBassNoteCount() > learnedAtStart);
+    REQUIRE(proc.getGridBassNoteCount() == gridAtStart);
+    // And it is following the player, not looping the frozen C2 riff.
+    REQUIRE(bassNotes.count(36) == 0);
 
     proc.releaseResources();
 }
@@ -2388,13 +2369,12 @@ TEST_CASE("Processor pipeline: play mode stops when the song form completes", "[
 }
 
 // ── Post-lock transition bass: the bass must LEAVE the old riff ───────────────
-TEST_CASE("Processor pipeline: bass leaves the locked riff during a post-lock transition", "[integration][pipeline][transition][lock]")
+TEST_CASE("Processor pipeline: the transition mirrors the player, then falls back to harmony",
+          "[integration][pipeline][transition][lock][mirror]")
 {
-    // After a Record-riff lock expires into a contrast section, the bass must move
-    // WITH the drums to the new section (play its harmony), not keep looping the
-    // recorded riff. Regression: the learner stayed Locked and autonomously
-    // looped the riff, so the bass emitted only the frozen riff note (C2=36) over
-    // the transition drums.
+    // After a Record-riff lock expires into a contrast section, the bass must not
+    // keep looping the recorded C2 riff. While the guitarist plays it mirrors
+    // them; when they stop, the harmony fallback (in their last key) returns.
     const double sr = 48000.0;
     const int block = 512;
     AccompanimentProcessor proc;
@@ -2403,7 +2383,7 @@ TEST_CASE("Processor pipeline: bass leaves the locked riff during a post-lock tr
     if (auto* p = proc.getApvts().getParameter("lockBars"))
         p->setValueNotifyingHost(0.0f);  // 4-bar lock
     if (auto* p = proc.getApvts().getParameter("transitionBars"))
-        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(4.0f));
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(16.0f));  // room for the stop tail
     if (auto* p = proc.getApvts().getParameter("transitionSections"))
         p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
 
@@ -2436,24 +2416,15 @@ TEST_CASE("Processor pipeline: bass leaves the locked riff during a post-lock tr
     feedTone(0.05, 400.0, static_cast<int>(9.0 * sr / block), blockIdx);
     REQUIRE(proc.isTransitionSectionActive());
 
-    // While the guitarist plays a sustained tone (different pitch to the frozen
-    // C2 riff), the bass plays the NEW section's harmony — it must NOT keep
-    // emitting the frozen riff note 36.
+    // While the guitarist is audibly playing (plucked E2, not the frozen C2),
+    // the bass follows them — never the frozen riff note.
     std::set<int> bassNotes;
     bool anyBass = false;
+    const int gridAtPlay = proc.getGridBassNoteCount();
     for (int b = 0; b < static_cast<int>(4.0 * sr / block); ++b)
     {
         juce::AudioBuffer<float> buf(2, block);
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            float* p = buf.getWritePointer(ch);
-            const double t = static_cast<double>(blockIdx) * block / sr;
-            for (int i = 0; i < block; ++i)
-            {
-                const double tt = t + static_cast<double>(i) / sr;
-                p[i] = static_cast<float>(0.05 * std::sin(2.0 * M_PI * 400.0 * tt));
-            }
-        }
+        fillChugBlock(buf, blockIdx, block, sr, 82.407);   // E2 plucks
         juce::MidiBuffer midi;
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
@@ -2468,8 +2439,13 @@ TEST_CASE("Processor pipeline: bass leaves the locked riff during a post-lock tr
         }
         ++blockIdx;
     }
-    REQUIRE(anyBass);                      // the section bass still sounds
-    REQUIRE(bassNotes.count(36) == 0);     // but NOT the frozen riff note C2
+    REQUIRE(anyBass);                          // the bass still sounds
+    REQUIRE(bassNotes.count(36) == 0);         // but NOT the frozen riff note C2
+    REQUIRE(proc.getGridBassNoteCount() == gridAtPlay);   // no harmony under the player
+
+    // The fallback-after-stop case (and its key memory) is covered in Play mode by
+    // "play-mode bass holds a sustain; harmony only after a real stop": here the
+    // transition's own auto-lock makes a stop ambiguous.
 
     proc.releaseResources();
 }
@@ -2594,7 +2570,7 @@ TEST_CASE("Processor pipeline: play-mode bass mirrors the guitarist, harmony onl
     proc.releaseResources();
 }
 
-TEST_CASE("Processor pipeline: play-mode harmony resumes when the guitarist stops",
+TEST_CASE("Processor pipeline: play-mode bass holds a sustain; harmony only after a real stop",
           "[integration][pipeline][play][bass][mirror]")
 {
     // The other half of the contract: the root/harmony line is the fallback, so
@@ -2622,42 +2598,66 @@ TEST_CASE("Processor pipeline: play-mode harmony resumes when the guitarist stop
     }
     REQUIRE(proc.getSectionPhase() == 1);
 
-    // One pick, then hold a quiet sustained tone: no further attacks.
-    auto feed = [&](float amp, int numBlocks, std::vector<int64_t>* bassAbs)
+    // A pick, then hold an audible sustained tone. A sustain is NOT a gap: the
+    // mirror must own the bass (and hold its note), and the harmony line must
+    // stay silent. The harmony returns only after the guitarist truly stops, and
+    // it must keep the key they were playing (E2 → root 40), not default to C.
+    constexpr double kPlayedFreq = 82.407;   // E2
+    std::set<int> playNotes;
+    auto feed = [&](float amp, int numBlocks)
     {
         for (int b = 0; b < numBlocks; ++b)
         {
             juce::AudioBuffer<float> buf(2, block);
-            fillSineAmp(buf, blockIdx, block, sr, 65.406, amp);
+            fillSineAmp(buf, blockIdx, block, sr, kPlayedFreq, amp);
             juce::MidiBuffer midi;
             proc.processBlock(buf, midi);
             proc.flushBackgroundInferenceForTests();
-            if (bassAbs != nullptr)
-                for (const auto meta : midi)
-                {
-                    const auto msg = meta.getMessage();
-                    if (msg.isNoteOn() && msg.getChannel() == 2 && msg.getVelocity() > 0)
-                        bassAbs->push_back(static_cast<int64_t>(blockIdx) * block
-                                           + meta.samplePosition);
-                }
+            for (const auto meta : midi)
+            {
+                const auto msg = meta.getMessage();
+                if (msg.isNoteOn() && msg.getChannel() == 2)
+                    playNotes.insert(msg.getNoteNumber());
+            }
             ++blockIdx;
         }
     };
 
-    feed(0.04f, 16, nullptr);          // arm the decay window
-    feed(0.55f, 8, nullptr);           // the pick (one attack)
-    std::vector<int64_t> gapAbs;
-    const int64_t gapStart = static_cast<int64_t>(blockIdx) * block;
-    feed(0.12f, static_cast<int>(std::ceil(3.0 * samplesPerBeat / block)), &gapAbs);
+    feed(0.04f, 16);          // arm the decay window
+    feed(0.55f, 8);           // the pick (one attack)
+    const int gridAtPick = proc.getGridBassNoteCount();
+    const int learnedAtPick = proc.getLearnedBassNoteCount();
+    REQUIRE(learnedAtPick > 0);   // the pick mirrored
+    REQUIRE(playNotes.count(40) > 0);   // ... at the played key (E2)
 
-    // The mirror note was already sounding; in the following ~2.5 beats of no
-    // picking, the grid fallback must add notes.
-    int late = 0;
-    for (int64_t hit : gapAbs)
-        if (hit - gapStart > static_cast<int64_t>(0.9 * samplesPerBeat))
-            ++late;
-    INFO("gap bass onsets after the mirror note = " << late);
-    REQUIRE(late >= 1);
+    // ~3 beats of audible sustain with no further attacks.
+    feed(0.12f, static_cast<int>(std::ceil(3.0 * samplesPerBeat / block)));
+    INFO("grid during sustain = " << (proc.getGridBassNoteCount() - gridAtPick));
+    REQUIRE(proc.getGridBassNoteCount() == gridAtPick);   // no harmony under a sustain
+
+    // Now actually stop (room-level signal, above digital silence so the player
+    // is not muted — the tagger declares SILENT). The tagger refuses to call it
+    // silence for 4 s after an attack (a ringing note is not a gap) and then
+    // needs ~1 s of hysteresis, so hold the stop for ~6 s.
+    std::set<int> stopNotes;
+    for (int b = 0; b < static_cast<int>(std::ceil(24.0 * samplesPerBeat / block)); ++b)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, kPlayedFreq, 0.002f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn() && msg.getChannel() == 2)
+                stopNotes.insert(msg.getNoteNumber());
+        }
+        ++blockIdx;
+    }
+    INFO("grid after stop = " << (proc.getGridBassNoteCount() - gridAtPick));
+    REQUIRE(proc.getGridBassNoteCount() > gridAtPick);    // the fallback is back
+    REQUIRE(stopNotes.count(40) > 0);                     // in the key just played
 
     proc.playActive.store(false, std::memory_order_release);
     proc.releaseResources();

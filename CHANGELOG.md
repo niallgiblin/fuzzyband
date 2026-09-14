@@ -6,6 +6,59 @@ For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md) and its
 
 Milestone/phase status lives in [`.planning/`](.planning) (`.planning/STATE.md`, `.planning/ROADMAP.md`). **Do not read `.gsd/` — it is a stale, untracked local artifact.**
 
+## [1.0.6] — Harmony is a total fallback; the mirror holds a sustain
+
+The user's report: "the bass listens for gaps in my playing and when it identifies
+one it goes into harmony, and for whatever reason that is constant." That was
+exactly right, and it was an arbitration bug, not a detector-tuning one.
+
+### What was measured
+
+Instrumented the real producer split (mirror vs authored/harmonic grid) end to end
+on the raw takes in `data/raw/`, in Play mode, per 30 s window — see the new
+`tests/test_bass_mirror_play_realaudio.cpp`. On the **sustain** take:
+
+| Window | guitar audible | mirror notes | harmony notes |
+| --- | --- | --- | --- |
+| 0 s | 90 % | 84 | 16 |
+| 60 s | **41 %** | **7** | **25** |
+| 90 s | 74 % | 50 | 15 |
+| 150 s | 16 % (a real gap) | 0 | 26 |
+
+At 60 s the guitarist was audible 41 % of the window and the bass played 25
+harmony notes against 7 mirrored ones. The gate treated **"no attack detected"**
+as a gap — so a sustained note, a legato phrase, or any missed detection opened
+the harmony underneath the player. The 150 s row is the correct case (a genuine
+gap while the guitarist had stopped).
+
+### The fix
+
+- **Harmony is gated on guitar *silence*, not on missed attacks.**
+  `AccompanimentProcessor` no longer enables the grid line just because the phase
+  allows it: `setBeatGridBassEnabled(listenBass && !guitarAudible)`, where
+  `guitarAudible` is the structure tagger's not-SILENT state. While the guitarist
+  is sounding, the mirror is the only bass producer. Re-measured: harmony is now
+  **0** in every audible window across all seven raw takes (was up to 26/30 s);
+  it returns only after a real stop.
+- **The mirror holds its note through a sustain.** `PatternPlayer::emitBassNote`
+  gained a `hold` mode: the note has no scheduled gate and is released when the
+  guitarist actually stops (or closed by the next attack / a seek flush). A missed
+  attack now sustains the last mirrored pitch instead of handing the voice to the
+  harmony line. `AccompanimentProcessor` passes `hold=true` on the live mirror.
+- **The fallback keeps the played key.** The pitch tracker resets on silence, so
+  the silence-gated harmony would always have reverted to C. The processor now
+  remembers the pitch class of the last mirrored attack and uses it for the
+  fallback's root (verified: E2 → root 40, not 36).
+- **Tests updated to the new contract** (the old ones encoded "no attack = gap"):
+  the live mirror's root folding; RiffBListen mirrors the player with no grid and
+  no holes; the post-lock transition follows the player and does not loop the
+  frozen C2 riff; and Play holds a sustain, then falls back to harmony in the
+  played key.
+
+Suites: **280** unit / **84** integration, all passing. Perf unchanged
+(mean 0.74 ms, p99 1.17 ms at 256 samples — measured under concurrent machine
+load).
+
 ## [1.0.3] — The bass mirrors again
 
 Play-mode bass had drifted back to sounding like a root/harmony line. It was not

@@ -126,6 +126,21 @@ public:
     int getRiffCaptureBar() const noexcept { return riffCaptureBar.load(std::memory_order_relaxed); }
     bool hasLearnedRiff() const noexcept { return riffHeld.load(std::memory_order_relaxed); }
 
+    /**
+     * @brief Test/debug: how many bass note-ons each producer has emitted.
+     *
+     * The recurring "bass doesn't mirror" bug is a ratio question. `learned`
+     * counts mirror / frozen-snapshot notes, `grid` the authored/harmonic
+     * fallback. Mirror-primary means learned must dominate grid while the
+     * guitarist is playing.
+     */
+    int getLearnedBassNoteCount() const noexcept { return patternPlayer.getLearnedBassNoteCount(); }
+    int getGridBassNoteCount() const noexcept { return patternPlayer.getGridBassNoteCount(); }
+
+    /** @brief Test/debug: detector predicate counters (see PhraseLearner::AttackDebug). */
+    PhraseLearner::AttackDebug getAttackDebug() const noexcept { return phraseLearner.getAttackDebug(); }
+    void resetAttackDebug() noexcept { phraseLearner.resetAttackDebug(); }
+
     /** @brief Test/debug: occupied 16ths in the Record A snapshot (0 if none). */
     int getRiffAOccupiedCount() const noexcept;
     bool getRiffASlotOccupied(int slot) const noexcept;
@@ -366,6 +381,9 @@ private:
     std::atomic<bool> requestBLockPick{ false };
     std::atomic<int> bLockPick{ -1 };
     int64_t guitarSilentSamples = 0;
+    // Pitch class (0–11, C = drop-C root) the guitarist last played, or INT_MIN.
+    // Keeps the harmony fallback in key once the tracker resets on silence.
+    int lastBassPitchClassOffset = INT_MIN;
     bool grooveLockActive = false;     // derived: enginePhase == RiffA (UI/tests)
     bool riffLoopActive = false;       // derived: any Riff* phase
     int64_t lockOriginMono = -1;       // hostSampleTime when the current A/B cycle began
