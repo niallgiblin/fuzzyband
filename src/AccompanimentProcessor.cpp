@@ -1537,7 +1537,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         struct MirrorTrigger { int offset; int midi; float vel; };
         std::array<MirrorTrigger, 128> hopTriggers{};
         int hopTriggerCount = 0;
-        if (!((silentNow || !armActive) && !capturingNow))
+        if (armActive || capturingNow)
         {
             const float pitchMidi = pitchEstimator.getMidiNote();
             const float pitchConf = pitchEstimator.getConfidence();

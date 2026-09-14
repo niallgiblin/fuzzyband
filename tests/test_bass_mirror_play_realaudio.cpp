@@ -292,7 +292,7 @@ TEST_CASE("bass mirror: real-audio Record-riff producer timeline (diagnostic)",
     const int64_t bucket = static_cast<int64_t>(2.0 * pcm.sampleRate);
     int64_t nextBucket = bucket;
     int lastLearned = 0, lastGrid = 0;
-    std::printf("[REC-MIRROR] t(s) | dLearned dGrid | capturing locked transition\n");
+    std::printf("[REC-MIRROR] t(s) | dLearned dGrid | capturing locked transition learnerLocked\n");
     for (int64_t start = 0; start + kBlock <= total; start += kBlock)
     {
         ph.samples = start;
@@ -308,18 +308,130 @@ TEST_CASE("bass mirror: real-audio Record-riff producer timeline (diagnostic)",
         {
             const int learned = proc.getLearnedBassNoteCount();
             const int grid = proc.getGridBassNoteCount();
-            std::printf("[REC-MIRROR] %4lld | %8d %5d | %9s %6s %10s\n",
+            std::printf("[REC-MIRROR] %4lld | %8d %5d | %9s %6s %10s %13s\n",
                         static_cast<long long>(nextBucket / pcm.sampleRate),
                         learned - lastLearned, grid - lastGrid,
                         proc.isRiffCapturing() ? "yes" : "no",
                         proc.isGrooveLocked() ? "yes" : "no",
-                        proc.isTransitionSectionActive() ? "yes" : "no");
+                        proc.isTransitionSectionActive() ? "yes" : "no",
+                        proc.hasLearnedRiff() ? "yes" : "no");
             lastLearned = learned;
             lastGrid = grid;
             nextBucket += bucket;
         }
     }
     SUCCEED("record timeline ran");
+}
+
+// The user's exact scenario: record a riff, let the lock expire into the
+// transition section, then play a DIFFERENT live riff. The bass must mirror
+// what is being played now, not freeze onto a snapshot and go silent.
+TEST_CASE("bass mirror: the transition mirrors a different live riff",
+          "[integration][bass][mirror][realaudio][transition]")
+{
+    WavReader::PcmMono riffA, riffB;
+    if (!WavReader::readMonoWav(rawPath("palm_mute/palm_mute.wav"), riffA)
+        || !WavReader::readMonoWav(rawPath("single_note/single_notes2.wav"), riffB))
+    {
+        SUCCEED("skipped");
+        return;
+    }
+
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(kSr, kBlock);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("genre"))
+        p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+    if (auto* p = proc.getApvts().getParameter("bpm"))
+        p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(kBpm)));
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);   // 4-bar hold
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(16.0f));
+
+    MovingPlayHead ph;
+    proc.setPlayHead(&ph);
+    proc.requestRiffCaptureStart();
+
+    int64_t host = 0;
+    int64_t srcPos = 0;
+    auto feed = [&](const WavReader::PcmMono* pcm, int blocks)
+    {
+        for (int b = 0; b < blocks; ++b)
+        {
+            ph.samples = host;
+            juce::AudioBuffer<float> buf(2, kBlock);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* p = buf.getWritePointer(ch);
+                for (int i = 0; i < kBlock; ++i)
+                {
+                    if (pcm == nullptr || pcm->samples.empty())
+                        p[i] = 0.0f;
+                    else
+                        p[i] = pcm->samples[static_cast<size_t>((srcPos + i) % pcm->samples.size())];
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            srcPos += kBlock;
+            host += kBlock;
+        }
+    };
+
+    // 1) Record riff A, then let it lock.
+    {
+        int guard = 0;
+        while (!proc.isGrooveLocked() && guard < static_cast<int>(25.0 * kSr / kBlock))
+        {
+            feed(&riffA, 1);
+            ++guard;
+        }
+    }
+    REQUIRE(proc.isGrooveLocked());
+
+    // 2) Feed silence until the lock expires into the transition section.
+    int guard = 0;
+    while (!proc.isTransitionSectionActive()
+           && guard < static_cast<int>(60.0 * kSr / kBlock))
+    {
+        feed(nullptr, 1);
+        ++guard;
+    }
+    REQUIRE(proc.isTransitionSectionActive());
+
+    // 3) Now play a different live riff through the transition, per second.
+    srcPos = static_cast<int64_t>(5.0 * kSr);   // skip the take's quiet lead-in
+    const int learnedBefore = proc.getLearnedBassNoteCount();
+    const int grid0 = proc.getGridBassNoteCount();
+    const int blocks = static_cast<int>(6.0 * kSr / kBlock);
+    for (int s = 0; s < 6; ++s)
+    {
+        const int l0 = proc.getLearnedBassNoteCount();
+        const int g0 = proc.getGridBassNoteCount();
+        const auto a0 = proc.getAttackDebug();
+        feed(&riffB, static_cast<int>(kSr / kBlock));
+        const auto a1 = proc.getAttackDebug();
+        std::printf("[TRANS] s=%d state=%d learned=%d grid=%d attacks=%lld locked=%d\n",
+                    s, proc.getDisplayStateIndex(),
+                    proc.getLearnedBassNoteCount() - l0,
+                    proc.getGridBassNoteCount() - g0,
+                    static_cast<long long>(a1.accepted - a0.accepted),
+                    proc.hasLearnedRiff() ? 1 : 0);
+    }
+    const int learned = proc.getLearnedBassNoteCount() - learnedBefore;
+    const int grid = proc.getGridBassNoteCount() - grid0;
+    const double secs = static_cast<double>(blocks) * kBlock / kSr;
+    std::printf("[TRANS-MIRROR] during transition: learned=%d (%.1f/s) grid=%d\n",
+                learned, static_cast<double>(learned) / secs, grid);
+
+    // The transition section must mirror the live player, not go silent.
+    // Before the fix this was 3 notes (0.5/s); a regression to starvation fails here.
+    REQUIRE(learned >= 10);
+
+    proc.setPlayHead(nullptr);
+    proc.releaseResources();
 }
 
 // Contract: on real playing in Play mode, the bass is the mirror. The harmony
