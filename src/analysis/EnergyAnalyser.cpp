@@ -27,6 +27,12 @@ void EnergyAnalyser::prepare(double newSampleRate, int maxBlockSize)
     onsetWindow.prepare(sampleRate, kOnsetWindowSeconds);
     onsetRmsEnergy = 0.0f;
 
+    // Fixed-hop onset sampling: ~10.7 ms, the update interval the attack detector
+    // was tuned at (512 samples @ 48 kHz). Host-block independent.
+    onsetHopSamples = juce::jmax(1, static_cast<int>(std::lround(0.0107 * sampleRate)));
+    onsetHopCountdown = onsetHopSamples;
+    onsetHopCount = 0;
+
     fifo.assign(static_cast<size_t>(fftSize), 0.0f);
     fifoWrite = 0;
     hopCounter = 0;
@@ -99,6 +105,7 @@ void EnergyAnalyser::runSpectrum()
 
 void EnergyAnalyser::process(const float* audioData, int numSamples)
 {
+    onsetHopCount = 0;
     for (int n = 0; n < numSamples; ++n)
     {
         const float s = audioData[n];
@@ -114,6 +121,18 @@ void EnergyAnalyser::process(const float* audioData, int numSamples)
         {
             hopCounter = 0;
             runSpectrum();
+        }
+
+        // Record the onset envelope at a fixed hop, independent of the host block.
+        if (--onsetHopCountdown <= 0)
+        {
+            onsetHopCountdown = onsetHopSamples;
+            if (onsetHopCount < kMaxOnsetHops)
+            {
+                onsetHopRms[static_cast<size_t>(onsetHopCount)] = onsetWindow.getRms();
+                onsetHopOffset[static_cast<size_t>(onsetHopCount)] = n;
+                ++onsetHopCount;
+            }
         }
     }
 

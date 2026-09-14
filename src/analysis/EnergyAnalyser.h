@@ -6,6 +6,7 @@
  */
 
 #include <juce_dsp/juce_dsp.h>
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -35,6 +36,25 @@ public:
      * window is the onset signal; it keeps the same ×4 scale and clamp.
      */
     float getOnsetRmsEnergy() const { return onsetRmsEnergy; }
+
+    // ── Fixed-hop onset envelope ─────────────────────────────────────────────
+    // The onset RMS sampled at a fixed time hop, independent of the host block
+    // size. The attack detector is driven per hop (see the processor), so a
+    // 65536-sample host block gives the same detection as a 64-sample one. The
+    // hop matches the ~10.7 ms update interval the detector was tuned at.
+
+    /** @brief Number of fixed-hop onset samples captured in the last process(). */
+    int getOnsetHopCount() const noexcept { return onsetHopCount; }
+    /** @brief Fixed-hop onset RMS (analyser-scaled) at hop @p i. */
+    float getOnsetHopRms(int i) const noexcept
+    {
+        return onsetHopRms[static_cast<size_t>(i)];
+    }
+    /** @brief Sample offset of hop @p i within the last process() block. */
+    int getOnsetHopOffset(int i) const noexcept
+    {
+        return onsetHopOffset[static_cast<size_t>(i)];
+    }
     float getSpectralCentroid() const { return spectralCentroid; }
     float getHighFreqFlux() const { return highFreqFlux; }
     float getPeakRms() const noexcept { return peakRmsEnvelope; }
@@ -64,6 +84,14 @@ private:
     // window. Shared with the tests via RmsWindow so the definition cannot drift.
     RmsWindow rmsWindow;
     RmsWindow onsetWindow;
+
+    // Fixed-hop capture of the onset envelope (see getOnsetHopCount).
+    static constexpr int kMaxOnsetHops = 4096;
+    std::array<float, kMaxOnsetHops> onsetHopRms{};
+    std::array<int, kMaxOnsetHops> onsetHopOffset{};
+    int onsetHopCount = 0;
+    int onsetHopSamples = 512;
+    int onsetHopCountdown = 512;
 
     double sampleRate = 44100.0;
 

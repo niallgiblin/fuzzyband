@@ -249,6 +249,7 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     while (grooveCommitQueue.try_dequeue(staleCommit)) {}
 
     hostSampleTime = 0;
+    lastLearnerHopAbs = -1;
     lastClockSample = -1;
     lastClockBlockSamples = 0;
     grooveLockStartMono = -1;
@@ -1526,18 +1527,47 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // trough between 16ths (the attack detector then re-fired several times
         // per note, so the mirror machine-gunned). Structure/loudness keeps the
         // slow RMS.
-        const float onsetRms = energyAnalyser.getOnsetRmsEnergy();
-        const auto bassNote = ((silentNow || !armActive) && !capturingNow)
-            ? PhraseLearner::BassNote{}
-            : phraseLearner.process(
-                hostSampleTime,
-                onsetRms,
-                pitchEstimator.getMidiNote(),
-                pitchEstimator.getConfidence(),
-                bpmForPlayer,
-                numSamples,
-                pcForBass
-            );
+        // The attack detector must see the waveform at a fixed hop, not once per
+        // host block. With a large host buffer the old once-per-block call fed it
+        // a single RMS value taken from the last ~20 ms of the block, so mirror
+        // density collapsed as the buffer grew (370 -> 78 notes/s from 64 -> 4096
+        // samples; the buffer sweep in test_bass_mirror_play_realaudio). Drive the
+        // learner once per fixed onset hop instead, so it behaves the same at 64
+        // and 65536 samples per block.
+        struct MirrorTrigger { int offset; int midi; float vel; };
+        std::array<MirrorTrigger, 128> hopTriggers{};
+        int hopTriggerCount = 0;
+        if (!((silentNow || !armActive) && !capturingNow))
+        {
+            const float pitchMidi = pitchEstimator.getMidiNote();
+            const float pitchConf = pitchEstimator.getConfidence();
+            const int hopCount = energyAnalyser.getOnsetHopCount();
+            for (int h = 0; h < hopCount; ++h)
+            {
+                const int hopOffset = energyAnalyser.getOnsetHopOffset(h);
+                const int64_t hopAbs = hostSampleTime + hopOffset;
+                // Hops are at fixed global positions (the analyser's countdown
+                // carries across blocks), so the delta is the true time since the
+                // previous call — no per-block "tail" sample, which is what still
+                // made detection depend on the host block size.
+                const int delta = (lastLearnerHopAbs >= 0)
+                    ? juce::jmax(1, static_cast<int>(hopAbs - lastLearnerHopAbs))
+                    : hopOffset + 1;
+                lastLearnerHopAbs = hopAbs;
+                const auto bn = phraseLearner.process(
+                    hopAbs, energyAnalyser.getOnsetHopRms(h),
+                    pitchMidi, pitchConf, bpmForPlayer, delta, pcForBass);
+                if (bn.trigger && hopTriggerCount < static_cast<int>(hopTriggers.size()))
+                    hopTriggers[static_cast<size_t>(hopTriggerCount++)] =
+                        { hopOffset, bn.midiNote, bn.velocity };
+            }
+        }
+        else
+        {
+            // Gated/idle: drop the accumulator anchor so a later resume does not
+            // pass one enormous delta to the learner.
+            lastLearnerHopAbs = -1;
+        }
         // Idle (armActive false) or silence: don't keep the riff mirror learning
         // in the background — the plugin only learns once the user arms it.
         if ((silentNow || !armActive) && !capturingNow && !phraseLearner.isLocked()
@@ -1909,9 +1939,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
         const double samplesPerBeatQ = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
         const int durationSamples = juce::jmax(1, static_cast<int>(0.85 * samplesPerBeatQ));
-        int mirrorNote = bassNote.midiNote;
-        float mirrorVel = bassNote.velocity;
-        bool shouldTrigger = bassNote.trigger && !guitarStopped;
         if (enginePhase == EnginePhase::RiffA
             && !riffCaptureActive.load(std::memory_order_acquire))
         {
@@ -1925,35 +1952,37 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                            static_cast<double>(bpmForPlayer), sr,
                            hostSampleTime, bassTranspose);
         }
-        else if (shouldTrigger && !riffCaptureActive.load(std::memory_order_acquire)
-            && !phraseLearner.isGridCapturing()
-            && listenBass)
+        else if (listenBass && !guitarStopped
+                 && !riffCaptureActive.load(std::memory_order_acquire)
+                 && !phraseLearner.isGridCapturing())
         {
-            const int note = mirrorNote + bassTranspose;
             const double sixteenthQ = samplesPerBeatQ / 4.0;
             const double maxSnap = std::min(0.030 * sr, sixteenthQ * 0.5);
-            int offset = 0;
-            if (sixteenthQ > 1.0)
+            for (int t = 0; t < hopTriggerCount; ++t)
             {
-                const int64_t nearest = static_cast<int64_t>(
-                    std::llround(static_cast<double>(clockSample) / sixteenthQ)
-                    * sixteenthQ);
-                const int64_t delta = nearest - clockSample; // negative ⇒ already passed
-                if (std::abs(static_cast<double>(delta)) <= maxSnap
-                    && delta >= 0 && delta < numSamples)
-                    offset = static_cast<int>(delta);
-                // else offset 0: never add sixteenthQ to chase the next 16th.
+                const int note = hopTriggers[static_cast<size_t>(t)].midi + bassTranspose;
+                int offset = juce::jlimit(0, numSamples - 1,
+                                          hopTriggers[static_cast<size_t>(t)].offset);
+                if (sixteenthQ > 1.0)
+                {
+                    // Snap the attack to the nearest 16th when it is close, so the
+                    // mirror sits on the grid instead of a hop late.
+                    const int64_t attackAbs = clockSample + offset;
+                    const int64_t nearest = static_cast<int64_t>(
+                        std::llround(static_cast<double>(attackAbs) / sixteenthQ) * sixteenthQ);
+                    const int64_t delta = nearest - attackAbs;   // negative ⇒ already passed
+                    if (std::abs(static_cast<double>(delta)) <= maxSnap
+                        && delta >= 0 && delta < numSamples - offset)
+                        offset += static_cast<int>(delta);
+                }
+                // Hold the mirror note through the player's sustain: it is released
+                // only when the guitarist actually stops.
+                patternPlayer.triggerLearnedBassNote(note,
+                                                     hopTriggers[static_cast<size_t>(t)].vel,
+                                                     offset, durationSamples, /*hold=*/true);
+                // Musical memory for the fallback: remember the key actually played.
+                lastBassPitchClassOffset = ((hopTriggers[static_cast<size_t>(t)].midi % 12) + 12) % 12;
             }
-            // Hold the mirror note through the player's sustain: it is released
-            // only when the guitarist actually stops.
-            patternPlayer.triggerLearnedBassNote(note, mirrorVel, offset, durationSamples,
-                                                 /*hold=*/true);
-            // Musical memory for the fallback: the harmony line now plays only
-            // when the guitarist has stopped, and the pitch tracker resets on
-            // silence. Remember the key they actually played (from a real
-            // mirrored attack — not from a quiet-tail estimate) so the fallback
-            // does not revert to C.
-            lastBassPitchClassOffset = ((mirrorNote % 12) + 12) % 12;
         }
     }
 

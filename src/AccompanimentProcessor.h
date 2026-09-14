@@ -322,6 +322,7 @@ private:
     std::mutex inferenceDrainMutex;
 
     int64_t hostSampleTime = 0;
+    int64_t lastLearnerHopAbs = -1;    // absolute sample of the last fixed-hop learner call
     int64_t lastClockSample = -1;          // previous block's resolved transport sample
     int lastClockBlockSamples = 0;         // previous block size (jump detection)
 

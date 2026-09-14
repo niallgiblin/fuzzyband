@@ -217,11 +217,13 @@ TEST_CASE("bass mirror: real-audio Play-mode producer split (raw takes)",
     SUCCEED("raw measurement ran");
 }
 
-// Diagnostic: buffer-size sweep. The detector is fed the fast onset RMS and its
-// decay-recency window is time-based, so the producer split should not depend on
-// the host buffer. If it does, that is the regression the user is hearing.
-TEST_CASE("bass mirror: real-audio buffer-size sweep (diagnostic)",
-          "[integration][bass][mirror][realaudio][diagnostic]")
+// Guard: the emitted mirror must not depend on the host block size. The attack
+// detector is driven at a fixed hop (independently of the host block), so the
+// number of mirrored notes must be the same at 64 and 4096 samples per block.
+// This was the root cause of the recurring "bass doesn't mirror" failures: the
+// detector was called once per block with a single value from the last 20 ms.
+TEST_CASE("bass mirror: the emitted mirror is host-buffer-size invariant",
+          "[integration][bass][mirror][realaudio][bufferinvariance]")
 {
     WavReader::PcmMono pcm;
     if (!WavReader::readMonoWav(rawPath("palm_mute/palm_mute.wav"), pcm))
@@ -231,6 +233,9 @@ TEST_CASE("bass mirror: real-audio buffer-size sweep (diagnostic)",
     }
     const int64_t window = static_cast<int64_t>(30.0 * pcm.sampleRate);
     std::printf("[BS-SWEEP] block | learned grid L/G | rise blockedFloor acc\n");
+    int ref = -1;
+    int minLearned = -1;
+    int maxLearned = -1;
     for (int bs : { 64, 128, 256, 512, 1024, 2048, 4096 })
     {
         const PlayMirrorStats s = runPlay(pcm, 0, window, bs);
@@ -241,8 +246,17 @@ TEST_CASE("bass mirror: real-audio buffer-size sweep (diagnostic)",
                     static_cast<long long>(s.attack.riseEdges),
                     static_cast<long long>(s.attack.blockedByFloor),
                     static_cast<long long>(s.attack.accepted));
+        if (bs == 512)
+            ref = s.learned;
+        minLearned = (minLearned < 0) ? s.learned : std::min(minLearned, s.learned);
+        maxLearned = std::max(maxLearned, s.learned);
     }
-    SUCCEED("sweep ran");
+
+    REQUIRE(ref > 0);
+    // 10% (plus a small absolute slack for edge hops) is generous next to the
+    // ~5x collapse the once-per-block call produced.
+    REQUIRE(maxLearned <= ref + ref / 10 + 4);
+    REQUIRE(minLearned >= ref - ref / 10 - 4);
 }
 
 // Diagnostic: Record-riff mode over the same real take, 2 s buckets, so the

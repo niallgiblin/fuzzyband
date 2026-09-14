@@ -6,6 +6,50 @@ For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md) and its
 
 Milestone/phase status lives in [`.planning/`](.planning) (`.planning/STATE.md`, `.planning/ROADMAP.md`). **Do not read `.gsd/` — it is a stale, untracked local artifact.**
 
+## [1.0.8] — The mirror is host-buffer-size invariant
+
+**Root cause of the nine-times-recurring "bass doesn't mirror".** The attack
+detector was invoked **once per host block** with a single RMS value taken from
+the **last ~20 ms of that block**:
+
+```
+energyAnalyser.process(in, numSamples);                            // once
+phraseLearner.process(hostSampleTime, getOnsetRmsEnergy(), ...);   // once
+```
+
+At a 512-sample block the detector saw a value every ~11 ms. At a 4096-sample
+block it saw one every ~93 ms, from the last 20 ms only — the first 78 % of each
+block was never sampled, and the 200 ms decay-recency window was shorter than the
+gap between samples, so `armed` was rarely true. With a host block near 1 s (a
+1.2 s media buffer), the mirror essentially stopped and the harmony line took
+over.
+
+Measured on `data/raw/palm_mute/palm_mute.wav`, real processor in Play mode, 30 s:
+
+| host block | mirrored notes (before) | (after) |
+| --- | --- | --- |
+| 64 | 370 | 217 |
+| 512 | 225 | 217 |
+| 2048 | 94 | 217 |
+| 4096 | 78 | 218 |
+
+### The fix
+
+- **The onset envelope is sampled at a fixed ~10.7 ms hop** inside
+  `EnergyAnalyser` (the update interval the detector was tuned at), independent
+  of the host block.
+- **`AccompanimentProcessor` drives `PhraseLearner` once per hop**, not once per
+  block, and emits **every** mirrored attack (the old path emitted at most one per
+  block). Hop deltas are computed from absolute sample positions, so there is no
+  per-block "tail" sample — that was the residual block dependence.
+- **Every mirrored attack is placed at its own time**, snapped to the nearest
+  16th within 30 ms, instead of all notes landing on the block start.
+- The buffer sweep that used to only `SUCCEED()` is now a failing guard:
+  `bass mirror: the emitted mirror is host-buffer-size invariant` asserts the
+  mirrored-note count is within 10 % across 64 → 4096 samples per block.
+
+Suites: **287** unit / **84** integration, all passing.
+
 ## [1.0.6] — Harmony is a total fallback; the mirror holds a sustain
 
 The user's report: "the bass listens for gaps in my playing and when it identifies

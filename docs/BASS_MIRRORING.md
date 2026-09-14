@@ -101,6 +101,20 @@ pre-learning fallback *within* a silence; it no longer decides mirror-vs-harmony
 while the guitarist is playing. Measured effect: harmony is 0 in every audible
 window across the raw takes (was up to 26 notes per 30 s). See §3 (1.0.6).
 
+**Update (1.0.8) — the detector is driven at a fixed hop, not once per host
+block.** Even with time-based windows, the attack detector was called *once per
+`processBlock`* with a single onset value from the last ~20 ms. Its **sampling
+rate was therefore the host block rate**, so a 64-sample buffer saw the waveform
+every ~1.5 ms and a 4096-sample buffer every ~93 ms — and a ~1 s block (a 1.2 s
+media buffer) saw one value per second, below the 200 ms decay-recency window, so
+`armed` was almost never true and the mirror stopped. `EnergyAnalyser` now records
+the onset envelope at a fixed ~10.7 ms hop and `AccompanimentProcessor` drives
+`PhraseLearner` once per hop, so the emitted mirror is identical from 64 to 4096
+samples per block. Guarded by `bass mirror: the emitted mirror is
+host-buffer-size invariant`. **A time-based window is necessary but not
+sufficient — the *update rate* of a streaming detector must also be decoupled
+from the host block.**
+
 ---
 
 ## 3. The regression cycle — the attempts, in order

@@ -126,6 +126,15 @@ still present in the attack detector.**
 `sampleRate` in `prepare()`, never counted in blocks.** Add a buffer-size sweep
 test whenever you touch a time window.
 
+**The same trap in its second form: the detector's *update rate*.** A streaming
+detector called once per `processBlock` samples the signal at the **host block
+rate**, so even a time-based window behaves differently at every buffer size. In
+1.0.8 the attack detector was decoupled from the host block: `EnergyAnalyser`
+records the onset envelope at a fixed ~10.7 ms hop and the processor drives
+`PhraseLearner` per hop. Before that, mirror density fell 370 → 78 notes/30 s
+from a 64- to a 4096-sample block. **When you add a streaming detector, decouple
+its update rate from the host block and assert invariance across 64 → 4096.**
+
 ### 2.2 The mirror/grid arbitration is a race by construction
 
 `PatternPlayer` has **one monophonic bass voice** and three producers

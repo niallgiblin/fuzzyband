@@ -1,4 +1,4 @@
-version 1.0.7
+version 1.0.8
 sampleRate 48000
 bpm 120
 genre Metal (index 3)
