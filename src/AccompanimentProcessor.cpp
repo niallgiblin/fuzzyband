@@ -1845,21 +1845,10 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             // The clock still guarantees an exit at transitionEndMono.
             const int64_t samplesPerBarC =
                 static_cast<int64_t>(4.0 * 60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer)) * sr);
-            const bool sameRiffReturned = sameRiffMatchCount >= 4
-                                       && lastRiffMatchSample > transitionStartMono
-                                       && firstRefMatchMono > 0
-                                       && (lastRefMatchMono - firstRefMatchMono)
-                                            >= static_cast<int64_t>(samplesPerBeat);
-            if (sameRiffReturned && !transitionCutShortArmed && samplesPerBarC > 0)
-            {
-                transitionCutShortArmed = true;
-                const int64_t elapsed = std::max(int64_t{ 0 }, hostSampleTime - transitionStartMono);
-                const int64_t intoBar = elapsed % samplesPerBarC;
-                const int64_t toNextBar = (intoBar == 0) ? 0 : (samplesPerBarC - intoBar);
-                const int64_t cutAt = hostSampleTime + toNextBar;
-                if (transitionEndMono < 0 || cutAt < transitionEndMono)
-                    transitionEndMono = cutAt;
-            }
+            // The T6.2 same-riff cut-short was removed: it fired on a loose
+            // IOI+pitch match and ended the section early even when the user had
+            // selected more transition bars. The transition now always runs its
+            // selected length (bounded by transitionEndMono below).
             if (transitionEndMono >= 0 && hostSampleTime >= transitionEndMono)
             {
                 postLockPhase = PostLockPhase::Idle;
