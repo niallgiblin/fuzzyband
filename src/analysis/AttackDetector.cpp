@@ -19,11 +19,27 @@ void AttackDetector::reset() noexcept
     rmsFloorSinceArm_ = 0.0f;
     risePending_ = false;
     lastAttackSample_ = 0;
+    hfFluxAvg_ = 0.0f;
 }
 
-AttackVerdict AttackDetector::classify(float rms, std::int64_t sampleTime) noexcept
+AttackVerdict AttackDetector::classify(float rms, std::int64_t sampleTime, float hfFlux) noexcept
 {
     AttackVerdict v;
+
+    // Pick-transient gate: a real pick is a broadband transient (>2 kHz flux
+    // spike). A sustained low note has HF energy but no flux change, and its RMS
+    // ripple must not be mistaken for a pick. When the caller supplies no flux
+    // (negative) the gate is skipped and the level-only predicate is used.
+    if (hfFlux >= 0.0f)
+    {
+        // Absolute floor only: measured on a real DI, the >2 kHz flux does not
+        // separate a pick from a distorted sustain (1.2x, and the sustain's flux
+        // is higher because it is louder). What it does separate is real audio
+        // from a *pure tone* (which has no broadband flux at all), so it serves
+        // as a cheap "is this a real string, not a sine" gate.
+        v.transient = (hfFlux > kFluxAbs);
+        hfFluxAvg_ = (hfFluxAvg_ <= 0.0f) ? hfFlux : (0.97f * hfFluxAvg_ + 0.03f * hfFlux);
+    }
 
     const float prevRms = prevRms_;   // previous block's level, before this one
     prevRms_ = rms;
@@ -65,7 +81,7 @@ AttackVerdict AttackDetector::classify(float rms, std::int64_t sampleTime) noexc
     v.clearsFloor = (v.troughMargin > 0.0f);
     v.aboveFloor = (rms > kAmplitudeFloor);
 
-    const bool riseEdge = v.armed && v.sharpRise && v.clearsFloor && v.aboveFloor;
+    const bool riseEdge = v.armed && v.sharpRise && v.clearsFloor && v.aboveFloor && v.transient;
     if (v.armed && v.sharpRise && v.aboveFloor)
     {
         ++debug_.riseEdges;
@@ -85,6 +101,8 @@ AttackVerdict AttackDetector::classify(float rms, std::int64_t sampleTime) noexc
             v.blockedBy = AttackVerdict::Blocked::MinIntervalGate;
         else if (!v.aboveFloor)
             v.blockedBy = AttackVerdict::Blocked::BelowAmplitudeFloor;
+        else if (!v.transient)
+            v.blockedBy = AttackVerdict::Blocked::NotTransient;
         else if (!v.armed)
             v.blockedBy = AttackVerdict::Blocked::NoRecentFall;
         else if (!v.sharpRise)

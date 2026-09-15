@@ -31,6 +31,7 @@ struct AttackVerdict
         NoSharpRise,          // level did not rise sharply vs the EMA or the previous block
         TroughTooShallow,     // rise did not clear the trough by the required margin
         BelowAmplitudeFloor,  // block was below the attack amplitude floor
+        NotTransient,         // no broadband (pick) transient — a sustained-note ripple
         MinIntervalGate       // a real edge, but the min-interval gate was still closed
     };
 
@@ -42,6 +43,7 @@ struct AttackVerdict
     bool sharpRise = false;
     bool clearsFloor = false;
     bool aboveFloor = false;
+    bool transient = true;
     bool gateOpen = false;
 
     // Numeric margins, for the same experiment.
@@ -76,8 +78,13 @@ public:
      * @brief Advance the envelope by one block and classify it.
      * @param rms        onset RMS for this block (see @ref EnergyAnalyser::getOnsetRmsEnergy)
      * @param sampleTime absolute sample position of the block start
+     * @param hfFlux     >2 kHz spectral flux, or negative when unknown. A real
+     *        pick is a broadband transient; the RMS ripple of a sustained low
+     *        note is not. When supplied, the transient gate keeps a fast pick
+     *        from being rejected by the level-only trough test without letting a
+     *        sustained note's ripple through.
      */
-    AttackVerdict classify(float rms, std::int64_t sampleTime) noexcept;
+    AttackVerdict classify(float rms, std::int64_t sampleTime, float hfFlux = -1.0f) noexcept;
 
     /** @brief Sample of the last accepted attack (0 before the first). */
     std::int64_t getLastAttackSample() const noexcept { return lastAttackSample_; }
@@ -98,6 +105,7 @@ private:
     float rmsFloorSinceArm_ = 0.0f;
     bool risePending_ = false;
     std::int64_t lastAttackSample_ = 0;
+    float hfFluxAvg_ = 0.0f;   // slow average of the pick-transient flux
 
     AttackDebug debug_{};
 
@@ -105,15 +113,15 @@ private:
     static constexpr double kFallWindowSeconds = 0.2;
     static constexpr float kRiseVsSmooth = 1.15f;
     static constexpr float kRiseVsPrev = 1.08f;
-    static constexpr float kFloorRise = 1.15f;
-    // Absolute trough term. Measured on a supplied DI: relaxing this (or the
-    // relative factor) captures all the player's picks but makes the detector
-    // fire on a *sustained* note's RMS ripple - the T6.2 guard
-    // ('a held note does not match a chug') fails at 9/4. Threshold tuning cannot
-    // separate a fast pick from a low note's ripple; that needs a transient /
-    // high-frequency discriminator, not a level ratio. See DI-AUDIT in
-    // test_bass_mirror_play_realaudio.cpp.
-    static constexpr float kFloorAbs = 0.005f;
+    static constexpr float kFloorRise = 1.10f;
+    // Absolute trough term dropped: with the transient gate below, the trough
+    // test no longer has to reject sustained-note ripple, so it can be
+    // relative-only and stop rejecting real picks. (Was 1.15 + 0.005, which
+    // rejected 68% of a real DI's rise edges.)
+    static constexpr float kFloorAbs = 0.0f;
+    // Pick-transient gate: flux must exceed a slow average of itself.
+    static constexpr float kFluxRel = 1.0f;
+    static constexpr float kFluxAbs = 1.0e-3f;
     static constexpr float kAmplitudeFloor = 0.01f;
     static constexpr float kSilenceFloor = 0.002f;
 };

@@ -737,7 +737,9 @@ TEST_CASE("T6.2: match reference uses onsets only; a held note does not match a 
             const double t = static_cast<double>(n) / kSr;
             win.push(static_cast<float>(0.08 * std::sin(2.0 * 3.14159265358979 * 65.406 * t)));
         }
-        held.process(static_cast<int64_t>(blk) * kBlock, win.getRms(), 36.0f, 0.9f, kBpm, kBlock);
+        // A held note: steady level, and no broadband pick transient (flux 0).
+        held.process(static_cast<int64_t>(blk) * kBlock, win.getRms(), 36.0f, 0.9f, kBpm, kBlock,
+                     INT_MIN, 0.0f);
         if (held.justMatchedReference())
             ++heldHits;
     }
@@ -750,16 +752,18 @@ TEST_CASE("T6.2: match reference uses onsets only; a held note does not match a 
     int chugHits = 0;
     int blocks = 0;
     // Prime a decay so the first 8th-note pulse is an attack (T6.5).
-    chug.process(0, 0.03f, 36.0f, 0.8f, kBpm, kBlock);
+    chug.process(0, 0.03f, 36.0f, 0.8f, kBpm, kBlock, INT_MIN, 0.5f);
     ++blocks;
     for (int a = 0; a < 8; ++a)
     {
         for (int b = 0; b < 18; ++b)
         {
             const bool loud = (b == 17);
+            // Each pulse carries a pick transient (flux spike).
             chug.process(static_cast<int64_t>(blocks) * kBlock,
                          loud ? 0.03f : 0.001f,
-                         36.0f, loud ? 0.8f : 0.0f, kBpm, kBlock);
+                         36.0f, loud ? 0.8f : 0.0f, kBpm, kBlock,
+                         INT_MIN, loud ? 0.5f : 0.0f);
             if (chug.justMatchedReference())
                 ++chugHits;
             ++blocks;

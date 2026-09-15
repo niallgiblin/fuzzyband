@@ -55,6 +55,12 @@ public:
     {
         return onsetHopOffset[static_cast<size_t>(i)];
     }
+    /** @brief >2 kHz spectral flux at hop @p i — a pick-transient indicator.
+     *         A pick is a broadband transient; a low note's RMS ripple is not. */
+    float getOnsetHopFlux(int i) const noexcept
+    {
+        return onsetHopFlux[static_cast<size_t>(i)];
+    }
     float getSpectralCentroid() const { return spectralCentroid; }
     float getHighFreqFlux() const { return highFreqFlux; }
     float getPeakRms() const noexcept { return peakRmsEnvelope; }
@@ -88,10 +94,14 @@ private:
     // Fixed-hop capture of the onset envelope (see getOnsetHopCount).
     static constexpr int kMaxOnsetHops = 4096;
     std::array<float, kMaxOnsetHops> onsetHopRms{};
+    std::array<float, kMaxOnsetHops> onsetHopFlux{};
     std::array<int, kMaxOnsetHops> onsetHopOffset{};
     int onsetHopCount = 0;
     int onsetHopSamples = 512;
     int onsetHopCountdown = 512;
+    // Max >2 kHz flux seen since the last onset hop, so a pick transient that
+    // falls between hops is not missed (the flux updates every 256 samples).
+    float hfFluxMaxSinceHop = 0.0f;
 
     double sampleRate = 44100.0;
 

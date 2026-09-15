@@ -47,7 +47,8 @@ public:
      */
     BassNote process(int64_t sampleTime, float rms, float pitchMidi, float pitchConf,
                      float bpm, int numSamples,
-                     int stablePitchClassOffset = INT_MIN) noexcept;
+                     int stablePitchClassOffset = INT_MIN,
+                     float hfFlux = -1.0f) noexcept;
 
     /**
      * @brief User-armed capture: reset and record every attack until

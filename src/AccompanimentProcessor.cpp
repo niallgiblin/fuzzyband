@@ -1556,7 +1556,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 lastLearnerHopAbs = hopAbs;
                 const auto bn = phraseLearner.process(
                     hopAbs, energyAnalyser.getOnsetHopRms(h),
-                    pitchMidi, pitchConf, bpmForPlayer, delta, pcForBass);
+                    pitchMidi, pitchConf, bpmForPlayer, delta, pcForBass,
+                    energyAnalyser.getOnsetHopFlux(h));
                 if (bn.trigger && hopTriggerCount < static_cast<int>(hopTriggers.size()))
                     hopTriggers[static_cast<size_t>(hopTriggerCount++)] =
                         { hopOffset, bn.midiNote, bn.velocity };

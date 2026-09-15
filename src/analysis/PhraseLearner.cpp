@@ -505,7 +505,7 @@ void PhraseLearner::coalesceSlotGates() noexcept
 
 PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, float pitchMidi,
                                                 float pitchConf, float bpm, int numSamples,
-                                                int stablePitchClassOffset) noexcept
+                                                int stablePitchClassOffset, float hfFlux) noexcept
 {
     BassNote result;
     result.trigger = false;
@@ -536,7 +536,7 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
     // gate read as a rise and the mirror machine-gunned); the gate only decides
     // *when* a latched edge is accepted, so a fast attack whose whole rise fits
     // inside the gate is not lost.
-    const AttackVerdict verdict = attackDetector.classify(rms, sampleTime);
+    const AttackVerdict verdict = attackDetector.classify(rms, sampleTime, hfFlux);
     const bool attack = verdict.accepted;
 
     // Hold the last confidently-estimated pitch: YIN confidence collapses at

@@ -121,6 +121,7 @@ void EnergyAnalyser::process(const float* audioData, int numSamples)
         {
             hopCounter = 0;
             runSpectrum();
+            hfFluxMaxSinceHop = std::max(hfFluxMaxSinceHop, highFreqFlux);
         }
 
         // Record the onset envelope at a fixed hop, independent of the host block.
@@ -130,9 +131,11 @@ void EnergyAnalyser::process(const float* audioData, int numSamples)
             if (onsetHopCount < kMaxOnsetHops)
             {
                 onsetHopRms[static_cast<size_t>(onsetHopCount)] = onsetWindow.getRms();
+                onsetHopFlux[static_cast<size_t>(onsetHopCount)] = hfFluxMaxSinceHop;
                 onsetHopOffset[static_cast<size_t>(onsetHopCount)] = n;
                 ++onsetHopCount;
             }
+            hfFluxMaxSinceHop = 0.0f;
         }
     }
 
