@@ -96,6 +96,13 @@ public:
     void setGuitarAudible(bool audible) noexcept { guitarAudible_ = audible; }
     bool isGuitarAudible() const noexcept { return guitarAudible_; }
 
+    /**
+     * @brief Current input (onset) level, 0..1. Used to release a held mirror
+     *        note when the note has actually decayed, instead of ringing through
+     *        a rest until the slow structure gate notices silence.
+     */
+    void setInputLevel(float level) noexcept { inputLevel_ = level; }
+
     /** @brief Grid events before this absolute sample are gap-fills only. */
     std::int64_t getGridGateSample() const noexcept { return gridGateSample_; }
 
@@ -147,6 +154,12 @@ private:
     bool bassNoteHeld_ = false;
 
     bool guitarAudible_ = false;
+    float inputLevel_ = 0.0f;      // current onset level (see setInputLevel)
+    float heldNoteLevel_ = 0.0f;   // onset level when the held note started
+
+    // A held note releases when the input falls to this fraction of its attack
+    // level (the note ended) - not only when the slow structure gate says silent.
+    static constexpr float kDecayRelease = 0.25f;
 
     // Absolute sample until which the mirror/frozen voice owns the grid.
     // std::numeric_limits<int64_t>::max() means "held until the guitar stops".

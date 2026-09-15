@@ -1899,6 +1899,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                               || enginePhase == EnginePhase::RiffBLocked);
         const bool guitarAudible = !silentNow;
         patternPlayer.setGuitarAudible(guitarAudible);
+        // Fast input level so a held mirror note releases when the note decays,
+        // not only when the slow structure gate later notices silence.
+        patternPlayer.setGuitarLevel(energyAnalyser.getOnsetRmsEnergy());
         patternPlayer.setBeatGridBassEnabled(listenBass && !guitarAudible);
 
         // The fallback keeps the key the guitarist last played (the live tracker

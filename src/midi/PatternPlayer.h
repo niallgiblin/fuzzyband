@@ -144,6 +144,9 @@ public:
      */
     void setGuitarAudible(bool audible) noexcept { bassVoice.setGuitarAudible(audible); }
 
+    /** @brief Current onset level, 0..1 (see BassVoice::setInputLevel). */
+    void setGuitarLevel(float level) noexcept { bassVoice.setInputLevel(level); }
+
     /** @brief Trigger a single bass note from PhraseLearner. Call from audio thread.
      *  @param hold sustain until the guitar stops, instead of a fixed gate.
      *  @param source provenance tag (live mirror vs frozen snapshot). */

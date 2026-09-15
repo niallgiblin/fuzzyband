@@ -250,12 +250,12 @@ inline int applyExclusion(
 
 /**
  * @brief Pattern indices for each section type.
- * Each pool has 2-4 patterns that rotate on bar boundaries for variety.
+ * Each pool has 2-8 patterns that rotate on bar boundaries for variety.
  */
 struct SectionPatternPool
 {
     int count;
-    int indices[4];
+    int indices[8];
 };
 
 /**
@@ -300,17 +300,18 @@ inline SectionPatternPool sectionPatternPoolForGenre(const char* sectionName, in
         return sectionPatternPool(sectionName);
 
     if (std::strcmp(sectionName, "INTRO") == 0)
-        return P{ 2, { 11, 12 } };
+        return P{ 3, { 11, 12, 20 } };            // Intro Build, Intro Full, Verse Ghost
     if (std::strcmp(sectionName, "VERSE") == 0)
-        return P{ 4, { 22, 23, 1, 2 } };         // Rock Backbeat, Rock Half-Time, Verse Groove, Verse Half-Time
+        // Wider than 4 so the rotation is not audibly repetitive (measured: 92 s\n        // of Play used only 5 patterns total). Adds Verse Fast, Verse Ghost and\n        // Half-Time to the backbeat/half-time pair.
+        return P{ 7, { 22, 23, 1, 2, 3, 20, 7 } };
     if (std::strcmp(sectionName, "CHORUS") == 0)
-        return P{ 4, { 4, 24, 25, 14 } };         // Chorus Mid, Rock Shuffle, Punk D-Beat, Chorus Open
+        return P{ 7, { 4, 24, 25, 14, 5, 21, 13 } };  // + Chorus Fast, Chorus Blast, Pre-Chorus Rise
     if (std::strcmp(sectionName, "BREAKDOWN") == 0)
-        return P{ 3, { 6, 15, 9 } };
+        return P{ 5, { 6, 15, 9, 7, 8 } };             // + Half-Time, Blast Beat
     if (std::strcmp(sectionName, "SOLO") == 0)
-        return P{ 3, { 4, 14, 24 } };
+        return P{ 5, { 4, 14, 24, 5, 10 } };           // + Chorus Fast, Thrash
     if (std::strcmp(sectionName, "OUTRO") == 0)
-        return P{ 2, { 16, 26 } };                // Outro Decay, Rock Ballad
+        return P{ 3, { 16, 26, 27 } };                 // Outro Decay, Rock Ballad, Rock 6/8 Feel
 
     return P{ 0, {} };
 }

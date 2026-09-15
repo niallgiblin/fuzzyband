@@ -118,6 +118,7 @@ void BassVoice::emit(juce::MidiBuffer& midi, int numSamples, std::int64_t blockS
         bassNoteOffMidi_ = outNote;
         bassNoteOffSample_ = std::numeric_limits<std::int64_t>::max();
         bassNoteHeld_ = true;
+        heldNoteLevel_ = juce::jmax(inputLevel_, 1.0e-4f);
         return;
     }
 
@@ -170,7 +171,17 @@ void BassVoice::flushLearned(juce::MidiBuffer& midi, int numSamples, std::int64_
 
 void BassVoice::releaseHeldIfStopped(juce::MidiBuffer& midi, std::int64_t blockStart) noexcept
 {
-    if (!bassNoteHeld_ || guitarAudible_)
+    if (!bassNoteHeld_)
+        return;
+
+    // Release when the guitarist actually stops, OR when the note's level has
+    // decayed to the trough (the note ended). Without the decay test a held
+    // mirror note rings through the rest and consecutive sustains blur into one
+    // another - the 'muddy on long sustains' report.
+    const bool stopped = !guitarAudible_;
+    const bool decayed = (heldNoteLevel_ > 0.0f)
+                      && (inputLevel_ < heldNoteLevel_ * kDecayRelease);
+    if (!stopped && !decayed)
         return;
 
     if (bassNoteOffSample_ >= 0)
@@ -179,6 +190,7 @@ void BassVoice::releaseHeldIfStopped(juce::MidiBuffer& midi, std::int64_t blockS
         bassNoteOffSample_ = -1;
     }
     bassNoteHeld_ = false;
+    heldNoteLevel_ = 0.0f;
     gridGateSample_ = blockStart;
 }
 
