@@ -38,6 +38,7 @@ void PhraseLearner::reset() noexcept
     matchLenBeats_ = 16.0;
     mismatchStartSample_ = -1;
     holdActive_ = false;
+    attackDetectedThisHop_ = false;
     attackDetector.reset();
     lastGoodPitchMidi_ = 36.0f;
     lastGoodPitchValid_ = false;
@@ -557,6 +558,7 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
     // inside the gate is not lost.
     const AttackVerdict verdict = attackDetector.classify(rms, sampleTime, hfFlux);
     const bool attack = verdict.accepted;
+    attackDetectedThisHop_ = attack;
 
     // Hold the last confidently-estimated pitch: YIN confidence collapses at
     // loud/quiet transitions, so attacks there use the held pitch instead of

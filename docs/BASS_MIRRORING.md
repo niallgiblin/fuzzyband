@@ -488,3 +488,41 @@ Fix: release at **10 %** of the attack level with an absolute floor
 only when the guitar has genuinely gone quiet (or the structure gate says
 stopped). Guard: `BassVoice: a held mirror note survives the guitar's natural
 decay` in `tests/test_bass_voice.cpp`.
+
+---
+
+## 12. Record-riff: keep the picked articulation, and denser Play drums (1.0.17)
+
+Two musicality fixes from the 1.0.16 takes.
+
+### The locked riff was a legato drone
+
+On `01-fairo_di-*_1608.wav`, the record-riff capture produced **19 onset slots**
+over the 4-bar loop where the guitarist picked ~25-31 times; the locked bass
+held one note for 3-5 sixteenths at a time and did not track the playing.
+
+Cause: the capture decided a 16th was an onset by comparing its slot *peak* to
+the previous slot's peak/tail. Two re-picks of the **same** note have similar
+peaks, so the comparison failed and the slots merged into one long gate. The
+learning-phase attack detector already knows a real pick happened — but
+`PhraseLearner::process` suppresses `result.trigger` during user capture, so the
+processor never saw it.
+
+Fix: `PhraseLearner::wasAttackDetected()` exposes the raw attack edge
+independent of the trigger suppression; the processor records every detected
+pick and the capture marks a 16th as an onset when a pick falls inside it. Same
+take: **19 → 35 articulated onsets**, gate 1-2 sixteenths, matching the picking.
+Guard: `Processor pipeline: the captured riff keeps the picked articulation`.
+
+### Play drums were sparse
+
+The Rock VERSE pool leads with `Rock Backbeat` and `Rock Half-Time`
+(7-8.5 drum events/bar) and `Verse Half-Time` (7/bar). Answered with those, a
+16th-note riff sounds plodding.
+
+Fix: the Play rotation now measures the guitarist's onset density
+(`getOnsetDensityPerBeat`); at ≥ 2.5 attacks/beat (16th-note riffing) it
+restricts the pick to the pool members with ≥ 12 drum events/bar (Verse Fast,
+Verse Ghost, Blast, …), falling back to the full pool otherwise. On the 1610
+play take the dense patterns now carry ~70 % of the take instead of a uniform
+7-way rotation.

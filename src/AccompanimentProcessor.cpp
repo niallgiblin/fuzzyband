@@ -217,6 +217,8 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     mirrorPitchWindow = juce::jmax(256, static_cast<int>(std::lround(0.016 * sr)));
     clearPendingMirror();
     lastOnsetMirrorMidi = -1;
+    recentAttackCount = 0;
+    recentAttackWrite = 0;
 
     // A5.2 post-lock transition state + display scope.
     postLockPhase = PostLockPhase::Idle;
@@ -971,6 +973,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         resetSectionRiffMemory();
         clearPendingMirror();
         lastOnsetMirrorMidi = -1;
+        recentAttackCount = 0;
+        recentAttackWrite = 0;
     }
     if (!playRequested)
     {
@@ -1075,16 +1079,43 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 lastPlayGrooveSlot = -1;
             if (grooveSlot != lastPlayGrooveSlot || lastPlayedPoolPattern < 0)
             {
+                // Guitarist intensity steers drum density: when they are riffing
+                // in 16ths, restrict the pool to the dense (metal) members so
+                // Play does not answer a fast riff with a sparse backbeat. Falls
+                // back to the full pool when nothing dense is available.
+                PatternRules::SectionPatternPool pickPool = orderedPool;
+                {
+                    const float playDensity = phraseLearner.getOnsetDensityPerBeat(
+                        hostSampleTime, rhythmWindowSamples, samplesPerBeatLocal);
+                    if (playDensity >= 2.5f)
+                    {
+                        PatternRules::SectionPatternPool densePool{};
+                        densePool.count = 0;
+                        for (int i = 0; i < orderedPool.count; ++i)
+                        {
+                            const int pi = orderedPool.indices[i];
+                            if (pi < 0 || pi >= patternLibrary.patternCount())
+                                continue;
+                            const auto& pat = patternLibrary.getPattern(pi);
+                            const float perBar = static_cast<float>(pat.drumEvents.size())
+                                / juce::jmax(1.0f, pat.lengthInBars);
+                            if (perBar >= 12.0f && densePool.count < 8)
+                                densePool.indices[densePool.count++] = pi;
+                        }
+                        if (densePool.count > 0)
+                            pickPool = densePool;
+                    }
+                }
                 const unsigned seed = static_cast<unsigned>(
                     sectionEntryBar.load(std::memory_order_relaxed));
                 int picked = PatternRules::pickPoolPattern(
-                    orderedPool, seed, grooveSlot, lastPlayedPoolPattern);
-                if (PatternRules::poolContains(orderedPool, patternIdx)
+                    pickPool, seed, grooveSlot, lastPlayedPoolPattern);
+                if (PatternRules::poolContains(pickPool, patternIdx)
                     && patternIdx != lastPlayedPoolPattern
                     && patternIdx > 0)
                     picked = patternIdx;
                 if (picked < 0)
-                    picked = PatternRules::constrainToPool(patternIdx, orderedPool, st);
+                    picked = PatternRules::constrainToPool(patternIdx, pickPool, st);
                 lastPlayedPoolPattern = picked;
                 lastPlayGrooveSlot = grooveSlot;
             }
@@ -1454,6 +1485,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             resetSlotOnsetTracker();
             clearPendingMirror();
             lastOnsetMirrorMidi = -1;
+            recentAttackCount = 0;
+            recentAttackWrite = 0;
             phraseLearner.setAutoLockEnabled(false);
             riffCaptureActive.store(true, std::memory_order_release);
             riffCaptureNoteCount.store(0, std::memory_order_relaxed);
@@ -1597,8 +1630,14 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 // Queue every detected attack for onset-aligned pitch resolution
                 // (used by the live mirror AND the riff capture). Emission is
                 // decided later, once the window is available.
-                if (bn.trigger)
+                // Record every real pick for the riff-capture articulation, and
+                // queue it for onset-pitch resolution — even during user capture,
+                // where the learner suppresses bn.trigger.
+                if (bn.trigger || phraseLearner.wasAttackDetected())
+                {
                     enqueueMirrorTrigger(hopAbs, bn.velocity, bn.midiNote);
+                    recordRecentAttack(hopAbs);
+                }
             }
         }
         else
@@ -2254,7 +2293,8 @@ void AccompanimentProcessor::flushPendingCaptureSlot() noexcept
     {
         const bool onset = !prevSlotOccupied_
             || captureSlotPeak_ > prevSlotPeak_ * 1.15f + 0.01f
-            || captureSlotPeak_ > prevSlotEnd_ * 1.15f + 0.01f;
+            || captureSlotPeak_ > prevSlotEnd_ * 1.15f + 0.01f
+            || attackInCaptureSlot(captureSlotStartAbs, captureSlotStartAbs + captureSlotSamples);
         phraseLearner.stampGridRange(
             static_cast<double>(captureSlotIndex_) * 0.25,
             static_cast<double>(captureSlotIndex_) * 0.25 + 0.25,
@@ -2437,6 +2477,28 @@ void AccompanimentProcessor::enqueueMirrorTrigger(int64_t targetAbs, float veloc
     pendingMirror[pendingMirrorCount++] = { targetAbs, velocity, fallbackNote };
 }
 
+void AccompanimentProcessor::recordRecentAttack(int64_t abs) noexcept
+{
+    recentAttackAbs[static_cast<size_t>(recentAttackWrite)] = abs;
+    recentAttackWrite = (recentAttackWrite + 1) % kMaxRecentAttacks;
+    if (recentAttackCount < kMaxRecentAttacks)
+        ++recentAttackCount;
+}
+
+bool AccompanimentProcessor::attackInCaptureSlot(int64_t fromAbs, int64_t toAbs) const noexcept
+{
+    for (int i = 0; i < recentAttackCount; ++i)
+    {
+        const int idx = (recentAttackWrite - 1 - i + kMaxRecentAttacks) % kMaxRecentAttacks;
+        const int64_t a = recentAttackAbs[static_cast<size_t>(idx)];
+        if (a >= fromAbs && a < toAbs)
+            return true;
+        if (a < fromAbs)
+            break;   // ring is chronological newest-first
+    }
+    return false;
+}
+
 void AccompanimentProcessor::flushMirrorTriggers(int numSamples, int64_t blockEndAbs,
                                                  int bassTranspose, int durationSamples,
                                                  bool emit) noexcept
@@ -2565,6 +2627,9 @@ void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSampl
                 captureSlotIndex_ = s;
                 captureSlotPeak_ = 0.0f;
                 captureSlotEnd_ = 0.0f;
+                captureSlotStartAbs = hostSampleTime
+                    + static_cast<int64_t>(std::llround((slotA - blockBeat0) * samplesPerBeat));
+                captureSlotSamples = static_cast<int64_t>(std::llround(0.25 * samplesPerBeat));
             }
             captureSlotMidi_ = bassMidi;
             if (slotPeak > captureSlotPeak_)

@@ -3869,3 +3869,41 @@ TEST_CASE("Step2: a form wrap re-enters a section and replays the stored riff",
     proc.playActive.store(false, std::memory_order_release);
     proc.releaseResources();
 }
+
+// Step 3: the captured riff must keep the PICKED articulation, not merge fast
+// re-picks into one long legato gate. The slot-peak/tail heuristic alone missed
+// re-picks of the same note (their slot peaks are similar), so the locked bass
+// played a sparse drone. The capture now also marks a 16th as an onset when the
+// attack detector accepted a real pick inside it.
+TEST_CASE("Processor pipeline: the captured riff keeps the picked articulation",
+          "[integration][pipeline][lock][capture]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);
+    REQUIRE(proc.isGrooveLocked());
+
+    int onsets = 0, maxGate = 0, occupied = 0;
+    for (int s = 0; s < PhraseLearner::kGridSlots; ++s)
+    {
+        if (!proc.getRiffASlotOccupied(s))
+            continue;
+        ++occupied;
+        const int g = proc.getRiffASlotGate(s);
+        if (g > 0)
+            ++onsets;
+        maxGate = std::max(maxGate, g);
+    }
+    INFO("occupied=" << occupied << " onsets=" << onsets << " maxGate=" << maxGate);
+    REQUIRE(occupied >= 8);
+    // A 16th-note chug over 4 bars must be articulated as separate onsets, not a
+    // handful of long gates.
+    REQUIRE(onsets >= 12);
+
+    proc.releaseResources();
+}

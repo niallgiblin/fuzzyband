@@ -186,6 +186,12 @@ public:
     /** True when pattern is locked and bass is actively playing. */
     bool isLocked() const noexcept { return state_ == State::Locked; }
 
+    /** @brief True on the hop where the attack detector accepted a pick,
+     *         INDEPENDENT of whether a bass note was emitted (suppressed during
+     *         user capture). The riff recorder uses this to keep the played
+     *         articulation instead of the block-level slot peaks. */
+    bool wasAttackDetected() const noexcept { return attackDetectedThisHop_; }
+
     /**
      * @brief Detector instrumentation: why attacks were or were not accepted.
      *
@@ -393,6 +399,7 @@ private:
     bool holdActive_ = false;       // Suppresses drift-unlock (bass keeps the riff)
     bool autoLockEnabled_ = true;   // Play disables; RiffBListen enables
     bool liveMirrorWhenLocked_ = false;  // transition: mirror live even when locked
+    bool attackDetectedThisHop_ = false;  // raw pick edge (see wasAttackDetected)
     bool following_ = false;        // Last attack matched the learned riff's grid
     bool justMatched_ = false;      // Edge: matched on the current block
     bool justMatchedRef_ = false;   // Edge: matched the A-riff match reference (T6.2)

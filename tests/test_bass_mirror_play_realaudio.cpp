@@ -71,12 +71,13 @@ struct MovingPlayHead final : public juce::AudioPlayHead
     juce::Optional<juce::AudioPlayHead::PositionInfo> getPosition() const override
     {
         juce::AudioPlayHead::PositionInfo info;
-        info.setBpm(kBpm);
+        info.setBpm(bpm);
         info.setIsPlaying(true);
         info.setTimeInSamples(samples);
         return info;
     }
     int64_t samples = 0;
+    double bpm = kBpm;
 };
 
 /** Run the real processor in Play mode over [startSample, startSample+numSamples). */
@@ -700,4 +701,97 @@ TEST_CASE("bass mirror: Play learns a riff per section and replays it on return 
     REQUIRE(stats[2].frozen > 0);
     REQUIRE(stats[2].mirror == 0);
     REQUIRE_FALSE(stats[2].frozenNotes.empty());
+}
+
+// Offline record-riff harness. Set MA_RIFF_WAV (and optionally MA_RIFF_BPM,
+// default 120). Captures a riff the way the plugin does, then dumps the captured
+// 16th grid and the emitted locked-riff bass notes so the capture/playback can be
+// compared against what was played. This is the record-riff counterpart to the
+// Play-mode DI audit.
+TEST_CASE("bass mirror: offline record-riff capture dump",
+          "[integration][bass][mirror][riff]")
+{
+    const char* path = std::getenv("MA_RIFF_WAV");
+    if (path == nullptr || *path == '\0')
+    {
+        SUCCEED("MA_RIFF_WAV unset");
+        return;
+    }
+    WavReader::PcmMono pcm;
+    if (!WavReader::readMonoWav(path, pcm) || pcm.samples.empty())
+    {
+        SUCCEED("MA_RIFF_WAV unreadable");
+        return;
+    }
+    double bpm = 120.0;
+    if (const char* b = std::getenv("MA_RIFF_BPM"))
+        bpm = std::max(40.0, std::atof(b));
+
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(kSr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("genre"))
+        p->setValueNotifyingHost(p->convertTo0to1(0.0f));   // Rock
+    if (auto* p = proc.getApvts().getParameter("bpm"))
+        p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(bpm)));
+
+    MovingPlayHead ph;
+    ph.bpm = bpm;
+    proc.setPlayHead(&ph);
+    proc.requestRiffCaptureStart();
+
+    const int64_t total = static_cast<int64_t>(pcm.samples.size());
+    int64_t start = 0;
+    bool locked = false;
+    int64_t lockStart = -1;
+    struct Note { double t; int midi; float vel; bool frozen; };
+    std::vector<Note> notes;
+    for (; start + block <= total; start += block)
+    {
+        ph.samples = start;
+        juce::AudioBuffer<float> buf(2, block);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* p = buf.getWritePointer(ch);
+            for (int i = 0; i < block; ++i)
+                p[i] = pcm.samples[static_cast<size_t>(start + i)];
+        }
+        const int f0 = proc.getBassProducerCount(BassVoice::Producer::Frozen);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        for (const auto meta : midi)
+        {
+            const auto m = meta.getMessage();
+            if (m.isNoteOn() && m.getChannel() == 2 && m.getVelocity() > 0)
+                notes.push_back({ static_cast<double>(start + meta.samplePosition) / kSr,
+                                  m.getNoteNumber(), m.getFloatVelocity(),
+                                  proc.getBassProducerCount(BassVoice::Producer::Frozen) > f0 });
+        }
+        if (!locked && proc.isGrooveLocked()) { locked = true; lockStart = start; }
+    }
+
+    std::printf("[RIFF] file=%s bpm=%.0f dur=%.1fs locked=%d lockAt=%.2fs\n",
+                path, bpm, static_cast<double>(total) / kSr, locked ? 1 : 0,
+                lockStart < 0 ? -1.0 : static_cast<double>(lockStart) / kSr);
+    std::printf("[RIFF] captured riff A: occupied=%d\n", proc.getRiffAOccupiedCount());
+    std::printf("[RIFF] slots (idx:midi:gate):");
+    for (int s = 0; s < PhraseLearner::kGridSlots; ++s)
+        if (proc.getRiffASlotOccupied(s))
+            std::printf(" %d:%d:%d", s, proc.getRiffASlotMidi(s), proc.getRiffASlotGate(s));
+    std::printf("\n");
+    std::printf("[RIFF] bass note-ons (t pitch vel frozen) over %.1fs: %d\n",
+                static_cast<double>(total) / kSr, static_cast<int>(notes.size()));
+    const int show = std::min<int>(static_cast<int>(notes.size()), 200);
+    for (int i = 0; i < show; ++i)
+        std::printf("[RIFF]   %8.3f  %3d  %.2f  %s\n", notes[static_cast<size_t>(i)].t,
+                    notes[static_cast<size_t>(i)].midi,
+                    static_cast<double>(notes[static_cast<size_t>(i)].vel),
+                    notes[static_cast<size_t>(i)].frozen ? "FROZEN" : "LIVE");
+
+    proc.playActive.store(false, std::memory_order_release);
+    proc.setPlayHead(nullptr);
+    proc.releaseResources();
+    SUCCEED("riff dump ran");
 }

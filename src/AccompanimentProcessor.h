@@ -329,9 +329,21 @@ private:
     int mirrorPitchWindow = 1024;   // LATENCY in samples; set in prepareToPlay
     int lastOnsetMirrorMidi = -1;   // most recent onset-resolved mirror note
 
+    // Recent detected attacks (absolute samples) — the riff capture marks a 16th
+    // as an onset when a real pick falls inside it, instead of merging re-picks
+    // into one long gate (the "learned riff is a legato drone" bug).
+    static constexpr int kMaxRecentAttacks = 64;
+    std::array<int64_t, kMaxRecentAttacks> recentAttackAbs{};
+    int recentAttackWrite = 0;
+    int recentAttackCount = 0;
+    int64_t captureSlotStartAbs = -1;
+    int64_t captureSlotSamples = 0;
+
     void enqueueMirrorTrigger(int64_t targetAbs, float velocity, int fallbackNote) noexcept;
     void flushMirrorTriggers(int numSamples, int64_t blockEndAbs, int bassTranspose,
                              int durationSamples, bool emit) noexcept;
+    void recordRecentAttack(int64_t abs) noexcept;
+    bool attackInCaptureSlot(int64_t fromAbs, int64_t toAbs) const noexcept;
     void clearPendingMirror() noexcept { pendingMirrorCount = 0; }
     void resetSlotOnsetTracker() noexcept;
     void flushPendingCaptureSlot() noexcept;
