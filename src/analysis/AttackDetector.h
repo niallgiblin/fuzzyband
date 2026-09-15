@@ -106,6 +106,13 @@ private:
     static constexpr float kRiseVsSmooth = 1.15f;
     static constexpr float kRiseVsPrev = 1.08f;
     static constexpr float kFloorRise = 1.15f;
+    // Absolute trough term. Measured on a supplied DI: relaxing this (or the
+    // relative factor) captures all the player's picks but makes the detector
+    // fire on a *sustained* note's RMS ripple - the T6.2 guard
+    // ('a held note does not match a chug') fails at 9/4. Threshold tuning cannot
+    // separate a fast pick from a low note's ripple; that needs a transient /
+    // high-frequency discriminator, not a level ratio. See DI-AUDIT in
+    // test_bass_mirror_play_realaudio.cpp.
     static constexpr float kFloorAbs = 0.005f;
     static constexpr float kAmplitudeFloor = 0.01f;
     static constexpr float kSilenceFloor = 0.002f;
