@@ -574,3 +574,130 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
     proc.releaseResources();
     SUCCEED("di audit ran");
 }
+
+namespace {
+
+// Drive a short Play form on real DI audio, one fixture per section name, and
+// report per-section BassVoice provenance. This is the Step 2 end-to-end guard:
+// the first pass mirrors live (and captures), a return replays the stored riff.
+struct RealSectionStat
+{
+    std::string name;
+    int frozen = 0;
+    int mirror = 0;
+    std::set<int> frozenNotes;
+};
+
+std::vector<RealSectionStat> runPlayRealSections(const WavReader::PcmMono& verse,
+                                                 const WavReader::PcmMono& chorus,
+                                                 int block)
+{
+    std::vector<RealSectionStat> stats;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(kSr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("genre"))
+        p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+    if (auto* p = proc.getApvts().getParameter("bpm"))
+        p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(kBpm)));
+    proc.setCustomSongForm("VERSE:1,CHORUS:1,VERSE:1");
+    {
+        juce::AudioBuffer<float> warm(2, block);
+        warm.clear();
+        juce::MidiBuffer midi;
+        proc.processBlock(warm, midi);
+    }
+
+    MovingPlayHead ph;
+    proc.setPlayHead(&ph);
+    proc.playActive.store(true, std::memory_order_release);
+
+    size_t versePos = 0, chorusPos = 0;
+    std::string cur;
+    int prevFrozen = 0, prevMirror = 0;
+    const int totalBlocks = static_cast<int>(13.0 * kSr / block);
+    for (int b = 0; b < totalBlocks; ++b)
+    {
+        const auto name = proc.getCurrentSectionName().toStdString();
+        if (proc.getSectionPhase() == 1 && name != cur && name != "Complete")
+        {
+            stats.push_back(RealSectionStat{});
+            stats.back().name = name;
+            cur = name;
+        }
+
+        const WavReader::PcmMono& src = (name == "CHORUS") ? chorus : verse;
+        size_t& pos = (name == "CHORUS") ? chorusPos : versePos;
+        juce::AudioBuffer<float> buf(2, block);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* p = buf.getWritePointer(ch);
+            for (int i = 0; i < block; ++i)
+                p[i] = src.samples.empty()
+                    ? 0.0f
+                    : src.samples[(pos + static_cast<size_t>(i)) % src.samples.size()];
+        }
+        pos += static_cast<size_t>(block);
+
+        ph.samples += block;
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+
+        const int f = proc.getBassProducerCount(BassVoice::Producer::Frozen);
+        const int m = proc.getBassProducerCount(BassVoice::Producer::Mirror);
+        if (!stats.empty())
+        {
+            auto& s = stats.back();
+            s.frozen += f - prevFrozen;
+            s.mirror += m - prevMirror;
+            for (const auto meta : midi)
+            {
+                const auto msg = meta.getMessage();
+                if (msg.isNoteOn() && msg.getChannel() == 2 && msg.getVelocity() > 0
+                    && proc.getLastBassProducer() == BassVoice::Producer::Frozen)
+                    s.frozenNotes.insert(msg.getNoteNumber());
+            }
+        }
+        prevFrozen = f;
+        prevMirror = m;
+    }
+
+    proc.playActive.store(false, std::memory_order_release);
+    proc.setPlayHead(nullptr);
+    proc.releaseResources();
+    return stats;
+}
+
+} // namespace
+
+// Step 2 §6.1/§6.3: first pass mirrors live (never silent) while capturing, and
+// a return to the same section NAME replays the captured riff (Producer::Frozen).
+TEST_CASE("bass mirror: Play learns a riff per section and replays it on return (real audio)",
+          "[integration][bass][mirror][realaudio][step2]")
+{
+    WavReader::PcmMono verse, chorus;
+    if (!WavReader::readMonoWav(rawPath("palm_mute/palm_mute.wav"), verse)
+        || !WavReader::readMonoWav(fixturePath("single_note_run.wav"), chorus))
+    {
+        SUCCEED("skipped");
+        return;
+    }
+
+    const auto stats = runPlayRealSections(verse, chorus, kBlock);
+    REQUIRE(stats.size() >= 3);
+    REQUIRE(stats[0].name == "VERSE");
+    REQUIRE(stats[1].name == "CHORUS");
+    REQUIRE(stats[2].name == "VERSE");
+
+    // First pass: the live mirror is the bass, immediately (the "asap" contract).
+    REQUIRE(stats[0].mirror > 0);
+    REQUIRE(stats[0].frozen == 0);
+    // The contrast section mirrors its own material too.
+    REQUIRE(stats[1].mirror > 0);
+    REQUIRE(stats[1].frozen == 0);
+    // The return is the stored VERSE riff, not the live mirror.
+    REQUIRE(stats[2].frozen > 0);
+    REQUIRE(stats[2].mirror == 0);
+    REQUIRE_FALSE(stats[2].frozenNotes.empty());
+}

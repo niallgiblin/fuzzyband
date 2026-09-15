@@ -1,7 +1,8 @@
 # Step 2 — Play-mode per-section riff learning and recall
 
-**Status:** not started. This document is the complete brief for the agent that
-implements it.
+**Status:** implemented at v1.0.14. See §5.4/§5.5 for the shipped algorithm and
+`docs/BASS_MIRRORING.md` §9 for the as-built summary (including the
+`stampLearnerGridSlots` end-boundary fix the buffer-invariance test exposed).
 **Written at:** v1.0.13 (`6463cdc`), after a long debugging session on the bass
 mirror. Read `docs/CONTEXT_HANDOFF.md` and `docs/PITFALLS_AND_INVARIANTS.md`
 first — this document assumes them and only adds what changed.

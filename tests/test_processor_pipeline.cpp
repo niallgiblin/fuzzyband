@@ -3549,3 +3549,323 @@ TEST_CASE("T6.4: 6 s of silence mid-lock keeps drums and frozen bass going",
 
     proc.releaseResources();
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Step 2: Play-mode per-section riff learning and recall
+//
+// First pass through a section: mirror live AND capture the riff in parallel.
+// A return to the same section NAME: replay the captured riff (Producer::Frozen).
+// Assertions are on emitted MIDI and BassVoice provenance, never on PhraseLearner
+// internals (docs/BASS_MIRRORING.md §4.4, §7).
+// ══════════════════════════════════════════════════════════════════════════════
+
+namespace {
+
+// An 8th-note plucked chug, phase-locked to the ABSOLUTE sample clock so the
+// rendered pattern is identical at every host block size.
+void fillPluck8th(juce::AudioBuffer<float>& buf, int64_t blockStartAbs, int block,
+                  double sr, double freq, int eighthSamples)
+{
+    for (int ch = 0; ch < buf.getNumChannels(); ++ch)
+    {
+        float* p = buf.getWritePointer(ch);
+        for (int i = 0; i < block; ++i)
+        {
+            const int64_t abs = blockStartAbs + i;
+            const int into = static_cast<int>(abs % eighthSamples);
+            const double intoSec = static_cast<double>(into) / sr;
+            const double env = std::exp(-intoSec * 9.0);
+            p[i] = static_cast<float>(0.55 * env
+                   * std::sin(2.0 * M_PI * freq * static_cast<double>(abs) / sr));
+        }
+    }
+}
+
+struct SectionRecall
+{
+    std::string name;
+    int frozen = 0;
+    int mirror = 0;
+    std::vector<int64_t> frozenAbs;   // absolute samples of Frozen note-ons
+    std::set<int> notes;
+};
+
+// Drive the real processor in Play mode over a short song form. The caller
+// supplies the chug frequency per section name (so VERSE and CHORUS differ).
+// Returns one stat record per section entry, in order.
+struct PlayFormResult
+{
+    std::vector<SectionRecall> sections;
+    int storedVerse = 0;
+    int storedChorus = 0;
+    int block = 512;
+};
+
+PlayFormResult runPlayForm(const char* form, int block, double seconds,
+                           double verseFreq, double chorusFreq, bool sparseFirstVerse = false)
+{
+    const double sr = 48000.0;
+    const double spb = 60.0 / 120.0 * sr;
+    const int eighth = static_cast<int>(std::llround(0.5 * spb));
+
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("bpm"))
+        p->setValueNotifyingHost(p->convertTo0to1(120.0f));
+    if (auto* p = proc.getApvts().getParameter("genre"))
+        p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+    proc.setCustomSongForm(form);
+    // Let the parsed form reach the audio thread once before arming Play.
+    {
+        juce::AudioBuffer<float> warm(2, block);
+        warm.clear();
+        juce::MidiBuffer midi;
+        proc.processBlock(warm, midi);
+    }
+    proc.playActive.store(true, std::memory_order_release);
+
+    PlayFormResult result;
+    result.block = block;
+    std::string cur;
+    int prevFrozen = 0, prevMirror = 0;
+    int64_t blockStart = static_cast<int64_t>(block);
+    const int totalBlocks = static_cast<int>(seconds * sr / block);
+    bool collecting = false;
+    bool firstVerseDone = false;
+    int blocksIntoFirstVerse = 0;
+    for (int b = 0; b < totalBlocks; ++b)
+    {
+        const auto name = proc.getCurrentSectionName().toStdString();
+        // Capture starts only once the count-in has finished (Play phase).
+        if (proc.getSectionPhase() == 1)
+        {
+            collecting = true;
+            if (name != cur && name != "Complete")
+            {
+                result.sections.push_back(SectionRecall{});
+                result.sections.back().name = name;
+                cur = name;
+            }
+        }
+        const double freq = (name == "CHORUS") ? chorusFreq : verseFreq;
+        juce::AudioBuffer<float> buf(2, block);
+        const bool inFirstVerse = collecting && name == "VERSE" && !firstVerseDone;
+        if (inFirstVerse && name != "CHORUS")
+            ++blocksIntoFirstVerse;
+        if (name == "CHORUS")
+            firstVerseDone = true;
+        if (sparseFirstVerse && inFirstVerse)
+        {
+            // One short blip, then silence: fewer than two 16ths are occupied, so
+            // there is no riff to remember.
+            buf.clear();
+            if (blocksIntoFirstVerse <= 1)
+                fillPluck8th(buf, blockStart, block, sr, freq, eighth);
+        }
+        else
+        {
+            fillPluck8th(buf, blockStart, block, sr, freq, eighth);
+        }
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (!msg.isNoteOn() || msg.getChannel() != 2 || msg.getVelocity() <= 0)
+                continue;
+            if (!collecting || result.sections.empty())
+                continue;
+            auto& s = result.sections.back();
+            s.notes.insert(msg.getNoteNumber());
+            if (proc.getLastBassProducer() == BassVoice::Producer::Frozen)
+                s.frozenAbs.push_back(blockStart + meta.samplePosition);
+        }
+        const int f = proc.getBassProducerCount(BassVoice::Producer::Frozen);
+        const int m = proc.getBassProducerCount(BassVoice::Producer::Mirror);
+        if (collecting && !result.sections.empty())
+        {
+            result.sections.back().frozen += (f - prevFrozen);
+            result.sections.back().mirror += (m - prevMirror);
+        }
+        prevFrozen = f;
+        prevMirror = m;
+        blockStart += block;
+    }
+
+    result.storedVerse = proc.getStoredSectionRiffOccupiedCount("VERSE");
+    result.storedChorus = proc.getStoredSectionRiffOccupiedCount("CHORUS");
+    proc.playActive.store(false, std::memory_order_release);
+    proc.releaseResources();
+    return result;
+}
+
+} // namespace
+
+// §6.1 — Learn on the first pass, recall on the return.
+// §6.3 — The first pass is NOT silent: it is the live mirror while capturing.
+TEST_CASE("Step2: Play mirrors a section's first pass and replays it on return",
+          "[integration][pipeline][step2][recall]")
+{
+    const auto r = runPlayForm("VERSE:1,CHORUS:1,VERSE:1", 512, 9.0, 65.406, 98.0);
+
+    REQUIRE(r.sections.size() >= 3);
+    // First VERSE: live mirror, not a replay.
+    REQUIRE(r.sections[0].name == "VERSE");
+    REQUIRE(r.sections[0].mirror > 0);
+    REQUIRE(r.sections[0].frozen == 0);
+    REQUIRE_FALSE(r.sections[0].notes.empty());
+    // CHORUS: different material, also mirrored on its first pass.
+    REQUIRE(r.sections[1].name == "CHORUS");
+    REQUIRE(r.sections[1].mirror > 0);
+    REQUIRE(r.sections[1].frozen == 0);
+    // Second VERSE: replay of the stored VERSE riff.
+    REQUIRE(r.sections[2].name == "VERSE");
+    REQUIRE(r.sections[2].frozen > 0);
+    REQUIRE(r.sections[2].mirror == 0);
+
+    // Both sections stored their own riff.
+    REQUIRE(r.storedVerse >= 2);
+    REQUIRE(r.storedChorus >= 2);
+
+    // The replay is the VERSE riff, not the CHORUS one.
+    REQUIRE(r.sections[2].notes.count(36) > 0);
+    REQUIRE(r.sections[2].notes.count(43) == 0);
+}
+
+// §6.2 — Sections do not cross-contaminate: CHORUS replays CHORUS, VERSE replays VERSE.
+TEST_CASE("Step2: a returned section replays its own riff, not another section's",
+          "[integration][pipeline][step2][isolation]")
+{
+    const auto r = runPlayForm("VERSE:1,CHORUS:1,VERSE:1,CHORUS:1", 512, 11.0, 65.406, 98.0);
+
+    REQUIRE(r.sections.size() >= 4);
+    REQUIRE(r.sections[2].name == "VERSE");
+    REQUIRE(r.sections[3].name == "CHORUS");
+
+    // VERSE replay is C (36); CHORUS replay is G (43). Neither bleeds into the other.
+    REQUIRE(r.sections[2].frozen > 0);
+    REQUIRE(r.sections[2].notes.count(36) > 0);
+    REQUIRE(r.sections[2].notes.count(43) == 0);
+    REQUIRE(r.sections[3].frozen > 0);
+    REQUIRE(r.sections[3].notes.count(43) > 0);
+    REQUIRE(r.sections[3].notes.count(36) == 0);
+}
+
+// §6.4 — The replay is buffer-size invariant (identical absolute event samples).
+TEST_CASE("Step2: section replay is host-buffer-size invariant",
+          "[integration][pipeline][step2][bufferinvariance]")
+{
+    const std::vector<int64_t>* ref = nullptr;
+    std::vector<int64_t> refStore;
+    for (int bs : { 128, 512, 2048 })
+    {
+        const auto r = runPlayForm("VERSE:1,CHORUS:1,VERSE:1", bs, 9.0, 65.406, 98.0);
+        REQUIRE(r.sections.size() >= 3);
+        REQUIRE(r.sections[2].name == "VERSE");
+        REQUIRE(r.sections[2].frozen > 0);
+        REQUIRE_FALSE(r.sections[2].frozenAbs.empty());
+        if (ref == nullptr)
+        {
+            refStore = r.sections[2].frozenAbs;
+            ref = &refStore;
+        }
+        else
+        {
+            INFO("block=" << bs << " ref=" << ref->size()
+                          << " got=" << r.sections[2].frozenAbs.size());
+            REQUIRE(r.sections[2].frozenAbs == *ref);
+        }
+    }
+}
+
+// §6.5 — A section with fewer than two occupied slots stores nothing and falls
+//        back to live mirroring on the next visit.
+TEST_CASE("Step2: a section with no real riff is not remembered",
+          "[integration][pipeline][step2][sparse]")
+{
+    const auto r = runPlayForm("VERSE:1,CHORUS:1,VERSE:1", 512, 9.0, 65.406, 98.0,
+                               /*silentFirstBar=*/true);
+    REQUIRE(r.sections.size() >= 2);
+    REQUIRE(r.sections[0].name == "VERSE");
+    REQUIRE(r.storedVerse == 0);       // nothing worth remembering
+    REQUIRE(r.storedChorus >= 2);      // the CHORUS still learned normally
+    if (r.sections.size() >= 3)
+    {
+        REQUIRE(r.sections[2].name == "VERSE");
+        REQUIRE(r.sections[2].frozen == 0);   // fell back to the live mirror
+    }
+}
+
+// §6.6 — A form wrap re-enters a section and replays its stored riff.
+//        Toggling the loop parameter restarts the form (setLooping resets the
+//        sequencer), which exercises the `barsElapsedNow < lastSeenBarsElapsed`
+//        re-entry path.
+TEST_CASE("Step2: a form wrap re-enters a section and replays the stored riff",
+          "[integration][pipeline][step2][wrap]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    const double spb = 60.0 / 120.0 * sr;
+    const int eighth = static_cast<int>(std::llround(0.5 * spb));
+
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("bpm"))
+        p->setValueNotifyingHost(p->convertTo0to1(120.0f));
+    if (auto* p = proc.getApvts().getParameter("genre"))
+        p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+    proc.setCustomSongForm("VERSE:1,CHORUS:1,VERSE:1");
+    proc.playActive.store(true, std::memory_order_release);
+
+    int64_t blockStart = 0;
+    int frozenDuringReentry = 0;
+    bool sawChorus = false;
+    bool loopToggled = false;
+    bool reenteredVersePostWrap = false;
+    int prevFrozen = 0;
+
+    const int totalBlocks = static_cast<int>(13.0 * sr / block);
+    for (int b = 0; b < totalBlocks; ++b)
+    {
+        const auto name = proc.getCurrentSectionName().toStdString();
+        if (name == "CHORUS")
+            sawChorus = true;
+
+        // Once the CHORUS has been reached, restart the form (a wrap) by
+        // switching the loop parameter on.
+        if (sawChorus && !loopToggled)
+        {
+            if (auto* p = proc.getApvts().getParameter("loop"))
+                p->setValueNotifyingHost(1.0f);
+            loopToggled = true;
+        }
+
+        const double freq = (name == "CHORUS") ? 98.0 : 65.406;
+        juce::AudioBuffer<float> buf(2, block);
+        fillPluck8th(buf, blockStart, block, sr, freq, eighth);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+
+        // After the wrap, the form is back at VERSE. Detect the re-entry and
+        // count the Frozen notes it emits (read the count AFTER the block).
+        if (loopToggled && name == "VERSE" && proc.isPlaySectionReplaying())
+            reenteredVersePostWrap = true;
+        const int frozenNow = proc.getBassProducerCount(BassVoice::Producer::Frozen);
+        if (reenteredVersePostWrap && name == "VERSE")
+            frozenDuringReentry += frozenNow - prevFrozen;
+        prevFrozen = frozenNow;
+        blockStart += block;
+    }
+
+    REQUIRE(sawChorus);
+    REQUIRE(loopToggled);
+    REQUIRE(reenteredVersePostWrap);
+    REQUIRE(frozenDuringReentry > 0);
+
+    proc.playActive.store(false, std::memory_order_release);
+    proc.releaseResources();
+}

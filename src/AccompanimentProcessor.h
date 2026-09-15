@@ -141,6 +141,31 @@ public:
     PhraseLearner::AttackDebug getAttackDebug() const noexcept { return phraseLearner.getAttackDebug(); }
     void resetAttackDebug() noexcept { phraseLearner.resetAttackDebug(); }
 
+    /** @brief Test/debug: note-ons emitted by a specific bass producer (provenance). */
+    int getBassProducerCount(BassVoice::Producer p) const noexcept
+    {
+        return patternPlayer.getBassProducerCount(p);
+    }
+    /** @brief Test/debug: producer of the most recent bass note-on. */
+    BassVoice::Producer getLastBassProducer() const noexcept
+    {
+        return patternPlayer.getLastBassProducer();
+    }
+
+    // ── Step 2: Play-mode per-section riff learning (test/debug surface) ─────
+    /** @brief True while Play is capturing the current section's riff (first pass). */
+    bool isPlaySectionCapturing() const noexcept { return playTakeActive; }
+    /** @brief True while Play is replaying a stored section riff (a return). */
+    bool isPlaySectionReplaying() const noexcept { return playTakeReplaying; }
+    /** @brief Section name of the active Play take/replay (empty when idle). */
+    const char* getPlayTakeSectionName() const noexcept { return playTakeSectionName; }
+    /** @brief Occupied 16th slots in the stored Play riff for @p name (0 if none). */
+    int getStoredSectionRiffOccupiedCount(const char* name) const noexcept;
+    /** @brief Occupancy of 16th slot @p slot in the stored Play riff for @p name. */
+    bool getStoredSectionSlotOccupied(const char* name, int slot) const noexcept;
+    /** @brief Bass MIDI of 16th slot @p slot in the stored Play riff for @p name. */
+    int getStoredSectionSlotMidi(const char* name, int slot) const noexcept;
+
     /** @brief Test/debug: occupied 16ths in the Record A snapshot (0 if none). */
     int getRiffAOccupiedCount() const noexcept;
     bool getRiffASlotOccupied(int slot) const noexcept;
@@ -252,6 +277,37 @@ private:
     void stampLearnerGridSlots(const float* in, int numSamples,
                                double beatStart, double beatEnd, double samplesPerBeat,
                                double originBeat, int bassMidi, bool wrapLoop) noexcept;
+
+    // ── Step 2: per-section riff memory (Play mode) ──────────────────────────
+    // Keyed by section NAME, not index: the same name recurs at different form
+    // indices, and those recurrences are exactly what must replay the learned
+    // riff. A CHORUS riff is not a VERSE riff. Fixed array — audio thread safe.
+    static constexpr int kSectionRiffSlots = 8;
+    struct SectionRiffMemory
+    {
+        bool valid = false;
+        char name[16] {};                        // "VERSE", "CHORUS", ...
+        PhraseLearner::LearnedRiff riff {};
+        int64_t learnedAtMono = -1;              // diagnostics
+    };
+    std::array<SectionRiffMemory, kSectionRiffSlots> sectionRiffs {};
+    int sectionRiffWrite = 0;                    // ring for overflow
+
+    // Play-mode section take state (audio thread).
+    bool playTakeActive = false;                 // capturing this section (first pass)
+    bool playTakeReplaying = false;              // replaying a stored riff (a return)
+    char playTakeSectionName[16] {};
+    int64_t playTakeOriginMono = -1;             // monotonic replay-loop origin (bar-aligned)
+    double playTakeOriginBeat = 0.0;             // transport beat of the section's bar 1
+
+    /** @brief Step 2: store the active take, then start capture/replay for a new section. */
+    void beginPlaySectionTake(const char* name, int64_t clockSample, double samplesPerBeat) noexcept;
+    /** @brief Step 2: snapshot + store the active Play take, then clear take state. */
+    void storePlaySectionTake() noexcept;
+    /** @brief Step 2: locate a stored snapshot by section name (nullptr if none). */
+    const PhraseLearner::LearnedRiff* findSectionRiff(const char* name) const noexcept;
+    /** @brief Step 2: drop all per-section memory and take state (Play start). */
+    void resetSectionRiffMemory() noexcept;
     void resetSlotOnsetTracker() noexcept;
     void flushPendingCaptureSlot() noexcept;
     /** @brief Capture bar phase from the transport clock and stamp lockOriginMono. */

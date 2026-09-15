@@ -257,6 +257,25 @@ void PhraseLearner::cancelLiveGridListen() noexcept
     gridSlots_.fill({});
 }
 
+void PhraseLearner::beginSectionGridListen() noexcept
+{
+    // Passive per-section capture: stamp the grid in parallel with the live
+    // mirror. Deliberately does NOT call reset() — clearing the attack detector
+    // would delay the first mirrored note after a section change.
+    userCapturing_ = false;
+    gridCapturing_ = false;
+    gridListening_ = true;
+    gridOccupied_ = 0;
+    gridSlots_.fill({});
+}
+
+void PhraseLearner::endSectionGridListen() noexcept
+{
+    gridListening_ = false;
+    gridOccupied_ = 0;
+    gridSlots_.fill({});
+}
+
 void PhraseLearner::stampGridRange(double beat0, double beat1, float peak, int bassMidi,
                                    bool onset) noexcept
 {

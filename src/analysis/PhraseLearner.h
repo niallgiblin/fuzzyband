@@ -97,6 +97,20 @@ public:
     /** @brief Abort a passive grid listen without touching capture state. */
     void cancelLiveGridListen() noexcept;
 
+    /**
+     * @brief Arm a passive per-section grid capture that does NOT reset the
+     *        live mirror (Play mode, Step 2).
+     *
+     *        Unlike @ref beginLiveGridListen this keeps the attack detector and
+     *        attack history intact, so "mirror me asap" survives a section
+     *        change. Prior slots are cleared. Cleared by @ref endSectionGridListen
+     *        or any reset (silence).
+     */
+    void beginSectionGridListen() noexcept;
+
+    /** @brief Disarm a per-section grid capture and drop its slots. */
+    void endSectionGridListen() noexcept;
+
     bool isGridCapturing() const noexcept { return gridCapturing_; }
 
     /** @brief True during follow-mode grid LISTEN (passive). Unlike active

@@ -360,3 +360,55 @@ has been made here before.
 5. What is the correct acceptance test for "bass mirrors my playing" that uses
    real audio at multiple buffer sizes and asserts the *emitted MIDI*, not the
    learner's internal counters?
+
+---
+
+## 9. Step 2 — per-section riff learning (Play mode)
+
+Shipped at **1.0.14** (see
+[`STEP2_PER_SECTION_LEARNING_PLAN.md`](STEP2_PER_SECTION_LEARNING_PLAN.md) for
+the brief). The user-facing contract:
+
+1. **First pass through a section** (e.g. the first `VERSE`): mirror the
+   guitarist live, immediately, and capture the riff in parallel.
+2. **A return to the same section NAME**: replay the captured riff instead of
+   re-learning.
+3. Sections are independent: a `CHORUS` riff is not a `VERSE` riff.
+
+**Where it lives.** `AccompanimentProcessor` keeps a fixed 8-slot
+`sectionRiffs` cache keyed by section **name** (`findSectionRiff` /
+`storePlaySectionTake`). Section entry is detected in the existing PlaySection
+path and calls `beginPlaySectionTake`, which stores the take it is leaving and
+either starts a capture (`PhraseLearner::beginSectionGridListen`, passive — it
+does **not** touch the attack detector, so the live mirror keeps firing) or
+starts a replay. The replay is emitted with `emitFrozenRiff(... BassSource::
+Frozen)` from the stored snapshot; the live mirror is suppressed while it plays
+(`playTakeReplaying`), and the harmony grid is disabled so nothing layers under
+it. Capture is the **first 4 bars** of the section, bar-aligned to the
+transport.
+
+**The §5.5 voice-ownership decision:** the replay is **authoritative**. A live
+attack does not interrupt it mid-phrase, and there is no drift-unlock back to
+the mirror within a section. This is what "play back a locked section" means,
+and it is pinned by `test_processor_pipeline.cpp`
+(`[step2][recall]`: `frozen > 0 && mirror == 0` on the return).
+
+**Boundary fix that this needed.** `stampLearnerGridSlots` computed the slot's
+end sample with a bare `std::ceil`, which could include the sample exactly *on*
+the exclusive end beat by one ULP. At a 2048-sample host block the 8th-note
+attack on a 16th boundary leaked into the previous slot, so the captured
+snapshot — and therefore the replay — was not buffer-size invariant. Both the
+peak and the tail sample ranges now subtract `1e-9` before the `ceil`. This also
+corrected the same latent double-count in the Record-riff capture (the
+`.artifacts/baseline` corpus was regenerated).
+
+**Tests (all in the normal suites, no `[!mayfail]`):**
+
+| Test | Pins |
+|---|---|
+| `Step2: Play mirrors a section's first pass and replays it on return` | first pass `Mirror`, return `Frozen` |
+| `Step2: a returned section replays its own riff, not another section's` | no cross-contamination |
+| `Step2: section replay is host-buffer-size invariant` | identical absolute events at 128/512/2048 |
+| `Step2: a section with no real riff is not remembered` | <2 occupied slots → no memory → mirror |
+| `Step2: a form wrap re-enters a section and replays the stored riff` | loop-wrap re-entry |
+| `bass mirror: Play learns a riff per section and replays it on return (real audio)` | end-to-end on real DI |

@@ -208,6 +208,7 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     playFillArm.clear();
     riffAFillArm.clear();
     riffBFillArm.clear();
+    resetSectionRiffMemory();
 
     // A5.2 post-lock transition state + display scope.
     postLockPhase = PostLockPhase::Idle;
@@ -958,6 +959,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         playFillArm.clear();
         riffAFillArm.clear();
         riffBFillArm.clear();
+        // Step 2: a fresh Play run learns the form again from the top.
+        resetSectionRiffMemory();
     }
     if (!playRequested)
     {
@@ -1042,6 +1045,12 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 lastPlayGrooveSlot = -1;
                 resetDrumHoldRequested.store(true, std::memory_order_release);
                 patternPlayer.armTransitionCrash();
+
+                // Step 2: store the section we just left, then either replay a
+                // stored riff for this section name or start learning it.
+                const double spbSec =
+                    (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
+                beginPlaySectionTake(secName, clockSample, spbSec);
             }
             lastSeenBarsElapsed = barsElapsedNow;
 
@@ -1119,6 +1128,10 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     {
         effectivePatternIdx = drumA;
     }
+    // Step 2: Play ended (stop, or the form completed) mid-take → store what
+    // the section captured so a later return to that name can replay it.
+    if (!playOn && playTakeActive)
+        storePlaySectionTake();
     wasPlayOn = playOn;
     if (!playOn)
     {
@@ -1521,6 +1534,32 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                                   originBeat, bassMidi, true);
         }
 
+        // Step 2: capture the first 4 bars of a Play section (bar-aligned to the
+        // transport) into the 64-slot snapshot, in parallel with the live mirror.
+        // Beats are shifted into the section's own frame so slot 0 is bar 1 beat 1.
+        if (playOn && playTakeActive && phraseLearner.isGridListening()
+            && samplesPerBeat > 0.0)
+        {
+            const double relBlockStart = beatStart - playTakeOriginBeat;
+            const double relBlockEnd = juce::jmin(
+                beatEnd - playTakeOriginBeat,
+                static_cast<double>(PhraseLearner::kGridBars) * 4.0);
+            if (relBlockStart < static_cast<double>(PhraseLearner::kGridBars) * 4.0
+                && relBlockEnd > relBlockStart)
+            {
+                int bassMidi = (pcForBass != INT_MIN) ? 36 + pcForBass : 36;
+                const float instPitch = pitchEstimator.getMidiNote();
+                const float instConf  = pitchEstimator.getConfidence();
+                if (instConf > 0.3f)
+                {
+                    const int pc = ((static_cast<int>(std::round(instPitch)) % 12) + 12) % 12;
+                    bassMidi = 36 + pc;
+                }
+                stampLearnerGridSlots(in, numSamples, relBlockStart, relBlockEnd,
+                                      samplesPerBeat, 0.0, bassMidi, false);
+            }
+        }
+
         // Do not wipe a user take on phrase-breath silence.
         // The learner is fed the FAST onset RMS, not the 0.1 s structure RMS:
         // note attacks live at 10-100 ms, and a 100 ms window cannot show the
@@ -1902,7 +1941,10 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // Fast input level so a held mirror note releases when the note decays,
         // not only when the slow structure gate later notices silence.
         patternPlayer.setGuitarLevel(energyAnalyser.getOnsetRmsEnergy());
-        patternPlayer.setBeatGridBassEnabled(listenBass && !guitarAudible);
+        // A replayed section riff owns the voice: do not let the harmony grid
+        // layer under it when the guitarist pauses.
+        patternPlayer.setBeatGridBassEnabled(listenBass && !guitarAudible
+                                             && !playTakeReplaying);
 
         // The fallback keeps the key the guitarist last played (the live tracker
         // reports nothing once they stop), so the harmony line is not stuck on C.
@@ -1943,6 +1985,17 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             emitFrozenRiff(riffA, riffAPlayOriginMono, numSamples,
                            static_cast<double>(bpmForPlayer), sr,
                            hostSampleTime, bassTranspose);
+        }
+        else if (playOn && playTakeReplaying)
+        {
+            // Step 2: a return to a section name replays the riff captured on
+            // its first pass. The replay is authoritative while it plays; the
+            // live mirror is suppressed below (see the note in §5.5).
+            const auto* stored = findSectionRiff(playTakeSectionName);
+            if (stored != nullptr)
+                emitFrozenRiff(*stored, playTakeOriginMono, numSamples,
+                               static_cast<double>(bpmForPlayer), sr,
+                               hostSampleTime, bassTranspose);
         }
         else if (listenBass && !guitarStopped
                  && !riffCaptureActive.load(std::memory_order_acquire)
@@ -2238,6 +2291,161 @@ void AccompanimentProcessor::flushPendingCaptureSlot() noexcept
     captureSlotIndex_ = -1;
 }
 
+const PhraseLearner::LearnedRiff* AccompanimentProcessor::findSectionRiff(
+    const char* name) const noexcept
+{
+    if (name == nullptr || name[0] == '\0')
+        return nullptr;
+    for (int i = 0; i < kSectionRiffSlots; ++i)
+    {
+        const auto& mem = sectionRiffs[static_cast<size_t>(i)];
+        if (mem.valid && std::strcmp(mem.name, name) == 0)
+            return &mem.riff;
+    }
+    return nullptr;
+}
+
+void AccompanimentProcessor::resetSectionRiffMemory() noexcept
+{
+    sectionRiffs.fill({});
+    sectionRiffWrite = 0;
+    playTakeActive = false;
+    playTakeReplaying = false;
+    playTakeSectionName[0] = '\0';
+    playTakeOriginMono = -1;
+    playTakeOriginBeat = 0.0;
+}
+
+void AccompanimentProcessor::beginPlaySectionTake(const char* name, int64_t clockSample,
+                                                  double samplesPerBeat) noexcept
+{
+    // Store what the section we are leaving learned, then start the new one.
+    storePlaySectionTake();
+
+    if (name == nullptr || name[0] == '\0')
+        return;
+
+    std::strncpy(playTakeSectionName, name, sizeof(playTakeSectionName) - 1);
+    playTakeSectionName[sizeof(playTakeSectionName) - 1] = '\0';
+
+    // Bar-aligned monotonic origin for the replay loop. Same forward-snap rule
+    // as latchLockClock (a detecting block may straddle the bar line), but kept
+    // in dedicated fields so the A/B lock clock is not disturbed.
+    playTakeOriginMono = hostSampleTime;
+    playTakeOriginBeat = 0.0;
+    if (samplesPerBeat > 0.0)
+    {
+        const double beatAtEntry = static_cast<double>(clockSample) / samplesPerBeat;
+        double barPhase = std::fmod(beatAtEntry, 4.0);
+        if (barPhase < 0.0)
+            barPhase += 4.0;
+        const double forward = 4.0 - barPhase;
+        const double phaseBeats = (forward <= 0.5) ? -forward : barPhase;
+        playTakeOriginMono = hostSampleTime
+            - static_cast<int64_t>(std::llround(phaseBeats * samplesPerBeat));
+        playTakeOriginBeat = beatAtEntry - phaseBeats;
+    }
+
+    phraseLearner.setAutoLockEnabled(false);   // Play never auto-locks the learner
+    resetSlotOnsetTracker();
+
+    const PhraseLearner::LearnedRiff* stored = findSectionRiff(playTakeSectionName);
+    if (stored != nullptr && stored->valid)
+    {
+        playTakeReplaying = true;
+        playTakeActive = false;
+        phraseLearner.endSectionGridListen();
+    }
+    else
+    {
+        playTakeReplaying = false;
+        playTakeActive = true;
+        phraseLearner.beginSectionGridListen();
+    }
+}
+
+void AccompanimentProcessor::storePlaySectionTake() noexcept
+{
+    if (!playTakeActive)
+    {
+        playTakeReplaying = false;
+        playTakeOriginMono = -1;
+        return;
+    }
+
+    if (phraseLearner.isGridListening())
+        flushPendingCaptureSlot();
+
+    PhraseLearner::LearnedRiff snap{};
+    phraseLearner.exportPattern(snap);
+    const int occupied = phraseLearner.getGridOccupiedCount();
+
+    // A section with fewer than two occupied 16ths is not a riff; do not create
+    // a memory entry (the next visit then falls back to live mirroring).
+    if (occupied >= 2 && snap.valid && playTakeSectionName[0] != '\0')
+    {
+        int slot = -1;
+        for (int i = 0; i < kSectionRiffSlots; ++i)
+        {
+            const auto& mem = sectionRiffs[static_cast<size_t>(i)];
+            if (mem.valid && std::strcmp(mem.name, playTakeSectionName) == 0)
+            {
+                slot = i;
+                break;
+            }
+        }
+        if (slot < 0)
+        {
+            slot = sectionRiffWrite;
+            sectionRiffWrite = (sectionRiffWrite + 1) % kSectionRiffSlots;
+        }
+        auto& mem = sectionRiffs[static_cast<size_t>(slot)];
+        mem.valid = true;
+        std::strncpy(mem.name, playTakeSectionName, sizeof(mem.name) - 1);
+        mem.name[sizeof(mem.name) - 1] = '\0';
+        mem.riff = snap;
+        mem.learnedAtMono = hostSampleTime;
+    }
+
+    phraseLearner.endSectionGridListen();
+    playTakeActive = false;
+    playTakeReplaying = false;
+    playTakeSectionName[0] = '\0';
+    playTakeOriginMono = -1;
+    playTakeOriginBeat = 0.0;
+    resetSlotOnsetTracker();
+}
+
+int AccompanimentProcessor::getStoredSectionRiffOccupiedCount(const char* name) const noexcept
+{
+    const auto* riff = findSectionRiff(name);
+    if (riff == nullptr)
+        return 0;
+    int n = 0;
+    for (int s = 0; s < PhraseLearner::kGridSlots; ++s)
+        if (riff->occupied[static_cast<size_t>(s)])
+            ++n;
+    return n;
+}
+
+bool AccompanimentProcessor::getStoredSectionSlotOccupied(const char* name, int slot) const noexcept
+{
+    if (slot < 0 || slot >= PhraseLearner::kGridSlots)
+        return false;
+    const auto* riff = findSectionRiff(name);
+    return riff != nullptr && riff->occupied[static_cast<size_t>(slot)];
+}
+
+int AccompanimentProcessor::getStoredSectionSlotMidi(const char* name, int slot) const noexcept
+{
+    if (slot < 0 || slot >= PhraseLearner::kGridSlots)
+        return -1;
+    const auto* riff = findSectionRiff(name);
+    if (riff == nullptr || !riff->occupied[static_cast<size_t>(slot)])
+        return -1;
+    return riff->midi[static_cast<size_t>(slot)];
+}
+
 void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSamples,
                                                    double beatStart, double beatEnd,
                                                    double samplesPerBeat, double originBeat,
@@ -2268,8 +2476,13 @@ void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSampl
                 continue;
             const int i0 = juce::jlimit(0, numSamples - 1,
                 static_cast<int>(std::floor((ov0 - blockBeat0) * samplesPerBeat)));
+            // The range is half-open: the sample exactly ON the end beat belongs
+            // to the NEXT slot. A bare std::ceil can include it by one ULP
+            // (measured: the 8th-note attack on a 16th boundary leaked into the
+            // previous slot at a 2048-sample host block but not at 128/512),
+            // which made the captured snapshot block-size dependent.
             const int i1 = juce::jlimit(1, numSamples,
-                static_cast<int>(std::ceil((ov1 - blockBeat0) * samplesPerBeat)));
+                static_cast<int>(std::ceil((ov1 - blockBeat0) * samplesPerBeat - 1.0e-9)));
             float slotPeak = 0.0f;
             for (int i = i0; i < i1; ++i)
             {
@@ -2294,7 +2507,7 @@ void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSampl
                 const int j0 = juce::jlimit(0, numSamples - 1,
                     static_cast<int>(std::floor((tb0 - blockBeat0) * samplesPerBeat)));
                 const int j1 = juce::jlimit(1, numSamples,
-                    static_cast<int>(std::ceil((ov1 - blockBeat0) * samplesPerBeat)));
+                    static_cast<int>(std::ceil((ov1 - blockBeat0) * samplesPerBeat - 1.0e-9)));
                 for (int i = j0; i < j1; ++i)
                 {
                     const float a = std::abs(in[i]);
