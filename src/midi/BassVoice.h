@@ -159,7 +159,13 @@ private:
 
     // A held note releases when the input falls to this fraction of its attack
     // level (the note ended) - not only when the slow structure gate says silent.
-    static constexpr float kDecayRelease = 0.25f;
+    // 0.25 was measured cutting the bass off mid-phrase: a naturally decaying
+    // guitar note drops to 25% within ~100-300 ms while the guitarist is still
+    // holding it, and the bass then went silent for the rest of the phrase. Use
+    // a much lower fraction plus an absolute floor so the note holds through a
+    // decay and releases only when the guitar has genuinely gone quiet.
+    static constexpr float kDecayRelease = 0.10f;
+    static constexpr float kAbsReleaseFloor = 0.0035f;
 
     // Absolute sample until which the mirror/frozen voice owns the grid.
     // std::numeric_limits<int64_t>::max() means "held until the guitar stops".

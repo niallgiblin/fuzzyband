@@ -214,3 +214,36 @@ TEST_CASE("BassVoice: seek/silence flush drops the grid claim and the pending qu
     // The grid is free again.
     REQUIRE(voice.emitGrid(after, 512, 0, 0, 43, 100, 0, 100, 0, true, Producer::GridAuthored));
 }
+
+TEST_CASE("BassVoice: a held mirror note survives the guitar's natural decay",
+          "[bass][voice][sustain]")
+{
+    // Regression: releasing at 25% of the attack level cut the bass off ~150 ms
+    // into an ordinary decaying guitar note, then left it silent for the rest of
+    // the phrase (measured on the user's real takes, a 2 s hole in the bass).
+    // A decay to 20% must HOLD; only a real fall-off past the release floor ends it.
+    BassVoice voice;
+    voice.reset();
+    voice.setGuitarAudible(true);
+    voice.setInputLevel(0.40f);   // attack
+    voice.requestLearned(40, 0.5f, 0, 1000, /*hold=*/true, Producer::Mirror);
+    juce::MidiBuffer on;
+    voice.flushLearned(on, 512, 0);
+    REQUIRE(countNoteOns(on) == 1);
+
+    // The note decays to 20% of its attack level — still audible, still held.
+    voice.setInputLevel(0.08f);
+    juce::MidiBuffer mid;
+    voice.releaseHeldIfStopped(mid, 1024);
+    REQUIRE(countNoteOffs(mid) == 0);
+
+    // …and further to 12.5%, still above the 10% release fraction: still held.
+    voice.setInputLevel(0.05f);
+    voice.releaseHeldIfStopped(mid, 1536);
+    REQUIRE(countNoteOffs(mid) == 0);
+
+    // The guitar has genuinely gone quiet: release.
+    voice.setInputLevel(0.001f);
+    voice.releaseHeldIfStopped(mid, 2048);
+    REQUIRE(countNoteOffs(mid) == 1);
+}

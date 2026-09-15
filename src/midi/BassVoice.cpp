@@ -179,8 +179,9 @@ void BassVoice::releaseHeldIfStopped(juce::MidiBuffer& midi, std::int64_t blockS
     // mirror note rings through the rest and consecutive sustains blur into one
     // another - the 'muddy on long sustains' report.
     const bool stopped = !guitarAudible_;
-    const bool decayed = (heldNoteLevel_ > 0.0f)
-                      && (inputLevel_ < heldNoteLevel_ * kDecayRelease);
+    const float releaseLevel = (heldNoteLevel_ > 0.0f)
+        ? juce::jmax(heldNoteLevel_ * kDecayRelease, kAbsReleaseFloor) : 0.0f;
+    const bool decayed = (heldNoteLevel_ > 0.0f) && (inputLevel_ < releaseLevel);
     if (!stopped && !decayed)
         return;
 

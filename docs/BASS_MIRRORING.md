@@ -467,3 +467,24 @@ During the post-lock `TransitionHold` (a drum contrast section) the harmony grid
 is now disabled entirely: when the guitarist pauses the bass **rests** instead of
 playing a root/fifth line over the contrast. Previously that fallback made the
 transition bass louder than the main riff and unrelated to the playing.
+
+---
+
+## 11. Held-note release: don't cut the bass off mid-decay (1.0.16)
+
+Found in the 1.0.15 play-mode take (`01-fairo_di-*_1534.wav`): the bass went
+**completely silent for ~2 s at 20.1-22.1s** while the guitarist was still
+sounding a decaying note (DI RMS 0.010-0.024), then resumed with the next pick.
+
+Cause: `BassVoice::releaseHeldIfStopped` released a held mirror note when the
+input fell to **25 %** of its attack level. An ordinary decaying guitar note
+crosses 25 % within ~100-300 ms while the player is still holding it, so the
+bass note ended early; with no further pick for a couple of seconds (and
+`noteRinging` keeping the structure tagger out of SILENT, so the harmony grid
+stayed muted) there was nothing to fill the hole.
+
+Fix: release at **10 %** of the attack level with an absolute floor
+(`kAbsReleaseFloor = 0.0035`) so the note holds through a normal decay and ends
+only when the guitar has genuinely gone quiet (or the structure gate says
+stopped). Guard: `BassVoice: a held mirror note survives the guitar's natural
+decay` in `tests/test_bass_voice.cpp`.
