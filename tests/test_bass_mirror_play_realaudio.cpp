@@ -427,12 +427,10 @@ TEST_CASE("bass mirror: the transition mirrors a different live riff",
     std::printf("[TRANS-MIRROR] during transition: learned=%d (%.1f/s) grid=%d\n",
                 learned, static_cast<double>(learned) / secs, grid);
 
-    // The transition section must produce bass while the guitarist plays (the
-    // silence-starvation bug produced 0). NOTE: with the B-lock feature active
-    // (setAutoLockEnabled(true) at transition engage) the learner freezes onto a
-    // contrast snapshot partway through, so the section is sparse by design until
-    // that is revisited. Assert only that it is not silent.
-    REQUIRE(learned > 0);
+    // The transition section must MIRROR the live player: the drums may commit
+    // to a contrast section, but the bass follows the player. Was 3 notes (0.5/s)
+    // when the contrast riff froze the bass; now ~110 (18/s).
+    REQUIRE(learned >= 40);
 
     proc.setPlayHead(nullptr);
     proc.releaseResources();

@@ -211,6 +211,13 @@ public:
     bool isAutoLockEnabled() const noexcept { return autoLockEnabled_; }
 
     /**
+     * @brief While the post-lock transition listens, keep live attacks driving
+     *        the mirror even if a contrast riff has locked. The drums may commit
+     *        to the contrast section; the bass still follows the player.
+     */
+    void setLiveMirrorWhenLocked(bool on) noexcept { liveMirrorWhenLocked_ = on; }
+
+    /**
      * @brief Rewind the learned riff to bar 1 beat 1 (phase 0) so a re-locked
      *        groove re-enters on the downbeat instead of mid-riff.
      *        No-op when not locked. Audio-thread safe.
@@ -371,6 +378,7 @@ private:
     int gridOccupied_ = 0;
     bool holdActive_ = false;       // Suppresses drift-unlock (bass keeps the riff)
     bool autoLockEnabled_ = true;   // Play disables; RiffBListen enables
+    bool liveMirrorWhenLocked_ = false;  // transition: mirror live even when locked
     bool following_ = false;        // Last attack matched the learned riff's grid
     bool justMatched_ = false;      // Edge: matched on the current block
     bool justMatchedRef_ = false;   // Edge: matched the A-riff match reference (T6.2)

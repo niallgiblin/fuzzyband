@@ -1712,6 +1712,10 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         grooveLockActive = (enginePhase == EnginePhase::RiffA);
         phraseLearner.setHoldActive(enginePhase == EnginePhase::RiffA
                                  || enginePhase == EnginePhase::RiffBLocked);
+        // The post-lock transition keeps the bass on the live mirror even after
+        // the learner locks a contrast riff: the drums commit to the contrast
+        // section, the bass follows the player.
+        phraseLearner.setLiveMirrorWhenLocked(postLockPhase == PostLockPhase::TransitionHold);
         riffHeld.store(riffA.valid || phraseLearner.isLocked(), std::memory_order_release);
 
         // ── Riff-lock hold progress (UI): bar done / bars remaining ───────────
@@ -1902,7 +1906,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // played constantly under the player ("the bass goes into harmony and
         // stays there"). Silence, not the absence of attacks, is the gap.
         const bool listenBass = (enginePhase == EnginePhase::PlaySection
-                              || enginePhase == EnginePhase::RiffBListen);
+                              || enginePhase == EnginePhase::RiffBListen
+                              || enginePhase == EnginePhase::RiffBLocked);
         const bool guitarAudible = !silentNow;
         patternPlayer.setGuitarAudible(guitarAudible);
         patternPlayer.setBeatGridBassEnabled(listenBass && !guitarAudible);
@@ -1944,12 +1949,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             && !riffCaptureActive.load(std::memory_order_acquire))
         {
             emitFrozenRiff(riffA, riffAPlayOriginMono, numSamples,
-                           static_cast<double>(bpmForPlayer), sr,
-                           hostSampleTime, bassTranspose);
-        }
-        else if (enginePhase == EnginePhase::RiffBLocked)
-        {
-            emitFrozenRiff(riffB, riffBPlayOriginMono, numSamples,
                            static_cast<double>(bpmForPlayer), sr,
                            hostSampleTime, bassTranspose);
         }

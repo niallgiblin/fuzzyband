@@ -637,7 +637,7 @@ PhraseLearner::BassNote PhraseLearner::process(int64_t sampleTime, float rms, fl
         // Live riff mirror: follow each attack while Learning (pre-lock).
         // Locked playback of a snapshot is the processor's job (RiffA / RiffBLocked).
         // Active capture is silent accompaniment — no bass until commit.
-        if (state_ != State::Locked && !userCapturing_ && !gridCapturing_)
+        if ((state_ != State::Locked || liveMirrorWhenLocked_) && !userCapturing_ && !gridCapturing_)
         {
             result.trigger = true;
             result.midiNote = attackBassNote;
