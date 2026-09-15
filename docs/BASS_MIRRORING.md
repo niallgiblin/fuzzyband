@@ -412,3 +412,58 @@ corrected the same latent double-count in the Record-riff capture (the
 | `Step2: a section with no real riff is not remembered` | <2 occupied slots → no memory → mirror |
 | `Step2: a form wrap re-enters a section and replays the stored riff` | loop-wrap re-entry |
 | `bass mirror: Play learns a riff per section and replays it on return (real audio)` | end-to-end on real DI |
+
+---
+
+## 10. Onset-aligned mirror pitch — the "one note behind" bug (1.0.15)
+
+**Measured on the user's own DIs** (`01-fairo_di-*_1420.wav`, play mode): the
+emitted bass note's pitch class matched the guitar's *actual* pitch class only
+**48 %** of the time. The failure pattern was systematic: at every pitch change
+the first bass note carried the **previous** note's pitch, then the next note
+caught up — the bass played one note behind, which is exactly what "the bass
+never mirrors" sounds like.
+
+### Cause
+
+`PitchEstimator::process` ran YIN over the whole 4096-sample ring (~93 ms at
+44.1 kHz) ending at the current sample. At the instant of a pick the window is
+still dominated by the previous note, so the `pitchMidi` handed to
+`PhraseLearner::process` (and to the riff capture) is the old note. No amount of
+attack-detector tuning can fix a pitch source that is a note stale.
+
+### Fix
+
+- `PitchEstimator` now has `estimateOnset(blockEndAbs, onsetAbs, length, …)`:
+  YIN over a window that **starts at the pick**. The block-level estimate also
+  shrank to the last 2048 samples (its job is now only the fallback/stable
+  tracker).
+- `AccompanimentProcessor` queues every detected attack in `pendingMirror`
+  (fixed 64-slot array) and flushes it `mirrorPitchWindow` samples later, when
+  the onset window is available. The flush uses **every sample from the pick
+  onward** (up to a 2048 cap) so a short wait still resolves drop-C.
+- `mirrorPitchWindow` is sized from the sample rate (~16 ms) so the total
+  latency — the attack detector's own ~10-15 ms plus this window — stays inside
+  the 30 ms audio→MIDI budget. The old forward 16th-grid snap was removed: it
+  stacked on top of the window and blew the budget.
+- The same resolved pitch feeds `capturePitchMidi()` for the Record-riff and
+  per-section captures, so locked/replayed riffs also stop lagging.
+
+**Result:** pitch-class match **48 % → 82-89 %** on the same DIs.
+
+### Why not 100 %
+
+The window must be ≥ ~2 periods of the lowest note. Drop-C is 65.4 Hz
+(period ≈ 674 samples at 44.1 kHz), so ~1350 samples ≈ 30 ms — plus the attack
+detector's own latency. The project's 30 ms budget therefore caps the window at
+~768 samples, which cannot fully resolve a 65 Hz fundamental. The residual
+errors are the low notes; higher-register riffs resolve cleanly. This is a real
+physical tension between the latency budget and pitch-accurate mirroring of
+drop-tuned guitar, not a tuning miss.
+
+### Transition bass
+
+During the post-lock `TransitionHold` (a drum contrast section) the harmony grid
+is now disabled entirely: when the guitarist pauses the bass **rests** instead of
+playing a root/fifth line over the contrast. Previously that fallback made the
+transition bass louder than the main riff and unrelated to the playing.

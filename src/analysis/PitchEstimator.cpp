@@ -30,6 +30,7 @@ void PitchEstimator::prepare(double sampleRate, int maxBlockSize)
     ringFilled_ = 0;
 
     yinWindow_.resize(static_cast<size_t>(kRingSize));
+    onsetWindow_.resize(static_cast<size_t>(kRingSize));
     const int maxTau = kRingSize / 2;
     d_.assign(static_cast<size_t>(maxTau + 1), 0.0f);
     cmndf_.assign(static_cast<size_t>(maxTau + 1), 0.0f);
@@ -71,7 +72,10 @@ void PitchEstimator::process(const float* mono, int numSamples)
             ++ringFilled_;
     }
 
-    const int n = ringFilled_;
+    // Block-level estimate uses only the most recent kBlockWindow samples (not
+    // the whole ring): a full-ring window lags ~93 ms and made the mirror play
+    // the previous note (docs/BASS_MIRRORING.md §10).
+    const int n = std::min(ringFilled_, kBlockWindow);
     if (n < minLag_ + 64)
     {
         lastMidiNote_ = 40.0f;
@@ -79,7 +83,7 @@ void PitchEstimator::process(const float* mono, int numSamples)
         return;
     }
 
-    int oldest = ringWrite_ - ringFilled_;
+    int oldest = ringWrite_ - n;
     while (oldest < 0)
         oldest += kRingSize;
     for (int i = 0; i < n; ++i)
@@ -91,14 +95,48 @@ void PitchEstimator::process(const float* mono, int numSamples)
     runYin(yinWindow_.data(), n);
 }
 
+bool PitchEstimator::estimateOnset(std::int64_t blockEndAbs, std::int64_t onsetAbs,
+                                   int length, float& midiOut, float& confOut) noexcept
+{
+    if (length < 64 || length > kRingSize || blockEndAbs <= 0)
+        return false;
+
+    // `back` is how far the window end sits behind the newest ring sample.
+    const std::int64_t back = blockEndAbs - onsetAbs - static_cast<std::int64_t>(length);
+    if (back < 0 || back + static_cast<std::int64_t>(length) > ringFilled_)
+        return false;
+
+    int start = ringWrite_ - static_cast<int>(back) - length;
+    while (start < 0)
+        start += kRingSize;
+    for (int i = 0; i < length; ++i)
+        onsetWindow_[static_cast<size_t>(i)] = ring_[static_cast<size_t>((start + i) % kRingSize)];
+
+    // Allow taus up to almost the whole (short) window: a 1024-sample window
+    // must still reach drop-C's ~674-sample period, even though that is < n/2.
+    const int tauMax = std::min(maxLag_, length - 2);
+    const int tauMin = std::min(minLag_, std::max(2, tauMax - 1));
+    if (tauMin >= tauMax || tauMax < 2)
+        return false;
+
+    runYinRange(onsetWindow_.data(), length, tauMin, tauMax, midiOut, confOut);
+    return true;
+}
+
 void PitchEstimator::runYin(const float* x, int n)
 {
     const int tauMax = std::min(maxLag_, n / 2 - 1);
     const int tauMin = std::min(minLag_, std::max(2, tauMax - 1));
+    runYinRange(x, n, tauMin, tauMax, lastMidiNote_, lastConfidence_);
+}
+
+void PitchEstimator::runYinRange(const float* x, int n, int tauMin, int tauMax,
+                                 float& midiOut, float& confOut)
+{
     if (tauMin >= tauMax || tauMax < 2)
     {
-        lastMidiNote_ = 40.0f;
-        lastConfidence_ = 0.0f;
+        midiOut = 40.0f;
+        confOut = 0.0f;
         return;
     }
 
@@ -145,8 +183,8 @@ void PitchEstimator::runYin(const float* x, int n)
 
     if (bestTau < 2)
     {
-        lastMidiNote_ = 40.0f;
-        lastConfidence_ = 0.0f;
+        midiOut = 40.0f;
+        confOut = 0.0f;
         return;
     }
 
@@ -169,12 +207,12 @@ void PitchEstimator::runYin(const float* x, int n)
 
     if (!std::isfinite(hz) || hz < 50.0 || hz > 500.0)
     {
-        lastMidiNote_ = 40.0f;
-        lastConfidence_ = 0.0f;
+        midiOut = 40.0f;
+        confOut = 0.0f;
         return;
     }
 
-    lastMidiNote_ = kHzToMidi(static_cast<float>(hz));
+    midiOut = kHzToMidi(static_cast<float>(hz));
 
     // Confidence: CMNDF depth at chosen lag + separation from next dip
     float firstMin = 1.0f;
@@ -196,8 +234,8 @@ void PitchEstimator::runYin(const float* x, int n)
     float conf = std::clamp(spread * 4.0f, 0.0f, 1.0f);
     if (firstMin < 0.05f)
         conf = std::max(conf, 1.0f - firstMin * 2.0f);
-    lastConfidence_ = std::clamp(conf, 0.0f, 1.0f);
+    confOut = std::clamp(conf, 0.0f, 1.0f);
 
     if (firstMin > 0.5f)
-        lastConfidence_ *= 0.5f;
+        confOut *= 0.5f;
 }

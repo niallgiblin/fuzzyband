@@ -308,6 +308,31 @@ private:
     const PhraseLearner::LearnedRiff* findSectionRiff(const char* name) const noexcept;
     /** @brief Step 2: drop all per-section memory and take state (Play start). */
     void resetSectionRiffMemory() noexcept;
+
+    // ── Onset-aligned mirror pitch (docs/BASS_MIRRORING.md §10) ──────────────
+    // The block-level YIN estimate ends at the current sample, so at a pick it
+    // is still dominated by the PREVIOUS note and the mirror plays one note
+    // behind (measured pitch-class match ~50% vs 97% for an onset window).
+    // Mirror notes are deferred by `mirrorPitchWindow` samples and pitched from
+    // the window that STARTS at the pick, so the bass plays the note actually
+    // picked. The delay is a fixed number of samples (buffer-invariant).
+    static constexpr int kMaxPendingMirror = 64;
+    struct PendingMirror
+    {
+        int64_t targetAbs = 0;   // grid-snapped absolute sample of the pick
+        float velocity = 0.58f;
+        int fallbackNote = 36;   // learner note if the onset estimate fails
+    };
+    static constexpr int kMaxOnsetWindow = 2048;   // analysis cap (samples)
+    std::array<PendingMirror, kMaxPendingMirror> pendingMirror{};
+    int pendingMirrorCount = 0;
+    int mirrorPitchWindow = 1024;   // LATENCY in samples; set in prepareToPlay
+    int lastOnsetMirrorMidi = -1;   // most recent onset-resolved mirror note
+
+    void enqueueMirrorTrigger(int64_t targetAbs, float velocity, int fallbackNote) noexcept;
+    void flushMirrorTriggers(int numSamples, int64_t blockEndAbs, int bassTranspose,
+                             int durationSamples, bool emit) noexcept;
+    void clearPendingMirror() noexcept { pendingMirrorCount = 0; }
     void resetSlotOnsetTracker() noexcept;
     void flushPendingCaptureSlot() noexcept;
     /** @brief Capture bar phase from the transport clock and stamp lockOriginMono. */

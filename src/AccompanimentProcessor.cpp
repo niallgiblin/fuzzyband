@@ -209,6 +209,14 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     riffAFillArm.clear();
     riffBFillArm.clear();
     resetSectionRiffMemory();
+    // Onset-aligned mirror pitch. `mirrorPitchWindow` is the LATENCY (how long
+    // the note waits for the onset window); the analysis then uses every sample
+    // available from the pick onward (up to kMaxOnsetWindow), so a short wait
+    // still resolves drop-C. Sized to stay inside the 30 ms audio→MIDI budget
+    // once the attack detector's own ~10-15 ms latency is added.
+    mirrorPitchWindow = juce::jmax(256, static_cast<int>(std::lround(0.016 * sr)));
+    clearPendingMirror();
+    lastOnsetMirrorMidi = -1;
 
     // A5.2 post-lock transition state + display scope.
     postLockPhase = PostLockPhase::Idle;
@@ -961,6 +969,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         riffBFillArm.clear();
         // Step 2: a fresh Play run learns the form again from the top.
         resetSectionRiffMemory();
+        clearPendingMirror();
+        lastOnsetMirrorMidi = -1;
     }
     if (!playRequested)
     {
@@ -1250,6 +1260,20 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             ? semitoneOffset
             : stablePitchTracker.getLastPitchClassOffset();
 
+        // Pitch used for a captured 16th. The onset-aligned estimate (resolved
+        // from the window that starts at the pick) is best; the block YIN and
+        // the stable tracker lag one note behind on pitch changes.
+        auto capturePitchMidi = [&]() noexcept -> int
+        {
+            if (lastOnsetMirrorMidi >= 0)
+                return lastOnsetMirrorMidi;
+            const float instPitch = pitchEstimator.getMidiNote();
+            const float instConf  = pitchEstimator.getConfidence();
+            if (instConf > 0.3f)
+                return 36 + ((static_cast<int>(std::round(instPitch)) % 12) + 12) % 12;
+            return (pcForBass != INT_MIN) ? 36 + pcForBass : 36;
+        };
+
         const double samplesPerBeat = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
         const double beatStart = static_cast<double>(clockSample) / samplesPerBeat;
         const double beatEnd = beatStart + static_cast<double>(numSamples) / samplesPerBeat;
@@ -1428,6 +1452,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             drumA = drumB0 = drumB = 0;
             phraseLearner.beginGridCapture();
             resetSlotOnsetTracker();
+            clearPendingMirror();
+            lastOnsetMirrorMidi = -1;
             phraseLearner.setAutoLockEnabled(false);
             riffCaptureActive.store(true, std::memory_order_release);
             riffCaptureNoteCount.store(0, std::memory_order_relaxed);
@@ -1482,19 +1508,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 const double cap1 = juce::jmin(beatEnd, recEnd);
                 if (cap1 > cap0)
                 {
-                    // Capture the instantaneous pitch class (not only the held
-                    // root) so the recorded riff keeps its melodic contour for
-                    // note-for-note mirroring. YIN octave-flips on distorted
-                    // guitar, but pitch CLASS is octave-invariant; when the
-                    // estimate is unreliable, fall back to the stable root class.
-                    int bassMidi = (pcForBass != INT_MIN) ? 36 + pcForBass : 36;
-                    const float instPitch = pitchEstimator.getMidiNote();
-                    const float instConf  = pitchEstimator.getConfidence();
-                    if (instConf > 0.3f)
-                    {
-                        const int pc = ((static_cast<int>(std::round(instPitch)) % 12) + 12) % 12;
-                        bassMidi = 36 + pc;
-                    }
+                    const int bassMidi = capturePitchMidi();
                     stampLearnerGridSlots(in, numSamples, cap0, cap1, samplesPerBeat,
                                           recStart, bassMidi, false);
                 }
@@ -1519,14 +1533,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         if (enginePhase == EnginePhase::RiffBListen && phraseLearner.isGridListening()
             && samplesPerBeat > 0.0 && transitionStartMono >= 0)
         {
-            int bassMidi = (pcForBass != INT_MIN) ? 36 + pcForBass : 36;
-            const float instPitch = pitchEstimator.getMidiNote();
-            const float instConf  = pitchEstimator.getConfidence();
-            if (instConf > 0.3f)
-            {
-                const int pc = ((static_cast<int>(std::round(instPitch)) % 12) + 12) % 12;
-                bassMidi = 36 + pc;
-            }
+            const int bassMidi = capturePitchMidi();
             const double elapsedMonoBeats =
                 static_cast<double>(hostSampleTime - transitionStartMono) / samplesPerBeat;
             const double originBeat = beatStart - elapsedMonoBeats;
@@ -1547,14 +1554,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             if (relBlockStart < static_cast<double>(PhraseLearner::kGridBars) * 4.0
                 && relBlockEnd > relBlockStart)
             {
-                int bassMidi = (pcForBass != INT_MIN) ? 36 + pcForBass : 36;
-                const float instPitch = pitchEstimator.getMidiNote();
-                const float instConf  = pitchEstimator.getConfidence();
-                if (instConf > 0.3f)
-                {
-                    const int pc = ((static_cast<int>(std::round(instPitch)) % 12) + 12) % 12;
-                    bassMidi = 36 + pc;
-                }
+                const int bassMidi = capturePitchMidi();
                 stampLearnerGridSlots(in, numSamples, relBlockStart, relBlockEnd,
                                       samplesPerBeat, 0.0, bassMidi, false);
             }
@@ -1573,9 +1573,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // samples; the buffer sweep in test_bass_mirror_play_realaudio). Drive the
         // learner once per fixed onset hop instead, so it behaves the same at 64
         // and 65536 samples per block.
-        struct MirrorTrigger { int offset; int midi; float vel; };
-        std::array<MirrorTrigger, 128> hopTriggers{};
-        int hopTriggerCount = 0;
         if (armActive || capturingNow)
         {
             const float pitchMidi = pitchEstimator.getMidiNote();
@@ -1597,9 +1594,11 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     hopAbs, energyAnalyser.getOnsetHopRms(h),
                     pitchMidi, pitchConf, bpmForPlayer, delta, pcForBass,
                     energyAnalyser.getOnsetHopFlux(h));
-                if (bn.trigger && hopTriggerCount < static_cast<int>(hopTriggers.size()))
-                    hopTriggers[static_cast<size_t>(hopTriggerCount++)] =
-                        { hopOffset, bn.midiNote, bn.velocity };
+                // Queue every detected attack for onset-aligned pitch resolution
+                // (used by the live mirror AND the riff capture). Emission is
+                // decided later, once the window is available.
+                if (bn.trigger)
+                    enqueueMirrorTrigger(hopAbs, bn.velocity, bn.midiNote);
             }
         }
         else
@@ -1942,9 +1941,13 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // not only when the slow structure gate later notices silence.
         patternPlayer.setGuitarLevel(energyAnalyser.getOnsetRmsEnergy());
         // A replayed section riff owns the voice: do not let the harmony grid
-        // layer under it when the guitarist pauses.
+        // layer under it when the guitarist pauses. Nor under a post-lock
+        // transition: that section is a DRUM contrast, and the bass must mirror
+        // the player (rest when they rest) instead of playing a root/fifth line
+        // over it — that was the loud, unmusical transition bass.
         patternPlayer.setBeatGridBassEnabled(listenBass && !guitarAudible
-                                             && !playTakeReplaying);
+                                             && !playTakeReplaying
+                                             && postLockPhase != PostLockPhase::TransitionHold);
 
         // The fallback keeps the key the guitarist last played (the live tracker
         // reports nothing once they stop), so the harmony line is not stuck on C.
@@ -1979,12 +1982,16 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
         const double samplesPerBeatQ = (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr;
         const int durationSamples = juce::jmax(1, static_cast<int>(0.85 * samplesPerBeatQ));
+        const bool mirrorActive = listenBass && !guitarStopped
+            && !riffCaptureActive.load(std::memory_order_acquire)
+            && !phraseLearner.isGridCapturing();
         if (enginePhase == EnginePhase::RiffA
             && !riffCaptureActive.load(std::memory_order_acquire))
         {
             emitFrozenRiff(riffA, riffAPlayOriginMono, numSamples,
                            static_cast<double>(bpmForPlayer), sr,
                            hostSampleTime, bassTranspose);
+            clearPendingMirror();
         }
         else if (playOn && playTakeReplaying)
         {
@@ -1996,38 +2003,14 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 emitFrozenRiff(*stored, playTakeOriginMono, numSamples,
                                static_cast<double>(bpmForPlayer), sr,
                                hostSampleTime, bassTranspose);
+            clearPendingMirror();
         }
-        else if (listenBass && !guitarStopped
-                 && !riffCaptureActive.load(std::memory_order_acquire)
-                 && !phraseLearner.isGridCapturing())
+        else
         {
-            const double sixteenthQ = samplesPerBeatQ / 4.0;
-            const double maxSnap = std::min(0.030 * sr, sixteenthQ * 0.5);
-            for (int t = 0; t < hopTriggerCount; ++t)
-            {
-                const int note = hopTriggers[static_cast<size_t>(t)].midi + bassTranspose;
-                int offset = juce::jlimit(0, numSamples - 1,
-                                          hopTriggers[static_cast<size_t>(t)].offset);
-                if (sixteenthQ > 1.0)
-                {
-                    // Snap the attack to the nearest 16th when it is close, so the
-                    // mirror sits on the grid instead of a hop late.
-                    const int64_t attackAbs = clockSample + offset;
-                    const int64_t nearest = static_cast<int64_t>(
-                        std::llround(static_cast<double>(attackAbs) / sixteenthQ) * sixteenthQ);
-                    const int64_t delta = nearest - attackAbs;   // negative ⇒ already passed
-                    if (std::abs(static_cast<double>(delta)) <= maxSnap
-                        && delta >= 0 && delta < numSamples - offset)
-                        offset += static_cast<int>(delta);
-                }
-                // Hold the mirror note through the player's sustain: it is released
-                // only when the guitarist actually stops.
-                patternPlayer.triggerLearnedBassNote(note,
-                                                     hopTriggers[static_cast<size_t>(t)].vel,
-                                                     offset, durationSamples, /*hold=*/true);
-                // Musical memory for the fallback: remember the key actually played.
-                lastBassPitchClassOffset = ((hopTriggers[static_cast<size_t>(t)].midi % 12) + 12) % 12;
-            }
+            // Resolve onset pitch for any queued attacks; emit only when the live
+            // mirror owns the bass (early-return branches above clear the queue).
+            flushMirrorTriggers(numSamples, hostSampleTime + numSamples,
+                                bassTranspose, durationSamples, mirrorActive);
         }
     }
 
@@ -2444,6 +2427,60 @@ int AccompanimentProcessor::getStoredSectionSlotMidi(const char* name, int slot)
     if (riff == nullptr || !riff->occupied[static_cast<size_t>(slot)])
         return -1;
     return riff->midi[static_cast<size_t>(slot)];
+}
+
+void AccompanimentProcessor::enqueueMirrorTrigger(int64_t targetAbs, float velocity,
+                                                 int fallbackNote) noexcept
+{
+    if (pendingMirrorCount >= kMaxPendingMirror)
+        return;   // overflow: drop. 64 covers ~7 s of 16ths at 150 BPM.
+    pendingMirror[pendingMirrorCount++] = { targetAbs, velocity, fallbackNote };
+}
+
+void AccompanimentProcessor::flushMirrorTriggers(int numSamples, int64_t blockEndAbs,
+                                                 int bassTranspose, int durationSamples,
+                                                 bool emit) noexcept
+{
+    const int64_t blockStartAbs = blockEndAbs - numSamples;
+    for (int i = 0; i < pendingMirrorCount; )
+    {
+        const auto& p = pendingMirror[i];
+        const int64_t emitAbs = p.targetAbs + mirrorPitchWindow;
+        if (emitAbs > blockEndAbs)
+            break;   // onset window not yet complete; FIFO keeps the rest ordered
+
+        // Onset-aligned pitch: the window that STARTS at the pick. Fall back to
+        // the learner's note when the estimate is unavailable/low-confidence.
+        int note = p.fallbackNote;
+        float midi = 0.0f, conf = 0.0f;
+        const int analysisLen = static_cast<int>(
+            juce::jmin<int64_t>(blockEndAbs - p.targetAbs, kMaxOnsetWindow));
+        if (pitchEstimator.estimateOnset(blockEndAbs, p.targetAbs, analysisLen, midi, conf)
+            && conf > 0.25f)
+        {
+            const int pc = ((static_cast<int>(std::lround(midi)) % 12) + 12) % 12;
+            note = 36 + pc;
+        }
+        // Capture pitch (no transposition): the riff recorder stamps this value.
+        lastOnsetMirrorMidi = note;
+        if (!emit)
+        {
+            for (int k = i + 1; k < pendingMirrorCount; ++k)
+                pendingMirror[static_cast<size_t>(k - 1)] = pendingMirror[static_cast<size_t>(k)];
+            --pendingMirrorCount;
+            continue;
+        }
+        const int offset = static_cast<int>(juce::jlimit<int64_t>(0, numSamples - 1,
+                                                                 emitAbs - blockStartAbs));
+        patternPlayer.triggerLearnedBassNote(note + bassTranspose, p.velocity, offset,
+                                             durationSamples, /*hold=*/true);
+        lastBassPitchClassOffset = ((note % 12) + 12) % 12;
+
+        // Pop the front entry (the queue stays ordered by target sample).
+        for (int k = i + 1; k < pendingMirrorCount; ++k)
+            pendingMirror[static_cast<size_t>(k - 1)] = pendingMirror[static_cast<size_t>(k)];
+        --pendingMirrorCount;
+    }
 }
 
 void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSamples,
