@@ -112,7 +112,7 @@ private:
     static constexpr std::int64_t kMinAttackIntervalSamples = 2000;  // ~40 ms
     static constexpr double kFallWindowSeconds = 0.2;
     static constexpr float kRiseVsSmooth = 1.15f;
-    static constexpr float kRiseVsPrev = 1.08f;
+    static constexpr float kRiseVsPrev = 1.20f;
     static constexpr float kFloorRise = 1.10f;
     // Absolute trough term dropped: with the transient gate below, the trough
     // test no longer has to reject sustained-note ripple, so it can be

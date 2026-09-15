@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -498,6 +499,8 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
     const int64_t total = static_cast<int64_t>(pcm.samples.size());
     int64_t nextSec = static_cast<int64_t>(kSr);
     int lastLearned = 0, lastGrid = 0;
+    int drumOnsThisSecond = 0;
+    std::set<int> drumPatterns;
     auto lastAtt = PhraseLearner::AttackDebug{};
     for (int64_t start = 0; start + kBlock <= total; start += kBlock)
     {
@@ -517,17 +520,22 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
             const auto m = meta.getMessage();
             if (m.isNoteOn() && m.getChannel() == 2 && m.getVelocity() > 0)
                 notes.push_back({ start + meta.samplePosition, m.getNoteNumber(), m.getFloatVelocity() });
+            else if (m.isNoteOn() && m.getChannel() == 10 && m.getVelocity() > 0)
+                ++drumOnsThisSecond;
         }
+        drumPatterns.insert(proc.getDisplayPatternIndex());
 
         if (start + kBlock >= nextSec)
         {
             const int learned = proc.getLearnedBassNoteCount();
             const int grid = proc.getGridBassNoteCount();
             const auto att = proc.getAttackDebug();
-            std::printf("[DI-AUDIT] %4lld | %5d %7d %4d %7lld\n",
+            std::printf("[DI-AUDIT] %4lld | %5d %7d %4d %7lld | drums=%3d pat=%3d\n",
                         static_cast<long long>(nextSec / kSr),
                         proc.getDisplayStateIndex(), learned - lastLearned, grid - lastGrid,
-                        static_cast<long long>(att.accepted - lastAtt.accepted));
+                        static_cast<long long>(att.accepted - lastAtt.accepted),
+                        drumOnsThisSecond, proc.getDisplayPatternIndex());
+            drumOnsThisSecond = 0;
             lastLearned = learned; lastGrid = grid; lastAtt = att;
             nextSec += static_cast<int64_t>(kSr);
         }
@@ -539,6 +547,11 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
                 static_cast<long long>(dbg.clearedFloor),
                 static_cast<long long>(dbg.blockedByFloor),
                 static_cast<long long>(dbg.accepted));
+    std::printf("[DI-AUDIT] distinct drum patterns used: %d  ("
+                "singles/two-bar feel); pattern set:",
+                static_cast<int>(drumPatterns.size()));
+    for (int p : drumPatterns) std::printf(" %d", p);
+    std::printf("\n");
     std::printf("[DI-AUDIT] bass note-ons: %d over %.1fs (%.2f/s)\n",
                 static_cast<int>(notes.size()),
                 static_cast<double>(total) / kSr,

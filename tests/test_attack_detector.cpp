@@ -66,7 +66,7 @@ struct ReferenceDetector
         }
         if (rms < 0.002f) { risePending = false; return false; }
         const bool armed = (lastFallSample >= 0) && (sampleTime - lastFallSample) < fallWindowSamples;
-        const bool sharpRise = (rms > rmsSmooth * 1.15f) || (rms > prev * 1.08f);
+        const bool sharpRise = (rms > rmsSmooth * 1.15f) || (rms > prev * 1.20f);
         const bool clearsFloor = (rms > rmsFloorSinceArm * 1.10f);
         const bool aboveFloor = (rms > 0.01f);
         const bool riseEdge = armed && sharpRise && clearsFloor && aboveFloor;
