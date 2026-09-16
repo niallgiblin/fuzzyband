@@ -217,6 +217,7 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     mirrorPitchWindow = juce::jmax(256, static_cast<int>(std::lround(0.016 * sr)));
     clearPendingMirror();
     lastOnsetMirrorMidi = -1;
+    mirrorHeldPc = -1;
     recentAttackCount = 0;
     recentAttackWrite = 0;
 
@@ -973,6 +974,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         resetSectionRiffMemory();
         clearPendingMirror();
         lastOnsetMirrorMidi = -1;
+        mirrorHeldPc = -1;
         recentAttackCount = 0;
         recentAttackWrite = 0;
     }
@@ -1485,6 +1487,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             resetSlotOnsetTracker();
             clearPendingMirror();
             lastOnsetMirrorMidi = -1;
+            mirrorHeldPc = -1;
             recentAttackCount = 0;
             recentAttackWrite = 0;
             phraseLearner.setAutoLockEnabled(false);
@@ -2067,6 +2070,23 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             // mirror owns the bass (early-return branches above clear the queue).
             flushMirrorTriggers(numSamples, hostSampleTime + numSamples,
                                 bassTranspose, durationSamples, mirrorActive);
+
+            // Legato pitch follow: a held/legato change (no fresh pick) still
+            // moves the bass to the new note. Without this the held mirror note
+            // stayed on the previous pitch (measured: guitar C, bass held E for a
+            // full second). Only a STABLE tracker class moves it, so a wobble
+            // cannot retrigger the line.
+            if (mirrorActive && semitoneOffset != INT_MIN
+                && mirrorHeldPc >= 0 && semitoneOffset != mirrorHeldPc
+                && phraseLearner.hasRecentAttack(hostSampleTime,
+                                                 static_cast<int64_t>(1.5 * sr)))
+            {
+                const int note = 36 + semitoneOffset;
+                patternPlayer.triggerLearnedBassNote(note + bassTranspose, 0.58f, 0,
+                                                     durationSamples, /*hold=*/true);
+                lastBassPitchClassOffset = semitoneOffset;
+                mirrorHeldPc = semitoneOffset;
+            }
         }
     }
 
@@ -2554,6 +2574,7 @@ void AccompanimentProcessor::flushMirrorTriggers(int numSamples, int64_t blockEn
         patternPlayer.triggerLearnedBassNote(note + bassTranspose, p.velocity, offset,
                                              durationSamples, /*hold=*/true);
         lastBassPitchClassOffset = ((note % 12) + 12) % 12;
+        mirrorHeldPc = lastBassPitchClassOffset;
 
         // Pop the front entry (the queue stays ordered by target sample).
         for (int k = i + 1; k < pendingMirrorCount; ++k)

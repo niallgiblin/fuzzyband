@@ -328,6 +328,7 @@ private:
     int pendingMirrorCount = 0;
     int mirrorPitchWindow = 1024;   // LATENCY in samples; set in prepareToPlay
     int lastOnsetMirrorMidi = -1;   // most recent onset-resolved mirror note
+    int mirrorHeldPc = -1;          // pitch class of the currently held mirror note (-1 none)
 
     // Recent detected attacks (absolute samples) — the riff capture marks a 16th
     // as an onset when a real pick falls inside it, instead of merging re-picks

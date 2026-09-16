@@ -564,3 +564,33 @@ traced every loose pick — the "jittery, jumpy" report. It now snaps the pick t
 the nearest 16th when within 15 ms (delta measured on the transport grid,
 applied to the monotonic hop, bound chosen to stay inside the 30 ms budget).
 The locked-frozen playback was already grid-placed.
+
+---
+
+## 14. The pre-0.9.62 era also machine-gunned; legato pitch-follow (1.0.19)
+
+Built `cdf4bac` (v0.9.60, the live-mirror Record A era the history points at) and
+dumped note on/off on the same DI:
+
+| build | Record-A bass | note length |
+|---|---|---|
+| v0.9.60 (live mirror) | 9/s, every attack | median **0.092 s** (1 of 501 held) |
+| v0.9.72 (frozen, no gate) | 6.8/s, every occupied 16th | ~1 sixteenth |
+| v1.0.18 (frozen + onset gate) | 4.7/s, detected onsets | held through gate |
+
+So the "sustains used to work" memory is **not** the record-riff lock in either
+old build — both retrigger every sixteenth. The held-note behaviour is a 1.0.x
+addition (`hold = true` on the live mirror). v0.9.72 was already degraded.
+
+### Legato pitch-follow
+
+On the new play take (`01-fairo_di-*_1106.wav`) the bass was dense and on-rate
+but the **pitch lagged on legato changes**: at 14.0-14.9 s the guitar held **C**
+while the bass held **E** (the previous note) for a full second, because the
+mirror only re-pitches on a fresh pick.
+
+The live mirror now follows a legato change: when the *stable* pitch tracker
+reports a new class (not a raw wobble) while a mirror note is held and the
+guitarist has played within 1.5 s, the bass moves to the new note. Measured
++8 % note-ons (230 vs 213 attacks) — it tracks the chord change without
+retriggering on jitter.
