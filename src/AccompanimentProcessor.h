@@ -358,6 +358,12 @@ private:
     int mirrorHeldPc = -1;          // pitch class of the currently held mirror note (-1 none)
     int legatoPcPending = INT_MIN;  // fixed-hop legato pitch candidate
     int legatoHops = 0;             // consecutive hops the candidate has held
+    // Absolute hop sample of the last detected attack. The legato follow is
+    // suppressed for one onset window after a pick, so the hops between the pick
+    // and its (deferred) flush cannot re-emit the same note. HOP-driven, not
+    // `pendingMirrorCount == 0`: the queue drains once per block, so a
+    // queue-based guard made the legato note count depend on the host buffer.
+    int64_t lastMirrorAttackHopAbs = std::numeric_limits<int64_t>::min();
 
     // Recent detected attacks (absolute samples) — the riff capture marks a 16th
     // as an onset when a real pick falls inside it, instead of merging re-picks

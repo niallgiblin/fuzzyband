@@ -953,3 +953,47 @@ Remaining honest options if the drag is still too much:
    a wrong note then a re-trigger on every change.
 3. **Accept the delay.** It applies only to first passes; Record capture is
    silent and every learned replay measured 0.9 ms off the grid.
+
+---
+
+## 21. The live mirror is now on the grid (1.0.28)
+
+Option 1 from §20: widen the grid snap. The live mirror snapped a pick to the
+nearest 16th only within a flat ±15 ms, so on a real DI **only 21 % of mirror
+notes landed on the grid** and the phase std was **27.3 ms**. That scatter — not
+the constant window offset — is what reads as "out of time / plays badly".
+
+Measured on the 1323 play take at 170 BPM (16th grid), `[di]` harness:
+
+| | v1.0.26 | v1.0.28 |
+|---|---|---|
+| mirror notes on the grid (within 6 ms) | 21 % | **97 %** |
+| phase std (samples mod 16th) | 27.3 ms | **1.8 ms** |
+| Mirror pitch-class match | 77 % | 76 % (unchanged) |
+| host-buffer spread (64→4096 blocks) | 7 % | 5.6 % |
+
+### What changed
+
+1. **A tempo-relative nearest-16th snap** (`kSnapFractionOfSixteenth = 0.50`,
+   i.e. half a 16th, so it behaves identically at every BPM). The old flat ±15 ms
+   only caught near-perfect playing. Consistency with the learned path is the
+   point: the frozen replay is 16th-quantised by construction, so a live first
+   pass that is not would jump when the riff locks. One constant; 0.17
+   reproduces the old behaviour.
+2. **The legato re-tune is snapped too** — it was the last unsnapped note source.
+3. **The legato suppression is now hop-driven**, not `pendingMirrorCount == 0`.
+   The queue drains once per block, so the queue-based guard made the legato note
+   count depend on the host buffer. `hopAbs - lastMirrorAttackHopAbs >
+   mirrorPitchWindow` is exact and block-invariant — and it *improved* the buffer
+   spread (12 % → 5.6 %) rather than just restoring it.
+
+### The one test fixture that had to change
+
+`Processor pipeline: play-mode bass mirrors the guitarist…` synthesised an
+8th-note riff whose start sample (`blockIdx * block`) is not aligned to the
+plugin's 16th grid. With any snap wider than ~35 ms that shifts every note by up
+to half a 16th, and the test's `within 60 ms of the attack` check fails — a
+fixture artefact, not a regression: the plugin quantises to the transport grid,
+and a guitarist playing to a click is on that grid. The fixture's origin is now
+16th-aligned; **the assertion itself is unchanged.** Verified by aligning the
+origin alone with the code untouched: the test passes.

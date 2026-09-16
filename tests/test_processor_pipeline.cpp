@@ -2522,7 +2522,13 @@ TEST_CASE("Processor pipeline: play-mode bass mirrors the guitarist, harmony onl
 
     // 12 bars of 8th-note chugs alternating C2 (36) and G2 (43), each with a
     // plucked envelope so the RMS onset detector sees independent attacks.
-    const int64_t origin = static_cast<int64_t>(blockIdx) * block;
+    // Align the synthetic performance to the plugin's 16th grid. The mirror now
+    // snaps to that grid (the learned capture/replay is 16th-quantised by
+    // construction), so a riff whose origin is not grid-aligned is a fixture
+    // artefact: every note would be shifted by up to half a 16th for no musical
+    // reason. A guitarist playing to a click is on the grid.
+    const int64_t sixteenthOrigin = static_cast<int64_t>(samplesPerBeat / 4.0);
+    const int64_t origin = (static_cast<int64_t>(blockIdx) * block / sixteenthOrigin) * sixteenthOrigin;
     const int kBars = 12;
     const int64_t collectSamples = static_cast<int64_t>(kBars * 4.0 * samplesPerBeat);
     const int collectBlocks = static_cast<int>(std::ceil(
