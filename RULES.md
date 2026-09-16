@@ -1,7 +1,7 @@
 # Fuzzyband Rules — How the Plugin Thinks
 
 **Audience:** anyone who wants to understand the product without being a DSP engineer.  
-**Authority:** verified against live source at **v1.0.19** (`CMakeLists.txt` line 4).  
+**Authority:** verified against live source at **v1.0.22** (`CMakeLists.txt` line 4).  
 **Companion docs:** `docs/CONTEXT_HANDOFF.md` (engineer briefing), `docs/BASS_MIRRORING.md` (bass bug history — some early sections are stale; trust this file + code for current behaviour).
 
 If a older doc disagrees with this file, **believe the code**. This document exists because that happens often.
@@ -209,7 +209,7 @@ When mirror is active:
 
 1. Each accepted **pick** produces **one** bass note.
 2. Pitch = your **pitch class**, placed in a low bass register, then optional octave transpose.
-3. Timing ≈ your pick time, optionally nudged onto the nearest **16th** if within ±15 ms, then delayed ~16 ms so pitch can be measured at the attack.
+3. Timing ≈ your pick time, optionally nudged onto the nearest **16th** if within ±15 ms, then delayed ~40 ms so pitch can be measured at the attack. This delay applies **only while a riff is being learned** (see §7.3).
 4. The note **holds** until the next pick, a real decay/silence, or you stop for ~1 s — it is not a short blip.
 5. Legato / held pitch changes (no new pick) can retune the held bass after a short debounce, when the pitch tracker agrees.
 
@@ -222,7 +222,7 @@ Guitar audio
   → short onset loudness (~20 ms) at a fixed ~10.7 ms hop
   → AttackDetector: “was that a pick?”
   → Soft snap to nearest 16th if within 15 ms
-  → Wait ~16 ms, run onset-aligned pitch (YIN)
+  → Wait ~40 ms, run onset-aligned pitch (YIN)
   → Emit MIDI bass note (channel 2), held
   → BassVoice owns the voice; grid stays out while you are audible
 ```
@@ -241,9 +241,9 @@ Attack detection is deliberately **not** gated on pitch confidence: a pick is ac
 |---|---|
 | Host BPM + sample clock | Bass and drums share the same musical timeline as the DAW. |
 | Optional 16th snap (±15 ms) | Tightens loose picks onto the grid without hard quantizing everything. |
-| ~16 ms pitch window | Small, intentional latency so the note you hear is the one you just hit. |
+| ~40 ms pitch window | **Learning-phase only.** The window must be long enough to name a drop-tuned low note (two periods of D2 ≈ 27 ms); shorter windows return the wrong note. It costs nothing once a riff is learned, because frozen/section replay is placed on the absolute 16th grid with no pitch analysis. |
 | Hold / legato follow | Sustains and slides with phrase motion instead of chopping every note to a fixed gate. |
-| Frozen riff path | Places notes on an absolute 16th grid from the capture origin (Record / section recall). |
+| Frozen riff path | Places notes on an absolute 16th grid from the capture origin (Record / section recall) — exact, no extra latency. |
 
 Mirror is **not** forced onto every beat. If you play syncopation, the mirror should follow that syncopation (within the soft snap). Beat-matching means “locked to the song’s clock,” not “only on downbeats.”
 
@@ -256,6 +256,12 @@ Mirror is **not** forced onto every beat. If you play syncopation, the mirror sh
 | Fold to pitch class + C2–B2 | Same note name as you, in bass register. |
 | `bassTranspose` | Whole-octave shift for the instrument patch. |
 | Voice clamp ~MIDI 28–55 | Keeps notes in a playable bass range. |
+
+Pitch confidence is `1 - CMNDF` at the chosen lag (classic YIN). Until 1.0.22 it
+was a "spread between the two smallest CMNDF samples", which read ~0.00 on every
+real DI window even when the pitch was correct — so every conf-gated stage fell
+back to a stale note and ~45 % of mirrored pitches were wrong. Do not tighten a
+conf gate without checking it against a real DI (`docs/BASS_MIRRORING.md` §16).
 
 Chords: the system is **monophonic**. It hears a dominant pitch, not a full voicing. Power chords often read as the root (or sometimes the fifth) depending on the spectrum.
 
@@ -274,6 +280,7 @@ Common causes of “wrong pitch or wrong time”:
 | Holes / missing notes | Attack detector starvation (no recent decay, shallow trough, no HF transient, min-interval gate) — Mode A. |
 | Late or jumpy timing | Large DAW buffer (mitigated by fixed-hop feeding); snap fighting loose playing; pitch window delay. |
 | Wrong note name | Onset window too short for very low DI notes; low YIN confidence → stale fallback; chord/fifth ambiguity. If the chain is post-FX, that is a **routing** bug, not something to “fix” in the detector. |
+| ~40–56 ms late bass on the FIRST pass of a section | **By design** (learning-phase pitch window). Returns are frozen and grid-exact — see §7.3. |
 | Sticks on old note through a slide | Legato follow retunes the held note once the fixed-hop pitch estimate agrees for ~3 hops (~30 ms). Low-amplitude windows are gated (no pitch on near-silence). |
 | “Not mirroring” in Riff A / returning section | **By design** — frozen snapshot owns the voice. |
 | Silence during TransitionHold when you stop | **By design** — no harmony bed under drum contrast. |
@@ -290,9 +297,17 @@ Env-gated Catch tests in `tests/test_bass_mirror_play_realaudio.cpp`:
 MA_DI_WAV=/path/to/01-fairo_di-….wav MA_DI_BPM=85 \
   ./build/MetalAccompanimentIntegrationTests "[di]"
 
+# Play-mode audit on the take's real song form (so Step-2 recall is exercised)
+MA_DI_WAV=/path/to/01-….wav MA_DI_BPM=170 MA_DI_FORM="VERSE:8,CHORUS:8,VERSE:8,CHORUS:8" \
+  ./build/MetalAccompanimentIntegrationTests "[di]"
+
 # Record-riff capture dump
 MA_RIFF_WAV=/path/to/01-fairo_di-….wav MA_RIFF_BPM=85 \
   ./build/MetalAccompanimentIntegrationTests "[riff]"
+
+# Pitch-estimator probe: dump the real PitchEstimator at given times (seconds)
+MA_PROBE_WAV=/path/to/01-….wav MA_PROBE_TIMES="4.22,5.66,6.73" \
+  ./build/MetalAccompanimentIntegrationTests "[pitch][probe]"
 ```
 
 Rules for agents using this harness:
@@ -302,6 +317,7 @@ Rules for agents using this harness:
 | Feed **mono clean DI** stem `01-*` only | Feed `02` (drums) or `03` (bass) output stems |
 | Always set `MA_DI_BPM` / `MA_RIFF_BPM` to the take's host tempo | Assume 120 BPM |
 | Trust **rise-candidate outcomes** + BassVoice producer tags | Compare rates to external spectral-flux / librosa onset tools |
+| Set `MA_DI_FORM` to the take's real song form so section recall runs | Assume the default single-section form exercises Step 2 |
 | Treat missing BPM or stereo WAV as a **failed** audit | Treat silent `SUCCEED` skips as evidence |
 
 Bad WAV / missing BPM fails the test hard (no quiet skip). Rates after Play count-in are reported separately from full-file averages.
@@ -421,4 +437,4 @@ Idle:   silence until you arm something
 
 ---
 
-*Last verified against source: v1.0.19. When behaviour changes, update this file in the same change that updates the code — do not leave it to a later “docs pass.”*
+*Last verified against source: v1.0.22. When behaviour changes, update this file in the same change that updates the code — do not leave it to a later “docs pass.”*

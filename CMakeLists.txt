@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # Plugin UI shows ProjectInfo::versionString from this line. Bump when you cut a
 # milestone checkpoint or release; GSD phase/milestone truth lives in .planning/.
-project(MetalAccompaniment VERSION 1.0.21)
+project(MetalAccompaniment VERSION 1.0.22)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -389,6 +389,8 @@ if(MA_BUILD_TESTS)
         tests/test_processor_pipeline.cpp
         # Real-audio bass mirror (mirror vs harmony producer split)
         tests/test_bass_mirror_play_realaudio.cpp
+        # Diagnostic probe: real PitchEstimator output on a supplied clean DI
+        tests/test_pitch_probe.cpp
         # E2E tests
         tests/test_e2e_silent_section.cpp
         tests/test_e2e_bpm_tracking.cpp

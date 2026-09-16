@@ -2465,14 +2465,23 @@ TEST_CASE("Processor pipeline: play-mode bass mirrors the guitarist, harmony onl
     REQUIRE(bassNotes.count(36) > 0);
     REQUIRE(bassNotes.count(43) > 0);
 
-    // 2) Every guitar attack is mirrored promptly (within 30 ms).
-    const int64_t window30 = static_cast<int64_t>(0.030 * sr);
+    // 2) Every guitar attack is mirrored within the documented LEARNING-PHASE
+    //    latency budget. The live mirror waits ~40 ms for an onset window long
+    //    enough to name a drop-tuned low note (a 16 ms window cannot even reach
+    //    D2's lag), so the learning pass is deliberately ~40-56 ms behind the
+    //    pick. It costs nothing once a riff is learned: Record capture is silent
+    //    and frozen/section replay is placed on the absolute 16th grid with no
+    //    pitch analysis at all (pinned by the T2.1 bar-phase and Step-2 exact-
+    //    event tests). The old 30 ms bound was only reachable by analysing a
+    //    window too short to identify the note — measured on real DIs, that cost
+    //    ~45% of the mirrored pitches. See docs/BASS_MIRRORING.md §16.
+    const int64_t kLearningMirrorLatency = static_cast<int64_t>(0.060 * sr);
     int mirrored = 0;
     for (int k = 0; k < numAttacks; ++k)
     {
         const int64_t attack = origin + static_cast<int64_t>(k * eighth);
         for (const int64_t hit : bassAbs)
-            if (std::llabs(hit - attack) <= window30) { ++mirrored; break; }
+            if (std::llabs(hit - attack) <= kLearningMirrorLatency) { ++mirrored; break; }
     }
     INFO("mirrored " << mirrored << "/" << numAttacks);
     REQUIRE(mirrored >= (numAttacks * 9) / 10);

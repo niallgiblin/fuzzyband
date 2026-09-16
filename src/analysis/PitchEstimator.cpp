@@ -267,28 +267,18 @@ void PitchEstimator::runYinRange(const float* x, int n, int tauMin, int tauMax,
 
     midiOut = kHzToMidi(static_cast<float>(hz));
 
-    // Confidence: CMNDF depth at chosen lag + separation from next dip
-    float firstMin = 1.0f;
-    float secondMin = 1.0f;
-    for (int tau = tauMin; tau <= tauMax; ++tau)
-    {
-        const float v = cmndf_[static_cast<size_t>(tau)];
-        if (v < firstMin)
-        {
-            secondMin = firstMin;
-            firstMin = v;
-        }
-        else if (v < secondMin && std::abs(tau - bestTau) > 2)
-        {
-            secondMin = v;
-        }
-    }
-    const float spread = std::max(0.0f, secondMin - firstMin);
-    float conf = std::clamp(spread * 4.0f, 0.0f, 1.0f);
-    if (firstMin < 0.05f)
-        conf = std::max(conf, 1.0f - firstMin * 2.0f);
-    confOut = std::clamp(conf, 0.0f, 1.0f);
-
-    if (firstMin > 0.5f)
-        confOut *= 0.5f;
+    // Confidence: classic YIN — how deep the CMNDF dips at the CHOSEN lag.
+    //
+    // The previous formula measured the spread between the two smallest CMNDF
+    // samples. On a real DI the CMNDF trough is smooth, so that spread is
+    // ~0.0003 for every window and confidence came out 0.00 *even when the
+    // estimate was correct* (a pure sine, by contrast, dips below 0.05 and
+    // scored ~1.0 — which is why the synthetic unit tests never caught it).
+    // Four consumers gate on this value (`flushMirrorTriggers` conf > 0.25,
+    // `StablePitchTracker` 0.20, `PhraseLearner` 0.30/0.05), so on real audio
+    // the whole pitch chain silently fell back to stale notes. See
+    // docs/BASS_MIRRORING.md §16.
+    const float cmndfAtBest = cmndf_[static_cast<size_t>(bestTau)];
+    const float conf = std::clamp(1.0f - cmndfAtBest, 0.0f, 1.0f);
+    confOut = conf;
 }

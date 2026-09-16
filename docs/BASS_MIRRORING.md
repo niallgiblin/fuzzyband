@@ -623,3 +623,110 @@ moved with the buffer size.
 Guards: `PitchEstimator: fixed-hop estimates track a low E2 sine at every hop`;
 the existing "play-mode bass holds a sustain" test (harmony key) now passes on
 the fixed-hop path.
+
+---
+
+## 16. Root cause found: the YIN confidence formula (1.0.22)
+
+**Measured on the user's own DIs** (`01-fairo_di-260916_1322.wav` record riff,
+`..._1323.wav` play mode, both 170 BPM): the emitted bass pitch class matched the
+guitar only **55 %** of the time, and the Record-riff capture stored only
+**55 %** of its 16th slots at the right pitch. Two independent bugs, each of
+which masked the other.
+
+### 16.1 The confidence was ~0 for every correct estimate
+
+`PitchEstimator::runYinRange` selected the lag from the YIN difference function
+`d(tau)`, but computed confidence from the *spread between the two smallest
+CMNDF samples*:
+
+```cpp
+spread = max(0, secondMin - firstMin);   // adjacent CMNDF samples
+conf   = clamp(spread * 4, 0, 1);
+if (firstMin < 0.05f) conf = max(conf, 1 - firstMin * 2);
+```
+
+On a real DI the CMNDF trough is smooth, so `secondMin - firstMin` is ~0.0003 and
+confidence came out **0.00 even when the fundamental was correct** (replicated in
+Python against the real windows — see the table below). Four consumers gate on
+this value:
+
+| Consumer | Gate |
+|---|---|
+| `AccompanimentProcessor::flushMirrorTriggers` (mirror pitch) | `conf > 0.25` |
+| `StablePitchTracker::update` | `rawConf >= 0.20` |
+| `PhraseLearner` held-pitch update | `pitchConf > 0.30` |
+| `PhraseLearner` attack pitch | `pitchConf > 0.05` |
+
+So on real audio the whole pitch chain silently fell back to `lastGoodPitchMidi_`
+or the learner's note. The synthetic unit tests passed because a pure sine dips
+below 0.05 and scored ~1.0 — the same synthetic-vs-real trap as §4.1.
+
+| Real DI window | YIN lag picks | CMNDF at that lag | confidence (old) |
+|---|---|---|---|
+| 5.66 s (D2) | D2 (correct) | 0.083 | **0.001** |
+| 5.78 s (D2) | D2 | 0.158 | **0.002** |
+| 6.73 s (D2) | D2 | 0.061 | **0.001** |
+| 4.96 s (E2) | E2 | 0.057 | **0.002** |
+| 4.22 s (F2) | F2 | 0.144 | **0.001** |
+
+**Fix:** classic YIN confidence — `conf = 1 - cmndf[bestTau]`.
+
+### 16.2 The onset window was too short to name a low note
+
+`mirrorPitchWindow` was 16 ms, so the flush analysed only the ~705–1216 samples
+that happened to be available. At 512 samples a window can only search lags out
+to ~86 Hz, so D2 was *unreachable* — the estimator returned F for every low note
+and the mirror's `conf > 0.25` gate then discarded even the correct answers.
+
+**Fix:** 40 ms (`jlimit(256, kMaxOnsetWindow, 0.040 * sr)`), and — critically —
+a **fixed** analysis length. The old code used `min(blockEnd - target, 2048)`,
+i.e. "whatever the host block happens to offer", which made the resolved pitch
+buffer-size dependent; the mirror count then swung 340→526 across 64→4096 sample
+blocks. A fixed length removes that.
+
+### 16.3 Capture pitch: per-16th majority vote
+
+The stored 16th pitch was `capturePitchMidi()` = the *last attack's* pitch,
+re-stamped on every block of the slot. One bad estimate poisoned a whole
+sustained note, and a slot with no fresh pick inherited an unrelated stale note
+(slots 31–34 captured A# over a held F). Every confident fixed-hop estimate
+inside a slot now gets a vote and the majority wins
+(`voteCaptureSlotPitch` / `flushPendingCaptureSlot`). The hop pitch comes from
+the trailing 2048-sample window, so it is available continuously — not only at
+attacks.
+
+### 16.4 The latency trade-off (accepted by the user)
+
+40 ms of post-pick audio is the shortest window that resolves a drop-tuned low
+note (two periods of D2 ≈ 27 ms). Measured learning-phase mirror latency:
+**min 40 ms, median 48 ms, max 56 ms** (was ~27 ms with the unusable 16 ms
+window).
+
+This is acceptable because it applies **only while a riff is being learned**:
+
+| Phase | Bass path | Latency |
+|---|---|---|
+| Record wait bar + count-in + 4-bar capture | **silent** (`userCapturing_` suppresses `result.trigger`) | — |
+| Record Riff A / Play section return | `emitFrozenRiff`, absolute 16th grid, no pitch analysis | **exact** |
+| Play first pass / Riff-B first visit | live mirror | 40–56 ms |
+
+### 16.5 Measured result
+
+| | before | after |
+|---|---|---|
+| Play-mode emitted pitch-class match (1323) | 55 % | **79–81 %** |
+| Record-riff capture slot pitch (1322) | 55 % | **97 %** |
+| Buffer-size sweep (64→4096 blocks) | 340–526 notes | 329–354 notes |
+
+Remaining errors are note-change boundary slots and the deliberately
+non-mirrored `Pickup` producer.
+
+### Guards
+
+- `bass mirror: YIN confidence is meaningful on real DI` — fails on the old
+  formula (126/420 stable hops confident) and passes on the new (419/420).
+- `bass mirror: the emitted mirror is host-buffer-size invariant`.
+- `Processor pipeline: play-mode bass mirrors the guitarist…` now asserts the
+  documented **60 ms learning-phase** budget, with the on-time guarantee pinned
+  by the existing frozen-riff T2.1 / Step-2 exact-event tests.

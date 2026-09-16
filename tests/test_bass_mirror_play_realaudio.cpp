@@ -520,7 +520,11 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
         p->setValueNotifyingHost(p->convertTo0to1(0.0f));
     if (auto* p = proc.getApvts().getParameter("bpm"))
         p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(bpm)));
-    proc.setCustomSongForm("VERSE:128");
+    // MA_DI_FORM lets the audit reproduce the take's real song form (e.g.
+    // "VERSE:8,CHORUS:8,VERSE:8,CHORUS:8") so Step-2 section recall is
+    // actually exercised. Default keeps the old single-section behaviour.
+    const char* formEnv = std::getenv("MA_DI_FORM");
+    proc.setCustomSongForm((formEnv != nullptr && *formEnv != '\0') ? formEnv : "VERSE:128");
     proc.playActive.store(true, std::memory_order_release);
 
     MovingPlayHead ph;
@@ -630,13 +634,14 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
             const int gra = proc.getBassProducerCount(BassVoice::Producer::GridAuthored);
             const int grh = proc.getBassProducerCount(BassVoice::Producer::GridHarmonic);
             const auto att = proc.getAttackDebug();
-            std::printf("[DI-AUDIT] %4lld | %5d %3d %3d %3d %3d %7lld | drums=%3d pat=%3d phase=%d%s\n",
+            std::printf("[DI-AUDIT] %4lld | %5d %3d %3d %3d %3d %7lld | drums=%3d pat=%3d phase=%d sec=%s%s\n",
                         static_cast<long long>(nextSec / static_cast<int64_t>(sr)),
                         proc.getDisplayStateIndex(),
                         mir - lastMirror, fro - lastFrozen, gra - lastGridA, grh - lastGridH,
                         static_cast<long long>(att.accepted - lastAtt.accepted),
                         drumOnsThisSecond, proc.getDisplayPatternIndex(),
                         proc.getSectionPhase(),
+                        proc.getCurrentSectionName().toRawUTF8(),
                         (playSectionStart >= 0
                          && nextSec / static_cast<int64_t>(sr)
                             == (playSectionStart / static_cast<int64_t>(sr)) + 1)
@@ -696,6 +701,13 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
             std::printf("[DI-AUDIT]   %-20s %lld\n", blockedName(i),
                         static_cast<long long>(dbg.everyCallBlockedBy[i]));
 
+    std::printf("[DI-AUDIT] stored section riffs: VERSE=%d CHORUS=%d INTRO=%d BREAKDOWN=%d SOLO=%d OUTRO=%d\n",
+                proc.getStoredSectionRiffOccupiedCount("VERSE"),
+                proc.getStoredSectionRiffOccupiedCount("CHORUS"),
+                proc.getStoredSectionRiffOccupiedCount("INTRO"),
+                proc.getStoredSectionRiffOccupiedCount("BREAKDOWN"),
+                proc.getStoredSectionRiffOccupiedCount("SOLO"),
+                proc.getStoredSectionRiffOccupiedCount("OUTRO"));
     std::printf("[DI-AUDIT] notes (t:s pitch vel producer held):\n");
     for (const auto& n : notes)
         std::printf("[DI-AUDIT]   %8.3f  %3d  %.2f  %-12s %s\n",

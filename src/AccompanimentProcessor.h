@@ -475,6 +475,16 @@ private:
     float captureSlotPeak_ = 0.0f;
     float captureSlotEnd_ = 0.0f;
     int captureSlotMidi_ = 36;
+    // Per-16th pitch vote (docs/BASS_MIRRORING.md §16). The stored slot pitch
+    // used to be "the last attack's pitch", stamped on every sustained 16th, so
+    // one bad estimate poisoned a whole held note and a slot with no fresh pick
+    // inherited an unrelated stale note. Instead every confident fixed-hop
+    // estimate inside the slot gets a vote and the majority wins. The hop pitch
+    // comes from the trailing 2048-sample window, so it is available
+    // continuously — not only at attacks.
+    static constexpr float kCaptureVoteConf = 0.30f;
+    std::array<std::uint16_t, 12> captureVoteCounts_{};
+    void voteCaptureSlotPitch(float midi, float conf) noexcept;
     int64_t riffAPlayOriginMono = -1;   // monotonic hostSampleTime-frame origin
     int64_t riffBPlayOriginMono = -1;
     int drumA = 0;

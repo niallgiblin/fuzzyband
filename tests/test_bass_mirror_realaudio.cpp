@@ -28,6 +28,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <climits>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -272,4 +273,85 @@ TEST_CASE("bass mirror: real onset RMS is non-trivial on a real chug",
     // And it must show a trough between chugs (the whole premise of the 0.02 s
     // window) — i.e. the signal is not a flat DC block.
     REQUIRE(minOnset < maxOnset * 0.9f);
+}
+
+// Regression (docs/BASS_MIRRORING.md §16): YIN confidence on real DI.
+//
+// The previous confidence formula measured the spread between the two smallest
+// CMNDF samples. On a real DI the CMNDF trough is smooth, so that spread is
+// ~0.0003 and confidence came out ~0.00 *even when the pitch was correct*.
+// Every conf-gated consumer (mirror pitch, StablePitchTracker, PhraseLearner)
+// then fell back to a stale note. It passed the synthetic unit tests because a
+// pure sine dips below 0.05 and scored ~1.0.
+//
+// Guard: among hops whose pitch class is already stable across a run, the
+// confidence must actually be high. Fails on the old formula (conf ~0.001
+// everywhere) and passes when confidence tracks the CMNDF dip.
+TEST_CASE("bass mirror: YIN confidence is meaningful on real DI",
+          "[pitch][realaudio]")
+{
+    PcmMono pcm;
+    if (!readWav16Mono(fixturePath("palm_mute_chug.wav"), pcm))
+    {
+        WARN("palm_mute_chug.wav missing; skipping");
+        return;
+    }
+
+    const int block = 512;
+    PitchEstimator pitch;
+    pitch.prepare(kSr, block);
+
+    struct Hop { int pc; float conf; bool loud; };
+    std::vector<Hop> hops;
+    const int total = static_cast<int>(pcm.samples.size());
+    for (int start = 0; start + block <= total; start += block)
+    {
+        pitch.process(pcm.samples.data() + start, block);
+        for (int h = 0; h < pitch.getHopCount(); ++h)
+        {
+            const int absEnd = start + pitch.getHopOffset(h);
+            const int absStart = std::max(0, absEnd - 2047);
+            double e = 0.0;
+            for (int i = absStart; i <= absEnd; ++i)
+                e += static_cast<double>(pcm.samples[static_cast<size_t>(i)])
+                   * static_cast<double>(pcm.samples[static_cast<size_t>(i)]);
+            const float rms = static_cast<float>(
+                std::sqrt(e / static_cast<double>(std::max(1, absEnd - absStart + 1))));
+            const int pc = ((static_cast<int>(std::lround(pitch.getHopMidi(h))) % 12) + 12) % 12;
+            hops.push_back({ pc, pitch.getHopConf(h), rms > 0.01f });
+        }
+    }
+    REQUIRE(hops.size() > 100);
+
+    // Stable runs: >= 4 consecutive loud hops on the same pitch class. If the
+    // pitch is genuinely settled, the confidence must be high there.
+    int stable = 0, confident = 0;
+    int i = 0;
+    while (i < static_cast<int>(hops.size()))
+    {
+        if (!hops[static_cast<size_t>(i)].loud)
+        {
+            ++i;
+            continue;
+        }
+        int j = i;
+        while (j + 1 < static_cast<int>(hops.size())
+               && hops[static_cast<size_t>(j + 1)].loud
+               && hops[static_cast<size_t>(j + 1)].pc == hops[static_cast<size_t>(i)].pc)
+            ++j;
+        if (j - i + 1 >= 4)
+        {
+            for (int k = i; k <= j; ++k)
+            {
+                ++stable;
+                if (hops[static_cast<size_t>(k)].conf > 0.3f)
+                    ++confident;
+            }
+        }
+        i = j + 1;
+    }
+
+    WARN("stable hops=" << stable << " confident=" << confident);
+    REQUIRE(stable > 50);
+    REQUIRE(confident > stable / 2);
 }

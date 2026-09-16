@@ -210,11 +210,15 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     riffBFillArm.clear();
     resetSectionRiffMemory();
     // Onset-aligned mirror pitch. `mirrorPitchWindow` is the LATENCY (how long
-    // the note waits for the onset window); the analysis then uses every sample
-    // available from the pick onward (up to kMaxOnsetWindow), so a short wait
-    // still resolves drop-C. Sized to stay inside the 30 ms audio→MIDI budget
-    // once the attack detector's own ~10-15 ms latency is added.
-    mirrorPitchWindow = juce::jmax(256, static_cast<int>(std::lround(0.016 * sr)));
+    // the note waits for the onset window) AND the fixed analysis length.
+    // 40 ms is the shortest window that resolves a drop-tuned low note: at 73 Hz
+    // (D2) two periods are ~27 ms, and a 16 ms window cannot even reach D2's lag
+    // (measured on real DIs: pitch-class match 55% at 16 ms vs 81% at 40 ms).
+    // The delay is only audible while a riff is being learned — Record capture is
+    // silent and frozen/section replay is grid-placed, so it costs nothing once
+    // a riff is stored. See docs/BASS_MIRRORING.md §16.
+    mirrorPitchWindow = juce::jlimit(256, kMaxOnsetWindow,
+                                     static_cast<int>(std::lround(0.040 * sr)));
     clearPendingMirror();
     lastOnsetMirrorMidi = -1;
     mirrorHeldPc = -1;
@@ -1630,6 +1634,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     ? pitchEstimator.getHopMidi(h) : blockPitchMidi;
                 const float pitchConf = hopPitchAligned
                     ? pitchEstimator.getHopConf(h) : blockPitchConf;
+                // Per-16th capture pitch vote (see flushPendingCaptureSlot).
+                voteCaptureSlotPitch(pitchMidi, pitchConf);
                 // Hops are at fixed global positions (the analyser's countdown
                 // carries across blocks), so the delta is the true time since the
                 // previous call — no per-block "tail" sample, which is what still
@@ -2351,6 +2357,17 @@ void AccompanimentProcessor::resetSlotOnsetTracker() noexcept
     captureSlotPeak_ = 0.0f;
     captureSlotEnd_ = 0.0f;
     captureSlotMidi_ = 36;
+    captureVoteCounts_.fill(0);
+}
+
+void AccompanimentProcessor::voteCaptureSlotPitch(float midi, float conf) noexcept
+{
+    if (captureSlotIndex_ < 0 || conf < kCaptureVoteConf)
+        return;
+    const int pc = ((static_cast<int>(std::lround(midi)) % 12) + 12) % 12;
+    auto& c = captureVoteCounts_[static_cast<std::size_t>(pc)];
+    if (c < 0xffff)
+        ++c;
 }
 
 void AccompanimentProcessor::flushPendingCaptureSlot() noexcept
@@ -2360,6 +2377,25 @@ void AccompanimentProcessor::flushPendingCaptureSlot() noexcept
     const bool occupied = captureSlotPeak_ >= 0.025f;
     if (occupied)
     {
+        // Majority vote over the confident fixed-hop estimates inside the slot.
+        // Beats "the last attack's pitch": correct for a held note and free of
+        // a stale attack inherited from the previous slot. Falls back to
+        // captureSlotMidi_ (the real-time value) when the slot had no confident
+        // hop estimate at all.
+        int winner = -1;
+        std::uint16_t bestVotes = 0;
+        for (int pc = 0; pc < 12; ++pc)
+        {
+            if (captureVoteCounts_[static_cast<std::size_t>(pc)] > bestVotes)
+            {
+                bestVotes = captureVoteCounts_[static_cast<std::size_t>(pc)];
+                winner = pc;
+            }
+        }
+        if (winner >= 0)
+            captureSlotMidi_ = 36 + winner;
+
+
         const bool onset = !prevSlotOccupied_
             || captureSlotPeak_ > prevSlotPeak_ * 1.15f + 0.01f
             || captureSlotPeak_ > prevSlotEnd_ * 1.15f + 0.01f
@@ -2380,6 +2416,7 @@ void AccompanimentProcessor::flushPendingCaptureSlot() noexcept
         prevSlotEnd_ = 0.0f;
         prevSlotOccupied_ = false;
     }
+    captureVoteCounts_.fill(0);
     captureSlotIndex_ = -1;
 }
 
@@ -2584,8 +2621,12 @@ void AccompanimentProcessor::flushMirrorTriggers(int numSamples, int64_t blockEn
         // the learner's note when the estimate is unavailable/low-confidence.
         int note = p.fallbackNote;
         float midi = 0.0f, conf = 0.0f;
-        const int analysisLen = static_cast<int>(
-            juce::jmin<int64_t>(blockEndAbs - p.targetAbs, kMaxOnsetWindow));
+        // Fixed analysis length, NOT "whatever the block happens to offer".
+        // The wait guarantees `mirrorPitchWindow` samples after the pick are in
+        // the ring, so request exactly that. Letting the window grow with the
+        // host block made the resolved pitch (and every count derived from it —
+        // the legato follow, the capture) buffer-size dependent.
+        const int analysisLen = juce::jlimit(64, kMaxOnsetWindow, mirrorPitchWindow);
         if (pitchEstimator.estimateOnset(blockEndAbs, p.targetAbs, analysisLen, midi, conf)
             && conf > 0.25f)
         {
@@ -2697,6 +2738,7 @@ void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSampl
                 captureSlotIndex_ = s;
                 captureSlotPeak_ = 0.0f;
                 captureSlotEnd_ = 0.0f;
+                captureVoteCounts_.fill(0);
                 captureSlotStartAbs = hostSampleTime
                     + static_cast<int64_t>(std::llround((slotA - blockBeat0) * samplesPerBeat));
                 captureSlotSamples = static_cast<int64_t>(std::llround(0.25 * samplesPerBeat));
