@@ -526,3 +526,41 @@ restricts the pick to the pool members with ≥ 12 drum events/bar (Verse Fast,
 Verse Ghost, Blast, …), falling back to the full pool otherwise. On the 1610
 play take the dense patterns now carry ~70 % of the take instead of a uniform
 7-way rotation.
+
+---
+
+## 13. A/B against v0.9.72, the Humanize slider, and a bounded grid snap (1.0.18)
+
+### The A/B (same 1608 DI, BPM 130, one 4-bar locked loop)
+
+Built `7984394` (v0.9.72 — the last good frozen Riff A per
+`docs/PROJECT_TIMELINE.md`) in a worktree and dumped the emitted bass notes.
+
+| | notes / 4-bar loop | rate |
+|---|---|---|
+| v0.9.72 | **50** | 6.8/s — every occupied 16th |
+| v1.0.17 | **35** | 4.7/s — detected onsets only |
+| the actual picking | ~32 | 4.4/s |
+
+So the remembered "solid" build was not more accurate: it played **every
+captured 16th** as a separate note (no onset/sustain distinction — it had no
+`gate16` at all, exactly as the history says), i.e. it machine-gunned sustains.
+v1.0.17 is the closest to what was played. The perceived loss of solidity is
+loss of *density*, not loss of correctness.
+
+### Humanize is drums-only
+
+`setHumanize` → `humanizeAmount` is read in exactly one place,
+`PatternPlayer::computeOrnamentation`, which randomly adds an open-hat, an extra
+off-16th ghost snare, or drops a non-downbeat kick, scaled by the slider
+(default 0.35). The bass paths (`triggerLearnedBassNote`, `emitFrozenRiff`,
+`emitPatternBass`, `emitHarmonicBass`) never read it. It cannot cause bass
+jitter; set it to 0 for a mechanical, steady kit.
+
+### Bounded grid snap on the live mirror
+
+The live Play mirror emitted at the raw attack time (+ the onset window), so it
+traced every loose pick — the "jittery, jumpy" report. It now snaps the pick to
+the nearest 16th when within 15 ms (delta measured on the transport grid,
+applied to the monotonic hop, bound chosen to stay inside the 30 ms budget).
+The locked-frozen playback was already grid-placed.

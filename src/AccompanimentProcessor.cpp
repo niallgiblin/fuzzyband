@@ -1635,7 +1635,24 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 // where the learner suppresses bn.trigger.
                 if (bn.trigger || phraseLearner.wasAttackDetected())
                 {
-                    enqueueMirrorTrigger(hopAbs, bn.velocity, bn.midiNote);
+                    // Snap the pick to the nearest 16th when it is close, so the
+                    // mirror sits on the grid instead of tracing every loose attack
+                    // time (the "jittery, jumpy" report). The delta is measured on
+                    // the transport grid and applied to the MONOTONIC hop (the two
+                    // clocks are never merged), and bounded so it cannot blow the
+                    // 30 ms latency budget.
+                    int64_t snapDelta = 0;
+                    if (samplesPerBeat > 1.0)
+                    {
+                        const double sixteenthQ = samplesPerBeat / 4.0;
+                        const int64_t attackTransport = clockSample + hopOffset;
+                        const int64_t nearest = static_cast<int64_t>(
+                            std::llround(static_cast<double>(attackTransport) / sixteenthQ) * sixteenthQ);
+                        const int64_t d = nearest - attackTransport;
+                        if (std::abs(static_cast<double>(d)) <= 0.015 * sr)
+                            snapDelta = d;
+                    }
+                    enqueueMirrorTrigger(hopAbs + snapDelta, bn.velocity, bn.midiNote);
                     recordRecentAttack(hopAbs);
                 }
             }
