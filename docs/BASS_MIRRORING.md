@@ -785,3 +785,45 @@ visit` — first visit mirrors (0 frozen), the same slot's second visit with the
 guitarist resting still emits Frozen bass. The test feeds a low-level DI tone
 while "resting": digital zeros trip the plugin's `digitalSilence` gate, which
 mutes everything by design and is a different behaviour from a resting player.
+
+---
+
+## 18. Play sections keep learning (1.0.24)
+
+**User-reported:** "in play mode it doesn't learn the per section riffs like it
+is supposed to; that mode sounds worse than record riff."
+
+Step-2 recall did work mechanically (measured: a return to `VERSE` emitted 114
+`Frozen` notes), but two things made it sound like it had not learned:
+
+1. It was fed the 55 %-accurate pitch chain — fixed in §16 (now ~79-81 %).
+2. **A section was frozen on its FIRST pass forever.** `storePlaySectionTake`
+   only ran when `playTakeActive` was true, and `beginPlaySectionTake` set
+   `playTakeActive = false` whenever a stored riff existed. A warm-up first
+   bar, a late start (a real take had the first 15 sixteenths of the capture
+   window silent) or simply a bad first take was stuck in the memory for the
+   whole session, with no way to fix it except Forget.
+
+**What it is now.** Every visit keeps capturing in parallel while the stored
+riff replays. The replay stays authoritative (the live mirror is still
+suppressed; the Step-2 isolation/buffer-invariance tests are unchanged), but
+when the section ends the snapshot replaces the previous pass. The
+`occupied >= 2` guard means a pass where the player rested does not wipe a good
+memory with an empty one.
+
+Not changed, deliberately:
+
+- **The replay is still authoritative.** On a return the memory owns the voice
+  even while the guitarist plays something else. That is the §5.5 Step-2
+  decision and is pinned by tests; revisit it only with the user, as a product
+  choice.
+- **The capture is still the first 4 bars of the section** (the grid is 64
+  sixteenths). Fine for riffs that repeat within 4 bars; an 8-bar
+  non-repeating phrase would need the grid widened, which changes Record-mode
+  capture too.
+
+### Guard
+
+`Step2: a returning section re-learns (a later pass replaces the memory)` —
+VERSE pass 1 plays C2, pass 2 plays E2 while the stored C2 replays, pass 3 must
+replay E2. Fails on the old code (pass 3 still replays C2).

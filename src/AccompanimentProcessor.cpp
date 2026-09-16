@@ -2593,18 +2593,14 @@ void AccompanimentProcessor::beginPlaySectionTake(const char* name, int64_t cloc
     resetSlotOnsetTracker();
 
     const PhraseLearner::LearnedRiff* stored = findSectionRiff(playTakeSectionName);
-    if (stored != nullptr && stored->valid)
-    {
-        playTakeReplaying = true;
-        playTakeActive = false;
-        phraseLearner.endSectionGridListen();
-    }
-    else
-    {
-        playTakeReplaying = false;
-        playTakeActive = true;
-        phraseLearner.beginSectionGridListen();
-    }
+    // Every visit keeps capturing in parallel: the replay stays authoritative
+    // (the live mirror is suppressed below), but the section memory is replaced
+    // with this pass when the section ends. Before this a section was frozen
+    // forever on its FIRST pass — a warm-up first bar, a late start or a bad
+    // first take was stuck in the memory for the whole session.
+    playTakeActive = true;
+    playTakeReplaying = (stored != nullptr && stored->valid);
+    phraseLearner.beginSectionGridListen();
 }
 
 void AccompanimentProcessor::storePlaySectionTake() noexcept

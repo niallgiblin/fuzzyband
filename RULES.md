@@ -1,7 +1,7 @@
 # Fuzzyband Rules — How the Plugin Thinks
 
 **Audience:** anyone who wants to understand the product without being a DSP engineer.  
-**Authority:** verified against live source at **v1.0.23** (`CMakeLists.txt` line 4).  
+**Authority:** verified against live source at **v1.0.24** (`CMakeLists.txt` line 4).  
 **Companion docs:** `docs/CONTEXT_HANDOFF.md` (engineer briefing), `docs/BASS_MIRRORING.md` (bass bug history — some early sections are stale; trust this file + code for current behaviour).
 
 If a older doc disagrees with this file, **believe the code**. This document exists because that happens often.
@@ -68,7 +68,7 @@ Plugin is silent. Analysis may still run for readouts, but MIDI stays off until 
 3. The plugin walks your **section list** once (INTRO → VERSE → … → OUTRO).
 4. Drums come from per-section pattern pools for the chosen **genre**.
 5. Bass **mirrors** your live playing while you are audible.
-6. First time through each section name, it **listens and stores** a bass sketch for that section. When that section returns, it can **replay** the stored sketch (Step-2 per-section learning).
+6. First time through each section name, it **listens and stores** a bass sketch for that section. When that section returns it **replays** the stored sketch while **re-capturing** in parallel, so the memory keeps tracking what you actually play (Step-2 per-section learning). A pass where you rest does not wipe a good memory.
 7. When the form ends, Play turns off and the plugin goes Idle.
 
 Play does **not** loop the form (loop is forced off). Play cancels any Record session.
@@ -437,4 +437,4 @@ Idle:   silence until you arm something
 
 ---
 
-*Last verified against source: v1.0.23. When behaviour changes, update this file in the same change that updates the code — do not leave it to a later “docs pass.”*
+*Last verified against source: v1.0.24. When behaviour changes, update this file in the same change that updates the code — do not leave it to a later “docs pass.”*

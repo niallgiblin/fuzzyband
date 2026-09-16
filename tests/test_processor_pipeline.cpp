@@ -3713,7 +3713,8 @@ struct PlayFormResult
 };
 
 PlayFormResult runPlayForm(const char* form, int block, double seconds,
-                           double verseFreq, double chorusFreq, bool sparseFirstVerse = false)
+                           double verseFreq, double chorusFreq, bool sparseFirstVerse = false,
+                           double secondVerseFreq = -1.0)
 {
     const double sr = 48000.0;
     const double spb = 60.0 / 120.0 * sr;
@@ -3745,6 +3746,7 @@ PlayFormResult runPlayForm(const char* form, int block, double seconds,
     bool collecting = false;
     bool firstVerseDone = false;
     int blocksIntoFirstVerse = 0;
+    int verseVisits = 0;
     for (int b = 0; b < totalBlocks; ++b)
     {
         const auto name = proc.getCurrentSectionName().toStdString();
@@ -3756,10 +3758,14 @@ PlayFormResult runPlayForm(const char* form, int block, double seconds,
             {
                 result.sections.push_back(SectionRecall{});
                 result.sections.back().name = name;
+                if (name == "VERSE")
+                    ++verseVisits;
                 cur = name;
             }
         }
-        const double freq = (name == "CHORUS") ? chorusFreq : verseFreq;
+        const double freq = (name == "CHORUS")
+            ? chorusFreq
+            : ((verseVisits >= 2 && secondVerseFreq > 0.0) ? secondVerseFreq : verseFreq);
         juce::AudioBuffer<float> buf(2, block);
         const bool inFirstVerse = collecting && name == "VERSE" && !firstVerseDone;
         if (inFirstVerse && name != "CHORUS")
@@ -3889,6 +3895,36 @@ TEST_CASE("Step2: section replay is host-buffer-size invariant",
             REQUIRE(r.sections[2].frozenAbs == *ref);
         }
     }
+}
+
+// §6.6 — A returning section keeps learning: the replay is authoritative while
+//        it plays, but the pass re-captures, so the memory tracks the player.
+TEST_CASE("Step2: a returning section re-learns (a later pass replaces the memory)",
+          "[integration][pipeline][step2][relearn]")
+{
+    // VERSE pass 1 plays C2 (65.406); pass 2 plays E2 (82.407) while the stored C2
+    // replay plays; pass 3 must replay the RELEARNED E2, not the stale C2. Before
+    // this a section was frozen on its first pass forever.
+    const auto r = runPlayForm("VERSE:1,CHORUS:1,VERSE:1,CHORUS:1,VERSE:1", 512, 15.0,
+                               65.406, 98.0, /*sparseFirstVerse=*/false,
+                               /*secondVerseFreq=*/82.407);
+    REQUIRE(r.sections.size() >= 5);
+    REQUIRE(r.sections[0].name == "VERSE");
+    REQUIRE(r.sections[2].name == "VERSE");
+    REQUIRE(r.sections[4].name == "VERSE");
+
+    // Pass 1: live mirror of C2.
+    REQUIRE(r.sections[0].mirror > 0);
+    REQUIRE(r.sections[0].frozen == 0);
+
+    // Pass 2: replay of the stored C2 while the E2 pass is captured.
+    REQUIRE(r.sections[2].frozen > 0);
+    REQUIRE(r.sections[2].notes.count(36) > 0);
+
+    // Pass 3: the memory was replaced by pass 2, so it now replays E2 (40).
+    REQUIRE(r.sections[4].frozen > 0);
+    REQUIRE(r.sections[4].notes.count(40) > 0);
+    REQUIRE(r.sections[4].notes.count(36) == 0);
 }
 
 // §6.5 — A section with fewer than two occupied slots stores nothing and falls
