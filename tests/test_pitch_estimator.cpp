@@ -2,6 +2,12 @@
 #include <cmath>
 #include <vector>
 #include "analysis/PitchEstimator.h"
+#include "analysis/EnergyAnalyser.h"
+#include "fixtures/WavReader.h"
+
+#if !defined(MA_REPO_ROOT)
+#define MA_REPO_ROOT ""
+#endif
 
 TEST_CASE("PitchEstimator tracks 440 Hz sine near MIDI 69 (±0.25 semitone)", "[pitch]")
 {
@@ -82,6 +88,58 @@ TEST_CASE("PitchEstimator tracks A1 (55 Hz ≈ MIDI 33) — extended low range",
     REQUIRE(midi > 32.0f);
     REQUIRE(midi < 35.0f);
     REQUIRE(est.getConfidence() > 0.1f);
+}
+
+TEST_CASE("PitchEstimator: fixed hops stay aligned with EnergyAnalyser at every block size",
+          "[pitch][hop][realaudio]")
+{
+    // The processor reads the per-hop pitch only when both analysers report the
+    // SAME hop count for the block:
+    //
+    //     hopPitchAligned = (pitchEstimator.getHopCount() == hopCount);
+    //     pitchMidi = hopPitchAligned ? pitchEstimator.getHopMidi(h) : blockPitchMidi;
+    //
+    // If they ever diverge the processor silently reverts to the block-level
+    // estimate for EVERY hop in the block — the "one note behind / two picks in
+    // one buffer share one pitch" bug, and a buffer-size dependence. The two
+    // analysers use the same 0.0107 s countdown by construction; this pins it on
+    // real audio across the buffer range.
+    WavReader::PcmMono pcm;
+    const std::string path = std::string(MA_REPO_ROOT) + "/tests/fixtures/palm_mute_chug.wav";
+    if (!WavReader::readMonoWav(path, pcm) || pcm.samples.empty())
+    {
+        WARN("palm_mute_chug.wav missing; skipping");
+        return;
+    }
+    const double sr = static_cast<double>(pcm.sampleRate);
+    const int64_t total = static_cast<int64_t>(pcm.samples.size());
+
+    int blocksChecked = 0;
+    int hopsChecked = 0;
+    for (int block : { 64, 128, 256, 512, 1024, 2048, 4096 })
+    {
+        EnergyAnalyser energy;
+        PitchEstimator pitch;
+        energy.prepare(sr, block);
+        pitch.prepare(sr, block);
+
+        for (int64_t start = 0; start + block <= total; start += block)
+        {
+            energy.process(pcm.samples.data() + start, block);
+            pitch.process(pcm.samples.data() + start, block);
+
+            REQUIRE(pitch.getHopCount() == energy.getOnsetHopCount());
+            REQUIRE(pitch.getHopSamples()
+                    == static_cast<int>(std::lround(0.0107 * sr)));
+            for (int h = 0; h < pitch.getHopCount(); ++h)
+                REQUIRE(pitch.getHopOffset(h) == energy.getOnsetHopOffset(h));
+            ++blocksChecked;
+            hopsChecked += pitch.getHopCount();
+        }
+    }
+    INFO("blocks=" << blocksChecked << " hops=" << hopsChecked);
+    REQUIRE(blocksChecked > 500);
+    REQUIRE(hopsChecked > 500);
 }
 
 TEST_CASE("PitchEstimator: fixed-hop estimates track a low E2 sine at every hop",
