@@ -279,7 +279,32 @@ Common causes of “wrong pitch or wrong time”:
 | Silence during TransitionHold when you stop | **By design** — no harmony bed under drum contrast. |
 | Nothing at all | Not armed (Idle), or still in count-in / capture-only path. |
 
-**Important methodology note:** ground truth is **real clean DI** takes (including DI palm-mute / drop-C) in `data/raw/`. Synthetic plucks can pass while real DI chugs fail — but do **not** validate against post-amp distorted audio; that is outside the product contract.
+**Important methodology note:** ground truth is **real clean DI** takes (including DI palm-mute / drop-C) in `data/raw/` or Desktop Media stem `01-*`. Synthetic plucks can pass while real DI chugs fail — but do **not** validate against post-amp distorted audio; that is outside the product contract.
+
+### 7.6 Offline agent DI / riff audit harness
+
+Env-gated Catch tests in `tests/test_bass_mirror_play_realaudio.cpp`:
+
+```bash
+# Play-mode mirror audit (required: mono DI path + host BPM)
+MA_DI_WAV=/path/to/01-fairo_di-….wav MA_DI_BPM=85 \
+  ./build/MetalAccompanimentIntegrationTests "[di]"
+
+# Record-riff capture dump
+MA_RIFF_WAV=/path/to/01-fairo_di-….wav MA_RIFF_BPM=85 \
+  ./build/MetalAccompanimentIntegrationTests "[riff]"
+```
+
+Rules for agents using this harness:
+
+| Do | Don't |
+|---|---|
+| Feed **mono clean DI** stem `01-*` only | Feed `02` (drums) or `03` (bass) output stems |
+| Always set `MA_DI_BPM` / `MA_RIFF_BPM` to the take's host tempo | Assume 120 BPM |
+| Trust **rise-candidate outcomes** + BassVoice producer tags | Compare rates to external spectral-flux / librosa onset tools |
+| Treat missing BPM or stereo WAV as a **failed** audit | Treat silent `SUCCEED` skips as evidence |
+
+Bad WAV / missing BPM fails the test hard (no quiet skip). Rates after Play count-in are reported separately from full-file averages.
 
 ---
 

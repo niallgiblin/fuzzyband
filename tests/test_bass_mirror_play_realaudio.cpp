@@ -29,6 +29,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -473,116 +474,241 @@ TEST_CASE("bass mirror: real playing in Play is mirror-primary",
     REQUIRE(s.learned > s.grid);
 }
 
-// Offline audit of a user-supplied DI. Set MA_DI_WAV to a WAV path; this runs the
-// real processor in Play mode and dumps every bass note-on the plugin emitted
-// (what the DAW received), plus per-second state/attack/mirror counts. This is
-// the "compare the emitted MIDI against what was played" instrument.
+// Offline audit of a user-supplied clean DI.
+//
+// Required env:
+//   MA_DI_WAV  = path to mono clean DI (stem 01-*). Never 02/03 output stems.
+//   MA_DI_BPM  = host tempo used when the take was recorded (required; no 120 default).
+//
+// Run:
+//   MA_DI_WAV=/path/to/01-fairo_di-….wav MA_DI_BPM=85 \
+//     ./build/MetalAccompanimentIntegrationTests "[di]"
+//
+// Do NOT compare accepted-attack rate to an external spectral-flux onset
+// detector — that mismatch previously caused circular AttackDetector retunes.
 TEST_CASE("bass mirror: offline audit of a supplied DI",
           "[integration][bass][mirror][di]")
 {
     const char* path = std::getenv("MA_DI_WAV");
     if (path == nullptr || *path == '\0')
     {
-        SUCCEED("MA_DI_WAV unset");
+        SUCCEED("MA_DI_WAV unset — offline DI audit skipped");
         return;
     }
+    const char* bpmEnv = std::getenv("MA_DI_BPM");
+    REQUIRE(bpmEnv != nullptr);
+    REQUIRE(*bpmEnv != '\0');
+    const double bpm = std::atof(bpmEnv);
+    REQUIRE(bpm >= 40.0);
+    REQUIRE(bpm <= 300.0);
+
     WavReader::PcmMono pcm;
-    if (!WavReader::readMonoWav(path, pcm) || pcm.samples.empty())
-    {
-        SUCCEED("MA_DI_WAV unreadable");
-        return;
-    }
+    std::string wavErr;
+    const bool wavOk = WavReader::readMonoWav(path, pcm, &wavErr);
+    INFO("WavReader: " << wavErr);
+    REQUIRE(wavOk);
+    REQUIRE_FALSE(pcm.samples.empty());
+    REQUIRE(pcm.sampleRate > 0);
+
+    const double sr = static_cast<double>(pcm.sampleRate);
+    const int block = kBlock;
 
     AccompanimentProcessor proc;
-    proc.prepareToPlay(kSr, kBlock);
+    proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
     if (auto* p = proc.getApvts().getParameter("genre"))
         p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+    if (auto* p = proc.getApvts().getParameter("bpm"))
+        p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(bpm)));
     proc.setCustomSongForm("VERSE:128");
     proc.playActive.store(true, std::memory_order_release);
 
     MovingPlayHead ph;
-    if (const char* b = std::getenv("MA_DI_BPM"))
-        ph.bpm = std::max(40.0, std::atof(b));
+    ph.bpm = bpm;
     proc.setPlayHead(&ph);
 
-    struct Note { int64_t sample; int midi; float vel; };
+    struct Note
+    {
+        int64_t sample = 0;
+        int midi = 0;
+        float vel = 0.0f;
+        BassVoice::Producer producer = BassVoice::Producer::None;
+        bool held = false;
+    };
     std::vector<Note> notes;
-    std::printf("[DI-AUDIT] file=%s dur=%.1fs sr=%d\n", path,
-                static_cast<double>(pcm.samples.size()) / pcm.sampleRate, pcm.sampleRate);
-    std::printf("[DI-AUDIT] t(s) | state learned grid attacks\n");
+    auto producerName = [](BassVoice::Producer p) -> const char*
+    {
+        switch (p)
+        {
+            case BassVoice::Producer::Mirror:       return "Mirror";
+            case BassVoice::Producer::Frozen:       return "Frozen";
+            case BassVoice::Producer::GridAuthored: return "GridAuthored";
+            case BassVoice::Producer::GridHarmonic: return "GridHarmonic";
+            case BassVoice::Producer::Pickup:       return "Pickup";
+            default:                                return "None";
+        }
+    };
+    auto blockedName = [](int idx) -> const char*
+    {
+        switch (idx)
+        {
+            case 0: return "None(accepted)";
+            case 1: return "NoRecentFall";
+            case 2: return "NoSharpRise";
+            case 3: return "TroughTooShallow";
+            case 4: return "BelowAmplitudeFloor";
+            case 5: return "NotTransient";
+            case 6: return "MinIntervalGate";
+            default: return "?";
+        }
+    };
 
     const int64_t total = static_cast<int64_t>(pcm.samples.size());
-    int64_t nextSec = static_cast<int64_t>(kSr);
-    int lastLearned = 0, lastGrid = 0;
+    const double durSec = static_cast<double>(total) / sr;
+    int64_t nextSec = static_cast<int64_t>(sr);
+    int64_t playSectionStart = -1;
+    int lastMirror = 0, lastFrozen = 0, lastGridA = 0, lastGridH = 0;
     int drumOnsThisSecond = 0;
-    std::set<int> drumPatterns;
     auto lastAtt = PhraseLearner::AttackDebug{};
-    for (int64_t start = 0; start + kBlock <= total; start += kBlock)
+
+    std::printf("[DI-AUDIT] === clean-DI Play audit ===\n");
+    std::printf("[DI-AUDIT] contract: mono clean DI only (01-*). Plugin sits before FX.\n");
+    std::printf("[DI-AUDIT] do-not: compare rates to external spectral-flux onset tools.\n");
+    std::printf("[DI-AUDIT] file=%s dur=%.1fs sr=%d bpm=%.1f block=%d\n",
+                path, durSec, pcm.sampleRate, bpm, block);
+    std::printf("[DI-AUDIT] t(s) | state Mir Fro GrA GrH attacks | drums pat phase\n");
+
+    for (int64_t start = 0; start + block <= total; start += block)
     {
         ph.samples = start;
-        juce::AudioBuffer<float> buf(2, kBlock);
+        juce::AudioBuffer<float> buf(2, block);
         for (int ch = 0; ch < 2; ++ch)
         {
             float* p = buf.getWritePointer(ch);
-            for (int i = 0; i < kBlock; ++i)
+            for (int i = 0; i < block; ++i)
                 p[i] = pcm.samples[static_cast<size_t>(start + i)];
         }
         juce::MidiBuffer midi;
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
+
+        if (playSectionStart < 0 && proc.getSectionPhase() == 1)
+            playSectionStart = start;
+
         for (const auto meta : midi)
         {
             const auto m = meta.getMessage();
-            if (m.isNoteOn() && m.getChannel() == 2 && m.getVelocity() > 0)
-                notes.push_back({ start + meta.samplePosition, m.getNoteNumber(), m.getFloatVelocity() });
-            else if (m.isNoteOn() && m.getChannel() == 10 && m.getVelocity() > 0)
+            if (m.isNoteOn() && m.getChannel() == 10 && m.getVelocity() > 0)
                 ++drumOnsThisSecond;
+            else if (m.isNoteOn() && m.getChannel() == 2 && m.getVelocity() > 0)
+            {
+                const int64_t abs = start + meta.samplePosition;
+                BassVoice::Producer prod = BassVoice::Producer::None;
+                bool held = false;
+                BassVoice::NoteOn recent[32];
+                const int nRecent = proc.getRecentBassNoteOns(recent, 32);
+                for (int i = 0; i < nRecent; ++i)
+                {
+                    if (recent[static_cast<size_t>(i)].sample == abs
+                        && recent[static_cast<size_t>(i)].midi == m.getNoteNumber())
+                    {
+                        prod = recent[static_cast<size_t>(i)].producer;
+                        held = recent[static_cast<size_t>(i)].held;
+                        break;
+                    }
+                }
+                if (prod == BassVoice::Producer::None)
+                    prod = proc.getLastBassProducer();
+                notes.push_back({ abs, m.getNoteNumber(), m.getFloatVelocity(), prod, held });
+            }
         }
-        drumPatterns.insert(proc.getDisplayPatternIndex());
 
-        if (start + kBlock >= nextSec)
+        if (start + block >= nextSec)
         {
-            const int learned = proc.getLearnedBassNoteCount();
-            const int grid = proc.getGridBassNoteCount();
+            const int mir = proc.getBassProducerCount(BassVoice::Producer::Mirror);
+            const int fro = proc.getBassProducerCount(BassVoice::Producer::Frozen);
+            const int gra = proc.getBassProducerCount(BassVoice::Producer::GridAuthored);
+            const int grh = proc.getBassProducerCount(BassVoice::Producer::GridHarmonic);
             const auto att = proc.getAttackDebug();
-            std::printf("[DI-AUDIT] %4lld | %5d %7d %4d %7lld | drums=%3d pat=%3d\n",
-                        static_cast<long long>(nextSec / kSr),
-                        proc.getDisplayStateIndex(), learned - lastLearned, grid - lastGrid,
+            std::printf("[DI-AUDIT] %4lld | %5d %3d %3d %3d %3d %7lld | drums=%3d pat=%3d phase=%d%s\n",
+                        static_cast<long long>(nextSec / static_cast<int64_t>(sr)),
+                        proc.getDisplayStateIndex(),
+                        mir - lastMirror, fro - lastFrozen, gra - lastGridA, grh - lastGridH,
                         static_cast<long long>(att.accepted - lastAtt.accepted),
-                        drumOnsThisSecond, proc.getDisplayPatternIndex());
+                        drumOnsThisSecond, proc.getDisplayPatternIndex(),
+                        proc.getSectionPhase(),
+                        (playSectionStart >= 0
+                         && nextSec / static_cast<int64_t>(sr)
+                            == (playSectionStart / static_cast<int64_t>(sr)) + 1)
+                            ? " (post-count-in)" : "");
             drumOnsThisSecond = 0;
-            lastLearned = learned; lastGrid = grid; lastAtt = att;
-            nextSec += static_cast<int64_t>(kSr);
+            lastMirror = mir; lastFrozen = fro; lastGridA = gra; lastGridH = grh;
+            lastAtt = att;
+            nextSec += static_cast<int64_t>(sr);
         }
     }
 
     const auto dbg = proc.getAttackDebug();
-    std::printf("[DI-AUDIT] detector: rise=%lld clearedFloor=%lld blockedByFloor=%lld accepted=%lld\n",
+    const int mir = proc.getBassProducerCount(BassVoice::Producer::Mirror);
+    const int fro = proc.getBassProducerCount(BassVoice::Producer::Frozen);
+    const int gra = proc.getBassProducerCount(BassVoice::Producer::GridAuthored);
+    const int grh = proc.getBassProducerCount(BassVoice::Producer::GridHarmonic);
+    const int pickup = proc.getBassProducerCount(BassVoice::Producer::Pickup);
+
+    const double countInSec = (playSectionStart > 0)
+        ? static_cast<double>(playSectionStart) / sr : 0.0;
+    const double mirrorWindowSec = std::max(0.001, durSec - countInSec);
+    int mirrorNotes = 0, frozenNotes = 0, gridNotes = 0, otherNotes = 0;
+    for (const auto& n : notes)
+    {
+        if (n.producer == BassVoice::Producer::Mirror) ++mirrorNotes;
+        else if (n.producer == BassVoice::Producer::Frozen) ++frozenNotes;
+        else if (n.producer == BassVoice::Producer::GridAuthored
+              || n.producer == BassVoice::Producer::GridHarmonic) ++gridNotes;
+        else ++otherNotes;
+    }
+
+    std::printf("[DI-AUDIT] count-in ended at t=%.2fs (PlaySection); rates below exclude it where noted\n",
+                countInSec);
+    std::printf("[DI-AUDIT] producer totals: Mirror=%d Frozen=%d GridAuthored=%d GridHarmonic=%d Pickup=%d\n",
+                mir, fro, gra, grh, pickup);
+    std::printf("[DI-AUDIT] note-ons by producer (from provenance ring): Mirror=%d Frozen=%d Grid=%d other=%d\n",
+                mirrorNotes, frozenNotes, gridNotes, otherNotes);
+    std::printf("[DI-AUDIT] bass note-ons: %d over %.1fs full-file (%.2f/s); "
+                "Mirror-only post-count-in ≈ %.2f/s over %.1fs\n",
+                static_cast<int>(notes.size()), durSec,
+                static_cast<double>(notes.size()) / durSec,
+                static_cast<double>(mirrorNotes) / mirrorWindowSec, mirrorWindowSec);
+
+    std::printf("[DI-AUDIT] detector legacy: rise=%lld clearedFloor=%lld blockedByFloor=%lld accepted=%lld\n",
                 static_cast<long long>(dbg.riseEdges),
                 static_cast<long long>(dbg.clearedFloor),
                 static_cast<long long>(dbg.blockedByFloor),
                 static_cast<long long>(dbg.accepted));
-    std::printf("[DI-AUDIT] distinct drum patterns used: %d  ("
-                "singles/two-bar feel); pattern set:",
-                static_cast<int>(drumPatterns.size()));
-    for (int p : drumPatterns) std::printf(" %d", p);
-    std::printf("\n");
-    std::printf("[DI-AUDIT] bass note-ons: %d over %.1fs (%.2f/s)\n",
-                static_cast<int>(notes.size()),
-                static_cast<double>(total) / kSr,
-                static_cast<double>(notes.size()) / (static_cast<double>(total) / kSr));
-    const int show = static_cast<int>(notes.size());
-    std::printf("[DI-AUDIT] first %d notes (t:s pitch vel):\n", show);
-    for (int i = 0; i < show; ++i)
-        std::printf("[DI-AUDIT]   %8.3f  %3d  %.2f\n",
-                    static_cast<double>(notes[static_cast<size_t>(i)].sample) / kSr,
-                    notes[static_cast<size_t>(i)].midi,
-                    static_cast<double>(notes[static_cast<size_t>(i)].vel));
+    std::printf("[DI-AUDIT] rise-candidate outcomes (USE THIS for pick diagnosis):\n");
+    for (int i = 0; i < AttackDetector::AttackDebug::kBlockedCount; ++i)
+        if (dbg.riseCandidateOutcome[i] > 0)
+            std::printf("[DI-AUDIT]   %-20s %lld\n", blockedName(i),
+                        static_cast<long long>(dbg.riseCandidateOutcome[i]));
+    std::printf("[DI-AUDIT] every-call blockedBy (noisy; mostly quiet hops — do not treat as missed picks):\n");
+    for (int i = 0; i < AttackDetector::AttackDebug::kBlockedCount; ++i)
+        if (dbg.everyCallBlockedBy[i] > 0)
+            std::printf("[DI-AUDIT]   %-20s %lld\n", blockedName(i),
+                        static_cast<long long>(dbg.everyCallBlockedBy[i]));
+
+    std::printf("[DI-AUDIT] notes (t:s pitch vel producer held):\n");
+    for (const auto& n : notes)
+        std::printf("[DI-AUDIT]   %8.3f  %3d  %.2f  %-12s %s\n",
+                    static_cast<double>(n.sample) / sr, n.midi,
+                    static_cast<double>(n.vel), producerName(n.producer),
+                    n.held ? "hold" : "gate");
+
     int hist[128] = {};
-    for (const auto& n : notes) if (n.midi >= 0 && n.midi < 128) ++hist[n.midi];
+    for (const auto& n : notes)
+        if (n.midi >= 0 && n.midi < 128) ++hist[n.midi];
     std::printf("[DI-AUDIT] pitch histogram:");
-    for (int i = 0; i < 128; ++i) if (hist[i] > 0) std::printf(" %d:%d", i, hist[i]);
+    for (int i = 0; i < 128; ++i)
+        if (hist[i] > 0) std::printf(" %d:%d", i, hist[i]);
     std::printf("\n");
 
     proc.playActive.store(false, std::memory_order_release);
@@ -718,33 +844,42 @@ TEST_CASE("bass mirror: Play learns a riff per section and replays it on return 
     REQUIRE_FALSE(stats[2].frozenNotes.empty());
 }
 
-// Offline record-riff harness. Set MA_RIFF_WAV (and optionally MA_RIFF_BPM,
-// default 120). Captures a riff the way the plugin does, then dumps the captured
-// 16th grid and the emitted locked-riff bass notes so the capture/playback can be
-// compared against what was played. This is the record-riff counterpart to the
-// Play-mode DI audit.
+// Offline record-riff harness.
+//
+// Required env:
+//   MA_RIFF_WAV = mono clean DI (01-*)
+//   MA_RIFF_BPM = host tempo for the take (required)
+//
+//   MA_RIFF_WAV=/path/to/01-….wav MA_RIFF_BPM=85 \
+//     ./build/MetalAccompanimentIntegrationTests "[riff]"
 TEST_CASE("bass mirror: offline record-riff capture dump",
           "[integration][bass][mirror][riff]")
 {
     const char* path = std::getenv("MA_RIFF_WAV");
     if (path == nullptr || *path == '\0')
     {
-        SUCCEED("MA_RIFF_WAV unset");
+        SUCCEED("MA_RIFF_WAV unset — offline riff audit skipped");
         return;
     }
-    WavReader::PcmMono pcm;
-    if (!WavReader::readMonoWav(path, pcm) || pcm.samples.empty())
-    {
-        SUCCEED("MA_RIFF_WAV unreadable");
-        return;
-    }
-    double bpm = 120.0;
-    if (const char* b = std::getenv("MA_RIFF_BPM"))
-        bpm = std::max(40.0, std::atof(b));
+    const char* bpmEnv = std::getenv("MA_RIFF_BPM");
+    REQUIRE(bpmEnv != nullptr);
+    REQUIRE(*bpmEnv != '\0');
+    const double bpm = std::atof(bpmEnv);
+    REQUIRE(bpm >= 40.0);
+    REQUIRE(bpm <= 300.0);
 
+    WavReader::PcmMono pcm;
+    std::string wavErr;
+    const bool wavOk = WavReader::readMonoWav(path, pcm, &wavErr);
+    INFO("WavReader: " << wavErr);
+    REQUIRE(wavOk);
+    REQUIRE_FALSE(pcm.samples.empty());
+    REQUIRE(pcm.sampleRate > 0);
+
+    const double sr = static_cast<double>(pcm.sampleRate);
     const int block = 512;
     AccompanimentProcessor proc;
-    proc.prepareToPlay(kSr, block);
+    proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
     if (auto* p = proc.getApvts().getParameter("genre"))
         p->setValueNotifyingHost(p->convertTo0to1(0.0f));   // Rock
@@ -756,12 +891,29 @@ TEST_CASE("bass mirror: offline record-riff capture dump",
     proc.setPlayHead(&ph);
     proc.requestRiffCaptureStart();
 
+    auto producerName = [](BassVoice::Producer p) -> const char*
+    {
+        switch (p)
+        {
+            case BassVoice::Producer::Mirror:       return "Mirror";
+            case BassVoice::Producer::Frozen:       return "Frozen";
+            case BassVoice::Producer::GridAuthored: return "GridAuthored";
+            case BassVoice::Producer::GridHarmonic: return "GridHarmonic";
+            case BassVoice::Producer::Pickup:       return "Pickup";
+            default:                                return "None";
+        }
+    };
+
     const int64_t total = static_cast<int64_t>(pcm.samples.size());
     int64_t start = 0;
     bool locked = false;
     int64_t lockStart = -1;
-    struct Note { double t; int midi; float vel; bool frozen; };
+    struct Note { double t; int midi; float vel; BassVoice::Producer producer; bool held; };
     std::vector<Note> notes;
+
+    std::printf("[RIFF] === clean-DI record-riff audit ===\n");
+    std::printf("[RIFF] contract: mono clean DI only (01-*). Do not feed 02/03 stems.\n");
+
     for (; start + block <= total; start += block)
     {
         ph.samples = start;
@@ -772,7 +924,6 @@ TEST_CASE("bass mirror: offline record-riff capture dump",
             for (int i = 0; i < block; ++i)
                 p[i] = pcm.samples[static_cast<size_t>(start + i)];
         }
-        const int f0 = proc.getBassProducerCount(BassVoice::Producer::Frozen);
         juce::MidiBuffer midi;
         proc.processBlock(buf, midi);
         proc.flushBackgroundInferenceForTests();
@@ -780,30 +931,71 @@ TEST_CASE("bass mirror: offline record-riff capture dump",
         {
             const auto m = meta.getMessage();
             if (m.isNoteOn() && m.getChannel() == 2 && m.getVelocity() > 0)
-                notes.push_back({ static_cast<double>(start + meta.samplePosition) / kSr,
-                                  m.getNoteNumber(), m.getFloatVelocity(),
-                                  proc.getBassProducerCount(BassVoice::Producer::Frozen) > f0 });
+            {
+                const int64_t abs = start + meta.samplePosition;
+                BassVoice::Producer prod = BassVoice::Producer::None;
+                bool held = false;
+                BassVoice::NoteOn recent[32];
+                const int nRecent = proc.getRecentBassNoteOns(recent, 32);
+                for (int i = 0; i < nRecent; ++i)
+                {
+                    if (recent[static_cast<size_t>(i)].sample == abs
+                        && recent[static_cast<size_t>(i)].midi == m.getNoteNumber())
+                    {
+                        prod = recent[static_cast<size_t>(i)].producer;
+                        held = recent[static_cast<size_t>(i)].held;
+                        break;
+                    }
+                }
+                if (prod == BassVoice::Producer::None)
+                    prod = proc.getLastBassProducer();
+                notes.push_back({ static_cast<double>(abs) / sr, m.getNoteNumber(),
+                                  m.getFloatVelocity(), prod, held });
+            }
         }
         if (!locked && proc.isGrooveLocked()) { locked = true; lockStart = start; }
     }
 
-    std::printf("[RIFF] file=%s bpm=%.0f dur=%.1fs locked=%d lockAt=%.2fs\n",
-                path, bpm, static_cast<double>(total) / kSr, locked ? 1 : 0,
-                lockStart < 0 ? -1.0 : static_cast<double>(lockStart) / kSr);
+    const auto dbg = proc.getAttackDebug();
+    std::printf("[RIFF] file=%s bpm=%.1f dur=%.1fs sr=%d locked=%d lockAt=%.2fs\n",
+                path, bpm, static_cast<double>(total) / sr, pcm.sampleRate, locked ? 1 : 0,
+                lockStart < 0 ? -1.0 : static_cast<double>(lockStart) / sr);
     std::printf("[RIFF] captured riff A: occupied=%d\n", proc.getRiffAOccupiedCount());
     std::printf("[RIFF] slots (idx:midi:gate):");
     for (int s = 0; s < PhraseLearner::kGridSlots; ++s)
         if (proc.getRiffASlotOccupied(s))
             std::printf(" %d:%d:%d", s, proc.getRiffASlotMidi(s), proc.getRiffASlotGate(s));
     std::printf("\n");
-    std::printf("[RIFF] bass note-ons (t pitch vel frozen) over %.1fs: %d\n",
-                static_cast<double>(total) / kSr, static_cast<int>(notes.size()));
-    const int show = std::min<int>(static_cast<int>(notes.size()), 200);
-    for (int i = 0; i < show; ++i)
-        std::printf("[RIFF]   %8.3f  %3d  %.2f  %s\n", notes[static_cast<size_t>(i)].t,
-                    notes[static_cast<size_t>(i)].midi,
-                    static_cast<double>(notes[static_cast<size_t>(i)].vel),
-                    notes[static_cast<size_t>(i)].frozen ? "FROZEN" : "LIVE");
+    std::printf("[RIFF] producer totals: Mirror=%d Frozen=%d GridAuthored=%d GridHarmonic=%d\n",
+                proc.getBassProducerCount(BassVoice::Producer::Mirror),
+                proc.getBassProducerCount(BassVoice::Producer::Frozen),
+                proc.getBassProducerCount(BassVoice::Producer::GridAuthored),
+                proc.getBassProducerCount(BassVoice::Producer::GridHarmonic));
+    std::printf("[RIFF] detector rise-candidate outcomes:\n");
+    auto blockedName = [](int idx) -> const char*
+    {
+        switch (idx)
+        {
+            case 0: return "None(accepted)";
+            case 1: return "NoRecentFall";
+            case 2: return "NoSharpRise";
+            case 3: return "TroughTooShallow";
+            case 4: return "BelowAmplitudeFloor";
+            case 5: return "NotTransient";
+            case 6: return "MinIntervalGate";
+            default: return "?";
+        }
+    };
+    for (int i = 0; i < AttackDetector::AttackDebug::kBlockedCount; ++i)
+        if (dbg.riseCandidateOutcome[i] > 0)
+            std::printf("[RIFF]   %-20s %lld\n", blockedName(i),
+                        static_cast<long long>(dbg.riseCandidateOutcome[i]));
+    std::printf("[RIFF] bass note-ons (t pitch vel producer held) over %.1fs: %d\n",
+                static_cast<double>(total) / sr, static_cast<int>(notes.size()));
+    for (const auto& n : notes)
+        std::printf("[RIFF]   %8.3f  %3d  %.2f  %-12s %s\n",
+                    n.t, n.midi, static_cast<double>(n.vel),
+                    producerName(n.producer), n.held ? "hold" : "gate");
 
     proc.playActive.store(false, std::memory_order_release);
     proc.setPlayHead(nullptr);
