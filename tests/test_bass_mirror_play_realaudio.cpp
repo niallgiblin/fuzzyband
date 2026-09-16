@@ -6,9 +6,21 @@
  * Why: the mirror-vs-harmony arbitration is a ratio question, and every prior
  * attempt to answer it used synthetic sine input or the learner's internal
  * counters. This drives the real plugin over the real recordings and measures
- * how many bass note-ons came from the mirror (`triggerLearnedBassNote`) versus
- * the authored/harmonic fallback grid (`emitBassRange`), plus the attack
- * detector's predicate breakdown. See `docs/BASS_MIRRORING.md` §6.
+ * how many bass note-ons came from each BassVoice producer, plus the attack
+ * detector's rise-candidate outcome histogram. See `docs/BASS_MIRRORING.md` §6
+ * and `RULES.md` §7.
+ *
+ * Offline agent harness (env-gated):
+ *   MA_DI_WAV  + MA_DI_BPM   → Play-mode DI audit   ([di] tag)
+ *   MA_RIFF_WAV + MA_RIFF_BPM → Record-riff dump    ([riff] tag)
+ *
+ * Harness contracts (do not weaken):
+ * - Input must be **mono clean DI** (stem `01-*`). Stereo 02/03 stems fail hard.
+ * - BPM env var is **required** (host tempo; never assume 120).
+ * - Processor sample rate = WAV sample rate (no silent 44.1 vs 48 skew).
+ * - Note dump includes BassVoice producer (Mirror/Frozen/Grid/…).
+ * - Attack stats use rise-candidate outcomes — never compare to external
+ *   spectral-flux onset rates; those are a different detector.
  *
  * The 10 s `tests/fixtures` excerpts are the *densest* windows of each raw take,
  * so they are the best case for the detector. The `data/raw` windows below are
@@ -86,10 +98,11 @@ PlayMirrorStats runPlay(const WavReader::PcmMono& pcm, int64_t startSample, int6
 {
     PlayMirrorStats s;
     s.loaded = true;
-    s.seconds = static_cast<double>(numSamples) / pcm.sampleRate;
+    const double sr = (pcm.sampleRate > 0) ? static_cast<double>(pcm.sampleRate) : kSr;
+    s.seconds = static_cast<double>(numSamples) / sr;
 
     AccompanimentProcessor proc;
-    proc.prepareToPlay(kSr, blockSize);
+    proc.prepareToPlay(sr, blockSize);
     proc.pauseBackgroundInferenceForTests();
     if (auto* p = proc.getApvts().getParameter("genre"))
         p->setValueNotifyingHost(p->convertTo0to1(0.0f));   // Rock

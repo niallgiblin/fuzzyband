@@ -62,10 +62,18 @@ AttackVerdict AttackDetector::classify(float rms, std::int64_t sampleTime, float
 
     v.riseRatio = (rmsSmooth_ > 0.0f) ? rms / rmsSmooth_ : 0.0f;
 
+    auto tallyBlocked = [&](AttackVerdict::Blocked why) noexcept
+    {
+        const int idx = static_cast<int>(why);
+        if (idx >= 0 && idx < AttackDebug::kBlockedCount)
+            ++debug_.everyCallBlockedBy[static_cast<std::size_t>(idx)];
+    };
+
     if (rms < kSilenceFloor)
     {
         risePending_ = false;
         v.blockedBy = AttackVerdict::Blocked::BelowAmplitudeFloor;
+        tallyBlocked(v.blockedBy);
         return v;
     }
 
@@ -109,6 +117,14 @@ AttackVerdict AttackDetector::classify(float rms, std::int64_t sampleTime, float
             v.blockedBy = AttackVerdict::Blocked::NoSharpRise;
         else
             v.blockedBy = AttackVerdict::Blocked::TroughTooShallow;
+        tallyBlocked(v.blockedBy);
+        // Rise-edge candidate that still failed (trough / transient / gate).
+        if (v.armed && v.sharpRise && v.aboveFloor)
+        {
+            const int idx = static_cast<int>(v.blockedBy);
+            if (idx >= 0 && idx < AttackDebug::kBlockedCount)
+                ++debug_.riseCandidateOutcome[static_cast<std::size_t>(idx)];
+        }
         return v;
     }
 
@@ -117,6 +133,7 @@ AttackVerdict AttackDetector::classify(float rms, std::int64_t sampleTime, float
     v.accepted = true;
     v.blockedBy = AttackVerdict::Blocked::None;
     ++debug_.accepted;
+    ++debug_.riseCandidateOutcome[static_cast<std::size_t>(AttackVerdict::Blocked::None)];
     lastAttackSample_ = sampleTime;
     lastFallSample_ = -1;
     risePending_ = false;

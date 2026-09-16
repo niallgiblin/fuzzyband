@@ -44,6 +44,9 @@ void PitchEstimator::prepare(double sampleRate, int maxBlockSize)
 
     lastMidiNote_ = 40.0f;
     lastConfidence_ = 0.0f;
+    hopSamples_ = std::max(1, static_cast<int>(std::lround(kHopSeconds * sampleRate_)));
+    nextHopOffset_ = hopSamples_ - 1;
+    hopCount_ = 0;
 }
 
 void PitchEstimator::reset()
@@ -53,10 +56,13 @@ void PitchEstimator::reset()
     std::fill(ring_.begin(), ring_.end(), 0.0f);
     lastMidiNote_ = 40.0f;
     lastConfidence_ = 0.0f;
+    hopCount_ = 0;
+    nextHopOffset_ = hopSamples_ - 1;
 }
 
 void PitchEstimator::process(const float* mono, int numSamples)
 {
+    hopCount_ = 0;
     if (mono == nullptr || numSamples <= 0)
     {
         lastMidiNote_ = 40.0f;
@@ -72,27 +78,77 @@ void PitchEstimator::process(const float* mono, int numSamples)
             ++ringFilled_;
     }
 
-    // Block-level estimate uses only the most recent kBlockWindow samples (not
-    // the whole ring): a full-ring window lags ~93 ms and made the mirror play
-    // the previous note (docs/BASS_MIRRORING.md §10).
-    const int n = std::min(ringFilled_, kBlockWindow);
-    if (n < minLag_ + 64)
+    // Fixed-hop estimates: YIN at fixed global positions, not once per block. A
+    // block-rate estimate makes anything derived from it (the mirror's legato
+    // pitch follow) depend on the host buffer size.
+    int pos = nextHopOffset_;
+    while (pos < numSamples && hopCount_ < kMaxHops)
+    {
+        recordHop(pos, numSamples);
+        ++hopCount_;
+        pos += hopSamples_;
+    }
+    nextHopOffset_ = pos - numSamples;
+
+    if (hopCount_ > 0)
+    {
+        lastMidiNote_ = hopMidi_[static_cast<size_t>(hopCount_ - 1)];
+        lastConfidence_ = hopConf_[static_cast<size_t>(hopCount_ - 1)];
+    }
+    else if (ringFilled_ < minLag_ + 64)
     {
         lastMidiNote_ = 40.0f;
         lastConfidence_ = 0.0f;
+    }
+}
+
+void PitchEstimator::recordHop(int posInBlock, int numSamples)
+{
+    const size_t idx = static_cast<size_t>(hopCount_);
+    hopOffset_[idx] = posInBlock;
+
+    // Window is the kBlockWindow samples ending at posInBlock (INCLUSIVE — the
+    // hop's last sample, matching EnergyAnalyser::getOnsetHopOffset).
+    int w = std::min(ringFilled_, kBlockWindow);
+    const int back = numSamples - 1 - posInBlock;   // samples from newest to window end
+    if (back < 0)
+    {
+        hopMidi_[idx] = 40.0f;
+        hopConf_[idx] = 0.0f;
+        return;
+    }
+    if (back + w > ringFilled_)
+        w = ringFilled_ - back;
+    if (w < minLag_ + 64)
+    {
+        hopMidi_[idx] = 40.0f;
+        hopConf_[idx] = 0.0f;
         return;
     }
 
-    int oldest = ringWrite_ - n;
-    while (oldest < 0)
-        oldest += kRingSize;
-    for (int i = 0; i < n; ++i)
+    int start = ringWrite_ - back - w;
+    while (start < 0)
+        start += kRingSize;
+    double energy = 0.0;
+    for (int i = 0; i < w; ++i)
     {
-        yinWindow_[static_cast<size_t>(i)] =
-            ring_[static_cast<size_t>((oldest + i) % kRingSize)];
+        const float s = ring_[static_cast<size_t>((start + i) % kRingSize)];
+        yinWindow_[static_cast<size_t>(i)] = s;
+        energy += static_cast<double>(s) * s;
+    }
+    if (std::sqrt(energy / static_cast<double>(w)) < kMinRms)
+    {
+        hopMidi_[idx] = 40.0f;
+        hopConf_[idx] = 0.0f;
+        return;
     }
 
-    runYin(yinWindow_.data(), n);
+    const int tauMax = std::min(maxLag_, w / 2 - 1);
+    const int tauMin = std::min(minLag_, std::max(2, tauMax - 1));
+    float midi = 40.0f, conf = 0.0f;
+    runYinRange(yinWindow_.data(), w, tauMin, tauMax, midi, conf);
+    hopMidi_[idx] = midi;
+    hopConf_[idx] = conf;
 }
 
 bool PitchEstimator::estimateOnset(std::int64_t blockEndAbs, std::int64_t onsetAbs,
@@ -121,13 +177,6 @@ bool PitchEstimator::estimateOnset(std::int64_t blockEndAbs, std::int64_t onsetA
 
     runYinRange(onsetWindow_.data(), length, tauMin, tauMax, midiOut, confOut);
     return true;
-}
-
-void PitchEstimator::runYin(const float* x, int n)
-{
-    const int tauMax = std::min(maxLag_, n / 2 - 1);
-    const int tauMin = std::min(minLag_, std::max(2, tauMax - 1));
-    runYinRange(x, n, tauMin, tauMax, lastMidiNote_, lastConfidence_);
 }
 
 void PitchEstimator::runYinRange(const float* x, int n, int tauMin, int tauMax,
@@ -173,7 +222,11 @@ void PitchEstimator::runYinRange(const float* x, int n, int tauMin, int tauMax,
     for (int tau = tauMin + 1; tau <= tauMax; ++tau)
         minD = std::min(minD, d_[static_cast<size_t>(tau)]);
 
-    const float tol = 1.0e-5f * static_cast<float>(std::max(1, n));
+    // Relative tolerance: an ABSOLUTE tolerance scales with n but not with the
+    // signal amplitude, so on a quiet window every lag qualifies and bestTau
+    // collapses to tauMin (measured: a 0.002-amplitude E2 read as MIDI 71,
+    // polluting the stable tracker). Tie it to the minimum instead.
+    const float tol = minD * 0.1f + 1.0e-6f;
     int bestTau = tauMax;
     for (int tau = tauMin; tau <= tauMax; ++tau)
     {

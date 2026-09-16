@@ -1609,15 +1609,27 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // samples; the buffer sweep in test_bass_mirror_play_realaudio). Drive the
         // learner once per fixed onset hop instead, so it behaves the same at 64
         // and 65536 samples per block.
+        // Modes where the live mirror owns the bass (Play section / Riff-B
+        // listen / locked contrast). The legato follow only applies there.
+        const bool mirrorListening = (enginePhase == EnginePhase::PlaySection
+                                   || enginePhase == EnginePhase::RiffBListen
+                                   || enginePhase == EnginePhase::RiffBLocked);
         if (armActive || capturingNow)
         {
-            const float pitchMidi = pitchEstimator.getMidiNote();
-            const float pitchConf = pitchEstimator.getConfidence();
+            const float blockPitchMidi = pitchEstimator.getMidiNote();
+            const float blockPitchConf = pitchEstimator.getConfidence();
             const int hopCount = energyAnalyser.getOnsetHopCount();
+            // Both are driven at the same fixed hop, so index h aligns. Fall back
+            // to the block estimate if they ever diverge (older build mismatch).
+            const bool hopPitchAligned = (pitchEstimator.getHopCount() == hopCount);
             for (int h = 0; h < hopCount; ++h)
             {
                 const int hopOffset = energyAnalyser.getOnsetHopOffset(h);
                 const int64_t hopAbs = hostSampleTime + hopOffset;
+                const float pitchMidi = hopPitchAligned
+                    ? pitchEstimator.getHopMidi(h) : blockPitchMidi;
+                const float pitchConf = hopPitchAligned
+                    ? pitchEstimator.getHopConf(h) : blockPitchConf;
                 // Hops are at fixed global positions (the analyser's countdown
                 // carries across blocks), so the delta is the true time since the
                 // previous call — no per-block "tail" sample, which is what still
@@ -1657,6 +1669,43 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     }
                     enqueueMirrorTrigger(hopAbs + snapDelta, bn.velocity, bn.midiNote);
                     recordRecentAttack(hopAbs);
+                    legatoPcPending = INT_MIN;
+                    legatoHops = 0;
+                }
+                else if (mirrorListening && mirrorHeldPc >= 0 && pitchConf > 0.25f)
+                {
+                    // Legato pitch follow (RULES.md §7.1.5): a held/legato change
+                    // with no fresh pick retunes the held note once the fixed-hop
+                    // pitch estimate agrees for a few hops (~30 ms). Hop-counted,
+                    // not block-counted, so it is buffer-size invariant.
+                    const int hopPc = ((static_cast<int>(std::lround(pitchMidi)) % 12) + 12) % 12;
+                    if (hopPc != mirrorHeldPc)
+                    {
+                        if (hopPc == legatoPcPending)
+                            ++legatoHops;
+                        else
+                        {
+                            legatoPcPending = hopPc;
+                            legatoHops = 1;
+                        }
+                        if (legatoHops >= 3)
+                        {
+                            enqueueMirrorTrigger(hopAbs, 0.58f, 36 + hopPc);
+                            mirrorHeldPc = hopPc;
+                            legatoPcPending = INT_MIN;
+                            legatoHops = 0;
+                        }
+                    }
+                    else
+                    {
+                        legatoPcPending = INT_MIN;
+                        legatoHops = 0;
+                    }
+                }
+                else
+                {
+                    legatoPcPending = INT_MIN;
+                    legatoHops = 0;
                 }
             }
         }
@@ -2070,23 +2119,6 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             // mirror owns the bass (early-return branches above clear the queue).
             flushMirrorTriggers(numSamples, hostSampleTime + numSamples,
                                 bassTranspose, durationSamples, mirrorActive);
-
-            // Legato pitch follow: a held/legato change (no fresh pick) still
-            // moves the bass to the new note. Without this the held mirror note
-            // stayed on the previous pitch (measured: guitar C, bass held E for a
-            // full second). Only a STABLE tracker class moves it, so a wobble
-            // cannot retrigger the line.
-            if (mirrorActive && semitoneOffset != INT_MIN
-                && mirrorHeldPc >= 0 && semitoneOffset != mirrorHeldPc
-                && phraseLearner.hasRecentAttack(hostSampleTime,
-                                                 static_cast<int64_t>(1.5 * sr)))
-            {
-                const int note = 36 + semitoneOffset;
-                patternPlayer.triggerLearnedBassNote(note + bassTranspose, 0.58f, 0,
-                                                     durationSamples, /*hold=*/true);
-                lastBassPitchClassOffset = semitoneOffset;
-                mirrorHeldPc = semitoneOffset;
-            }
         }
     }
 

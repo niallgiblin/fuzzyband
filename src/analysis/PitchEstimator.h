@@ -5,6 +5,7 @@
  * @brief Monophonic pitch estimate (YIN) for guitar analysis (PITCH-01).
  */
 
+#include <array>
 #include <cstddef>
 #include <vector>
 
@@ -45,10 +46,27 @@ public:
     /** @brief Ring capacity in samples (the valid range of @ref estimateOnset windows). */
     static constexpr int getRingSize() noexcept { return kRingSize; }
 
+    // ── Fixed-hop pitch ──────────────────────────────────────────────────────
+    // YIN runs at fixed ~10.7 ms global positions, not once per host block, so
+    // anything derived from it (the mirror's legato pitch follow, per-hop
+    // pitch) is buffer-size invariant — the same lesson as the 1.0.8 attack
+    // detector fix. @ref process fills these arrays for the current block.
+
+    /** @brief Hop estimates captured in the last @ref process. */
+    int getHopCount() const noexcept { return hopCount_; }
+    /** @brief Hop end offset within the last block (aligns with EnergyAnalyser). */
+    int getHopOffset(int i) const noexcept { return hopOffset_[static_cast<size_t>(i)]; }
+    /** @brief Continuous MIDI pitch at hop @p i (40 when unknown). */
+    float getHopMidi(int i) const noexcept { return hopMidi_[static_cast<size_t>(i)]; }
+    /** @brief YIN confidence at hop @p i. */
+    float getHopConf(int i) const noexcept { return hopConf_[static_cast<size_t>(i)]; }
+    /** @brief Fixed hop length in samples. */
+    int getHopSamples() const noexcept { return hopSamples_; }
+
 private:
-    void runYin(const float* x, int n);
     void runYinRange(const float* x, int n, int tauMin, int tauMax,
                      float& midiOut, float& confOut);
+    void recordHop(int posInBlock, int numSamples);
 
     double sampleRate_ = 44100.0;
 
@@ -69,6 +87,16 @@ private:
     // enough for drop-C, short enough that the block estimate is not dominated
     // by the previous note. The mirror uses @ref estimateOnset instead.
     static constexpr int kBlockWindow = 2048;
+
+    static constexpr double kHopSeconds = 0.0107;
+    static constexpr float kMinRms = 0.0025f;   // below this the pitch is noise
+    static constexpr int kMaxHops = 4096;
+    std::array<float, kMaxHops> hopMidi_{};
+    std::array<float, kMaxHops> hopConf_{};
+    std::array<int, kMaxHops> hopOffset_{};
+    int hopCount_ = 0;
+    int hopSamples_ = 512;
+    int nextHopOffset_ = 511;   // offset of the next hop's LAST sample (matches EnergyAnalyser)
 
     int minLag_ = 1;
     int maxLag_ = 1;

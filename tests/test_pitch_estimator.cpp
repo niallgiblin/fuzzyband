@@ -83,3 +83,38 @@ TEST_CASE("PitchEstimator tracks A1 (55 Hz ≈ MIDI 33) — extended low range",
     REQUIRE(midi < 35.0f);
     REQUIRE(est.getConfidence() > 0.1f);
 }
+
+TEST_CASE("PitchEstimator: fixed-hop estimates track a low E2 sine at every hop",
+          "[pitch][hop]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    PitchEstimator est;
+    est.prepare(sr, block);
+    std::vector<float> buf(static_cast<size_t>(block), 0.0f);
+    int64_t abs = 0;
+    int good = 0, bad = 0;
+    for (int b = 0; b < 400; ++b)
+    {
+        for (int i = 0; i < block; ++i)
+        {
+            const double t = static_cast<double>(abs + i) / sr;
+            buf[static_cast<size_t>(i)] =
+                static_cast<float>(0.5 * std::sin(2.0 * 3.14159265358979323846 * 82.407 * t));
+        }
+        est.process(buf.data(), block);
+        abs += block;
+        if (b < 40)
+            continue;
+        for (int h = 0; h < est.getHopCount(); ++h)
+        {
+            if (est.getHopConf(h) <= 0.3f)
+                continue;
+            const int pc = ((static_cast<int>(std::lround(est.getHopMidi(h))) % 12) + 12) % 12;
+            if (pc == 4) ++good; else ++bad;
+        }
+    }
+    INFO("E2 hops: good=" << good << " bad=" << bad);
+    REQUIRE(good > 0);
+    REQUIRE(bad == 0);
+}

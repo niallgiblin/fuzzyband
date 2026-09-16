@@ -63,10 +63,27 @@ public:
     /** @brief Cumulative diagnostic counters (was @ref PhraseLearner::AttackDebug). */
     struct AttackDebug
     {
+        static constexpr int kBlockedCount = 7; // AttackVerdict::Blocked enumerators
+
         std::int64_t riseEdges = 0;      // armed + sharp rise + above the level floor
         std::int64_t clearedFloor = 0;   // …and the rise also cleared the trough
         std::int64_t blockedByFloor = 0; // rise edge rejected by the trough test
         std::int64_t accepted = 0;       // actually accepted as an attack
+
+        /**
+         * @brief Outcomes among *rise-edge candidates* (armed && sharpRise && aboveFloor).
+         *
+         * This is the useful histogram for pick-rate diagnosis. Index =
+         * static_cast<int>(AttackVerdict::Blocked). `None` means accepted.
+         * Do **not** treat per-hop silence rejects as missed picks.
+         */
+        std::int64_t riseCandidateOutcome[kBlockedCount] = {};
+
+        /**
+         * @brief Every classify() refusal, including quiet / no-rise hops.
+         * Noisy — print only as secondary context; prefer riseCandidateOutcome.
+         */
+        std::int64_t everyCallBlockedBy[kBlockedCount] = {};
     };
 
     /** @brief Derive the time-based window from the sample rate (A1). */

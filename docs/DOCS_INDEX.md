@@ -12,9 +12,10 @@ large fraction of them are stale, duplicated, vendored, or archived.
 
 | If you want to… | Read |
 |---|---|
+| Understand modes, controls, and decisions in plain English | [`../RULES.md`](../RULES.md) |
 | Understand the project and fix a bug | [`CONTEXT_HANDOFF.md`](CONTEXT_HANDOFF.md) |
 | Avoid the traps that keep recurring | [`PITFALLS_AND_INVARIANTS.md`](PITFALLS_AND_INVARIANTS.md) |
-| Work on the bass mirroring bug | [`BASS_MIRRORING.md`](BASS_MIRRORING.md) |
+| Work on the bass mirroring bug | [`BASS_MIRRORING.md`](BASS_MIRRORING.md) (early §§ stale vs v1.0.19; prefer `RULES.md` §7) |
 | Know what was already tried and failed | [`PROJECT_TIMELINE.md`](PROJECT_TIMELINE.md) |
 | Know what the tests cover | [`TEST_AUDIT.md`](TEST_AUDIT.md) |
 | Understand the runtime architecture | [`/ARCHITECTURE.md`](../ARCHITECTURE.md), evidence in [`ARCHITECTURE_DETAIL.md`](ARCHITECTURE_DETAIL.md) |
@@ -26,6 +27,7 @@ large fraction of them are stale, duplicated, vendored, or archived.
 
 | Doc | Status | What it is |
 |---|---|---|
+| [`../RULES.md`](../RULES.md) | **NEW** (v1.0.19) | Domain/rules guide for non-experts: modes, controls, decision flow, bass pitch/beat contract, musicality research |
 | [`CONTEXT_HANDOFF.md`](CONTEXT_HANDOFF.md) | **NEW** | Self-contained briefing: what the project is, real architecture, build/test, the active bug, what is *not* wired |
 | [`PITFALLS_AND_INVARIANTS.md`](PITFALLS_AND_INVARIANTS.md) | **NEW** | Cross-wiring causes, recurring engineering traps, the ten invariants, a pre-flight checklist |
 | [`BASS_MIRRORING.md`](BASS_MIRRORING.md) | **NEW** | The mirroring contract, exact call chain, all nine fix attempts, ranked hypotheses, debug recipe |

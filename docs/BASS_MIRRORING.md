@@ -594,3 +594,32 @@ reports a new class (not a raw wobble) while a mirror note is held and the
 guitarist has played within 1.5 s, the bass moves to the new note. Measured
 +8 % note-ons (230 vs 213 attacks) — it tracks the chord change without
 retriggering on jitter.
+
+---
+
+## 15. Fixed-hop pitch chain + legato follow (1.0.20)
+
+RULES.md §9.1.1 / §7.5 named the last structural gap: the pitch chain ran
+**once per host block**, so it lagged ~100 ms (block YIN ~46 ms + stable tracker
+~44 ms + onset window ~16 ms) and anything derived from it — the legato follow —
+moved with the buffer size.
+
+### What changed
+
+- `PitchEstimator` now runs YIN at the **same fixed ~10.7 ms hop** as
+  `EnergyAnalyser` (aligned by construction: first hop at sample `hopSamples-1`),
+  exposing `getHopCount()/getHopOffset()/getHopMidi()/getHopConf()`. The
+  processor drives the learner and the legato follow from these per-hop values.
+- The legato pitch follow moved into that hop loop: a held note retunes when the
+  per-hop pitch agrees for 3 hops (~30 ms). Hop-counted, so **buffer-invariant**
+  (sweep 259-279 across 64→4096 vs 249 before — within the test's tolerance).
+- **Latent YIN bug fixed:** the lag tolerance was *absolute* (`1e-5 * n`), which
+  on a quiet window exceeds every `d(tau)`, so `bestTau` collapsed to `tauMin`
+  and a 0.002-amplitude E2 read as **MIDI 71**. It is now relative to the minimum
+  (`minD*0.1 + 1e-6`), plus a window-RMS gate (`kMinRms = 0.0025`). This polluted
+  the stable tracker and the harmony key; it was masked only because the
+  block-rate tracker held its previous class.
+
+Guards: `PitchEstimator: fixed-hop estimates track a low E2 sine at every hop`;
+the existing "play-mode bass holds a sustain" test (harmony key) now passes on
+the fixed-hop path.

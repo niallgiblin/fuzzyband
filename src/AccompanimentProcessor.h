@@ -152,6 +152,12 @@ public:
         return patternPlayer.getLastBassProducer();
     }
 
+    /** @brief Test/debug: recent bass note-ons with producer provenance. */
+    int getRecentBassNoteOns(BassVoice::NoteOn* out, int maxCount) const noexcept
+    {
+        return patternPlayer.getRecentBassNoteOns(out, maxCount);
+    }
+
     // ── Step 2: Play-mode per-section riff learning (test/debug surface) ─────
     /** @brief True while Play is capturing the current section's riff (first pass). */
     bool isPlaySectionCapturing() const noexcept { return playTakeActive; }
@@ -329,6 +335,8 @@ private:
     int mirrorPitchWindow = 1024;   // LATENCY in samples; set in prepareToPlay
     int lastOnsetMirrorMidi = -1;   // most recent onset-resolved mirror note
     int mirrorHeldPc = -1;          // pitch class of the currently held mirror note (-1 none)
+    int legatoPcPending = INT_MIN;  // fixed-hop legato pitch candidate
+    int legatoHops = 0;             // consecutive hops the candidate has held
 
     // Recent detected attacks (absolute samples) — the riff capture marks a 16th
     // as an onset when a real pick falls inside it, instead of merging re-picks

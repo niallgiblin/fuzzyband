@@ -8,6 +8,10 @@
  * excerpts) and 24-bit PCM (the minutes-long `data/raw/` captures). Shared by
  * `test_golden_signal.cpp`, `test_bass_mirror_realaudio.cpp` and
  * `test_bass_mirror_play_realaudio.cpp` so the fixtures are decoded one way.
+ *
+ * **Mono only.** Stem bounces (drums/bass) are often stereo — reject them with a
+ * clear error so agent audits cannot silently skip or analyse the wrong file.
+ * The plugin input contract is clean DI on stem `01-*` (see `RULES.md`).
  */
 
 #include <cstdint>
@@ -24,18 +28,25 @@ struct PcmMono
     int sampleRate = 0;
 };
 
-inline bool readMonoWav(const std::string& path, PcmMono& out)
+inline bool readMonoWav(const std::string& path, PcmMono& out, std::string* error = nullptr)
 {
+    auto fail = [&](const char* msg) -> bool
+    {
+        if (error != nullptr)
+            *error = msg;
+        return false;
+    };
+
     std::ifstream f(path, std::ios::binary);
     if (!f)
-        return false;
+        return fail("file not found / unreadable");
 
     std::vector<unsigned char> data((std::istreambuf_iterator<char>(f)),
                                     std::istreambuf_iterator<char>());
     if (data.size() < 44 || data[0] != 'R' || data[1] != 'I' || data[2] != 'F' || data[3] != 'F')
-        return false;
+        return fail("not a RIFF file");
     if (data[8] != 'W' || data[9] != 'A' || data[10] != 'V' || data[11] != 'E')
-        return false;
+        return fail("not a WAVE file");
 
     auto u16 = [&](size_t o) { return static_cast<uint16_t>(data[o] | (data[o + 1] << 8)); };
     auto u32 = [&](size_t o) {
@@ -55,7 +66,7 @@ inline bool readMonoWav(const std::string& path, PcmMono& out)
         const size_t bodyStart = pos + 8;
         const size_t bodyEnd = bodyStart + size;
         if (bodyEnd > data.size())
-            return false;
+            return fail("truncated WAV chunk");
 
         if (data[pos] == 'f' && data[pos + 1] == 'm' && data[pos + 2] == 't' && data[pos + 3] == ' ')
         {
@@ -71,8 +82,13 @@ inline bool readMonoWav(const std::string& path, PcmMono& out)
         pos = bodyEnd + (size & 1u);
     }
 
-    if (!pcm || channels != 1 || sampleRate == 0 || (bits != 16 && bits != 24))
-        return false;
+    if (!pcm || sampleRate == 0)
+        return fail("missing fmt/data chunk");
+    if (channels != 1)
+        return fail("stereo/multi-channel rejected — use mono clean DI stem 01-* only "
+                    "(02=drums, 03=bass are outputs, not plugin input)");
+    if (bits != 16 && bits != 24)
+        return fail("only 16-bit or 24-bit PCM supported");
 
     const size_t bytesPerSample = bits / 8u;
     const size_t n = pcmBytes / bytesPerSample;
@@ -97,7 +113,8 @@ inline bool readMonoWav(const std::string& path, PcmMono& out)
             out.samples[i] = static_cast<float>(v) / 8388608.0f;
         }
     }
+    if (error != nullptr)
+        error->clear();
     return true;
 }
 } // namespace WavReader
-
