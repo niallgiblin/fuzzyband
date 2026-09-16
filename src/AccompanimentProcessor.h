@@ -315,6 +315,19 @@ private:
     /** @brief Step 2: drop all per-section memory and take state (Play start). */
     void resetSectionRiffMemory() noexcept;
 
+    // ── Record-mode transition riff memory (docs/BASS_MIRRORING.md §17) ───────
+    // Each contrast slot (B/C/D/E) learns the riff played through its FIRST
+    // visit and replays it on every return, exactly like Riff A. Before 1.0.22
+    // the transition only mirrored the live player, so the bass rested (went
+    // silent) the moment the player stopped and the contrast was never
+    // remembered. Keyed by the pinned slot index, which `resetTransitionCycle`
+    // clears together with the slot->family pins.
+    void beginTransitionTake(int slot, double samplesPerBeat) noexcept;
+    void storeTransitionTake() noexcept;
+    void storeTransitionRiff(int slot, const PhraseLearner::LearnedRiff& riff) noexcept;
+    void clearTransitionMemory() noexcept;
+    const PhraseLearner::LearnedRiff* findTransitionRiff(int slot) const noexcept;
+
     // ── Onset-aligned mirror pitch (docs/BASS_MIRRORING.md §10) ──────────────
     // The block-level YIN estimate ends at the current sample, so at a pick it
     // is still dominated by the PREVIOUS note and the mirror plays one note
@@ -546,6 +559,12 @@ private:
     static constexpr int kMaxTransitionSlots = 4;
     const char* transitionSlotNames[kMaxTransitionSlots] {};  // pinned family per B/C/D/E
     bool transitionSlotPinned[kMaxTransitionSlots] {};
+    // Learned contrast riff per slot (see beginTransitionTake).
+    std::array<SectionRiffMemory, kMaxTransitionSlots> transitionRiffs {};
+    bool transitionTakeActive = false;      // capturing the current contrast slot
+    bool transitionTakeReplaying = false;   // replaying that slot's stored riff
+    int transitionTakeSlot = -1;
+    int64_t transitionReplayOriginMono = -1;
     int transitionBarsTotalLocal = 0;       // hold length in bars (from APVTS)
     std::atomic<bool> transitionSectionActive{ false };
     std::atomic<const char*> transitionSectionName{ "VERSE" };

@@ -2367,6 +2367,108 @@ TEST_CASE("Processor pipeline: the transition mirrors the player, then falls bac
     proc.releaseResources();
 }
 
+// ── Record contrast (B/C/D/E) memory ──────────────────────────────────────────
+TEST_CASE("Processor pipeline: a Record contrast riff is learned and replayed on the next visit",
+          "[integration][pipeline][transition][lock][memory]")
+{
+    // User contract (docs/BASS_MIRRORING.md §17): the transition/B section must
+    // be remembered like Riff A. First visit to a contrast slot mirrors the
+    // player AND captures in parallel; every later visit to the same slot
+    // replays the stored riff, so the bass keeps going when the player stops.
+    // Before this the contrast only mirrored live, and went silent on a rest.
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(0.0f);  // 4-bar lock, short test
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(4.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));  // always slot 0
+
+    int blockIdx = 0;
+    recordChugRiff(proc, sr, block, 65.406, blockIdx);   // C2 riff -> lock
+    REQUIRE(proc.isGrooveLocked());
+
+    auto feed = [&](bool play, double freq, int numBlocks)
+    {
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            juce::AudioBuffer<float> buf(2, block);
+            if (play)
+            {
+                fillChugBlock(buf, blockIdx, block, sr, freq);
+            }
+            else
+            {
+                // "Stopped playing" is not digital silence: there is still DI
+                // signal (room/amp noise). Digital zeros trip the plugin's
+                // digitalSilence gate, which mutes everything by design — a
+                // different behaviour from a guitarist resting.
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    float* p = buf.getWritePointer(ch);
+                    const double t = static_cast<double>(blockIdx) * block / sr;
+                    for (int i = 0; i < block; ++i)
+                        p[i] = static_cast<float>(
+                            0.0005 * std::sin(2.0 * M_PI * 110.0 * (t + i / sr)));
+                }
+            }
+            juce::MidiBuffer midi;
+            proc.processBlock(buf, midi);
+            proc.flushBackgroundInferenceForTests();
+            ++blockIdx;
+        }
+    };
+    auto waitForTransition = [&](bool play, double freq) -> bool
+    {
+        int guard = 0;
+        while (!proc.isTransitionSectionActive() && guard < blocksForBars(sr, block, 40.0))
+        {
+            feed(play, freq, 1);
+            ++guard;
+        }
+        return proc.isTransitionSectionActive();
+    };
+
+    // 1) First contrast visit: play a distinct riff (E2, not the C2 Riff A) for
+    //    the whole contrast. It must mirror live, not replay anything frozen.
+    REQUIRE(waitForTransition(true, 82.407));
+    int frozenFirst = 0;
+    {
+        int last = proc.getBassProducerCount(BassVoice::Producer::Frozen);
+        while (proc.isTransitionSectionActive())
+        {
+            feed(true, 82.407, 1);
+            const int now = proc.getBassProducerCount(BassVoice::Producer::Frozen);
+            frozenFirst += now - last;
+            last = now;
+        }
+    }
+    REQUIRE(frozenFirst == 0);
+
+    // 2) Let Riff A re-engage, reach the SAME contrast slot again, and play
+    //    NOTHING. The stored contrast riff must carry the bass.
+    REQUIRE(waitForTransition(false, 0.0));
+    int frozenSecond = 0;
+    {
+        int last = proc.getBassProducerCount(BassVoice::Producer::Frozen);
+        while (proc.isTransitionSectionActive())
+        {
+            feed(false, 0.0, 1);
+            const int now = proc.getBassProducerCount(BassVoice::Producer::Frozen);
+            frozenSecond += now - last;
+            last = now;
+        }
+    }
+    INFO("frozenFirst=" << frozenFirst << " frozenSecond=" << frozenSecond);
+    REQUIRE(frozenSecond > 0);
+
+    proc.releaseResources();
+}
+
 // ── Play-mode bass: reflects the guitarist's root in the song's key ───────────
 TEST_CASE("Processor pipeline: play-mode bass mirrors the guitarist, harmony only fills gaps",
           "[integration][pipeline][play][bass][mirror]")

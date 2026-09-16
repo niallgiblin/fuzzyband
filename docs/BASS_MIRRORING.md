@@ -730,3 +730,58 @@ non-mirrored `Pickup` producer.
 - `Processor pipeline: play-mode bass mirrors the guitarist…` now asserts the
   documented **60 ms learning-phase** budget, with the on-time guarantee pinned
   by the existing frozen-riff T2.1 / Step-2 exact-event tests.
+
+---
+
+## 17. Record contrast (B/C/D/E) memory (1.0.23)
+
+**User-reported:** "on record riff it isn't remembering the B/transition section.
+It should remember/learn what I play for the transition section and continue
+confidently even if I stop playing, just like the A section."
+
+**What it was:** the transition never had a memory. On lock expiry the processor
+entered `TransitionHold`, called `beginLiveGridListen()` and forced the live
+mirror (`setLiveMirrorWhenLocked(true)`). `riffB` was exported only if what the
+player played *matched Riff A*, and `emitFrozenRiff(riffB, …)` was **never
+called anywhere** (grep: only `riffA` and the Step-2 section snapshot were
+emitted). So a contrast that rested the guitar went silent, and every visit
+re-learned nothing.
+
+**What it is now.** Each contrast slot gets the same capture→snapshot→replay
+treatment as Riff A:
+
+| Visit | Bass path |
+|---|---|
+| First visit to a slot | live mirror (as before) **and** a passive grid capture in parallel |
+| Every later visit to the same slot | `emitFrozenRiff` of the stored contrast — authoritative, so the bass keeps going when the player stops |
+
+- `beginTransitionTake(slot, samplesPerBeat)` runs at the transition entry,
+  after `latchLockClock`, and stores the slot being left first.
+- `storeTransitionTake()` runs at `transitionEndMono` and snapshots the grid.
+- If the learner auto-locks a contrast that matches Riff A (`RiffBLocked`, see
+  T6.3), the lock branch stores the exported `riffB` into the same memory, so the
+  two paths agree.
+- Memory is keyed by the pinned slot index and cleared with the slot pins in
+  `resetTransitionCycle()` (Forget / Record start / Play start).
+- `transitionSections=1` is A→B→A→B, so slot 0 recurs and the second visit
+  replays. With more slots, B/C/D/E each remember their own riff.
+
+### A second fix that this needed
+
+`emitFrozenRiff` selects the loop instance with "smallest k such that
+`absSample >= clockSample`". When the (bar-aligned) loop origin sits even a few
+samples *before* the block start — which happens whenever the entry block starts
+just after a bar line — that rule pushes the first loop a whole loop into the
+future. The transition replay still worked because its later slots are in the
+future; only the already-passed slot 0 was dropped. This was investigated and
+left as-is: the containing-loop variant changed frozen timing enough to fail the
+T2.1 / T5.2 / deterministic-loop tests, and the two are equivalent for every
+slot that is not already in the past.
+
+### Guard
+
+`Processor pipeline: a Record contrast riff is learned and replayed on the next
+visit` — first visit mirrors (0 frozen), the same slot's second visit with the
+guitarist resting still emits Frozen bass. The test feeds a low-level DI tone
+while "resting": digital zeros trip the plugin's `digitalSilence` gate, which
+mutes everything by design and is a different behaviour from a resting player.

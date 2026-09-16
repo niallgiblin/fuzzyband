@@ -1375,6 +1375,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 transitionSlotNames[i] = nullptr;
                 transitionSlotPinned[i] = false;
             }
+            clearTransitionMemory();
         };
 
         auto abortRiffCapture = [this]() noexcept
@@ -1832,6 +1833,12 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             phraseLearner.exportPattern(riffB);
             if (riffB.valid)
             {
+                // Remember this contrast riff so a later visit to the same slot
+                // replays it (docs/BASS_MIRRORING.md §17) instead of relying on
+                // the live mirror. The learner lock cancelled the grid listen, so
+                // this snapshot is the only capture of that visit.
+                storeTransitionRiff(transitionTakeSlot, riffB);
+                transitionTakeActive = false;
                 const int oneShot = bLockPick.exchange(-1, std::memory_order_acq_rel);
                 drumB = (oneShot >= 0)
                     ? PatternRules::constrainToPool(oneShot, transitionPool, st)
@@ -1984,6 +1991,10 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             transitionStartMono = hostSampleTime;
             transitionEndMono = hostSampleTime + static_cast<int64_t>(transitionBars) * samplesPerBarT;
             transitionSectionActive.store(true, std::memory_order_release);
+            // Learn this contrast slot on its first visit, replay it afterwards
+            // (docs/BASS_MIRRORING.md §17). Must run AFTER latchLockClock so the
+            // replay origin is bar-phase aligned.
+            beginTransitionTake(slot, samplesPerBeat);
 
             patternPlayer.armTransitionCrash();
             riffAFillArm.clear();
@@ -2003,6 +2014,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             // selected length (bounded by transitionEndMono below).
             if (transitionEndMono >= 0 && hostSampleTime >= transitionEndMono)
             {
+                // Snapshot the contrast before leaving it, so the next visit to
+                // this slot replays what was played here.
+                storeTransitionTake();
                 postLockPhase = PostLockPhase::Idle;
                 transitionSectionActive.store(false, std::memory_order_release);
                 transitionCutShortArmed = false;
@@ -2115,6 +2129,20 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             const auto* stored = findSectionRiff(playTakeSectionName);
             if (stored != nullptr)
                 emitFrozenRiff(*stored, playTakeOriginMono, numSamples,
+                               static_cast<double>(bpmForPlayer), sr,
+                               hostSampleTime, bassTranspose);
+            clearPendingMirror();
+        }
+        else if (!playOn && transitionTakeReplaying)
+        {
+            // Record contrast recall (§17): replay the riff learned on this
+            // contrast slot's first visit. Authoritative while it plays, so the
+            // bass keeps going when the guitarist stops — the same contract as
+            // Riff A. Without this the transition only mirrored the live player
+            // and went silent on a rest.
+            const auto* stored = findTransitionRiff(transitionTakeSlot);
+            if (stored != nullptr)
+                emitFrozenRiff(*stored, transitionReplayOriginMono, numSamples,
                                static_cast<double>(bpmForPlayer), sr,
                                hostSampleTime, bassTranspose);
             clearPendingMirror();
@@ -2443,6 +2471,92 @@ void AccompanimentProcessor::resetSectionRiffMemory() noexcept
     playTakeSectionName[0] = '\0';
     playTakeOriginMono = -1;
     playTakeOriginBeat = 0.0;
+    clearTransitionMemory();
+}
+
+void AccompanimentProcessor::clearTransitionMemory() noexcept
+{
+    transitionRiffs.fill({});
+    transitionTakeActive = false;
+    transitionTakeReplaying = false;
+    transitionTakeSlot = -1;
+    transitionReplayOriginMono = -1;
+}
+
+const PhraseLearner::LearnedRiff* AccompanimentProcessor::findTransitionRiff(int slot) const noexcept
+{
+    if (slot < 0 || slot >= kMaxTransitionSlots)
+        return nullptr;
+    const auto& mem = transitionRiffs[static_cast<std::size_t>(slot)];
+    return (mem.valid && mem.riff.valid) ? &mem.riff : nullptr;
+}
+
+void AccompanimentProcessor::storeTransitionRiff(int slot,
+                                                const PhraseLearner::LearnedRiff& riff) noexcept
+{
+    if (slot < 0 || slot >= kMaxTransitionSlots || !riff.valid)
+        return;
+    auto& mem = transitionRiffs[static_cast<std::size_t>(slot)];
+    mem.valid = true;
+    std::strncpy(mem.name, transitionSectionNameStr != nullptr ? transitionSectionNameStr : "?",
+                 sizeof(mem.name) - 1);
+    mem.name[sizeof(mem.name) - 1] = '\0';
+    mem.riff = riff;
+    mem.learnedAtMono = hostSampleTime;
+}
+
+void AccompanimentProcessor::storeTransitionTake() noexcept
+{
+    if (!transitionTakeActive)
+    {
+        transitionTakeReplaying = false;
+        transitionReplayOriginMono = -1;
+        return;
+    }
+
+    if (phraseLearner.isGridListening())
+        flushPendingCaptureSlot();
+
+    PhraseLearner::LearnedRiff snap{};
+    phraseLearner.exportPattern(snap);
+    const int occupied = phraseLearner.getGridOccupiedCount();
+
+    // A contrast with fewer than two occupied 16ths is not a riff; keep the
+    // previous memory (if any) and fall back to the live mirror next visit.
+    if (occupied >= 2 && snap.valid)
+        storeTransitionRiff(transitionTakeSlot, snap);
+
+    phraseLearner.endSectionGridListen();
+    transitionTakeActive = false;
+    transitionTakeReplaying = false;
+    transitionTakeSlot = -1;
+    transitionReplayOriginMono = -1;
+}
+
+void AccompanimentProcessor::beginTransitionTake(int slot, double samplesPerBeat) noexcept
+{
+    // Store whatever the contrast we are leaving learned, then either replay this
+    // slot's stored riff or start learning it.
+    storeTransitionTake();
+
+    transitionTakeSlot = slot;
+    transitionReplayOriginMono = frozenRiffOriginMono(samplesPerBeat);
+
+    const PhraseLearner::LearnedRiff* stored = findTransitionRiff(slot);
+    if (stored != nullptr)
+    {
+        transitionTakeActive = false;
+        transitionTakeReplaying = true;
+        phraseLearner.endSectionGridListen();
+    }
+    else
+    {
+        transitionTakeActive = true;
+        transitionTakeReplaying = false;
+        // Passive capture: stamps the 16th grid in parallel with the live
+        // mirror, and unlike beginGridCapture it does NOT suppress the mirror.
+        phraseLearner.beginSectionGridListen();
+    }
 }
 
 void AccompanimentProcessor::beginPlaySectionTake(const char* name, int64_t clockSample,
@@ -2821,7 +2935,13 @@ void AccompanimentProcessor::emitFrozenRiff(const PhraseLearner::LearnedRiff& ri
             static_cast<double>(gate16) * 0.25 * spb * 0.9)));
         const int64_t slotOffset = static_cast<int64_t>(
             std::llround(static_cast<double>(s) * 0.25 * spb));
-        // Smallest k with origin + slotOffset + k*loopSamples >= clockSample.
+        // Loop instance that CONTAINS clockSample. The previous form took the
+        // smallest k with absSample >= clockSample, which jumped a whole loop
+        // whenever the (bar-aligned) origin sat even a few samples before the
+        // block start: a Record contrast replay whose origin was 256 samples in
+        // the past emitted nothing for an entire 4-bar loop. Clamping to the
+        // containing loop keeps the first loop's not-yet-passed slots alive; a
+        // genuine future origin still starts on k=0 and waits for its time.
         const int64_t rel = clockSample - (origin + slotOffset);
         int64_t k = rel / loopSamples;
         if (k * loopSamples < rel)

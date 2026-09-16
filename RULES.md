@@ -1,7 +1,7 @@
 # Fuzzyband Rules — How the Plugin Thinks
 
 **Audience:** anyone who wants to understand the product without being a DSP engineer.  
-**Authority:** verified against live source at **v1.0.22** (`CMakeLists.txt` line 4).  
+**Authority:** verified against live source at **v1.0.23** (`CMakeLists.txt` line 4).  
 **Companion docs:** `docs/CONTEXT_HANDOFF.md` (engineer briefing), `docs/BASS_MIRRORING.md` (bass bug history — some early sections are stale; trust this file + code for current behaviour).
 
 If a older doc disagrees with this file, **believe the code**. This document exists because that happens often.
@@ -79,7 +79,7 @@ Play does **not** loop the form (loop is forced off). Play cancels any Record se
 2. Wait for the next bar → **count-in** → **4-bar capture** on a 16th grid.
 3. Take commits → **Riff A**: drums + bass freeze on that take for **Lock bars**.
 4. Then a **transition** contrast (Riff B listen / optional lock) for **Transition bars**, cycling A → B → A → C… according to **Transition sections**.
-5. During contrast, bass should **mirror you** (and rest when you rest), not play a root/fifth bed under the drum change.
+5. During the **first** visit to a contrast slot the bass **mirrors you** (and captures in parallel, exactly like Riff A). On every **later** visit to the same slot it **replays the learned contrast riff**, so the bass keeps going when you rest instead of going silent.
 6. **Forget** wipes the riff and returns to Idle.
 
 Stopping Record early with enough occupied 16ths still commits; too little material aborts.
@@ -99,7 +99,7 @@ These are internal states. The UI summarises them as Idle / Play / Lock / Transi
 | **RecCountIn** | One bar click | Click (kick on 1) | Waiting |
 | **RecCapture** | 4 bars recording | Click continues | Stamping 16ths into the learner |
 | **RiffA** | Locked to take A | Frozen pattern | Frozen riff snapshot |
-| **RiffBListen** | Contrast section | Rotating contrast pool | Live mirror; grid only if silent (not during TransitionHold) |
+| **RiffBListen** | Contrast section | Rotating contrast pool | Live mirror (first visit) **and** captures the contrast riff; a later visit to the same slot replays the stored one |
 | **RiffBLocked** | Contrast locked | Frozen B pattern | Live mirror while transition hold; stored B is not the main live emit path |
 
 **Post-lock TransitionHold** means: drums contrast; bass mirrors/rests with you — **no** harmony fill.
@@ -437,4 +437,4 @@ Idle:   silence until you arm something
 
 ---
 
-*Last verified against source: v1.0.22. When behaviour changes, update this file in the same change that updates the code — do not leave it to a later “docs pass.”*
+*Last verified against source: v1.0.23. When behaviour changes, update this file in the same change that updates the code — do not leave it to a later “docs pass.”*
