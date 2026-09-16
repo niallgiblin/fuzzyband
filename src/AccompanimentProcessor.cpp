@@ -211,14 +211,25 @@ void AccompanimentProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     resetSectionRiffMemory();
     // Onset-aligned mirror pitch. `mirrorPitchWindow` is the LATENCY (how long
     // the note waits for the onset window) AND the fixed analysis length.
-    // 40 ms is the shortest window that resolves a drop-tuned low note: at 73 Hz
-    // (D2) two periods are ~27 ms, and a 16 ms window cannot even reach D2's lag
-    // (measured on real DIs: pitch-class match 55% at 16 ms vs 81% at 40 ms).
+    //
+    // Sized from physics, not taste: an estimator needs ~2 periods of the note to
+    // name it, and the lowest note the plugin supports is C2 (65.4 Hz, the drop-C
+    // design floor). That is ~30.6 ms at any sample rate. Measured on real DIs at
+    // 170 BPM, pitch-class match vs window: 16 ms 55%, 24 ms 70%, 28-32 ms ~76%,
+    // 40 ms 81% — so this is the knee, and everything below ~24 ms is unusable.
+    //
+    // A frequency-domain harmonic comb (whitened matched filter / linear HPS /
+    // YIN+comb correction) was implemented and measured as a short-window
+    // alternative: none of them beats YIN at equal window length, because a
+    // 16 ms window cannot resolve harmonics 73 Hz apart. The window IS the
+    // latency knob. See docs/BASS_MIRRORING.md §16 and §20.
+    //
     // The delay is only audible while a riff is being learned — Record capture is
-    // silent and frozen/section replay is grid-placed, so it costs nothing once
-    // a riff is stored. See docs/BASS_MIRRORING.md §16.
+    // silent and frozen/section replay is grid-placed (0.9 ms), so it costs
+    // nothing once a riff is stored.
+    static constexpr double kLowestSupportedNoteHz = 65.4;   // C2, drop-C floor
     mirrorPitchWindow = juce::jlimit(256, kMaxOnsetWindow,
-                                     static_cast<int>(std::lround(0.040 * sr)));
+        static_cast<int>(std::lround(2.0 / kLowestSupportedNoteHz * sr)));
     clearPendingMirror();
     lastOnsetMirrorMidi = -1;
     mirrorHeldPc = -1;

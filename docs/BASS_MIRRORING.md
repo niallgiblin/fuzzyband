@@ -894,3 +894,62 @@ Guards: `Processor pipeline: a Record contrast riff is learned and replayed on
 the next visit` now also requires the stored contrast to hold more than 8 slots;
 `Processor pipeline: play-mode bass mirrors the guitarist…` requires at most two
 same-pitch double-triggers within 48 ms (11 on the unfixed legato path).
+
+---
+
+## 20. Short-window pitch: a negative result (1.0.27)
+
+After the field report that the live mirror still felt "out of time", the plan was
+to replace the onset-aligned YIN with a **harmonic-comb / template estimator** so
+the window could shrink from 40 ms to ~16-20 ms (inside the original 30 ms
+budget) without losing accuracy.
+
+**It does not work. Do not retry it without new evidence.** Measured offline on
+both real DIs, scoring each estimator against a stable-segment reference
+(46 ms YIN, confidence > 0.7) at the same window lengths:
+
+| window | YIN (plugin algorithm) | whitened comb (SWIPE-like) | linear HPS | YIN + comb correction |
+|---|---|---|---|---|
+| 16 ms | 9.9 % | 11.5 % | 21.4 % | 7.6 % |
+| 20 ms | 18.3 % | 14.5 % | 22.1 % | 13.0 % |
+| 24 ms | 20.6 % | 15.3 % | 20.6 % | 16.8 % |
+| 28 ms | 15.9 % | 12.9 % | 23.5 % | 22.0 % |
+| 32 ms | 22.7 % | 15.9 % | 29.5 % | 23.5 % |
+| 40 ms | 65.9 % | 51.5 % | — | 46.2 % |
+
+The absolute numbers are low because the reference is strict (segment starts,
+where the previous note's tail is still in the window) — what matters is the
+*relative* comparison at equal window length, and **no variant beats YIN.**
+
+**Why:** at 44.1 kHz a 705-sample (16 ms) window has ~62 Hz resolution, and the
+harmonics of a 73 Hz D2 are 73 Hz apart — they are not resolved, so no
+frequency-domain comb can lock on. In the time domain only ~1.2 periods fit, so
+`d(tau)` is estimated from ~100 samples. **~2 periods of the lowest supported
+note is a hard floor**, which for C2 (65.4 Hz) is ~30.6 ms at any sample rate.
+The comb is only competitive at 16-20 ms *and still wrong there*, and it is worse
+than YIN from 32 ms up, so adding it as a fallback or a corrector would be a net
+loss.
+
+**What was shipped instead:** `mirrorPitchWindow` is now sized from the physics
+rather than a round number —
+
+```cpp
+static constexpr double kLowestSupportedNoteHz = 65.4;   // C2, drop-C floor
+mirrorPitchWindow = jlimit(256, kMaxOnsetWindow, lround(2.0 / kLowestSupportedNoteHz * sr));
+```
+
+→ 30.6 ms (was a flat 40 ms): **~9 ms less learning-phase latency** for ~3 points
+of pitch-class match (measured on the 1323 play take: 78.7 % → 75.1 %). It is one
+constant if the balance needs to move back.
+
+Remaining honest options if the drag is still too much:
+
+1. **Widen the grid snap.** The mirror snaps a pick to the nearest 16th only
+   within ±15 ms, so looser picks are traced as-is plus the window. A wider snap
+   makes the live mirror land on a consistent grid offset instead of scattering
+   (measured scatter 0-44 ms), at the cost of quantising the player's feel.
+2. **Two-stage emission** (emit on time with the held pitch, re-pitch once the
+   window resolves). Perfect timing for repeated notes — the bulk of a riff — but
+   a wrong note then a re-trigger on every change.
+3. **Accept the delay.** It applies only to first passes; Record capture is
+   silent and every learned replay measured 0.9 ms off the grid.
