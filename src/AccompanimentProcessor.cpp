@@ -1571,9 +1571,15 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             }
         }
 
-        if (enginePhase == EnginePhase::RiffBListen && phraseLearner.isGridListening()
+        if ((enginePhase == EnginePhase::RiffBListen || enginePhase == EnginePhase::RiffBLocked)
+            && phraseLearner.isGridListening()
             && samplesPerBeat > 0.0 && transitionStartMono >= 0)
         {
+            // Capture runs for the WHOLE contrast, including after the learner
+            // auto-locks it into RiffBLocked. Before this the stamp stopped (and
+            // the grid was cleared) the moment the lock fired, so an 8-bar
+            // contrast stored only the first bar or two: the replay was a
+            // 4-note sketch and the return sounded like no bass at all.
             const int bassMidi = capturePitchMidi();
             const double elapsedMonoBeats =
                 static_cast<double>(hostSampleTime - transitionStartMono) / samplesPerBeat;
@@ -1679,12 +1685,24 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     legatoPcPending = INT_MIN;
                     legatoHops = 0;
                 }
-                else if (mirrorListening && mirrorHeldPc >= 0 && pitchConf > 0.25f)
+                else if (mirrorListening && mirrorHeldPc >= 0 && pitchConf > 0.25f
+                         && pendingMirrorCount == 0)
                 {
                     // Legato pitch follow (RULES.md §7.1.5): a held/legato change
                     // with no fresh pick retunes the held note once the fixed-hop
                     // pitch estimate agrees for a few hops (~30 ms). Hop-counted,
                     // not block-counted, so it is buffer-size invariant.
+                    //
+                    // `pendingMirrorCount == 0` is essential: a detected pick is
+                    // queued with its onset-resolved pitch, but `mirrorHeldPc` is
+                    // only updated when that entry is FLUSHED (one onset window
+                    // later, ~40 ms). Without this guard the hops between the pick
+                    // and the flush compare the new note against the stale held
+                    // note, accumulate 3 hops and fire the same note again 32 ms
+                    // after the pick — a same-pitch double-trigger on every pitch
+                    // change ("sounds like someone playing badly"). Measured on a
+                    // real DI: 61 same-pitch note-ons within 48 ms vs 6 before the
+                    // confidence fix let this path run at all.
                     const int hopPc = ((static_cast<int>(std::lround(pitchMidi)) % 12) + 12) % 12;
                     if (hopPc != mirrorHeldPc)
                     {
@@ -1833,17 +1851,14 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             phraseLearner.exportPattern(riffB);
             if (riffB.valid)
             {
-                // Remember this contrast riff so a later visit to the same slot
-                // replays it (docs/BASS_MIRRORING.md §17) instead of relying on
-                // the live mirror. The learner lock cancelled the grid listen, so
-                // this snapshot is the only capture of that visit.
-                storeTransitionRiff(transitionTakeSlot, riffB);
-                transitionTakeActive = false;
                 const int oneShot = bLockPick.exchange(-1, std::memory_order_acq_rel);
                 drumB = (oneShot >= 0)
                     ? PatternRules::constrainToPool(oneShot, transitionPool, st)
                     : (lastBListenPoolPattern > 0 ? lastBListenPoolPattern : drumB0);
-                phraseLearner.cancelLiveGridListen();
+                // Do NOT cancel the grid listen here: the contrast memory is
+                // written from the FULL contrast at transitionEndMono, and
+                // cancelling mid-way is what truncated it to a few slots. The
+                // lock only pins the contrast DRUMS.
                 phraseLearner.setAutoLockEnabled(false);
                 phraseLearner.setHoldActive(true);
                 enginePhase = EnginePhase::RiffBLocked;
@@ -2489,6 +2504,18 @@ const PhraseLearner::LearnedRiff* AccompanimentProcessor::findTransitionRiff(int
         return nullptr;
     const auto& mem = transitionRiffs[static_cast<std::size_t>(slot)];
     return (mem.valid && mem.riff.valid) ? &mem.riff : nullptr;
+}
+
+int AccompanimentProcessor::getTransitionRiffOccupiedCount(int slot) const noexcept
+{
+    const auto* riff = findTransitionRiff(slot);
+    if (riff == nullptr)
+        return 0;
+    int n = 0;
+    for (int s = 0; s < PhraseLearner::kGridSlots; ++s)
+        if (riff->occupied[static_cast<std::size_t>(s)])
+            ++n;
+    return n;
 }
 
 void AccompanimentProcessor::storeTransitionRiff(int slot,

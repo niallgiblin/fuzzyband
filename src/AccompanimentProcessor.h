@@ -206,6 +206,14 @@ public:
 
     /** @brief True while a post-lock transition section is playing (drums on the section pool). */
     bool isTransitionSectionActive() const noexcept { return transitionSectionActive.load(std::memory_order_relaxed); }
+    /** @brief True while a learned contrast riff is replaying (Record mode). */
+    bool isTransitionTakeReplaying() const noexcept { return transitionTakeReplaying; }
+    /** @brief True while the current contrast slot is being captured. */
+    bool isTransitionTakeActive() const noexcept { return transitionTakeActive; }
+    /** @brief Monotonic sample the contrast replay loops from (-1 if none). */
+    int64_t getTransitionReplayOriginSample() const noexcept { return transitionReplayOriginMono; }
+    /** @brief Occupied 16ths in contrast slot @p slot 's memory (0 = none). */
+    int getTransitionRiffOccupiedCount(int slot) const noexcept;
     /** @brief Name of the current transition section ("CHORUS", "BREAKDOWN", …). */
     const char* getTransitionSectionName() const noexcept { return transitionSectionName.load(std::memory_order_relaxed); }
     /** @brief Bars remaining in the current transition section hold. */

@@ -2452,6 +2452,11 @@ TEST_CASE("Processor pipeline: a Record contrast riff is learned and replayed on
     // 2) Let Riff A re-engage, reach the SAME contrast slot again, and play
     //    NOTHING. The stored contrast riff must carry the bass.
     REQUIRE(waitForTransition(false, 0.0));
+    // The memory holds the WHOLE contrast, not the few slots captured before
+    // the learner auto-locked and truncated the grid listen (measured on a real
+    // 8-bar DI: 4 slots -> 64 after the fix). A thin memory is what made the
+    // contrast return sound like no bass at all.
+    REQUIRE(proc.getTransitionRiffOccupiedCount(0) > 8);
     int frozenSecond = 0;
     {
         int last = proc.getBassProducerCount(BassVoice::Producer::Frozen);
@@ -2524,6 +2529,7 @@ TEST_CASE("Processor pipeline: play-mode bass mirrors the guitarist, harmony onl
         static_cast<double>(collectSamples) / block));
     std::set<int> bassNotes;
     std::vector<int64_t> bassAbs;
+    std::vector<int> bassAbsPitch;
     for (int b = 0; b < collectBlocks; ++b)
     {
         const int64_t abs0 = static_cast<int64_t>(blockIdx) * block;
@@ -2553,6 +2559,7 @@ TEST_CASE("Processor pipeline: play-mode bass mirrors the guitarist, harmony onl
                 continue;
             bassNotes.insert(msg.getNoteNumber());
             bassAbs.push_back(abs0 + meta.samplePosition);
+            bassAbsPitch.push_back(msg.getNoteNumber());
         }
         ++blockIdx;
     }
@@ -2587,6 +2594,32 @@ TEST_CASE("Processor pipeline: play-mode bass mirrors the guitarist, harmony onl
     }
     INFO("mirrored " << mirrored << "/" << numAttacks);
     REQUIRE(mirrored >= (numAttacks * 9) / 10);
+
+    // 2b) No same-pitch double-trigger. The legato pitch-follow fires when the
+    //     held note's pitch class changes, but a detected PICK is still queued
+    //     (its onset-resolved pitch is flushed one onset-window later) — the hops
+    //     in between compared the new note against the stale held note, hit the
+    //     3-hop debounce and fired the SAME note again ~32 ms after the pick.
+    //     On a real DI that produced 61 same-pitch note-ons within 48 ms (vs 6)
+    //     and sounded like sloppy playing. Guard: at most a couple are allowed
+    //     (a genuine re-pick), never one per pitch change.
+    {
+        std::vector<std::pair<int64_t, int>> ons;
+        for (size_t i = 0; i < bassAbs.size(); ++i)
+            ons.emplace_back(bassAbs[i], bassAbsPitch[i]);
+        std::sort(ons.begin(), ons.end());
+        int dups = 0;
+        for (size_t i = 0; i < ons.size(); ++i)
+            for (size_t j = i + 1; j < ons.size(); ++j)
+            {
+                if (ons[j].first - ons[i].first > static_cast<int64_t>(0.048 * sr))
+                    break;
+                if (ons[j].first > ons[i].first && ons[j].second % 12 == ons[i].second % 12)
+                    ++dups;
+            }
+        INFO("same-pitch double-triggers within 48ms: " << dups);
+        REQUIRE(dups <= 2);
+    }
 
     // 3) No harmony layer: the bass is not ~4x denser than the guitar. With the
     //    grid muted under the mirror, one attack produces ~one bass note (plus

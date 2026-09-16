@@ -827,3 +827,70 @@ Not changed, deliberately:
 `Step2: a returning section re-learns (a later pass replaces the memory)` —
 VERSE pass 1 plays C2, pass 2 plays E2 while the stored C2 replays, pass 3 must
 replay E2. Fails on the old code (pass 3 still replays C2).
+
+---
+
+## 19. Two bugs found in the 1.0.24/25 field test (1.0.26)
+
+Reported after testing v1.0.24: *"for record riff the transition section mirrors
+the first time around but when the transition/B section returns there is no bass
+sometimes … the bass also seems to stay out of time for every iteration … it
+seems a little more inconsistent."*
+
+Measured on the user's 1322 record DI at 170 BPM, `lockBars=8`,
+`transitionBars=8`, `transitionSections=1`.
+
+### 19.1 Contrast capture was truncated by the learner auto-lock → no bass
+
+Per-visit diagnostic (`[tdiag]` harness):
+
+| | before | after |
+|---|---|---|
+| Contrast memory after the first visit | **4 slots** | **64 slots** |
+| Frozen notes on the return | 32 | 126 |
+| Grid phase error of the replay | — | **0.0 ms** |
+
+The capture stopped the moment the learner auto-locked the contrast into
+`RiffBLocked`: the stamp condition required `enginePhase == RiffBListen` and the
+lock branch called `cancelLiveGridListen()`. An 8-bar contrast therefore stored
+only its first bar or two, so the return replayed a 4-note sketch — "no bass
+sometimes". Worse, on a *replay* visit the lock branch called
+`exportPattern(riffB)` with the grid not listening, so it stored the learner's
+internal pattern over the good memory (4 → 16 slots for no musical reason).
+
+**Fix:** the stamp runs for the whole contrast
+(`RiffBListen` **or** `RiffBLocked`), the lock no longer cancels the grid listen
+(it only pins the contrast *drums*), and the contrast memory is written once, at
+`transitionEndMono`, from the full grid.
+
+### 19.2 The legato follow double-triggered every pitch change
+
+Now that confidence is meaningful (§16), the legato pitch-follow ran for the
+first time. But `mirrorHeldPc` is only updated when a queued pick is *flushed*
+(one onset window later, ~40 ms), so the hops between a pick and its flush
+compared the new note against the stale held note, reached the 3-hop debounce and
+emitted the **same note again ~32 ms after the pick**. Measured on the real DI:
+**61 same-pitch note-ons within 48 ms** (vs 6 before the confidence fix) — every
+pitch change doubled, which is exactly "someone who plays badly".
+
+**Fix:** the legato follow is skipped while a mirror trigger is pending
+(`pendingMirrorCount == 0`). A genuinely legato change has no pick queued, so it
+still retunes. Duplicates: 61 → 12 on the same take (baseline 6).
+
+### 19.3 The timing trade-off, measured
+
+Grid phase error on the 1323 play take (16th grid at 170 BPM):
+
+| Producer | median | p90 | max |
+|---|---|---|---|
+| **Frozen** (Riff A / contrast / section replay) | 0.5 ms | 0.9 ms | 0.9 ms |
+| **Mirror** (live, learning passes) | 25.4 ms | 38.6 ms | 43.9 ms |
+
+So a learned riff is on the grid to within a millisecond; the ~25-44 ms sits on
+the **live mirror**, which is the deliberate learning-phase pitch window (§16.4).
+The old 16 ms window hid this by returning the wrong note ~45 % of the time.
+
+Guards: `Processor pipeline: a Record contrast riff is learned and replayed on
+the next visit` now also requires the stored contrast to hold more than 8 slots;
+`Processor pipeline: play-mode bass mirrors the guitarist…` requires at most two
+same-pitch double-triggers within 48 ms (11 on the unfixed legato path).

@@ -1014,3 +1014,125 @@ TEST_CASE("bass mirror: offline record-riff capture dump",
     proc.releaseResources();
     SUCCEED("riff dump ran");
 }
+
+// Diagnostic: Record-mode contrast memory on a real DI, with the take's real
+// settings (lockBars=8, transitionBars=8, transitionSections=1). Prints, per
+// contrast visit, whether it mirrored or replayed, the replay origin's offset
+// from the visit start, and the phase of every Frozen note against the 16th
+// grid. Env-gated like the other offline harnesses:
+//   MA_RIFF_WAV=... MA_RIFF_BPM=170 ./build/MetalAccompanimentIntegrationTests "[tdiag]"
+TEST_CASE("bass mirror: real-audio Record contrast memory timeline (diagnostic)",
+          "[integration][bass][mirror][realaudio][tdiag]")
+{
+    const char* path = std::getenv("MA_RIFF_WAV");
+    if (path == nullptr || *path == '\0')
+    {
+        SUCCEED("MA_RIFF_WAV unset — contrast diagnostic skipped");
+        return;
+    }
+    const char* bpmEnv = std::getenv("MA_RIFF_BPM");
+    const double bpm = (bpmEnv != nullptr && *bpmEnv != '\0') ? std::atof(bpmEnv) : 170.0;
+
+    WavReader::PcmMono pcm;
+    std::string err;
+    REQUIRE(WavReader::readMonoWav(path, pcm, &err));
+    REQUIRE_FALSE(pcm.samples.empty());
+    const double sr = static_cast<double>(pcm.sampleRate);
+    const int block = 512;
+    const double spb = 60.0 / bpm * sr;
+    const double sixteenth = 0.25 * spb;
+
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    if (auto* p = proc.getApvts().getParameter("genre"))
+        p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+    if (auto* p = proc.getApvts().getParameter("bpm"))
+        p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(bpm)));
+    if (auto* p = proc.getApvts().getParameter("lockBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(8.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionBars"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(8.0f));
+    if (auto* p = proc.getApvts().getParameter("transitionSections"))
+        p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(1.0f));
+
+    MovingPlayHead ph;
+    ph.bpm = bpm;
+    proc.setPlayHead(&ph);
+    proc.requestRiffCaptureStart();
+
+    bool inTrans = false;
+    int visit = 0;
+    int64_t visitStart = 0, visitOrigin = -1;
+    bool visitReplay = false, visitCap = false;
+    int visitMem = 0;
+    int lastFrozen = 0, lastMirror = 0;
+    std::vector<int64_t> visitFrozenAbs;
+
+    std::printf("[TDIAG] bpm=%.1f spb=%.0f 16th=%.0f\n", bpm, spb, sixteenth);
+    const int64_t total = static_cast<int64_t>(pcm.samples.size());
+    for (int64_t start = 0; start + block <= total; start += block)
+    {
+        ph.samples = start;
+        juce::AudioBuffer<float> buf(2, block);
+        for (int ch = 0; ch < 2; ++ch)
+            juce::FloatVectorOperations::copy(buf.getWritePointer(ch),
+                                              pcm.samples.data() + start, block);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        proc.flushBackgroundInferenceForTests();
+        for (const auto meta : midi)
+        {
+            const auto m = meta.getMessage();
+            if (m.isNoteOn() && m.getChannel() == 2 && m.getVelocity() > 0
+                && proc.getLastBassProducer() == BassVoice::Producer::Frozen)
+                visitFrozenAbs.push_back(start + meta.samplePosition);
+        }
+
+        const bool now = proc.isTransitionSectionActive();
+        if (now && !inTrans)
+        {
+            ++visit;
+            visitStart = start;
+            visitOrigin = proc.getTransitionReplayOriginSample();
+            visitReplay = proc.isTransitionTakeReplaying();
+            visitCap = proc.isTransitionTakeActive();
+            visitMem = proc.getTransitionRiffOccupiedCount(0);
+            lastFrozen = proc.getBassProducerCount(BassVoice::Producer::Frozen);
+            lastMirror = proc.getBassProducerCount(BassVoice::Producer::Mirror);
+            visitFrozenAbs.clear();
+            std::printf("[TDIAG] visit %d START t=%.2fs replay=%d capturing=%d mem0=%d origin=%.3fs "
+                        "originLag=%.1fms\n",
+                        visit, start / sr, visitReplay ? 1 : 0, visitCap ? 1 : 0, visitMem,
+                        visitOrigin / sr,
+                        1000.0 * static_cast<double>(start - visitOrigin) / sr);
+        }
+        if (!now && inTrans)
+        {
+            const int f = proc.getBassProducerCount(BassVoice::Producer::Frozen) - lastFrozen;
+            const int m = proc.getBassProducerCount(BassVoice::Producer::Mirror) - lastMirror;
+            std::printf("[TDIAG] visit %d END   t=%.2fs len=%.2fs Frozen=%d Mirror=%d\n",
+                        visit, start / sr, (start - visitStart) / sr, f, m);
+            // Phase of each Frozen note against the 16th grid from the origin.
+            if (visitOrigin >= 0)
+            {
+                double worst = 0.0;
+                for (int64_t a : visitFrozenAbs)
+                {
+                    const double rel = static_cast<double>(a - visitOrigin) / sixteenth;
+                    const double frac = rel - std::floor(rel);
+                    const double ms = std::min(frac, 1.0 - frac) * sixteenth / sr * 1000.0;
+                    worst = std::max(worst, ms);
+                }
+                std::printf("[TDIAG] visit %d grid: frozenNotes=%d worstPhaseErr=%.1fms\n",
+                            visit, static_cast<int>(visitFrozenAbs.size()), worst);
+            }
+        }
+        inTrans = now;
+    }
+
+    proc.playActive.store(false, std::memory_order_release);
+    proc.setPlayHead(nullptr);
+    proc.releaseResources();
+    SUCCEED("contrast diagnostic ran");
+}
