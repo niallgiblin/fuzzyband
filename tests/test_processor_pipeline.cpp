@@ -3907,3 +3907,4 @@ TEST_CASE("Processor pipeline: the captured riff keeps the picked articulation",
 
     proc.releaseResources();
 }
+

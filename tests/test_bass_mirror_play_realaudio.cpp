@@ -489,6 +489,8 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
     proc.playActive.store(true, std::memory_order_release);
 
     MovingPlayHead ph;
+    if (const char* b = std::getenv("MA_DI_BPM"))
+        ph.bpm = std::max(40.0, std::atof(b));
     proc.setPlayHead(&ph);
 
     struct Note { int64_t sample; int midi; float vel; };
@@ -557,7 +559,7 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
                 static_cast<int>(notes.size()),
                 static_cast<double>(total) / kSr,
                 static_cast<double>(notes.size()) / (static_cast<double>(total) / kSr));
-    const int show = std::min<int>(static_cast<int>(notes.size()), 80);
+    const int show = static_cast<int>(notes.size());
     std::printf("[DI-AUDIT] first %d notes (t:s pitch vel):\n", show);
     for (int i = 0; i < show; ++i)
         std::printf("[DI-AUDIT]   %8.3f  %3d  %.2f\n",
