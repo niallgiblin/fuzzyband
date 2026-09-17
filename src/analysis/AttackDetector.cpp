@@ -86,6 +86,13 @@ AttackVerdict AttackDetector::classify(float rms, std::int64_t sampleTime, float
            && (sampleTime - lastFallSample_) < fallWindowSamples_;
     v.sharpRise = (rms > rmsSmooth_ * kRiseVsSmooth) || (rms > prevRms * kRiseVsPrev);
     v.troughMargin = rms - (rmsFloorSinceArm_ * kFloorRise + kFloorAbs);
+    // The trough test is NOT the cause of the missing notes. Instrumented on a
+    // real take: every TroughTooShallow refusal has rms == rmsFloorSinceArm_ and
+    // rms < prevRms (rise-vs-prev 0.74-0.99) while rise-vs-smooth reads 1.4-2.1 —
+    // i.e. they are DECAY hops the lagging EMA mis-flags as sharp rises. The
+    // trough test is correctly rejecting them; removing it (measured) adds 82
+    // accepted attacks that are note decays, i.e. spurious double-hits.
+    // See docs/BASS_MIRRORING.md §23 for the real coverage numbers.
     v.clearsFloor = (v.troughMargin > 0.0f);
     v.aboveFloor = (rms > kAmplitudeFloor);
 

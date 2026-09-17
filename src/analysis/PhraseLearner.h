@@ -80,6 +80,10 @@ public:
         std::array<bool, kGridSlots> occupied{};
         std::array<int, kGridSlots> midi{};
         std::array<uint8_t, kGridSlots> gate16{};  // 16th counts; 0 = sustain continuation
+        // Per-slot note-on velocity (MIDI 1..127), captured from the guitarist's
+        // attack level. Without it a locked riff replayed every note at one fixed
+        // velocity, which is what made the learned bass sound robotic.
+        std::array<uint8_t, kGridSlots> velocity{};
     };
 
     /**
@@ -129,7 +133,7 @@ public:
      *        @p onset is a re-attack (D6); false marks a sustain continuation.
      */
     void stampGridRange(double beat0, double beat1, float peak, int bassMidi,
-                        bool onset = true) noexcept;
+                        bool onset = true, uint8_t velocity = 96) noexcept;
 
     /**
      * @brief Lock occupied 16th slots as a 4-bar (16-beat) bass loop.
@@ -393,6 +397,7 @@ private:
         int midiNote = 36;
         uint8_t gate16 = 1;
         bool onset = true;
+        uint8_t velocity = 96;   // captured attack level (MIDI 1..127)
     };
     std::array<GridSlot, kGridSlots> gridSlots_{};
     int gridOccupied_ = 0;

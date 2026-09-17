@@ -2160,6 +2160,12 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         const bool mirrorActive = listenBass && !guitarStopped
             && !riffCaptureActive.load(std::memory_order_acquire)
             && !phraseLearner.isGridCapturing();
+        const int accentPat = patternPlayer.getActivePatternIndex();
+        if (accentPat != lastAccentPatternIdx)
+        {
+            lastAccentPatternIdx = accentPat;
+            drumAccentMask = buildDrumAccentMask(accentPat);
+        }
         if (enginePhase == EnginePhase::RiffA
             && !riffCaptureActive.load(std::memory_order_acquire))
         {
@@ -2475,10 +2481,15 @@ void AccompanimentProcessor::flushPendingCaptureSlot() noexcept
             || captureSlotPeak_ > prevSlotPeak_ * 1.15f + 0.01f
             || captureSlotPeak_ > prevSlotEnd_ * 1.15f + 0.01f
             || attackInCaptureSlot(captureSlotStartAbs, captureSlotStartAbs + captureSlotSamples);
+        // Capture the slot's attack level as a velocity. The learned riff was
+        // replayed at one fixed velocity, which is what made a locked bass sound
+        // robotic; this keeps the dynamics the guitarist actually played.
+        const uint8_t slotVel = static_cast<uint8_t>(std::lround(
+            127.0 * juce::jlimit(0.46f, 0.88f, 0.46f + captureSlotPeak_ * 1.9f)));
         phraseLearner.stampGridRange(
             static_cast<double>(captureSlotIndex_) * 0.25,
             static_cast<double>(captureSlotIndex_) * 0.25 + 0.25,
-            captureSlotPeak_, captureSlotMidi_, onset);
+            captureSlotPeak_, captureSlotMidi_, onset, slotVel);
         prevSlotPeak_ = captureSlotPeak_;
         // The true end-of-slot envelope. A held note ends near its peak (no onset);
         // a re-picked 16th decays within the slot and jumps back up (onset).
@@ -2944,6 +2955,31 @@ void AccompanimentProcessor::stampLearnerGridSlots(const float* in, int numSampl
     }
 }
 
+std::uint64_t AccompanimentProcessor::buildDrumAccentMask(int patternIdx) const noexcept
+{
+    std::uint64_t mask = 0;
+    if (patternIdx < 0 || patternIdx >= patternLibrary.patternCount())
+        return mask;
+    const auto& pat = patternLibrary.getPattern(patternIdx);
+    const int lenSlots = juce::jlimit(1, PhraseLearner::kGridSlots,
+        static_cast<int>(std::lround(juce::jmax(1.0f, pat.lengthInBars) * 16.0f)));
+    for (const auto& ev : pat.drumEvents)
+    {
+        if (ev.note != 36 && ev.note != 38 && ev.note != 49)   // kick, snare, crash
+            continue;
+        int s = static_cast<int>(std::lround(ev.beatOffset * 4.0f));
+        if (s < 0)
+            continue;
+        for (int base = 0; base < PhraseLearner::kGridSlots; base += lenSlots)
+        {
+            const int idx = base + (s % lenSlots);
+            if (idx >= 0 && idx < PhraseLearner::kGridSlots)
+                mask |= (1ULL << idx);
+        }
+    }
+    return mask;
+}
+
 void AccompanimentProcessor::emitFrozenRiff(const PhraseLearner::LearnedRiff& riff,
                                             int64_t originSample, int numSamples,
                                             double bpm, double sr, int64_t clockSample,
@@ -2986,8 +3022,14 @@ void AccompanimentProcessor::emitFrozenRiff(const PhraseLearner::LearnedRiff& ri
         if (anyGate && gate == 0)
             continue;   // sustain continuation — already covered by the onset's gate
         const int gate16 = anyGate ? juce::jmax(1, static_cast<int>(gate)) : 1;
-        const int duration = juce::jmax(1, static_cast<int>(std::lround(
-            static_cast<double>(gate16) * 0.25 * spb * 0.9)));
+        // Ring into the next onset instead of stopping 10 % short. A locked riff
+        // of one-sixteenth notes at 0.9 x gate sounded staccato and mechanical;
+        // the monophonic bass voice cuts the tail at the next note-on, so a small
+        // over-hang is free legato. Bounded so a long sustain cannot ring for bars.
+        constexpr double kLegatoTailBeats = 0.12;
+        const int duration = juce::jlimit(1, static_cast<int>(std::lround(4.0 * spb)),
+            static_cast<int>(std::lround(
+                (static_cast<double>(gate16) * 0.25 + kLegatoTailBeats) * spb)));
         const int64_t slotOffset = static_cast<int64_t>(
             std::llround(static_cast<double>(s) * 0.25 * spb));
         // Loop instance that CONTAINS clockSample. The previous form took the
@@ -3006,7 +3048,15 @@ void AccompanimentProcessor::emitFrozenRiff(const PhraseLearner::LearnedRiff& ri
             continue;
         const int offset = static_cast<int>(absSample - clockSample);
         const int note = riff.midi[static_cast<size_t>(s)] + bassTranspose;
-        patternPlayer.triggerLearnedBassNote(note, 0.58f, offset, duration,
+        // Velocity: what the guitarist actually played, accented where the kit's
+        // kick/snare lands on the same 16th, so the bass locks with the drums
+        // instead of sitting on top of them at a flat level.
+        float vel01 = (riff.velocity[static_cast<size_t>(s)] > 0)
+                          ? static_cast<float>(riff.velocity[static_cast<size_t>(s)]) / 127.0f
+                          : 0.58f;
+        if ((drumAccentMask >> (s & 63)) & 1ULL)
+            vel01 = juce::jmin(0.95f, vel01 * 1.12f);
+        patternPlayer.triggerLearnedBassNote(note, vel01, offset, duration,
                                              /*hold=*/false, PatternPlayer::BassSource::Frozen);
     }
 }

@@ -997,3 +997,74 @@ fixture artefact, not a regression: the plugin quantises to the transport grid,
 and a guitarist playing to a click is on that grid. The fixture's origin is now
 16th-aligned; **the assertion itself is unchanged.** Verified by aligning the
 origin alone with the code untouched: the test passes.
+
+---
+
+## 22. Musicality: captured dynamics, ringing notes, kit accents (1.0.30)
+
+Field report on the 1152 (record) / 1155 (play) takes: *"the bass is feeling a
+little robotic and the notes don't quite ring normally … it's also still missing
+too many notes."* All three were measured.
+
+### 22.1 The learned riff had ONE velocity
+
+| | before | after |
+|---|---|---|
+| Mirror velocities, 133 notes | **3 distinct** | 26 distinct, 0.57–0.90 |
+| Frozen velocities, 204 notes | **1 distinct** (0.58 on every note) | 20 distinct, 0.65–0.95 |
+
+`emitFrozenRiff` called `triggerLearnedBassNote(note, 0.58f, …)` — hardcoded —
+and the capture had nowhere to store a level: `GridSlot` was
+`{occupied, midiNote, gate16, onset}`. Meanwhile `bassVelocityForRms` used
+`0.48 + rms*4` clamped to `[0.48, 0.68]`, which saturated almost immediately.
+
+Fix: `GridSlot` and `LearnedRiff` carry a per-slot `velocity` (MIDI 1..127),
+captured from the slot's attack peak in `flushPendingCaptureSlot` and replayed by
+`emitFrozenRiff`. The mirror mapping keeps the documented floor (the
+`learned bass velocity sits under the drums` test is unchanged) but reaches
+further: `0.48 + rms*2.6`, capped at 0.90.
+
+### 22.2 Notes did not ring
+
+The frozen replay used `gate16 × 0.25 × spb × 0.9`, so a captured riff of
+one-sixteenth notes at 170 BPM produced **79 ms** notes with a gap, while the
+live mirror held for ~300 ms. The bass rang on the first pass and went staccato
+the moment it locked.
+
+Fix: `(gate16 × 0.25 + 0.12) × spb`, i.e. a 0.12-beat legato tail that rings
+into the next onset. The monophonic bass voice cuts the tail at the next
+note-on, so the over-hang is free and there is no gap. Bounded to 4 beats.
+
+### 22.3 Kit accents
+
+The bass now accents any frozen note that lands on the active drum pattern's
+kick (36), snare (38) or crash (49), by 12 % (capped at 0.95). The mask is built
+once per pattern change (`buildDrumAccentMask`), tiled across the 4-bar loop, so
+the bass pushes with the kit instead of sitting flat on top of it. This is the
+**accent** form of "align with the drums", not the timing form: the bass still
+follows the player, it just agrees with the kit where it already coincides.
+
+### 22.4 "Missing notes" — the trough test is NOT the cause
+
+`riseEdges = 564` over a 49 s take is exactly the 16th-note rate (11.3/s), and
+only 241 are accepted, with `TroughTooShallow = 293`. That looked like the cause.
+It is not. Instrumenting every trough refusal on the real take shows they all
+have `rms == rmsFloorSinceArm_` **and** `rms < prevRms` (rise-vs-previous 0.74–0.99)
+while rise-vs-smooth reads 1.4–2.1:
+
+**The trough test is rejecting note DECAYS that the lagging RMS EMA mis-flags as
+sharp rises.** Disabling it (measured) adds 82 accepted attacks and 28 mirror
+notes, but they are decay hops — i.e. spurious double-hits, exactly the
+"machine-gun" failure the test was added to stop.
+
+So the trough test stays, and the real coverage question is elsewhere. Candidate
+mechanisms, in order, for the next investigation:
+
+1. **Section/contrast replay suppression.** On a return the stored riff owns the
+   voice (`playTakeReplaying`), so if the player varies the phrase, the bass plays
+   the memory and those notes read as "missing".
+2. **`sharpRise` via the slow EMA** creates false rise candidates; tightening it
+   (`rms > prevRms` required) would clean the candidate set without touching the
+   trough contract.
+3. Capture fidelity on this take: Frozen pitch-class match measured 68 % on 1155
+   vs 79 % on 1323, which needs its own look.

@@ -205,9 +205,12 @@ float PhraseLearner::bassVelocityForRms(float rms) noexcept
 {
     // Learned bass used to fire at 0.9 (~MIDI 114) with 90% beat gates — a
     // wall of sound sitting on top of the drums. Sit under the kit: MIDI ~61–86.
-    float vel = 0.48f + rms * 4.0f;
+    // Wider range than 0.48..0.68: `rms * 4` saturated almost immediately, so a
+    // 48 s real take produced only 3 distinct mirror velocities (measured) —
+    // audible as a flat, robotic line. Still sits under the kit.
+    float vel = 0.48f + rms * 2.6f;
     if (vel < 0.48f) vel = 0.48f;
-    if (vel > 0.68f) vel = 0.68f;
+    if (vel > 0.90f) vel = 0.90f;
     return vel;
 }
 
@@ -278,7 +281,7 @@ void PhraseLearner::endSectionGridListen() noexcept
 }
 
 void PhraseLearner::stampGridRange(double beat0, double beat1, float peak, int bassMidi,
-                                   bool onset) noexcept
+                                   bool onset, uint8_t velocity) noexcept
 {
     if (!gridCapturing_ && !gridListening_)
         return;
@@ -323,6 +326,8 @@ void PhraseLearner::stampGridRange(double beat0, double beat1, float peak, int b
             slot.onset = true;
         }
         slot.midiNote = midi;
+        if (velocity > 0)
+            slot.velocity = velocity;
     }
 }
 
@@ -365,12 +370,14 @@ void PhraseLearner::exportPattern(LearnedRiff& dest) const noexcept
     dest.occupied.fill(false);
     dest.midi.fill(36);
     dest.gate16.fill(0);
+    dest.velocity.fill(0);
     int n = 0;
     for (int s = 0; s < kGridSlots; ++s)
     {
         const auto& slot = gridSlots_[static_cast<size_t>(s)];
         dest.occupied[static_cast<size_t>(s)] = slot.occupied;
         dest.midi[static_cast<size_t>(s)] = slot.occupied ? slot.midiNote : 36;
+        dest.velocity[static_cast<size_t>(s)] = slot.velocity;
         if (slot.occupied)
             ++n;
     }
@@ -400,6 +407,7 @@ void PhraseLearner::exportPattern(LearnedRiff& dest) const noexcept
     dest.occupied.fill(false);
     dest.midi.fill(36);
     dest.gate16.fill(0);
+    dest.velocity.fill(0);
     dest.lenBeats = static_cast<double>(kGridBars) * 4.0;
     n = 0;
     for (int i = 0; i < patternLen_; ++i)
@@ -418,6 +426,7 @@ void PhraseLearner::exportPattern(LearnedRiff& dest) const noexcept
         dest.occupied[static_cast<size_t>(slot)] = true;
         dest.midi[static_cast<size_t>(slot)] = pattern_[static_cast<size_t>(i)].midiNote;
         dest.gate16[static_cast<size_t>(slot)] = 1;
+        dest.velocity[static_cast<size_t>(slot)] = 96;
         ++n;
     }
     dest.valid = n >= 2;
@@ -449,6 +458,8 @@ bool PhraseLearner::loadPattern(const LearnedRiff& src) noexcept
         auto& slot = gridSlots_[static_cast<size_t>(s)];
         slot.occupied = true;
         slot.midiNote = src.midi[static_cast<size_t>(s)];
+        slot.velocity = src.velocity[static_cast<size_t>(s)] > 0
+                            ? src.velocity[static_cast<size_t>(s)] : uint8_t{ 96 };
         slot.gate16 = anyGate ? src.gate16[static_cast<size_t>(s)] : uint8_t{ 1 };
         slot.onset = anyGate ? (src.gate16[static_cast<size_t>(s)] > 0) : true;
         ++gridOccupied_;

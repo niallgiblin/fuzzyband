@@ -295,6 +295,14 @@ private:
     /** @brief Smooth a raw style classification into the committed style used downstream. */
     void updateCommittedStyle(int rawStyle) noexcept;
     /** @brief Emit onset slots from a learned-riff snapshot, gated by T5.2. */
+    // 16th-slot mask (tiled over the 4-bar loop) of the active drum pattern's
+    // kick/snare positions. Frozen bass notes that already land on one are
+    // accented so the bass locks with the kit instead of sitting flat on top of
+    // it. Rebuilt only when the active pattern changes (docs/BASS_MIRRORING §22).
+    std::uint64_t drumAccentMask = 0;
+    int lastAccentPatternIdx = -1;
+    std::uint64_t buildDrumAccentMask(int patternIdx) const noexcept;
+
     void emitFrozenRiff(const PhraseLearner::LearnedRiff& riff, int64_t originSample,
                         int numSamples, double bpm, double sr,
                         int64_t clockSample, int bassTranspose) noexcept;
