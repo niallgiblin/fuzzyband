@@ -61,6 +61,23 @@ bundle_main_mtime() {
   stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0
 }
 
+# A build interrupted during JUCE bundle finalization (JUCE deletes and rewrites
+# the bundle) leaves Contents/MacOS empty. Copying that yields a signed-but-empty
+# plugin the host silently refuses to load, and it *replaces* a working install.
+# Verify the source payload before we remove the destination, and again after the
+# copy, so a broken build fails loudly instead of installing a dead bundle.
+require_bundle_payload() {
+  local bundle="$1"
+  local label="$2"
+  local bin
+  bin="$(find "$bundle/Contents/MacOS" -type f -perm -111 2>/dev/null | head -1)"
+  if [[ -z "$bin" || ! -s "$bin" ]]; then
+    echo "install-plugin-to-user: ${label} bundle has no executable in Contents/MacOS: ${bundle}" >&2
+    echo "  The build is incomplete (interrupted mid-finalization?). Re-run: cmake --build <build> --parallel" >&2
+    exit 1
+  fi
+}
+
 pick_config_auto() {
   local r="${ART}/Release/VST3/${VST3_NAME}"
   local d="${ART}/Debug/VST3/${VST3_NAME}"
@@ -99,6 +116,7 @@ else
 fi
 
 VST3_SRC="${ART}/${CFG}/VST3/${VST3_NAME}"
+require_bundle_payload "$VST3_SRC" VST3
 DEST_VST3="${HOME}/Library/Audio/Plug-Ins/VST3"
 DEST_VST3_BUNDLE="${DEST_VST3}/${VST3_NAME}"
 
@@ -130,6 +148,7 @@ echo "install-plugin-to-user: VST3 ad-hoc signed + xattrs cleared (Gatekeeper)"
 if [[ "$(uname -s)" == "Darwin" ]]; then
   AU_SRC="${ART}/${CFG}/AU/${AU_NAME}"
   if [[ -d "$AU_SRC" ]]; then
+    require_bundle_payload "$AU_SRC" AU
     DEST_AU="${HOME}/Library/Audio/Plug-Ins/Components"
     DEST_AU_BUNDLE="${DEST_AU}/${AU_NAME}"
     mkdir -p "$DEST_AU"
