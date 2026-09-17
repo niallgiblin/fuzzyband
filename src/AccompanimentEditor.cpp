@@ -300,6 +300,29 @@ static const char* stateName(int idx)
     return "?";
 }
 
+/**
+ * @brief Human-readable loop shape of the post-lock transition grammar.
+ *
+ * The engine returns to the locked riff (A) between every contrast, and the
+ * contrast slots repeat in order (B, C, D, E) once the cycle wraps, so the
+ * shape is A-B-A-C-A-D-A-E… For one contrast the period is just A-B, so it is
+ * shown twice (`A-B-A-B…`) to make the loop obvious; two or more show one full
+ * cycle. `transitionSections` is clamped to 1..4.
+ */
+static juce::String transitionFormShape(int sections)
+{
+    sections = juce::jlimit(1, 4, sections);
+    if (sections == 1)
+        return "A-B-A-B...";
+
+    static const char* kContrast = "BCDE";
+    juce::String s = "A";
+    for (int i = 0; i < sections; ++i)
+        s << "-" << kContrast[i] << "-A";
+    s = s.dropLastCharacters(2);   // drop the trailing return to A (the wrap implies it)
+    return s + "...";
+}
+
 AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     : AudioProcessorEditor(&p)
     , audioProcessorRef(p)
@@ -492,6 +515,15 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     content.addAndMakeVisible(transitionSectionsLabel);
     content.addAndMakeVisible(transitionSectionsSlider);
 
+    // Form-shape readout: one short line under the slider showing the loop the
+    // selected contrast count produces (A-B-A-B..., A-B-A-C...). Set from the
+    // timer so it tracks host automation as well as user moves.
+    transitionShapeLabel.setJustificationType(juce::Justification::centredLeft);
+    transitionShapeLabel.setFont(lookAndFeel.monoFont(11.0f));
+    transitionShapeLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::moss));
+    transitionShapeLabel.setTooltip("Loop shape after the riff lock: the locked riff (A) returns between each contrast section (B, C, D, E), and the sequence repeats.");
+    content.addAndMakeVisible(transitionShapeLabel);
+
     // ── One-line status: phase dot + text, section progress on the same row ──
     statusLabel.setJustificationType(juce::Justification::centredLeft);
     statusLabel.setFont(lookAndFeel.labelFont(13.0f));
@@ -622,6 +654,14 @@ void AccompanimentEditor::timerCallback()
             : "Recording " + juce::String(capBar) + "/4 - " + juce::String(n) + " hits";
         statusColour = juce::Colour(FuzzybandPalette::amber);
     }
+    else if (audioProcessorRef.isPlayCountingIn())
+    {
+        // Play has the same 1-bar click count-in as Record riff; show the same
+        // amber "COUNT-IN" status so the wait before the form starts is legible
+        // (it previously read "Idle" throughout the count-in).
+        statusText = "Count-in - play on 1";
+        statusColour = juce::Colour(FuzzybandPalette::amber);
+    }
     else if (phase == static_cast<int>(AccompanimentProcessor::SectionPhase::Transition))
     {
         int maxSections = 2;
@@ -657,6 +697,12 @@ void AccompanimentEditor::timerCallback()
     statusLabel.setColour(juce::Label::textColourId, statusColour);
     statusDot.setDotColour(statusColour);
     sectionProgressComponent.setProgress(bar, tot, rem, frac);
+
+    // ── Form-shape readout: the loop the selected contrast count produces ────
+    int shapeSections = 2;
+    if (auto* raw = audioProcessorRef.getApvts().getRawParameterValue("transitionSections"))
+        shapeSections = juce::jlimit(1, 4, juce::roundToInt(raw->load()));
+    transitionShapeLabel.setText(transitionFormShape(shapeSections), juce::dontSendNotification);
 
     // ── DAW-style scope: copy ring + playhead, repaint ───────────────────────
     std::array<float, AccompanimentProcessor::kScopeSize> scopeCopy{};
@@ -820,10 +866,11 @@ void AccompanimentEditor::SectionProgressComponent::paint(juce::Graphics& g)
 
 int AccompanimentEditor::LayoutMetrics::fixedHeight() const noexcept
 {
-    // The six group gaps and six label+control rows, then the diagnostics: gap
-    // to the status row, the status row itself, a gap, the scope, a 4px pad and
-    // the single engine readout line.
+    // The six group gaps and six label+control rows, the form-shape readout, then
+    // the diagnostics: gap to the status row, the status row itself, a gap, the
+    // scope, a 4px pad and the single engine readout line.
     return 6 * gap + 6 * rowH
+         + shapeH
          + diagGap + statusH + gap + scopeH + 4 + readoutH;
 }
 
@@ -1010,6 +1057,10 @@ void AccompanimentEditor::layoutContent(juce::Rectangle<int> bounds)
     row = r.removeFromTop(metrics.rowH);
     transitionSectionsLabel.setBounds(row.removeFromLeft(kRowLabelW));
     transitionSectionsSlider.setBounds(row);
+
+    // The loop shape sits directly under the slider it describes, indented past
+    // the label column so it reads as part of that control.
+    transitionShapeLabel.setBounds(r.removeFromTop(metrics.shapeH).withTrimmedLeft(kRowLabelW));
 
     const int userBottom = r.getY();
     userPolicyArea = juce::Rectangle<int>(kEditorMargin, userTop,

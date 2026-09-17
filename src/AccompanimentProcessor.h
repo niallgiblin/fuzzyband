@@ -240,6 +240,16 @@ public:
     /** @brief Fraction of the active section elapsed, [0,1] (0 when idle). */
     float getSectionProgress() const noexcept { return sectionProgress.load(std::memory_order_relaxed); }
 
+    /**
+     * @brief True while Play's 1-bar click count-in is running, before the song
+     *        form starts.
+     *
+     * The editor shows the same count-in status as Record riff while this is
+     * true. SectionPhase stays Idle during the count-in (nothing is playing
+     * yet), so the count-in needs its own flag.
+     */
+    bool isPlayCountingIn() const noexcept { return playCountInActive.load(std::memory_order_relaxed); }
+
     // ── Display scope: rolling input waveform + playhead (DAW-style) ─────────
     // Ring of decimated input samples. Sized to hold at least a full bar at the
     // tempos the plugin targets so the editor can render a bar-aligned scope
@@ -609,8 +619,9 @@ private:
     int64_t firstRefMatchMono = std::numeric_limits<int64_t>::min() / 2;
     bool wasPlayOn = false;         // play-start edge detection (re-seed)
     // Play-mode count-in: 1 bar of click (kick 1, stick 2/3/4) before the form
-    // starts, mirroring the Record-riff count-in.
-    bool playCountInActive = false;
+    // starts, mirroring the Record-riff count-in. Atomic because the editor
+    // reads it (isPlayCountingIn) to show the count-in status.
+    std::atomic<bool> playCountInActive{ false };
     bool playCountInWaitingBar = false;
     double playCountInStartBeat = 0.0;
     int lastSeenBarsElapsed = -1;   // loop/restart edge detection (re-seed on wrap)

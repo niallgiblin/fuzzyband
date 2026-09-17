@@ -315,7 +315,10 @@ public:
                 tri.addTriangle(cx - 4.0f, cy - 6.0f, cx - 4.0f, cy + 6.0f, cx + 6.0f, cy);
                 g.fillPath(tri);
             }
-            g.drawFittedText("Play", bounds, juce::Justification::centredLeft, 1);
+            // The word is centred on the whole button; the icon keeps its slot
+            // at the left edge.
+            g.drawFittedText("Play", button.getLocalBounds().reduced(2),
+                             juce::Justification::centred, 1);
             return;
         }
 
@@ -431,6 +434,7 @@ private:
         int diagGap  = 10;   // panel -> status row
         int gap      = 9;    // breathing room between groups
         int readoutH = 20;   // the single diagnostic line
+        int shapeH   = 18;   // form-shape readout under the transition slider
 
         /** Height of everything except the variable-height section list. */
         int fixedHeight() const noexcept;
@@ -487,6 +491,11 @@ private:
     juce::Slider transitionBarsSlider;
     juce::Label transitionSectionsLabel{ {}, "TRANSITION SECTIONS" };
     juce::Slider transitionSectionsSlider;
+
+    // One-line loop-shape readout under the TRANSITION SECTIONS slider:
+    // "A-B-A-C..." etc. Rebuilt from the parameter each UI tick so it follows
+    // both user moves and host automation.
+    juce::Label transitionShapeLabel;
 
     /**
      * @brief One-line status: a phase dot, the phase/section, and the section

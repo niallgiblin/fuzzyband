@@ -2809,6 +2809,49 @@ TEST_CASE("Processor pipeline: section-progress accessors track Play, Lock, and 
     proc.releaseResources();
 }
 
+TEST_CASE("Processor pipeline: Play publishes its 1-bar count-in for the UI",
+          "[integration][pipeline][play]")
+{
+    // The editor shows the same amber "Count-in" status for Play as it does for
+    // Record riff. SectionPhase stays Idle during the count-in (nothing is
+    // playing yet), so the count-in needs its own flag: it must be raised on the
+    // Play edge and cleared when the song form starts.
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+
+    REQUIRE_FALSE(proc.isPlayCountingIn());
+
+    proc.playActive.store(true, std::memory_order_release);
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+    }
+    REQUIRE(proc.isPlayCountingIn());
+    REQUIRE(proc.getSectionPhase() == 0);   // Idle: the form has not started
+
+    // Run out the count-in (plus the wait for the next bar line). The flag must
+    // clear and the form must start.
+    int blockIdx = 0;
+    const int maxWait = static_cast<int>(4.0 * sr / block);
+    for (int i = 0; i < maxWait && proc.isPlayCountingIn(); ++i)
+    {
+        juce::AudioBuffer<float> buf(2, block);
+        fillSineAmp(buf, blockIdx, block, sr, 110.0, 0.12f);
+        juce::MidiBuffer midi;
+        proc.processBlock(buf, midi);
+        ++blockIdx;
+    }
+    REQUIRE_FALSE(proc.isPlayCountingIn());
+    REQUIRE(proc.getSectionPhase() == 1);   // Play
+
+    proc.playActive.store(false, std::memory_order_release);
+    proc.releaseResources();
+}
+
 TEST_CASE("Processor pipeline: deterministic riff loop never re-locks onto a NEW riff", "[integration][pipeline][transition][lock]")
 {
     // A is stored at capture. B may lock a second riff. Returning to A plays
