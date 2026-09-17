@@ -850,12 +850,14 @@ TEST_CASE("bass mirror: Play learns a riff per section and replays it on return 
     // The contrast section mirrors its own material too.
     REQUIRE(stats[1].mirror > 0);
     REQUIRE(stats[1].frozen == 0);
-    // The return is the stored VERSE riff, and the replay is AUTHORITATIVE: it
-    // plays the stored phrase exactly (including its rests) and the live mirror
-    // does not fill its gaps. The user's explicit choice — see
-    // docs/BASS_MIRRORING.md §24.
+    // The return is the stored VERSE riff, and the MEMORY IS PRIMARY: it owns
+    // every 16th it has a note on. The live mirror is no longer fully suppressed
+    // there — it fills only the 16ths the memory leaves EMPTY. Measured on a real
+    // take: the capture's first 14 sixteenths were empty (the player had not
+    // started yet), so the old "authoritative replay" looped a 1.2 s hole every
+    // 4 bars and those notes went missing. The memory must clearly dominate.
     REQUIRE(stats[2].frozen > 0);
-    REQUIRE(stats[2].mirror == 0);
+    REQUIRE(stats[2].mirror < stats[2].frozen);
     REQUIRE_FALSE(stats[2].frozenNotes.empty());
 }
 
