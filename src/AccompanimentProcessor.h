@@ -395,9 +395,7 @@ private:
 
     void enqueueMirrorTrigger(int64_t targetAbs, float velocity, int fallbackNote) noexcept;
     void flushMirrorTriggers(int numSamples, int64_t blockEndAbs, int bassTranspose,
-                             int durationSamples, bool emit,
-                             const PhraseLearner::LearnedRiff* skipOccupied = nullptr,
-                             int64_t skipOrigin = -1, double skipSamplesPerBeat = 0.0) noexcept;
+                             int durationSamples, bool emit) noexcept;
     void recordRecentAttack(int64_t abs) noexcept;
     bool attackInCaptureSlot(int64_t fromAbs, int64_t toAbs) const noexcept;
     void clearPendingMirror() noexcept { pendingMirrorCount = 0; }
