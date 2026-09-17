@@ -157,3 +157,32 @@ TEST_CASE("MidiPatternLibrary: open hats have a musical gate and ghosts are mark
         }
     }
 }
+
+// Regression: "Sparse Breakdown" used to be 4 hits over 2 bars — a ~5 s
+// near-silence that read as a drum dropout (measured on a real Play take).
+// It must stay sparse but never leave a full beat without a timekeeper.
+TEST_CASE("MidiPatternLibrary: Sparse Breakdown has no dead beat", "[midi_pattern_library][genre]")
+{
+    MidiPatternLibrary lib;
+    MidiPattern p{};
+    for (int i = 0; i < lib.patternCount(); ++i)
+        if (lib.getPattern(i).name == std::string("Sparse Breakdown"))
+            p = lib.getPattern(i);
+
+    REQUIRE(p.name == std::string("Sparse Breakdown"));
+    const int totalBeats = static_cast<int>(p.lengthInBars * 4.0f);
+
+    // Every beat in the 2-bar loop must contain at least one drum hit.
+    for (int beat = 0; beat < totalBeats; ++beat)
+    {
+        bool any = false;
+        for (const auto& e : p.drumEvents)
+            if (static_cast<int>(e.beatOffset) == beat)
+                any = true;
+        INFO("beat " << beat);
+        REQUIRE(any);
+    }
+
+    // Still sparse: far fewer hits than a normal groove of the same length.
+    REQUIRE(p.drumEvents.size() <= 14u);
+}

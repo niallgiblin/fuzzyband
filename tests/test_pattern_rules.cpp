@@ -859,3 +859,86 @@ TEST_CASE("PatternRules::contrastHomePattern avoids verse-neighborhood when poss
     REQUIRE(PatternRules::isStrongContrastPattern(14));
     REQUIRE_FALSE(PatternRules::isVerseFeelNeighborhood(14));
 }
+
+// ── B2: per-genre vocabularies ───────────────────────────────────────────────
+// Before this, every rock genre drew the same patterns and every metal genre
+// drew the same patterns (measured on a real Play DI: Thrash / Death / Black /
+// Doom were byte-for-byte identical). Genre must change WHAT is played, not just
+// how hard it is played.
+
+TEST_CASE("PatternRules: genres inside one family have distinct section pools", "[pattern_rules][genre]")
+{
+    auto different = [](const char* section, int a, int b)
+    {
+        const auto pa = PatternRules::sectionPatternPoolForGenre(section, a);
+        const auto pb = PatternRules::sectionPatternPoolForGenre(section, b);
+        if (pa.count != pb.count) return true;
+        for (int i = 0; i < pa.count; ++i)
+            if (pa.indices[i] != pb.indices[i]) return true;
+        return false;
+    };
+
+    // Metal family must no longer be one vocabulary.
+    REQUIRE(different("VERSE", 5 /*Thrash*/, 8 /*Doom*/));
+    REQUIRE(different("CHORUS", 5, 8));
+    REQUIRE(different("VERSE", 6 /*Death*/, 9 /*Djent*/));
+    REQUIRE(different("CHORUS", 4 /*Sludge*/, 8 /*Doom*/));
+    // Rock family must no longer be one vocabulary.
+    REQUIRE(different("VERSE", 1 /*Hard Rock*/, 10 /*Classic Rock*/));
+    REQUIRE(different("CHORUS", 1, 12 /*Grunge*/));
+}
+
+TEST_CASE("PatternRules: genre pools reach their signature patterns", "[pattern_rules][genre]")
+{
+    auto has = [](const char* section, int genre, int pat)
+    {
+        return PatternRules::poolContains(
+            PatternRules::sectionPatternPoolForGenre(section, genre), pat);
+    };
+
+    REQUIRE(has("VERSE", 5, 10));    // Thrash -> Thrash
+    REQUIRE(has("CHORUS", 5, 13));   // Thrash -> Pre-Chorus Rise
+    REQUIRE(has("VERSE", 6, 8));     // Death -> Blast Beat
+    REQUIRE(has("VERSE", 7, 8));     // Black -> Blast Beat
+    REQUIRE(has("VERSE", 8, 7));     // Doom -> Half-Time
+    REQUIRE(has("CHORUS", 8, 6));    // Doom -> Breakdown
+    REQUIRE(has("VERSE", 2, 25));    // Punk -> Punk D-Beat
+    REQUIRE(has("VERSE", 10, 24));   // Classic Rock -> Rock Shuffle
+    REQUIRE(has("OUTRO", 10, 26));   // Classic Rock -> Rock Ballad
+    REQUIRE(has("CHORUS", 12, 6));   // Grunge -> Breakdown
+}
+
+TEST_CASE("PatternRules: Metal and Rock families keep their original pools", "[pattern_rules][genre]")
+{
+    // Rock (0) and Metal (3) are the calibration genres — their pools are
+    // unchanged so existing sessions and golden tests do not move.
+    const auto rockVerse = PatternRules::sectionPatternPoolForGenre("VERSE", 0);
+    REQUIRE(rockVerse.indices[0] == 22);
+    const auto metalVerse = PatternRules::sectionPatternPoolForGenre("VERSE", 3);
+    REQUIRE(metalVerse.indices[0] == 1);
+    REQUIRE(metalVerse.count == 3);
+}
+
+// The mel-CNN's vocabulary is the metal-era set (0-21) while the rock Play pools
+// are 22-27, so a raw ML pick is almost never a pool member and Play ignored the
+// classifier. Re-homing the pick with the follow path's genre rules is what makes
+// the ML audible in Play without giving up the bar-quantised pool.
+TEST_CASE("PatternRules: mel-CNN picks re-home into the Play pools", "[pattern_rules][genre][ml]")
+{
+    FeatureVector loud{};
+    loud.state = StructureState::LOUD;
+    loud.bpm = 96.0f;
+    loud.rmsEnergy = 0.15f;
+
+    const auto chorus0 = PatternRules::sectionPatternPoolForGenre("CHORUS", 0);
+    REQUIRE_FALSE(PatternRules::poolContains(chorus0, 8));
+    REQUIRE_FALSE(PatternRules::poolContains(chorus0, 10));
+    REQUIRE_FALSE(PatternRules::poolContains(chorus0, 15));
+
+    REQUIRE(PatternRules::poolContains(chorus0,
+        PatternRules::diversifyPatternForGenre(8, loud, 0, 0)));
+    REQUIRE(PatternRules::poolContains(chorus0,
+        PatternRules::diversifyPatternForGenre(10, loud, 0, 0)));
+    REQUIRE(PatternRules::poolContains(chorus0,
+        PatternRules::diversifyPatternForGenre(15, loud, 0, 0)));
+}

@@ -1,7 +1,7 @@
 # Fuzzyband Rules — How the Plugin Thinks
 
 **Audience:** anyone who wants to understand the product without being a DSP engineer.  
-**Authority:** verified against live source at **v1.0.31** (`CMakeLists.txt` line 4).  
+**Authority:** verified against live source at **v1.0.32** (`CMakeLists.txt` line 4).  
 **Companion docs:** `docs/CONTEXT_HANDOFF.md` (engineer briefing), `docs/BASS_MIRRORING.md` (bass bug history — some early sections are stale; trust this file + code for current behaviour).
 
 If a older doc disagrees with this file, **believe the code**. This document exists because that happens often.
@@ -66,7 +66,7 @@ Plugin is silent. Analysis may still run for readouts, but MIDI stays off until 
 1. Press **Play**.
 2. One-bar **count-in** click.
 3. The plugin walks your **section list** once (INTRO → VERSE → … → OUTRO).
-4. Drums come from per-section pattern pools for the chosen **genre**.
+4. Drums come from per-section pattern pools for the chosen **genre**; each genre has its own vocabulary (Thrash / D-Beat / Blast / Half-Time / Shuffle …), so the preset changes *which* patterns play, not just their velocity.
 5. Bass **mirrors** your live playing while you are audible.
 6. First time through each section name, it **listens and stores** a bass sketch for that section. When that section returns it **replays** the stored sketch while **re-capturing** in parallel, so the memory keeps tracking what you actually play (Step-2 per-section learning). A pass where you rest does not wipe a good memory.
 7. When the form ends, Play turns off and the plugin goes Idle.
@@ -164,7 +164,7 @@ It does **not** rename VERSE/CHORUS — those come from the song-form sequencer 
 
 ### 6.3 Drum pattern selection
 
-**When Play is on:** the song-form sequencer + genre section pools pick patterns. Background ML pattern commits are drained and **discarded** on purpose so Play stays musically authored.
+**When Play is on:** the song-form sequencer + **per-genre** section pools pick patterns. The mel-CNN still runs; its pick is re-homed into the genre vocabulary and is preferred when it lands in the section pool, so the classifier steers the feel but can never leave the section's vocabulary or break the bar-quantised rotation.
 
 **When following without Play overrides:** a mel spectrogram CNN (`MetalGrooveInference`) picks among **28** library grooves, with rule-based fallback. Style CNN runs but does not currently steer pattern choice hard.
 
@@ -363,8 +363,11 @@ Priorities are ordered for **audible payoff that fits the current architecture**
 5. **Thicker authored bass lines for silence gaps**  
    Authored `bassEvents` are live again. Enrich rock/metal pocket (behind the kick by a few ms), better degree maps, and section-aware note density so the fallback feels composed when you stop.
 
-6. **Genre presets as musical policy**  
-   Groove templates already encode feel. Push genre further into: pool defaults, fill aggressiveness, bass pocket, and humanize ceilings so Rock vs Thrash are obviously different bands.
+6. **Genre presets as musical policy** — *landed in v1.0.32*  
+   Each genre now selects its own section pattern vocabulary (Thrash / Death /
+   Black / Doom / Punk / Classic Rock / Grunge … all differ; measured), on top of
+   the per-genre groove template and ghost density. Remaining: per-genre fill
+   aggressiveness, bass pocket and humanize ceilings.
 
 7. **Dynamic storytelling**  
    Verse vs chorus contrast is partly there (velocity maps, open hats/ride, notes-per-bar). Increase the *perceived* dynamic range and articulation changes so form breathes.
@@ -437,4 +440,4 @@ Idle:   silence until you arm something
 
 ---
 
-*Last verified against source: v1.0.31. When behaviour changes, update this file in the same change that updates the code — do not leave it to a later “docs pass.”*
+*Last verified against source: v1.0.32. When behaviour changes, update this file in the same change that updates the code — do not leave it to a later “docs pass.”*

@@ -74,6 +74,7 @@ struct PlayMirrorStats
     double seconds = 0.0;
     PhraseLearner::AttackDebug attack{};
     std::vector<int> bassNotes;   // note numbers, in time order
+    std::set<int> drumPatterns;   // distinct Play-section drum patterns used
     int blocks = 0;
     int audibleBlocks = 0;        // structure state != SILENT
     int silentBlocks = 0;
@@ -95,7 +96,7 @@ struct MovingPlayHead final : public juce::AudioPlayHead
 
 /** Run the real processor in Play mode over [startSample, startSample+numSamples). */
 PlayMirrorStats runPlay(const WavReader::PcmMono& pcm, int64_t startSample, int64_t numSamples,
-                        int blockSize = kBlock)
+                        int blockSize = kBlock, int genreId = 0)
 {
     PlayMirrorStats s;
     s.loaded = true;
@@ -106,7 +107,7 @@ PlayMirrorStats runPlay(const WavReader::PcmMono& pcm, int64_t startSample, int6
     proc.prepareToPlay(sr, blockSize);
     proc.pauseBackgroundInferenceForTests();
     if (auto* p = proc.getApvts().getParameter("genre"))
-        p->setValueNotifyingHost(p->convertTo0to1(0.0f));   // Rock
+        p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(genreId)));
     if (auto* p = proc.getApvts().getParameter("bpm"))
         p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(kBpm)));
     proc.setCustomSongForm("VERSE:64,CHORUS:32");
@@ -136,6 +137,8 @@ PlayMirrorStats runPlay(const WavReader::PcmMono& pcm, int64_t startSample, int6
         }
         ++s.blocks;
         if (proc.getDisplayStateIndex() == 0) ++s.silentBlocks; else ++s.audibleBlocks;
+        if (proc.getSectionPhase() == 1)   // PlaySection
+            s.drumPatterns.insert(proc.getDisplayPatternIndex());
     }
 
     s.learned = proc.getLearnedBassNoteCount();
@@ -511,13 +514,29 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
     REQUIRE(pcm.sampleRate > 0);
 
     const double sr = static_cast<double>(pcm.sampleRate);
-    const int block = kBlock;
+    const char* blockEnv = std::getenv("MA_DI_BLOCK");
+    const int block = (blockEnv != nullptr && *blockEnv != '\0')
+        ? juce::jmax(16, std::atoi(blockEnv)) : kBlock;
 
     AccompanimentProcessor proc;
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
+    // MA_DI_GENRE / MA_DI_SWING / MA_DI_HUMANIZE reproduce the exact session
+    // settings of a recorded take (defaults: Rock, swing 0, humanize 0.35).
+    auto envFloat = [](const char* name, float fallback) -> float
+    {
+        const char* v = std::getenv(name);
+        return (v != nullptr && *v != '\0') ? static_cast<float>(std::atof(v)) : fallback;
+    };
+    const float genreId = envFloat("MA_DI_GENRE", 0.0f);
+    const float swingVal = envFloat("MA_DI_SWING", 0.0f);
+    const float humanizeVal = envFloat("MA_DI_HUMANIZE", 0.35f);
     if (auto* p = proc.getApvts().getParameter("genre"))
-        p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+        p->setValueNotifyingHost(p->convertTo0to1(genreId));
+    if (auto* p = proc.getApvts().getParameter("swing"))
+        p->setValueNotifyingHost(p->convertTo0to1(swingVal));
+    if (auto* p = proc.getApvts().getParameter("humanize"))
+        p->setValueNotifyingHost(p->convertTo0to1(humanizeVal));
     if (auto* p = proc.getApvts().getParameter("bpm"))
         p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(bpm)));
     // MA_DI_FORM lets the audit reproduce the take's real song form (e.g.
@@ -573,6 +592,8 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
     int64_t playSectionStart = -1;
     int lastMirror = 0, lastFrozen = 0, lastGridA = 0, lastGridH = 0;
     int drumOnsThisSecond = 0;
+    struct Drum { int64_t sample; int midi; float vel; };
+    std::vector<Drum> drumNotes;
     auto lastAtt = PhraseLearner::AttackDebug{};
 
     std::printf("[DI-AUDIT] === clean-DI Play audit ===\n");
@@ -603,7 +624,11 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
         {
             const auto m = meta.getMessage();
             if (m.isNoteOn() && m.getChannel() == 10 && m.getVelocity() > 0)
+            {
                 ++drumOnsThisSecond;
+                drumNotes.push_back({ start + meta.samplePosition, m.getNoteNumber(),
+                                      m.getFloatVelocity() });
+            }
             else if (m.isNoteOn() && m.getChannel() == 2 && m.getVelocity() > 0)
             {
                 const int64_t abs = start + meta.samplePosition;
@@ -722,6 +747,33 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
     for (int i = 0; i < 128; ++i)
         if (hist[i] > 0) std::printf(" %d:%d", i, hist[i]);
     std::printf("\n");
+
+    // Drum dump: every note-on with its absolute time, so a dropout can be
+    // localised to a bar/16th and compared against the rendered stem.
+    std::printf("[DI-AUDIT] drum note-ons: %d over %.1fs (%.2f/s)\n",
+                static_cast<int>(drumNotes.size()), durSec,
+                static_cast<double>(drumNotes.size()) / std::max(0.001, durSec));
+    std::printf("[DI-AUDIT] drum events (t:s note vel):\n");
+    for (const auto& d : drumNotes)
+        std::printf("[DI-AUDIT]   %8.3f  %3d  %.2f\n",
+                    static_cast<double>(d.sample) / sr, d.midi,
+                    static_cast<double>(d.vel));
+
+    // Per-second drum count, plus a "quiet" marker when a second has <=1 hit
+    // while the guitar is not digitally silent — the dropout signature.
+    {
+        const int64_t seconds = static_cast<int64_t>(durSec) + 1;
+        std::vector<int> perSec(static_cast<size_t>(seconds), 0);
+        for (const auto& d : drumNotes)
+        {
+            const int64_t s = d.sample / static_cast<int64_t>(sr);
+            if (s >= 0 && s < seconds) ++perSec[static_cast<size_t>(s)];
+        }
+        std::printf("[DI-AUDIT] drum onsets/second: ");
+        for (int64_t s = 0; s < seconds; ++s)
+            std::printf("%lld%c", static_cast<long long>(perSec[static_cast<size_t>(s)]),
+                        (s + 1 < seconds) ? ',' : '\n');
+    }
 
     proc.playActive.store(false, std::memory_order_release);
     proc.setPlayHead(nullptr);
@@ -1140,4 +1192,38 @@ TEST_CASE("bass mirror: real-audio Record contrast memory timeline (diagnostic)"
     proc.setPlayHead(nullptr);
     proc.releaseResources();
     SUCCEED("contrast diagnostic ran");
+}
+
+// B2 end-to-end: the genre preset must change WHICH patterns Play chooses, not
+// just how hard they are played. Before this, Thrash / Death / Black / Doom were
+// byte-identical and all five rock genres were identical (the pattern pool only
+// split Rock vs Metal). This drives the real processor over real playing and
+// compares the distinct drum-pattern sets two genres reach in one pass.
+TEST_CASE("bass mirror: Play-mode genre selection changes the drum vocabulary (real audio)",
+          "[integration][drums][genre]")
+{
+    WavReader::PcmMono pcm;
+    if (!WavReader::readMonoWav(fixturePath("palm_mute_chug.wav"), pcm))
+    {
+        SUCCEED("skipped");
+        return;
+    }
+    const int64_t total = static_cast<int64_t>(pcm.samples.size());
+
+    const PlayMirrorStats thrash = runPlay(pcm, 0, total, kBlock, 5 /* Thrash */);
+    const PlayMirrorStats doom = runPlay(pcm, 0, total, kBlock, 8 /* Doom */);
+
+    INFO("thrash patterns: " << [&]{ std::string s; for (int p : thrash.drumPatterns) s += std::to_string(p) + " "; return s; }());
+    INFO("doom patterns:   " << [&]{ std::string s; for (int p : doom.drumPatterns) s += std::to_string(p) + " "; return s; }());
+
+    REQUIRE_FALSE(thrash.drumPatterns.empty());
+    REQUIRE_FALSE(doom.drumPatterns.empty());
+    REQUIRE(thrash.drumPatterns != doom.drumPatterns);
+
+    // Thrash must reach its signature language: Thrash (10) and/or Punk D-Beat (25).
+    const bool thrashSignature = thrash.drumPatterns.count(10) > 0
+                              || thrash.drumPatterns.count(25) > 0;
+    REQUIRE(thrashSignature);
+    // Doom must stay in the half-time/breakdown language, never a blast beat (8).
+    REQUIRE(doom.drumPatterns.count(8) == 0);
 }

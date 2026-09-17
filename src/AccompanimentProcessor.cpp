@@ -1101,23 +1101,61 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 // Play does not answer a fast riff with a sparse backbeat. Falls
                 // back to the full pool when nothing dense is available.
                 PatternRules::SectionPatternPool pickPool = orderedPool;
+                const float playDensity = phraseLearner.getOnsetDensityPerBeat(
+                    hostSampleTime, rhythmWindowSamples, samplesPerBeatLocal);
                 {
-                    const float playDensity = phraseLearner.getOnsetDensityPerBeat(
-                        hostSampleTime, rhythmWindowSamples, samplesPerBeatLocal);
                     if (playDensity >= 2.5f)
                     {
-                        PatternRules::SectionPatternPool densePool{};
-                        densePool.count = 0;
-                        for (int i = 0; i < orderedPool.count; ++i)
+                        // Answer fast riffing with a driving groove — but keep the
+                        // genre's vocabulary. The old fixed `perBar >= 12` cut a
+                        // pool down to whatever was densest on paper, which for
+                        // Thrash (Thrash 10/bar, D-Beat 11/bar vs Verse Fast
+                        // 16/bar) collapsed the pool to a single generic pattern.
+                        // Rank by notated density, keep the members close to the
+                        // densest, and never collapse a multi-member pool below
+                        // two members (the phrase rotation still needs a choice).
+                        int   ord[8]  = {};
+                        float dens[8] = {};
+                        int   n = 0;
+                        for (int i = 0; i < orderedPool.count && n < 8; ++i)
                         {
                             const int pi = orderedPool.indices[i];
                             if (pi < 0 || pi >= patternLibrary.patternCount())
                                 continue;
                             const auto& pat = patternLibrary.getPattern(pi);
-                            const float perBar = static_cast<float>(pat.drumEvents.size())
-                                / juce::jmax(1.0f, pat.lengthInBars);
-                            if (perBar >= 12.0f && densePool.count < 8)
-                                densePool.indices[densePool.count++] = pi;
+                            ord[n] = pi;
+                            dens[n] = static_cast<float>(pat.drumEvents.size())
+                                    / juce::jmax(1.0f, pat.lengthInBars);
+                            ++n;
+                        }
+                        for (int i = 1; i < n; ++i)   // insertion sort: densest first
+                        {
+                            const int pi = ord[i];
+                            const float d = dens[i];
+                            int j = i - 1;
+                            while (j >= 0 && dens[j] < d)
+                            {
+                                ord[j + 1] = ord[j];
+                                dens[j + 1] = dens[j];
+                                --j;
+                            }
+                            ord[j + 1] = pi;
+                            dens[j + 1] = d;
+                        }
+                        const float threshold = (n > 0)
+                            ? juce::jmax(6.0f, 0.65f * dens[0]) : 6.0f;
+                        PatternRules::SectionPatternPool densePool{};
+                        densePool.count = 0;
+                        for (int i = 0; i < n && densePool.count < 8; ++i)
+                            if (dens[i] >= threshold)
+                                densePool.indices[densePool.count++] = ord[i];
+                        for (int i = 0; i < n && densePool.count < 2; ++i)
+                        {
+                            bool have = false;
+                            for (int k = 0; k < densePool.count; ++k)
+                                if (densePool.indices[k] == ord[i]) have = true;
+                            if (!have)
+                                densePool.indices[densePool.count++] = ord[i];
                         }
                         if (densePool.count > 0)
                             pickPool = densePool;
@@ -1127,7 +1165,30 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     sectionEntryBar.load(std::memory_order_relaxed));
                 int picked = PatternRules::pickPoolPattern(
                     pickPool, seed, grooveSlot, lastPlayedPoolPattern);
-                if (PatternRules::poolContains(pickPool, patternIdx)
+                // B2/ML: let the mel-CNN steer WITHIN the section pool. The
+                // model's vocabulary is the metal-era set (0-21) while the rock
+                // pools are 22-27, so a raw ML pick is almost never a pool member
+                // and Play silently ignored the classifier. Re-home the pick with
+                // the same genre rules the follow path uses, then prefer it when it
+                // lands in the pool (never repeating the previous phrase; the pool
+                // stays authoritative, so Play rotation is still bar-quantised).
+                FeatureVector mlF{};
+                mlF.state = st;
+                mlF.bpm = bpmForPlayer;
+                mlF.rmsEnergy = rms;
+                mlF.spectralCentroid = centroid;
+                mlF.onsetDensityPerBeat = playDensity;
+                const int barMod8 = (samplesPerBeatLocal > 0.0)
+                    ? static_cast<int>(static_cast<double>(hostSampleTime)
+                                       / (samplesPerBeatLocal * 4.0)) % 8
+                    : 0;
+                const int mlPick = PatternRules::diversifyPatternForGenre(
+                    patternIdx, mlF, barMod8, genreId);
+                if (PatternRules::poolContains(pickPool, mlPick)
+                    && mlPick != lastPlayedPoolPattern
+                    && mlPick > 0)
+                    picked = mlPick;
+                else if (PatternRules::poolContains(pickPool, patternIdx)
                     && patternIdx != lastPlayedPoolPattern
                     && patternIdx > 0)
                     picked = patternIdx;

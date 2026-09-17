@@ -6,6 +6,54 @@ For architecture and threading, see [`ARCHITECTURE.md`](ARCHITECTURE.md) and its
 
 Milestone/phase status lives in [`.planning/`](.planning) (`.planning/STATE.md`, `.planning/ROADMAP.md`). **Do not read `.gsd/` — it is a stale, untracked local artifact.**
 
+## [1.0.32] — Genre vocabulary, no dead-air breakdown, ML in Play
+
+Three drum changes from a full analysis of the 96 BPM Hard Rock Play take
+(`01-fairo_di-260917_1428.wav`, form `VERSE:8,CHORUS:8,VERSE:8,CHORUS:8`).
+
+**Genre selection now changes what is played, not just how hard.** Running the
+offline DI audit across all 13 presets showed every rock-leaning genre choosing
+the identical pattern sequence and every metal-family genre choosing the
+identical sequence (Thrash / Death / Black / Doom were byte-for-byte the same).
+The section pools only split Rock vs Metal, and the Lakh priors rows were
+byte-identical inside each family. `PatternRules::genreSectionOverride` now gives
+each genre its own section vocabulary (Thrash reaches Thrash / D-Beat, Death and
+Black reach Blast Beat, Doom reaches Half-Time, Punk reaches D-Beat, Classic Rock
+reaches Shuffle / Ballad, …). Measured before → after: distinct Play patterns per
+genre 3 → 5–12; no two genres share a pattern set.
+
+**`Sparse Breakdown` (pattern 9) is no longer a hole.** It was 4 hits over 2 bars
+— ~4–5 s of near-silence at 96–120 BPM, which reads as a drum dropout. It keeps
+its sparse, hat/ride-free identity but now carries a low kick pulse so every beat
+holds time.
+
+**The mel-CNN is audible in Play.** The model's vocabulary is the metal-era set
+(0–21) while the rock pools are 22–27, so a raw ML pick was almost never a pool
+member and Play silently ignored the classifier. The pick is now re-homed with
+the follow path's genre rules and preferred when it lands in the pool — the pool
+stays authoritative, so Play rotation is still bar-quantised.
+
+The Play "dense pool" no longer collapses to a single pattern: the old fixed
+`perBar >= 12` filter cut Thrash's pool to generic `Verse Fast` (Thrash 10/bar,
+D-Beat 11/bar), so fast chugging lost the genre's identity. It now ranks by
+notated density, keeps members close to the densest, and never drops below two
+members.
+
+New guards: genre pools differ within a family; signature patterns are
+reachable; Metal/Rock pools unchanged; pattern 9 has no dead beat; a pattern
+change at a bar line does not double-emit the downbeat; and an end-to-end
+real-audio test that Play-mode drum vocabulary changes with genre.
+
+Suites: **297** unit / **99** integration, all passing.
+
+**The Play-take drum dropout was not reproduced by the plugin.** In that exact
+window (46.5–51 s) the plugin emits a continuous kick/snare/hat stream at every
+host block size and at the take's real genre/swing/humanize; the recorded stem
+loses snare/hats while kick continues, which points downstream (drum sampler /
+routing) or at a stale plugin instance in the host. Audited with the extended
+offline drum dump (`MA_DI_GENRE`, `MA_DI_SWING`, `MA_DI_HUMANIZE`, `MA_DI_BLOCK`,
+and per-note drum events).
+
 ## [1.0.8] — The mirror is host-buffer-size invariant
 
 **Root cause of the nine-times-recurring "bass doesn't mirror".** The attack

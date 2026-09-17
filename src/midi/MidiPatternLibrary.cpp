@@ -322,7 +322,13 @@ MidiPattern buildBlastBeat()
     return p;
 }
 
-// ── 9: Sparse Breakdown (2-bar, only 3 hits — ultra-minimal) ─────────────────
+// ── 9: Sparse Breakdown (2-bar, half-time space, but never dead air) ────────
+//
+// Was 4 hits over 2 bars (china+kick at 0, kick+snare at beat 6), i.e. ~4-5 s
+// of near-silence at 96-120 BPM — audibly a dropout, not a breakdown (measured
+// on a real Play take). It keeps its sparse, hat/ride-free identity (see
+// test_midi_pattern_library "sparse breakdown has no hats or ride") and now
+// holds time with a low kick pulse, so every beat carries the groove.
 
 MidiPattern buildSparseBreakdown()
 {
@@ -330,10 +336,18 @@ MidiPattern buildSparseBreakdown()
     p.name = "Sparse Breakdown";
     p.lengthInBars = 2.0f;
     p.drumEvents = {
-        drum(kChina,     118, 0.0f, 2.0f),
+        // Bar 1 — downbeat accent, then a laid-back kick pulse
+        drum(kChina,     116, 0.0f, 2.0f),
         drum(kKick,      115, 0.0f),
+        drum(kKick,       96, 1.0f),
+        drum(kSnare,     112, 2.0f),
+        drum(kKick,       98, 3.0f),
+        // Bar 2 — heavier push on 3, still only kick/snare/china
+        drum(kKick,      112, 4.0f),
+        drum(kKick,       96, 5.0f),
         drum(kKick,      108, 6.0f),
         drum(kSnare,     112, 6.0f),
+        drum(kKick,       98, 7.0f),
     };
     p.bassEvents = {
         bass(kBassRoot, 95, 0.0f, 3.5f),

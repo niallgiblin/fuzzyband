@@ -1413,6 +1413,61 @@ TEST_CASE("T6.1: GrooveCommit alignToBeat applies at the next beat, not the next
     REQUIRE(pos < bar);
 }
 
+// A pattern change at a bar (or beat) line must not emit the boundary hit twice:
+// the outgoing pattern's downbeat and the incoming pattern's downbeat are the
+// SAME musical event, and two note-ons on the same note at the same sample make
+// a drum sampler choke or flam. Found while auditing the Play-mode drum stream
+// (measured ~10 % of drum note-ons duplicated on a real DI).
+TEST_CASE("pattern change at a bar line does not double-emit the downbeat",
+          "[midi][duplicate]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 256);
+    player.snapBpm(120.0f);
+    player.setStructureSilent(false);
+    player.setHumanize(0.0f);
+    player.setSwing(0.0f);
+    player.setRandomSeed(0);
+    player.setPatternIndex(1);            // Verse Groove — 2-bar, kick on 0/2/4/6
+
+    constexpr int block = 256;
+    constexpr int64_t bar = 96000;        // 4 beats @ 120 BPM / 48 kHz
+    std::map<std::pair<int64_t, int>, int> hits;
+    int64_t pos = 0;
+    juce::MidiBuffer midi;
+
+    auto runBlocks = [&](int n)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            midi.clear();
+            player.process(midi, block, pos, true);
+            for (const auto meta : midi)
+            {
+                const auto m = meta.getMessage();
+                if (m.isNoteOn() && m.getChannel() == 10)
+                    ++hits[{ pos + meta.samplePosition, m.getNoteNumber() }];
+            }
+            pos += block;
+        }
+    };
+
+    runBlocks(static_cast<int>(bar / block) - 1);   // stop one block before bar 2
+    PatternPlayer::GrooveCommit commit{};
+    commit.patternIndex = 4;                    // Chorus Mid — kick on the downbeat
+    commit.alignToBeat = false;                 // applies at the next bar line
+    player.queueGrooveCommit(commit);
+    runBlocks(static_cast<int>(bar / block) + 3);
+
+    int duplicates = 0;
+    for (const auto& kv : hits)
+        if (kv.second > 1)
+            ++duplicates;
+    REQUIRE(duplicates == 0);
+}
+
 TEST_CASE("T7.2 armBarFillAtBeat keeps fill 17 on a late-latched last bar", "[midi][fill][t7.2]")
 {
     MidiPatternLibrary lib;

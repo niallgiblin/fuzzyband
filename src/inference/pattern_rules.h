@@ -285,9 +285,103 @@ inline SectionPatternPool sectionPatternPool(const char* sectionName) noexcept
 }
 
 /**
- * @brief B1: genre-aware section → pattern pool mapping for play (song-form) mode.
+ * @brief B2: per-genre section-pool override — the genre-identity vocabulary.
+ *
+ * Before this, the only genre routing was Rock-leaning vs Metal, and the Lakh
+ * priors rows were byte-identical inside each family, so every rock genre chose
+ * the same patterns and every metal genre chose the same patterns (measured on a
+ * real DI: Thrash / Death / Black / Doom were byte-for-byte identical, and all
+ * five rock genres were identical).
+ *
+ * Each genre that has a recognisable vocabulary overrides the sections where its
+ * identity shows (Thrash reaches Thrash / Punk D-Beat, Doom reaches Half-Time,
+ * Punk reaches D-Beat, Classic Rock reaches Shuffle / Ballad, ...). Any section
+ * not listed falls through to the family pool, so a genre only has to name the
+ * sections it cares about. Indices are MidiPatternLibrary indices 0-27.
+ *
+ * @return the override pool, or a count==0 pool meaning "use the family pool".
+ */
+inline SectionPatternPool genreSectionOverride(int genreId, const char* sectionName) noexcept
+{
+    using P = SectionPatternPool;
+    if (sectionName == nullptr)
+        return P{ 0, {} };
+    auto is = [sectionName](const char* n) noexcept
+    {
+        return std::strcmp(sectionName, n) == 0;
+    };
+
+    switch (genreId)
+    {
+        case 1:  // Hard Rock
+            if (is("VERSE"))  return P{ 5, { 22, 1, 3, 20, 24 } };
+            if (is("CHORUS")) return P{ 4, { 4, 14, 21, 5 } };
+            if (is("OUTRO"))  return P{ 2, { 16, 26 } };
+            break;
+        case 2:  // Punk
+            if (is("VERSE"))  return P{ 3, { 3, 25, 1 } };
+            if (is("CHORUS")) return P{ 3, { 5, 25, 21 } };
+            if (is("SOLO"))   return P{ 3, { 5, 25, 10 } };
+            break;
+        case 4:  // Sludge — heavier/dirtier than Doom
+            if (is("VERSE"))     return P{ 3, { 2, 7, 1 } };
+            if (is("CHORUS"))    return P{ 2, { 6, 15 } };
+            if (is("BREAKDOWN")) return P{ 3, { 15, 9, 6 } };
+            break;
+        case 5:  // Thrash Metal
+            if (is("VERSE"))     return P{ 3, { 3, 10, 25 } };
+            if (is("CHORUS"))    return P{ 3, { 5, 13, 21 } };
+            if (is("SOLO"))      return P{ 3, { 5, 10, 13 } };
+            if (is("BREAKDOWN")) return P{ 3, { 15, 10, 8 } };
+            break;
+        case 6:  // Death Metal
+            if (is("VERSE"))     return P{ 3, { 3, 10, 8 } };
+            if (is("CHORUS"))    return P{ 3, { 5, 13, 8 } };
+            if (is("SOLO"))      return P{ 3, { 5, 8, 10 } };
+            if (is("BREAKDOWN")) return P{ 3, { 15, 8, 10 } };
+            break;
+        case 7:  // Black Metal
+            if (is("VERSE"))     return P{ 3, { 3, 8, 10 } };
+            if (is("CHORUS"))    return P{ 3, { 5, 8, 21 } };
+            if (is("BREAKDOWN")) return P{ 2, { 8, 15 } };
+            break;
+        case 8:  // Doom Metal
+            if (is("VERSE"))     return P{ 3, { 2, 7, 1 } };
+            if (is("CHORUS"))    return P{ 2, { 6, 14 } };
+            if (is("BREAKDOWN")) return P{ 3, { 6, 9, 7 } };
+            break;
+        case 9:  // Djent
+            if (is("VERSE"))     return P{ 3, { 1, 2, 3 } };
+            if (is("CHORUS"))    return P{ 3, { 4, 5, 14 } };
+            if (is("BREAKDOWN")) return P{ 3, { 6, 7, 9 } };
+            break;
+        case 10: // Classic Rock
+            if (is("VERSE"))  return P{ 3, { 22, 24, 1 } };
+            if (is("CHORUS")) return P{ 3, { 4, 14, 26 } };
+            if (is("SOLO"))   return P{ 3, { 4, 14, 24 } };
+            if (is("OUTRO"))  return P{ 3, { 16, 26, 27 } };
+            break;
+        case 11: // Alternative
+            if (is("VERSE"))     return P{ 3, { 22, 23, 20 } };
+            if (is("CHORUS"))    return P{ 3, { 4, 14, 22 } };
+            if (is("BREAKDOWN")) return P{ 3, { 6, 9, 15 } };
+            break;
+        case 12: // Grunge
+            if (is("VERSE"))     return P{ 3, { 22, 23, 7 } };
+            if (is("CHORUS"))    return P{ 3, { 4, 14, 6 } };
+            if (is("BREAKDOWN")) return P{ 3, { 6, 9, 15 } };
+            break;
+        default:
+            break;
+    }
+    return P{ 0, {} };
+}
+
+/**
+ * @brief B1/B2: genre-aware section → pattern pool mapping for play (song-form) mode.
  * Rock-leaning genres prefer the rock-first pattern set; Metal-family genres
- * keep the original metal pools.
+ * keep the original metal pools. Genres with a signature vocabulary override
+ * individual sections first (see @ref genreSectionOverride).
  */
 inline SectionPatternPool sectionPatternPoolForGenre(const char* sectionName, int genreId) noexcept
 {
@@ -295,6 +389,10 @@ inline SectionPatternPool sectionPatternPoolForGenre(const char* sectionName, in
 
     if (!sectionName)
         return P{ 0, {} };
+
+    const auto over = genreSectionOverride(genreId, sectionName);
+    if (over.count > 0)
+        return over;
 
     if (Groove::isMetalFamily(genreId))
         return sectionPatternPool(sectionName);
