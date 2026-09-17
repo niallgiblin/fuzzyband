@@ -2184,7 +2184,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 emitFrozenRiff(*stored, playTakeOriginMono, numSamples,
                                static_cast<double>(bpmForPlayer), sr,
                                hostSampleTime, bassTranspose);
-            clearPendingMirror();
+            flushMirrorTriggers(numSamples, hostSampleTime + numSamples, bassTranspose,
+                                durationSamples, mirrorActive, stored, playTakeOriginMono,
+                                samplesPerBeatQ);
         }
         else if (!playOn && transitionTakeReplaying)
         {
@@ -2198,7 +2200,9 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 emitFrozenRiff(*stored, transitionReplayOriginMono, numSamples,
                                static_cast<double>(bpmForPlayer), sr,
                                hostSampleTime, bassTranspose);
-            clearPendingMirror();
+            flushMirrorTriggers(numSamples, hostSampleTime + numSamples, bassTranspose,
+                                durationSamples, mirrorActive, stored,
+                                transitionReplayOriginMono, samplesPerBeatQ);
         }
         else
         {
@@ -2787,7 +2791,10 @@ bool AccompanimentProcessor::attackInCaptureSlot(int64_t fromAbs, int64_t toAbs)
 
 void AccompanimentProcessor::flushMirrorTriggers(int numSamples, int64_t blockEndAbs,
                                                  int bassTranspose, int durationSamples,
-                                                 bool emit) noexcept
+                                                 bool emit,
+                                                 const PhraseLearner::LearnedRiff* skipOccupied,
+                                                 int64_t skipOrigin,
+                                                 double skipSamplesPerBeat) noexcept
 {
     const int64_t blockStartAbs = blockEndAbs - numSamples;
     for (int i = 0; i < pendingMirrorCount; )
@@ -2815,7 +2822,28 @@ void AccompanimentProcessor::flushMirrorTriggers(int numSamples, int64_t blockEn
         }
         // Capture pitch (no transposition): the riff recorder stamps this value.
         lastOnsetMirrorMidi = note;
-        if (!emit)
+
+        // Gap fill: while a learned riff owns the voice, the mirror is normally
+        // suppressed. But the memory can be SILENT where the guitarist is playing
+        // — measured on a real take: the capture window's first 14 sixteenths
+        // were empty (the player had not started yet), and the return looped that
+        // 1.2 s hole every 4 bars. Let the mirror fill only the 16ths the memory
+        // leaves empty, so the learned part keeps its exact grid timing and the
+        // player's extra notes are still heard.
+        bool skipForMemory = false;
+        if (emit && skipOccupied != nullptr && skipSamplesPerBeat > 0.0 && skipOrigin >= 0)
+        {
+            const double q = 0.25 * skipSamplesPerBeat;
+            if (q > 0.0)
+            {
+                const int64_t idx = static_cast<int64_t>(std::llround(
+                    static_cast<double>(p.targetAbs - skipOrigin) / q));
+                const int slots = PhraseLearner::kGridSlots;
+                const int slot = static_cast<int>(((idx % slots) + slots) % slots);
+                skipForMemory = skipOccupied->occupied[static_cast<size_t>(slot)];
+            }
+        }
+        if (!emit || skipForMemory)
         {
             for (int k = i + 1; k < pendingMirrorCount; ++k)
                 pendingMirror[static_cast<size_t>(k - 1)] = pendingMirror[static_cast<size_t>(k)];

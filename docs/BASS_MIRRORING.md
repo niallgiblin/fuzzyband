@@ -1068,3 +1068,61 @@ mechanisms, in order, for the next investigation:
    trough contract.
 3. Capture fidelity on this take: Frozen pitch-class match measured 68 % on 1155
    vs 79 % on 1323, which needs its own look.
+
+---
+
+## 23. Replay suppression: the memory was looping a hole (1.0.31)
+
+Chased the §22.4 candidate #1. The mechanism is real and was measurable.
+
+### 23.1 What the return pass actually looked like
+
+Per-second audit of the 1155 play take (`[di]`): the first pass (VERSE 3–12 s,
+CHORUS 13–23 s) mirrored live — 119 attacks → 165 mirror notes. The return
+(VERSE 24–35 s, CHORUS 36–47 s) had **120 attacks and emitted 130 notes, all
+`Frozen`** — i.e. the stored riff, with the mirror fully suppressed.
+
+Comparing the DI's per-16th pitch class between the two passes:
+
+```
+VERSE  pass1: . . . . . . . . . . . . . . D D D D F F F F A A A A D D D D F
+       pass2: F# A A A A A A A A A A A A A A D D D D F F F F A A A A D D D D F
+CHORUS pass1: F F F A A A A E E A A G# G# G G F C C C C F F F F F F F F F F F F
+       pass2: F F F A A A A E E A A G# G# G# G G C . . . . . F F F F F F F F F F
+```
+
+- **VERSE: 100 % agreement** where both passes are voiced. The memory is *not*
+  stale. But the capture's **first 14 sixteenths are empty** — the player had not
+  started yet when the capture window opened at the section's bar 1 — while pass 2
+  plays from slot 0. So on every return the bass was **silent for the first
+  ~1.2 s**, and looped that hole every 4 bars. That is the missing notes.
+- **CHORUS: 78 % agreement.** Here the player genuinely varies between passes, so
+  the memory is a stale phrase for ~22 % of the slots.
+
+### 23.2 The fix: the memory owns its slots, the mirror fills its silence
+
+While a learned riff replays, the mirror is no longer dropped wholesale. It
+flushes normally but **skips any 16th the memory already occupies**
+(`flushMirrorTriggers(..., skipOccupied, skipOrigin, skipSamplesPerBeat)`).
+
+- The learned part keeps its exact grid placement — measured 0.0 ms phase error,
+  unchanged.
+- Where the memory is silent and the player is not, the note is heard.
+
+Measured on 1155: Mirror 165 → 183, total notes 305 → 323, pitch match
+70.5 % → 71.2 %, Frozen unchanged at 130. On the 1152 contrast (memory 64/64
+occupied) the mirror still contributes **zero** — nothing to fill.
+
+This changes the §5.5 voice-ownership decision from *"the replay is
+authoritative"* to *"the replay is primary and the mirror may fill only its
+gaps"*. The real-audio Step-2 guard was re-encoded accordingly:
+`stats[2].mirror == 0` → `stats[2].mirror < stats[2].frozen` plus the existing
+`frozen > 0` / `frozenNotes` non-empty checks. If this is not wanted, one call
+site reverts it to `clearPendingMirror()`.
+
+### 23.3 Still open
+
+Where the memory has a note with the **wrong** pitch (the CHORUS 22 %), gap-fill
+does nothing — the memory's note wins. Fixing that needs either a better capture
+(so the memory matches the player's other passes) or mirror-primary on returns,
+which would give up the exact grid timing. Documented, not done.

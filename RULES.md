@@ -1,7 +1,7 @@
 # Fuzzyband Rules — How the Plugin Thinks
 
 **Audience:** anyone who wants to understand the product without being a DSP engineer.  
-**Authority:** verified against live source at **v1.0.30** (`CMakeLists.txt` line 4).  
+**Authority:** verified against live source at **v1.0.31** (`CMakeLists.txt` line 4).  
 **Companion docs:** `docs/CONTEXT_HANDOFF.md` (engineer briefing), `docs/BASS_MIRRORING.md` (bass bug history — some early sections are stale; trust this file + code for current behaviour).
 
 If a older doc disagrees with this file, **believe the code**. This document exists because that happens often.
@@ -437,4 +437,4 @@ Idle:   silence until you arm something
 
 ---
 
-*Last verified against source: v1.0.30. When behaviour changes, update this file in the same change that updates the code — do not leave it to a later “docs pass.”*
+*Last verified against source: v1.0.31. When behaviour changes, update this file in the same change that updates the code — do not leave it to a later “docs pass.”*
