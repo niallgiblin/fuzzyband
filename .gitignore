@@ -26,6 +26,18 @@ _deps/
 # GSD planning (local only)
 .planning/
 
+# Vendored third-party agent framework (local tooling, not project code)
+.cursor/
+
+# Source audio corpus — kept locally, too large to track (300 MB+)
+Media/
+data/raw/
+data/model_backup_*/
+
+# Regenerable training metadata (rebuild via training/scripts/build_mel_groove_dataset.py)
+data/processed/meta.csv
+data/processed/meta_groove.csv
+
 # Claude/GSD worktrees (stale, local only)
 .claude/worktrees/
 
@@ -37,7 +49,7 @@ training/artifacts/
 training/**/*.pt
 training/**/*.pth
 
-# Doxygen (optional local HTML — see Doxyfile / doxygen-docs target)
+# Doxygen (optional local HTML)
 docs/doxygen/html/
 
 # Terraform (Phase 16 — local state backend config + plugin dir)

@@ -575,20 +575,6 @@ target_link_libraries(MetalAccompanimentExportPatterns PRIVATE
     juce::juce_core
 )
 
-# ─────────────────────────────────────────────────────────────────
-# API docs (optional — requires Doxygen on PATH)
-# ─────────────────────────────────────────────────────────────────
-
-find_program(DOXYGEN_EXECUTABLE NAMES doxygen)
-if(DOXYGEN_EXECUTABLE)
-    add_custom_target(doxygen-docs
-        COMMAND "${DOXYGEN_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/Doxyfile"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        COMMENT "Generating Doxygen HTML API documentation (docs/doxygen/html/)"
-        VERBATIM
-    )
-endif()
-
 # JUCE's VST3 helper writes moduleinfo.json AFTER the bundle is codesigned,
 # which invalidates the seal. macOS then refuses to load the plugin in a
 # signed host (REAPER): "library load disallowed by system policy".
