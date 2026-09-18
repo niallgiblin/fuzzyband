@@ -18,6 +18,18 @@ constexpr int kRideBell  = 53;
 constexpr int kTomHi     = 48;
 constexpr int kTomMid    = 45;
 
+// GMD fill-bank voice index -> GM drum note (mirror GrooveGrid voice mapping).
+inline int bankVoiceToNote(int voice) noexcept
+{
+    switch (voice)
+    {
+        case 0: return 36;  case 1: return 38;  case 2: return 42;  case 3: return 46;
+        case 4: return 51;  case 5: return 53;  case 6: return 41;  case 7: return 45;
+        case 8: return 48;  case 9: return 49;
+        default: return -1;
+    }
+}
+
 // ── Ornamentation probabilities (per-bar, percent). Deterministic per bar. ──
 constexpr int kOpenHatPctChorus    = 18;  // chorus/solo loosen up
 constexpr int kOpenHatPctElse      = 8;
@@ -145,6 +157,7 @@ void PatternPlayer::setGenrePreset(int presetId) noexcept
     preset = Groove::presetFor(presetId);
     grooveTemplate = Groove::templateFor(preset.templateId);
     currentTemplateId = preset.templateId;
+    fillGenreBias_ = Groove::genreFillBias(presetId);   // 39-04 fill-tier bias
     ghostDensity = preset.ghostDensity;
     // The swing knob is user-owned; preset.defaultSwing is applied by the
     // editor when the user changes genre, so we do not override it here.
@@ -763,6 +776,49 @@ void PatternPlayer::emitCrashHit(juce::MidiBuffer& midi,
     midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, kCrashNote, 0.9f), off);
 }
 
+int PatternPlayer::computeFillTier() const noexcept
+{
+    const bool quiet = (sectionId == Groove::SongSectionId::Breakdown
+                     || sectionId == Groove::SongSectionId::Outro);
+    const bool dense = (fillEnergy_ >= 0.45f) || (fillDensity_ >= 1.8f);
+    const bool mid = !dense && (fillEnergy_ >= 0.20f);
+    int tier = dense ? 2 : (mid ? 1 : 0);
+    if (quiet)
+        tier = 0;
+    tier += fillCue_;   // 39-02: swell -> bigger, drop-out -> smaller
+    tier += fillGenreBias_;   // 39-04: fast styles denser, slow styles sparser
+    return juce::jlimit(0, 2, tier);
+}
+
+int PatternPlayer::selectBankFillIndex(int tier, bool allowCrash, unsigned seed) const noexcept
+{
+    int matches[FillBank::kFillCount];
+    int n = 0;
+    for (int i = 0; i < FillBank::kFillCount; ++i)
+    {
+        const FillBank::FillDef& f = FillBank::kFills[i];
+        if (f.eventCount <= 0)
+            continue;
+        const bool tierOk = (tier >= 2) ? (f.eventCount >= 16)
+                          : (tier == 1) ? (f.eventCount >= 10 && f.eventCount <= 15)
+                                        : (f.eventCount <= 9);
+        if (!tierOk)
+            continue;
+        if (!allowCrash)
+        {
+            bool crash = false;
+            for (int k = 0; k < f.eventCount; ++k)
+                if (f.events[static_cast<size_t>(k)].voice == 9) { crash = true; break; }
+            if (crash)
+                continue;
+        }
+        matches[n++] = i;
+    }
+    if (n == 0)
+        return -1;
+    return matches[static_cast<int>(barHash(seed, 0x39u) % static_cast<unsigned>(n))];
+}
+
 Groove::Template PatternPlayer::effectiveTemplate() const noexcept
 {
     // Per-pattern feel is a humanisation layer: with ornaments off, the plain
@@ -871,14 +927,52 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
 
     if (humanizeAmount > 0.0f)
     {
-        // Phase 37 A1: a generated fill from the deterministic grammar. The score
-        // is a pure function of the bar context, so the render stays buffer-size
-        // invariant (T9.2) and repeatable across bounces.
-        const FillGrammar::FillScore score = currentFillScore(fillPatternIndex, barStart);
-        for (int i = 0; i < score.count; ++i)
+        // Phase 39-01: play a real, GMD-mined fill from the bank, tiered by the
+        // live energy/density and coloured by the section. Phase 37's generative
+        // grammar is the fallback when no bank fill matches (e.g. a quiet section
+        // that would need a crash-free sparse fill the bank cannot supply).
+        const bool quietSec = (sectionId == Groove::SongSectionId::Breakdown
+                            || sectionId == Groove::SongSectionId::Outro);
+        const int tier = fillTierLatched_;
+        const int bankIdx = selectBankFillIndex(
+            tier, !quietSec, static_cast<unsigned>(std::llround(fillBarStart / 4.0)));
+
+        if (bankIdx >= 0)
         {
-            const auto& e = score.events[static_cast<size_t>(i)];
-            emitOne(e.note, e.velocity, e.beatOffset, e.durationBeats, e.isGhost);
+            const FillBank::FillDef& def = FillBank::kFills[bankIdx];
+            bool landing = false;
+            for (int i = 0; i < def.eventCount; ++i)
+            {
+                const FillBank::FillEvent& e = def.events[static_cast<size_t>(i)];
+                const int note = bankVoiceToNote(e.voice);
+                if (note < 0)
+                    continue;
+                const double beatOffset = static_cast<double>(e.cell) * 0.25
+                                        + static_cast<double>(e.off16) * 0.00025;
+                const bool longNote = (note == 46 || note == 51 || note == 53 || note == 49);
+                const int vel = static_cast<int>(e.vel);
+                emitOne(note, vel, static_cast<float>(beatOffset),
+                        longNote ? 1.0f : 0.25f, vel <= 45);
+                if (beatOffset >= 3.5)
+                    landing = true;
+            }
+            // Land the phrase into the next downbeat when the bank fill ends early
+            // (the authored fills all did; keeps the "fills always land" contract).
+            if (!landing)
+            {
+                const bool crash = (tier >= 2) && !quietSec;
+                emitOne(crash ? kCrashNote : kKick, crash ? 118 : 108,
+                        3.75f, crash ? 2.0f : 0.25f, false);
+            }
+        }
+        else
+        {
+            const FillGrammar::FillScore score = currentFillScore(fillPatternIndex, barStart);
+            for (int i = 0; i < score.count; ++i)
+            {
+                const auto& e = score.events[static_cast<size_t>(i)];
+                emitOne(e.note, e.velocity, e.beatOffset, e.durationBeats, e.isGhost);
+            }
         }
     }
     else
@@ -975,7 +1069,8 @@ void PatternPlayer::emitExtraOrnaments(juce::MidiBuffer& midi,
         // Absolute-sample placement with the same structured microtiming +
         // bounded jitter the pattern's own notes use, so the additions sit in
         // the groove rather than on top of it.
-        const auto addHit = [&](int note, int vel, int cell, double beatOffset) noexcept
+        const auto addHit = [&](int note, int vel, int cell, double beatOffset,
+                                double durBeats = 0.125) noexcept
         {
             const double ms = static_cast<double>(tpl.timingMs[cell])
                             + static_cast<double>(eventGaussian(eventBar, cell, note,
@@ -988,7 +1083,7 @@ void PatternPlayer::emitExtraOrnaments(juce::MidiBuffer& midi,
             if (absOff < 0)
                 return;
             const int durSamps = juce::jmax(1,
-                static_cast<int>(std::round(0.125 * samplesPerBeat)));
+                static_cast<int>(std::round(durBeats * samplesPerBeat)));
             const int outVel = applyVelocityHeadroom(vel);
             scheduleDrumNoteOff(midi, numSamples, sampleCounter, note, absOff, durSamps);
             midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, note,
@@ -1004,9 +1099,14 @@ void PatternPlayer::emitExtraOrnaments(juce::MidiBuffer& midi,
             addHit(kRideBell, 100, o.rideBellCell, o.rideBellCell * 0.25);
         if (o.snareFlam)
         {
-            // A 32nd grace note before the authored backbeat; the backbeat itself
-            // is emitted by the pattern, so only the grace note is added here.
-            addHit(kSnare, 58, o.snareFlamCell, o.snareFlamCell * 0.25 - 0.125);
+            // A grace note a fixed ~20 ms before the authored backbeat. A real
+            // flam is 15-40 ms; a 1/32 note was 78 ms at 96 BPM (a drag, not a
+            // flam). A very short gate keeps the grace's note-off *before* the
+            // backbeat, so the same-note retrigger never straddles a block
+            // boundary (which would break T9.2 buffer-size invariance).
+            const double graceBeats = 0.020 * static_cast<double>(bpm) / 60.0;
+            addHit(kSnare, 40, o.snareFlamCell,
+                   static_cast<double>(o.snareFlamCell) * 0.25 - graceBeats, 0.015);
         }
     }
 }
@@ -1589,6 +1689,11 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         ? ((barFillStartBeat_ >= 0.0) ? barFillStartBeat_ : std::floor(beatStart / 4.0) * 4.0)
         : beatEnd;
     const bool fillEmitting = pendingBarFillIndex_ >= 17 && beatEnd > fillOrigin + 1.0e-12;
+    // Latch the fill tier at the fill's first block so the bank entry cannot swap
+    // mid-fill as the live energy moves.
+    if (fillEmitting && !fillWasEmitting_)
+        fillTierLatched_ = computeFillTier();
+    fillWasEmitting_ = fillEmitting;
     const double fillCut = fillEmitting
         ? fillGrooveCutBeat(pendingBarFillIndex_, fillOrigin)
         : beatEnd;

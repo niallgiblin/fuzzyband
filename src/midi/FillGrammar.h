@@ -174,10 +174,10 @@ inline FillScore buildFill(const FillContext& ctx) noexcept
     const bool quietSection  = (sec == Groove::SongSectionId::Breakdown
                              || sec == Groove::SongSectionId::Outro);
 
-    // Dense fills are tom-forward (punk feedback 2026-09-18: the authored fills
-    // were tom rolls and the generated ones lost them). The first assembled cell
-    // is forced to a tom cascade so every dense fill reads as a fill, not a groove.
-    const bool tomForward = dense && !quietSection;
+    // 39-03: mid AND dense fills are tom-forward so they read as fills, not
+    // grooves (the real-take audit found mid-tier fills arriving tom-less on Hard
+    // Rock). Sparse fills stay kick/flam — a quiet fill does not need toms.
+    const bool tomForward = (dense || mid) && !quietSection;
 
     // ── Allowed cell vocabulary by tier (fixed order; selection is hash-driven).
     // A quiet section (breakdown/outro) collapses to the sparse set and never

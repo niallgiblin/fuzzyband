@@ -2041,3 +2041,121 @@ TEST_CASE("38-02: ornaments react to the committed playing style", "[midi][ornam
     // Palm-mute chugs reinforce with kick doubles; sustain backs off.
     REQUIRE(count(0, false) > count(3, false));
 }
+
+// ── Phase 39-01: GMD fill bank wired into the live fill path ─────────────────
+
+TEST_CASE("39-01: bank fill density scales with the energy tier", "[midi][fill][bank][39-01]")
+{
+    MidiPatternLibrary lib;
+    auto count = [&](float energy)
+    {
+        PatternPlayer p;
+        p.setPatternLibrary(&lib);
+        p.prepare(48000.0, 512);
+        p.setRandomSeed(5);
+        p.snapBpm(120.0f);
+        p.setStructureSilent(false);
+        p.setPatternIndex(1);
+        p.setHumanize(1.0f);
+        p.setFillEnergy(energy);
+        p.setFillDensity(0.5f);
+        p.setSection(Groove::SongSectionId::Chorus);
+        p.armBarFillAtBeat(19, 0.0);
+        const auto ev = MidiProbe::render(p, (96000 + 511) / 512, 512, 0);
+        int n = 0;
+        for (const auto& e : ev)
+            if (e.isNoteOn && e.channel == 10) ++n;
+        return n;
+    };
+    // A loud fill must draw a denser bank entry than a quiet one.
+    REQUIRE(count(0.80f) > count(0.05f));
+}
+
+// ── Phase 39-02: playing-cue nudges the fill tier ────────────────────────────
+
+TEST_CASE("39-02: the playing cue shifts the fill tier by one step", "[midi][fill][cue][39-02]")
+{
+    MidiPatternLibrary lib;
+    auto count = [&](int cue)
+    {
+        PatternPlayer p;
+        p.setPatternLibrary(&lib);
+        p.prepare(48000.0, 512);
+        p.setRandomSeed(9);
+        p.snapBpm(120.0f);
+        p.setStructureSilent(false);
+        p.setPatternIndex(1);
+        p.setHumanize(1.0f);
+        p.setFillEnergy(0.30f);   // mid tier
+        p.setFillDensity(1.0f);
+        p.setFillCue(cue);
+        p.setSection(Groove::SongSectionId::Chorus);
+        p.armBarFillAtBeat(19, 0.0);
+        const auto ev = MidiProbe::render(p, (96000 + 511) / 512, 512, 0);
+        int n = 0;
+        for (const auto& e : ev)
+            if (e.isNoteOn && e.channel == 10) ++n;
+        return n;
+    };
+    // A windup (+1) draws a denser tier than a drop-out (-1), same energy.
+    REQUIRE(count(+1) > count(0));
+    REQUIRE(count(0) > count(-1));
+}
+
+TEST_CASE("39-01/39-02: bank fill stays consistent across the fill bar", "[midi][fill][bank][39-01]")
+{
+    // The tier is latched at the fill start, so a fill rendered at 128/512/2048
+    // must be identical (no mid-fill bank swap).
+    MidiPatternLibrary lib;
+    auto render = [&](int block)
+    {
+        PatternPlayer p;
+        p.setPatternLibrary(&lib);
+        p.prepare(48000.0, block);
+        p.setRandomSeed(3);
+        p.snapBpm(120.0f);
+        p.setStructureSilent(false);
+        p.setPatternIndex(1);
+        p.setHumanize(1.0f);
+        p.setFillEnergy(0.70f);
+        p.setFillDensity(2.0f);
+        p.setSection(Groove::SongSectionId::Chorus);
+        p.armBarFillAtBeat(19, 0.0);
+        const int64_t span = 2048 * 188;
+        return MidiProbe::render(p, static_cast<int>(span / block), block, 0);
+    };
+    const auto a = render(128);
+    const auto c = render(2048);
+    REQUIRE_FALSE(a.empty());
+    REQUIRE(MidiProbe::fingerprint(a) == MidiProbe::fingerprint(c));
+}
+
+// ── Phase 39-04: per-genre fill-density bias ─────────────────────────────────
+
+TEST_CASE("39-04: fast genres draw denser fills than slow genres", "[midi][fill][genre][39-04]")
+{
+    MidiPatternLibrary lib;
+    auto count = [&](int genre)
+    {
+        PatternPlayer p;
+        p.setPatternLibrary(&lib);
+        p.prepare(48000.0, 512);
+        p.setRandomSeed(4);
+        p.snapBpm(120.0f);
+        p.setStructureSilent(false);
+        p.setPatternIndex(1);
+        p.setHumanize(1.0f);
+        p.setGenrePreset(genre);
+        p.setFillEnergy(0.30f);   // mid energy -> tier 1 before the genre bias
+        p.setFillDensity(1.0f);
+        p.setSection(Groove::SongSectionId::Chorus);
+        p.armBarFillAtBeat(19, 0.0);
+        const auto ev = MidiProbe::render(p, (96000 + 511) / 512, 512, 0);
+        int n = 0;
+        for (const auto& e : ev)
+            if (e.isNoteOn && e.channel == 10) ++n;
+        return n;
+    };
+    // Thrash (5) biases +1, Doom (8) biases -1: same energy, denser vs sparser.
+    REQUIRE(count(5) > count(8));
+}

@@ -914,6 +914,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const int64_t rhythmWindowSamples = static_cast<int64_t>(8.0 * (60.0 / juce::jmax(1.0, static_cast<double>(bpmForPlayer))) * sr);
     fv.onsetDensityPerBeat = phraseLearner.getOnsetDensityPerBeat(
         hostSampleTime, rhythmWindowSamples, samplesPerBeatLocal);
+    lastOnsetDensity_ = fv.onsetDensityPerBeat;
     fv.onsetIoiBeats = (samplesPerBeatLocal > 0.0)
         ? static_cast<float>(phraseLearner.getMeanIoiSamples(hostSampleTime, rhythmWindowSamples) / samplesPerBeatLocal)
         : 0.0f;
@@ -1315,6 +1316,30 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const float alpha = 1.0f - std::exp(-blockSec / kEnergyTauSec);
     guitarEnergyRms_ += alpha * (rms - guitarEnergyRms_);
     patternPlayer.setGuitarEnergy(PatternPlayer::guitarEnergyFromRms(guitarEnergyRms_));
+
+    // 39-02: fill-cue detection. Latch a per-bar cue from the energy trend and the
+    // pick density: a swell while picking densely makes the next fill bigger (+1),
+    // a drop-out makes it smaller (-1). Bar-latched so the fill tier is stable for
+    // the whole fill (and so 128/512/2048 renders stay identical).
+    if (playOn)
+    {
+        const auto globalBar = structureSequencer.getGlobalBarCount();
+        if (globalBar != lastCueBar_)
+        {
+            const float rise = guitarEnergyRms_ - cueEnergyPrev_;
+            cueEnergyPrev_ = guitarEnergyRms_;
+            fillCueLatch_ = 0;
+            if (rise > 0.02f && lastOnsetDensity_ >= 1.8f) fillCueLatch_ = 1;
+            else if (rise < -0.03f)                        fillCueLatch_ = -1;
+            lastCueBar_ = globalBar;
+        }
+    }
+    else
+    {
+        fillCueLatch_ = 0;
+        lastCueBar_ = -1;
+    }
+    patternPlayer.setFillCue(fillCueLatch_);
 
     // ── 7. Silence gating ───────────────────────────────────────────────────
     // Item: "only starts listening at Record riff / Play" — the plugin is idle

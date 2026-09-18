@@ -18,6 +18,7 @@
 #include "GrooveGrid.h"
 #include "BassVoice.h"
 #include "FillGrammar.h"
+#include "FillBankData.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -273,6 +274,11 @@ public:
     void setFillDensity(float attacksPerBeat) noexcept { fillDensity_ = juce::jlimit(0.0f, 8.0f, attacksPerBeat); }
     void setFillStyle(int style) noexcept { fillStyle_ = style; }
 
+    /** @brief Playing-cue nudge for the fill tier (Phase 39-02): +1 = the guitarist
+     *  is winding up (swell + dense picking), -1 = dropping out, 0 = neutral.
+     *  Latched per bar by the processor; nudges the bank tier by one step. */
+    void setFillCue(int cue) noexcept { fillCue_ = juce::jlimit(-1, 1, cue); }
+
     /**
      * @brief Map a long-window RMS onto the bidirectional energy multiplier.
      *        Silence sits at 0.94 (below unity); a hot signal reaches 1.20.
@@ -349,6 +355,16 @@ private:
      *  Returns the plain genre template when humanize is off, so humanize=0 output
      *  stays byte-identical to pre-C1. Audio thread; returns a fixed-size POD copy. */
     Groove::Template effectiveTemplate() const noexcept;
+
+    /** @brief Pick a GMD fill-bank entry for the energy tier (Phase 39-01).
+     *  @p tier 0=sparse,1=mid,2=dense; @p allowCrash false excludes crash fills.
+     *  Returns an index into FillBank::kFills, or -1 when none matches. Pure. */
+    int selectBankFillIndex(int tier, bool allowCrash, unsigned seed) const noexcept;
+
+    /** @brief Live fill tier 0=sparse,1=mid,2=dense from energy/density + the
+     *  playing cue. Latched at the fill's first block so it stays constant for the
+     *  whole fill (a mid-fill tier change would swap the bank entry). */
+    int computeFillTier() const noexcept;
 
     /**
      * @brief Route bass for a range: authored pattern bass, else harmonic fallback.
@@ -531,6 +547,10 @@ private:
     float fillEnergy_ = 0.0f;                   // raw input RMS [0,1]
     float fillDensity_ = 0.0f;                  // guitar onset density (attacks/beat)
     int   fillStyle_ = -1;                      // committed style -1..3
+    int   fillCue_ = 0;                         // playing-cue nudge -1..+1 (39-02)
+    int   fillGenreBias_ = 0;                   // per-genre fill-tier bias (39-04)
+    int   fillTierLatched_ = 1;                 // tier latched at the fill's start
+    bool  fillWasEmitting_ = false;             // fill edge detector for the latch
     float sectionVelMul = 1.0f;                 // preset section multiplier (A3.1)
     float ghostDensity = 0.0f;                  // 0..1 (A3.2)
     float guitarEnergy = 1.0f;                  // guitarist-energy dynamic (drums + bass)

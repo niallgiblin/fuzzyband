@@ -325,4 +325,34 @@ inline bool isMetalFamily(int genreId) noexcept
     return presetFor(genreId).family == GenreFamily::Metal;
 }
 
+/**
+ * @brief Per-genre fill-density bias for the GMD fill bank tier (Phase 39-04).
+ *
+ * The bank is one rock/punk corpus, so without this every genre drew the same
+ * fill notes for a given energy. Fast, busy styles pull the dense tier; slow,
+ * heavy styles pull the sparse tier. The value is added to the energy tier and
+ * clamped, so it nudges rather than overrides the live dynamics.
+ *
+ * Genre ids (see @ref presets): 0 Rock, 1 Hard Rock, 2 Punk, 3 Metal, 4 Sludge,
+ * 5 Thrash, 6 Death, 7 Black, 8 Doom, 9 Djent, 10 Classic Rock, 11 Alternative,
+ * 12 Grunge.
+ */
+inline int genreFillBias(int genreId) noexcept
+{
+    switch (genreId)
+    {
+        case 2:  // Punk
+        case 5:  // Thrash Metal
+        case 6:  // Death Metal
+        case 7:  // Black Metal
+        case 9:  // Djent
+            return 1;
+        case 4:  // Sludge
+        case 8:  // Doom Metal
+            return -1;
+        default: // Rock-leaning + Metal: neutral (the energy tier decides)
+            return 0;
+    }
+}
+
 } // namespace Groove

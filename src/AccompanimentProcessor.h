@@ -680,6 +680,11 @@ private:
     // off and above it when they dig in. Audio-thread state.
     float prevBlockRms = 0.0f;
     float guitarEnergyRms_ = 0.0f;
+    // 39-02 fill-cue detection (Play only): per-bar energy trend + pick density.
+    float lastOnsetDensity_ = 0.0f;
+    float cueEnergyPrev_ = 0.0f;
+    int   fillCueLatch_ = 0;
+    int   lastCueBar_ = -1;
 
     std::atomic<double> cachedSampleRate{ 44100.0 };
     std::atomic<int> debugPreviewSamplesRemaining{ 0 };
