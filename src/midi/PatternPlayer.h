@@ -59,6 +59,15 @@ public:
         bool dropKick = false;      // omit one non-downbeat/beat-3 kick
         int  dropKickCell = -1;
         bool microFill = false;     // tom pickup at the end of a 4-bar phrase
+
+        // Tier-0 additive ornaments (B): each is a NEW note, not a modification
+        // of an existing event. Every cell is chosen so it never collides with an
+        // authored pattern voice or another ornament, except snareFlam which is a
+        // deliberate grace note immediately before an authored backbeat snare.
+        bool extraTom = false;       int extraTomCell = -1;    // accent on an empty off-16th
+        bool kickDouble = false;     int kickDoubleCell = -1;  // 16th kick before a beat-1/3 kick
+        bool snareFlam = false;      int snareFlamCell = -1;   // grace hit before a backbeat snare
+        bool rideBellAccent = false; int rideBellCell = -1;    // bell on a phrase downbeat
     };
 
     /**
@@ -312,6 +321,14 @@ private:
                        double beatStart,
                        double beatEnd,
                        int sampleOffsetBase) noexcept;
+
+    /** @brief Tier-0 additive ornaments (B): extra tom, kick double, snare flam,
+     *  ride-bell accent. Absolute-sample placement, bounded to <=4 notes/bar. */
+    void emitExtraOrnaments(juce::MidiBuffer& midi,
+                            int numSamples,
+                            double beatStart,
+                            double beatEnd,
+                            int sampleOffsetBase) noexcept;
 
     /**
      * @brief Route bass for a range: authored pattern bass, else harmonic fallback.

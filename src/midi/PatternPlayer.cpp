@@ -27,6 +27,12 @@ constexpr int kExtraGhostPct       = 15;  // verse/breakdown only
 constexpr int kDropKickPctBreak    = 12;  // breakdown/outro leave space
 constexpr int kMicroFillPct        = 12;  // phrase-end bars only
 
+// B: additive per-bar ornaments (new notes, not modifications).
+constexpr int kExtraTomPct         = 12;  // verse/breakdown/solo empty off-16th
+constexpr int kKickDoublePct       = 10;  // 16th before a beat-1/beat-3 kick
+constexpr int kSnareFlamPct        = 8;   // grace hit before a backbeat snare
+constexpr int kRideBellAccentPct   = 10;  // bell on a phrase downbeat
+
 // Distinct salts so each ornament decision is an independent draw.
 constexpr unsigned kSaltOpenHat      = 0x11u;
 constexpr unsigned kSaltOpenHatCell  = 0x12u;
@@ -36,6 +42,16 @@ constexpr unsigned kSaltGhostCell    = 0x32u;
 constexpr unsigned kSaltKickDrop     = 0x41u;
 constexpr unsigned kSaltKickDropCell = 0x42u;
 constexpr unsigned kSaltMicroFill    = 0x51u;
+
+// B: additive-ornament salts (independent of every salt above).
+constexpr unsigned kSaltExtraTom       = 0x61u;
+constexpr unsigned kSaltExtraTomCell   = 0x62u;
+constexpr unsigned kSaltKickDouble     = 0x63u;
+constexpr unsigned kSaltKickDoubleCell = 0x64u;
+constexpr unsigned kSaltFlam           = 0x65u;
+constexpr unsigned kSaltFlamCell       = 0x66u;
+constexpr unsigned kSaltRideBell       = 0x67u;
+constexpr unsigned kSaltRideBellCell   = 0x68u;
 
 // T3.4: per-event humanisation salts (independent of the ornament salts above).
 constexpr unsigned kSaltDrumTime  = 0xA1u;
@@ -359,9 +375,12 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
     int closedHatCells[16]; int closedHatCount = 0;
     int kickCells[16];      int kickCount = 0;
     bool snareOccupied[16] = {};
+    bool anyOccupied[16] = {};   // any voice on the cell (B collision guard)
+    bool rideBellAt[16] = {};
     for (const auto& ev : p.drumEvents)
     {
         const int cell = Groove::grid16Of(ev.beatOffset);
+        anyOccupied[cell] = true;
         if (ev.note == kHatClosed)
         {
             hasClosedHat = true;
@@ -370,6 +389,7 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
         else if (ev.note == kRide || ev.note == kRideBell)
         {
             hasRide = true;
+            if (ev.note == kRideBell) rideBellAt[cell] = true;
         }
         else if (ev.note == kKick)
         {
@@ -396,6 +416,10 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
         if (o.openHat && o.openHatCell == cell) return true;
         if (o.extraGhost && o.extraGhostCell == cell) return true;
         if (o.dropKick && o.dropKickCell == cell) return true;
+        if (o.extraTom && o.extraTomCell == cell) return true;
+        if (o.kickDouble && o.kickDoubleCell == cell) return true;
+        if (o.snareFlam && o.snareFlamCell == cell) return true;
+        if (o.rideBellAccent && o.rideBellCell == cell) return true;
         return false;
     };
 
@@ -492,6 +516,100 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
         const int pct = scaledPct(kMicroFillPct);
         if (pct > 0 && barChance(barNumber, kSaltMicroFill, pct))
             o.microFill = true;
+    }
+
+    // 6) B: extra tom accent on an empty off-16th (verse/breakdown/solo).
+    if (sectionId == Groove::SongSectionId::Verse
+        || sectionId == Groove::SongSectionId::Breakdown
+        || sectionId == Groove::SongSectionId::Solo)
+    {
+        const int pct = scaledPct(kExtraTomPct);
+        if (pct > 0 && barChance(barNumber, kSaltExtraTom, pct))
+        {
+            const int tomCells[8] = { 1, 3, 5, 7, 9, 11, 13, 15 };
+            const int start = static_cast<int>(
+                barHash(static_cast<unsigned>(barNumber), kSaltExtraTomCell) % 8u);
+            for (int i = 0; i < 8; ++i)
+            {
+                const int cell = tomCells[(start + i) % 8];
+                if (!anyOccupied[cell] && !injectedGhost[cell] && !cellTaken(cell))
+                {
+                    o.extraTom = true;
+                    o.extraTomCell = cell;
+                    break;
+                }
+            }
+        }
+    }
+
+    // 7) B: kick double — a 16th kick immediately before a beat-1/beat-3 kick.
+    if (kickCount > 0)
+    {
+        const int pct = scaledPct(kKickDoublePct);
+        if (pct > 0 && barChance(barNumber, kSaltKickDouble, pct))
+        {
+            int candidates[16]; int n = 0;
+            for (int i = 0; i < kickCount; ++i)
+            {
+                if (kickCells[i] != 0 && kickCells[i] != 8)
+                    continue;
+                const int prev = (kickCells[i] + 15) % 16;
+                if (!anyOccupied[prev] && !cellTaken(prev) && n < 16)
+                    candidates[n++] = prev;
+            }
+            if (n > 0)
+            {
+                o.kickDouble = true;
+                o.kickDoubleCell = candidates[static_cast<int>(
+                    barHash(static_cast<unsigned>(barNumber), kSaltKickDoubleCell)
+                    % static_cast<unsigned>(n))];
+            }
+        }
+    }
+
+    // 8) B: snare flam — a grace hit immediately before an authored backbeat.
+    if (snareOccupied[4] || snareOccupied[12])
+    {
+        const int pct = scaledPct(kSnareFlamPct);
+        if (pct > 0 && barChance(barNumber, kSaltFlam, pct))
+        {
+            const int flamCells[2] = { 4, 12 };
+            const int start = static_cast<int>(
+                barHash(static_cast<unsigned>(barNumber), kSaltFlamCell) % 2u);
+            for (int i = 0; i < 2; ++i)
+            {
+                const int cell = flamCells[(start + i) % 2];
+                if (snareOccupied[cell] && !cellTaken(cell))
+                {
+                    o.snareFlam = true;
+                    o.snareFlamCell = cell;
+                    break;
+                }
+            }
+        }
+    }
+
+    // 9) B: ride-bell accent on a phrase accent (downbeat preferred, beat 3 as a
+    //    fallback when the downbeat is taken). Needs a ride or closed-hat voice.
+    if ((barNumber % 4) == 0 && (hasRide || hasClosedHat))
+    {
+        const int pct = scaledPct(kRideBellAccentPct);
+        if (pct > 0 && barChance(barNumber, kSaltRideBell, pct))
+        {
+            const int cells[2] = { 0, 8 };
+            const int start = static_cast<int>(
+                barHash(static_cast<unsigned>(barNumber), kSaltRideBellCell) & 1u);
+            for (int i = 0; i < 2; ++i)
+            {
+                const int cell = cells[(start + i) % 2];
+                if (!rideBellAt[cell] && !cellTaken(cell))
+                {
+                    o.rideBellAccent = true;
+                    o.rideBellCell = cell;
+                    break;
+                }
+            }
+        }
     }
 
     return o;
@@ -750,6 +868,76 @@ void PatternPlayer::emitMicroFill(juce::MidiBuffer& midi,
             continue;
         addTom(kTomHi, 105, barStart + 3.75);    // "a" of beat 4
         addTom(kTomMid, 108, barStart + 3.875);  // the very last 16th before the downbeat
+    }
+}
+
+void PatternPlayer::emitExtraOrnaments(juce::MidiBuffer& midi,
+                                       int numSamples,
+                                       double beatStart,
+                                       double beatEnd,
+                                       int sampleOffsetBase) noexcept
+{
+    // Tier-0 additive ornaments (B): NEW notes only, placed by absolute sample
+    // so the render is block-size invariant (T9.2). Bounded: <=4 notes per bar
+    // (one per BarOrnamentation flag). Requires humanize > 0, mirroring every
+    // other Tier-0 ornament.
+    (void) sampleOffsetBase;
+    if (numSamples <= 0 || humanizeAmount <= 0.0f)
+        return;
+
+    const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
+    const double samplesPerMs = sampleRate / 1000.0;
+    const double blockStartBeat = static_cast<double>(sampleCounter) / samplesPerBeat;
+    double earlyBeats = 0.0, lateBeats = 0.0;
+    microtimingSlackBeats(samplesPerBeat, samplesPerMs, 0.0, earlyBeats, lateBeats);
+    const int64_t slackSamples = static_cast<int64_t>(std::llround(lateBeats * samplesPerBeat)) + 1;
+
+    const double barLo = std::floor((beatStart - lateBeats) / 4.0) * 4.0;
+    const double barHi = beatEnd + earlyBeats;
+
+    for (double barStart = barLo; barStart < barHi - 1.0e-9; barStart += 4.0)
+    {
+        const int64_t eventBar = static_cast<int64_t>(std::floor(barStart / 4.0));
+        const auto o = computeOrnamentation(eventBar, activePatternIndex);
+        if (!o.extraTom && !o.kickDouble && !o.snareFlam && !o.rideBellAccent)
+            continue;
+
+        // Absolute-sample placement with the same structured microtiming +
+        // bounded jitter the pattern's own notes use, so the additions sit in
+        // the groove rather than on top of it.
+        const auto addHit = [&](int note, int vel, int cell, double beatOffset) noexcept
+        {
+            const double ms = static_cast<double>(grooveTemplate.timingMs[cell])
+                            + static_cast<double>(eventGaussian(eventBar, cell, note,
+                                  kSaltDrumTime, grooveTemplate.timingJitterMs));
+            const double beat = barStart + beatOffset
+                              + ms / 1000.0 * (static_cast<double>(bpm) / 60.0);
+            const int64_t absSample = sampleCounter + static_cast<int64_t>(std::llround(
+                (beat - blockStartBeat) * samplesPerBeat));
+            const int absOff = placeEvent(absSample, numSamples, slackSamples);
+            if (absOff < 0)
+                return;
+            const int durSamps = juce::jmax(1,
+                static_cast<int>(std::round(0.125 * samplesPerBeat)));
+            const int outVel = applyVelocityHeadroom(vel);
+            scheduleDrumNoteOff(midi, numSamples, sampleCounter, note, absOff, durSamps);
+            midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, note,
+                                                    static_cast<float>(outVel) / 127.0f),
+                          absOff);
+        };
+
+        if (o.extraTom)
+            addHit(kTomHi, 92, o.extraTomCell, o.extraTomCell * 0.25);
+        if (o.kickDouble)
+            addHit(kKick, 104, o.kickDoubleCell, o.kickDoubleCell * 0.25);
+        if (o.rideBellAccent)
+            addHit(kRideBell, 100, o.rideBellCell, o.rideBellCell * 0.25);
+        if (o.snareFlam)
+        {
+            // A 32nd grace note before the authored backbeat; the backbeat itself
+            // is emitted by the pattern, so only the grace note is added here.
+            addHit(kSnare, 58, o.snareFlamCell, o.snareFlamCell * 0.25 - 0.125);
+        }
     }
 }
 
@@ -1344,6 +1532,14 @@ void PatternPlayer::process(juce::MidiBuffer& midi, int numSamples, int64_t host
         const int base = juce::jmax(0, static_cast<int>(std::llround((from - beatStart) * samplesPerBeat)));
         emitDrumEventsForRange(midi, numSamples, from, to, library->getPattern(patIdx), base);
     };
+
+    // B: additive ornaments are emitted BEFORE the groove. The snare flam is a
+    // same-note (38) grace hit a 32nd before an authored backbeat, so it must be
+    // retriggered in musical-time order: the drum note-off tracker then closes the
+    // grace when the authored snare arrives, instead of the grace truncating the
+    // authored hit. Skipped during fills (the fill owns the bar).
+    if (!fillEmitting)
+        emitExtraOrnaments(midi, numSamples, beatStart, beatEnd, 0);
 
     if (changeBeat < 0.0)
     {

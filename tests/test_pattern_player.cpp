@@ -1306,6 +1306,183 @@ TEST_CASE("T4.3: humanize=0 MIDI matches a second render and differs from humani
     REQUIRE(fa != fc);
 }
 
+// ── B: additive Tier-0 ornaments (extra tom / kick double / snare flam /
+//       ride-bell accent). New notes, not modifications of authored events. ──
+
+TEST_CASE("B: additive ornaments fire, never collide, and lead correctly",
+          "[midi][ornament][B]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.setHumanize(1.0f);
+    player.setGenrePreset(0);
+    player.setSection(Groove::SongSectionId::Verse);
+
+    auto allCells = [&](int pat)
+    {
+        std::set<int> cells;
+        for (const auto& ev : lib.getPattern(pat).drumEvents)
+            cells.insert(Groove::grid16Of(ev.beatOffset));
+        return cells;
+    };
+
+    constexpr int kBars = 400;
+    int extraTom = 0, kickDouble = 0, snareFlam = 0, rideBell = 0;
+
+    for (int pat : {1, 2, 3, 7, 20})
+    {
+        const auto occupied   = allCells(pat);
+        const auto kickCells  = patternCellsForNote(lib, pat, 36);
+        const auto snareCells = patternCellsForNote(lib, pat, 38);
+        for (int64_t bar = 0; bar < kBars; ++bar)
+        {
+            const auto o = player.computeOrnamentation(bar, pat);
+            if (o.extraTom)
+            {
+                ++extraTom;
+                REQUIRE(!occupied.count(o.extraTomCell));   // no clash with any voice
+            }
+            if (o.kickDouble)
+            {
+                ++kickDouble;
+                REQUIRE(!occupied.count(o.kickDoubleCell));
+                const int lead = (o.kickDoubleCell + 1) % 16;
+                REQUIRE((lead == 0 || lead == 8));          // leads a beat-1/beat-3 kick
+                REQUIRE(kickCells.count(lead));
+            }
+            if (o.snareFlam)
+            {
+                ++snareFlam;
+                REQUIRE(snareCells.count(o.snareFlamCell)); // grace before an authored backbeat
+            }
+            if (o.rideBellAccent)
+            {
+                ++rideBell;
+                REQUIRE((o.rideBellCell == 0 || o.rideBellCell == 8));
+                REQUIRE(!patternCellsForNote(lib, pat, 53).count(o.rideBellCell));
+            }
+        }
+    }
+
+    // Reachability: each addition actually fires somewhere in the sweep.
+    REQUIRE(extraTom >= 1);
+    REQUIRE(kickDouble >= 1);
+    REQUIRE(snareFlam >= 1);
+    REQUIRE(rideBell >= 1);
+
+    // Ceiling: additions stay "a little variety", not a new groove (~<=12%/bar).
+    REQUIRE(extraTom <= 2 * kBars);
+    REQUIRE(kickDouble <= 2 * kBars);
+    REQUIRE(snareFlam <= 2 * kBars);
+}
+
+TEST_CASE("B: additive ornaments are disabled at humanize=0", "[midi][ornament][B]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.setHumanize(0.0f);
+
+    const Groove::SongSectionId sections[] = {
+        Groove::SongSectionId::Verse,     Groove::SongSectionId::Chorus,
+        Groove::SongSectionId::Breakdown, Groove::SongSectionId::Solo,
+        Groove::SongSectionId::Outro,
+    };
+    for (const auto section : sections)
+    {
+        player.setSection(section);
+        for (int64_t bar = 0; bar < 400; ++bar)
+        {
+            for (int pat : {1, 3, 22, 25})
+            {
+                const auto o = player.computeOrnamentation(bar, pat);
+                REQUIRE(!o.extraTom);
+                REQUIRE(!o.kickDouble);
+                REQUIRE(!o.snareFlam);
+                REQUIRE(!o.rideBellAccent);
+            }
+        }
+    }
+}
+
+TEST_CASE("B: additive ornaments are buffer-size invariant and deterministic",
+          "[midi][ornament][B]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer a, b, c, d, e;
+    auto prep = [&](PatternPlayer& p, int block)
+    {
+        p.setPatternLibrary(&lib);
+        p.prepare(48000.0, block);
+        p.setRandomSeed(0xB0B0);
+        p.snapBpm(120.0f);
+        p.setPatternIndex(1);   // Verse Groove: all four additions are possible
+        p.setSection(Groove::SongSectionId::Verse);
+        p.setGenrePreset(0);
+        p.setStructureSilent(false);
+        p.setSwing(0.0f);
+        p.setHumanize(1.0f);
+        p.setBeatGridBassEnabled(false);
+    };
+    prep(a, 128);
+    prep(b, 512);
+    prep(c, 2048);
+    prep(d, 512);   // identical config to b: determinism check
+    prep(e, 4096);  // large block: flam grace + authored backbeat land in ONE callback
+
+    constexpr int64_t kSpan = 2048 * 188;  // ~4 bars, divisible by 128/512/2048/4096
+    const auto ea = MidiProbe::render(a, static_cast<int>(kSpan / 128),  128,  0);
+    const auto eb = MidiProbe::render(b, static_cast<int>(kSpan / 512),  512,  0);
+    const auto ec = MidiProbe::render(c, static_cast<int>(kSpan / 2048), 2048, 0);
+    const auto ed = MidiProbe::render(d, static_cast<int>(kSpan / 512),  512,  0);
+    const auto ee = MidiProbe::render(e, static_cast<int>(kSpan / 4096), 4096, 0);
+
+    REQUIRE_FALSE(ea.empty());
+    REQUIRE(MidiProbe::fingerprint(ea) == MidiProbe::fingerprint(eb));
+    REQUIRE(MidiProbe::fingerprint(ea) == MidiProbe::fingerprint(ec));
+    REQUIRE(MidiProbe::fingerprint(eb) == MidiProbe::fingerprint(ed));
+    // Same-note retrigger ordering must not depend on the host block size: the
+    // flam grace must close when the authored backbeat arrives, never the reverse.
+    REQUIRE(MidiProbe::fingerprint(ea) == MidiProbe::fingerprint(ee));
+}
+
+TEST_CASE("B: additive ornaments never fire on Silent and scale with humanize",
+          "[midi][ornament][B]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.setSection(Groove::SongSectionId::Verse);
+    player.setGenrePreset(0);
+
+    // Pattern 0 (Silent) must never receive an additive ornament at any amount.
+    player.setHumanize(1.0f);
+    for (int64_t bar = 0; bar < 400; ++bar)
+    {
+        const auto o = player.computeOrnamentation(bar, 0);
+        REQUIRE(!o.extraTom);
+        REQUIRE(!o.kickDouble);
+        REQUIRE(!o.snareFlam);
+        REQUIRE(!o.rideBellAccent);
+    }
+
+    // Rates scale with humanizeAmount: the pct=6 firing set is a strict subset
+    // of pct=12 for the same (bar, salt), so the half-rate count can never
+    // exceed the full-rate count, and the full rate must be non-zero.
+    int full = 0, half = 0;
+    for (int pat : {1, 2, 3, 7, 20})
+        for (int64_t bar = 0; bar < 400; ++bar)
+        {
+            player.setHumanize(1.0f);
+            if (player.computeOrnamentation(bar, pat).extraTom) ++full;
+            player.setHumanize(0.5f);
+            if (player.computeOrnamentation(bar, pat).extraTom) ++half;
+        }
+    REQUIRE(full > 0);
+    REQUIRE(half <= full);
+}
+
 TEST_CASE("T5.3: a ringing mirror owns the bass; the grid resumes after its gate", "[midi][bass][t5.3]")
 {
     // Mirror-primary contract. Live-mirror notes are 0.85 beat long, so a pick
