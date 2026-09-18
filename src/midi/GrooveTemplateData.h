@@ -42,4 +42,13 @@ inline constexpr float kPunkGhostVelocityLo = 30.0f;
 inline constexpr float kPunkGhostVelocityHi = 55.0f;
 inline constexpr unsigned char kPunkGhostThreshold = 62;
 
+// Per-pattern feel (Phase 37 C1). Derived from the committed pattern MIDI
+// (data/pattern_midi) — machine-independent. Applied at render time as a
+// blend on top of the genre template so the 28 patterns do not all share
+// one velocity/timing curve. Pattern 0 (Silent) is the identity.
+inline constexpr int kPatternFeelCount = 28;
+inline constexpr float kPatternAccentDepth[kPatternFeelCount] = { 1.000f, 0.976f, 1.081f, 0.700f, 0.943f, 0.700f, 1.079f, 1.030f, 0.700f, 1.080f, 0.940f, 1.117f, 0.922f, 0.911f, 0.918f, 1.016f, 1.241f, 0.906f, 0.817f, 0.700f, 0.700f, 0.700f, 1.010f, 1.057f, 1.003f, 0.892f, 1.007f, 1.077f };
+inline constexpr float kPatternTimingScale[kPatternFeelCount] = { 1.000f, 0.688f, 0.786f, 0.400f, 0.665f, 0.400f, 0.776f, 0.743f, 0.400f, 0.976f, 0.657f, 0.821f, 0.636f, 0.660f, 0.643f, 0.710f, 0.929f, 0.614f, 0.529f, 0.400f, 0.400f, 0.400f, 0.710f, 0.755f, 0.710f, 0.614f, 0.702f, 0.743f };
+inline constexpr float kPatternJitterScale[kPatternFeelCount] = { 1.000f, 0.792f, 0.857f, 0.600f, 0.777f, 0.600f, 0.851f, 0.829f, 0.600f, 0.984f, 0.771f, 0.881f, 0.758f, 0.773f, 0.762f, 0.806f, 0.953f, 0.743f, 0.686f, 0.600f, 0.600f, 0.600f, 0.806f, 0.836f, 0.806f, 0.743f, 0.801f, 0.829f };
+
 } // namespace Groove::data

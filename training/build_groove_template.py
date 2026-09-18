@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import statistics
 import sys
 from collections import defaultdict
@@ -47,6 +48,7 @@ _DEFAULT_GMD_GLOB = (
 )
 _DEFAULT_JSON_OUT = _REPO_ROOT / "data/groove_templates.json"
 _DEFAULT_HEADER_OUT = _REPO_ROOT / "src/midi/GrooveTemplateData.h"
+_DEFAULT_PATTERN_MIDI_DIR = _REPO_ROOT / "data" / "pattern_midi"
 
 # General MIDI drum note → coarse instrument bucket (only used for ghost/pocket stats).
 _KICK = {35, 36}
@@ -299,7 +301,7 @@ def _fmt_arr(values: list[float]) -> str:
     return ", ".join(f"{v:.4f}f" for v in values)
 
 
-def _emit_header(templates: dict, out_path: Path) -> None:
+def _emit_header(templates: dict, feels: list, out_path: Path) -> None:
     """Generate src/midi/GrooveTemplateData.h with the baked constants."""
     lines = [
         "#pragma once",
@@ -332,9 +334,105 @@ def _emit_header(templates: dict, out_path: Path) -> None:
         lines.append(f"inline constexpr float k{name.capitalize()}GhostVelocityHi = {t['ghostVelocityHi']:.1f}f;")
         lines.append(f"inline constexpr unsigned char k{name.capitalize()}GhostThreshold = {t['ghostThreshold']};")
         lines.append("")
+
+    # ── Per-pattern feel (Phase 37 C1) ──────────────────────────────────────
+    lines.append("// Per-pattern feel (Phase 37 C1). Derived from the committed pattern MIDI")
+    lines.append("// (data/pattern_midi) — machine-independent. Applied at render time as a")
+    lines.append("// blend on top of the genre template so the 28 patterns do not all share")
+    lines.append("// one velocity/timing curve. Pattern 0 (Silent) is the identity.")
+    lines.append(f"inline constexpr int kPatternFeelCount = {len(feels)};")
+    lines.append("inline constexpr float kPatternAccentDepth[kPatternFeelCount] = { "
+                 + ", ".join(f"{f['accentDepth']:.3f}f" for f in feels) + " };")
+    lines.append("inline constexpr float kPatternTimingScale[kPatternFeelCount] = { "
+                 + ", ".join(f"{f['timingScale']:.3f}f" for f in feels) + " };")
+    lines.append("inline constexpr float kPatternJitterScale[kPatternFeelCount] = { "
+                 + ", ".join(f"{f['jitterScale']:.3f}f" for f in feels) + " };")
+    lines.append("")
     lines.append("} // namespace Groove::data")
     lines.append("")
     out_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _percentile(vals, q):
+    """Linear-interpolated percentile (stdlib only)."""
+    if not vals:
+        return 0.0
+    s = sorted(vals)
+    if len(s) == 1:
+        return float(s[0])
+    k = (len(s) - 1) * q
+    lo = int(math.floor(k))
+    hi = int(math.ceil(k))
+    if lo == hi:
+        return float(s[lo])
+    return s[lo] * (hi - k) + s[hi] * (k - lo)
+
+
+def _iter_pattern_midis(midi_dir: Path):
+    """Return [(index, path)] for committed pattern_XX_*.mid, ordered by index."""
+    if not midi_dir.is_dir():
+        return []
+    found = []
+    for p in sorted(midi_dir.glob("pattern_*.mid")):
+        parts = p.stem.split("_")
+        if len(parts) < 2:
+            continue
+        try:
+            idx = int(parts[1])
+        except ValueError:
+            continue
+        found.append((idx, p))
+    found.sort(key=lambda t: t[0])
+    return found
+
+
+def pattern_feel(midi_dir: Path, n_patterns: int = 28) -> list:
+    """Derive a per-pattern feel from each pattern's own authored MIDI.
+
+    Machine-independent (the MIDI is committed). Three scalars, applied as a
+    blend on top of the genre template at render time:
+
+      accentDepth  scales (velocityMul - 1) — flatter patterns → shallower accents
+      timingScale  scales timingMs          — denser patterns → tighter to the grid
+      jitterScale  scales timingJitterMs    — denser patterns → less wobble
+
+    Pattern 0 (Silent) and any missing index are the identity feel.
+    """
+    identity = {"accentDepth": 1.0, "timingScale": 1.0, "jitterScale": 1.0}
+    by_idx: dict = {}
+    for idx, path in _iter_pattern_midis(midi_dir):
+        hits = _hits_from_midi(path)
+        if idx == 0 or not hits:
+            by_idx[idx] = {**identity, "index": idx, "name": path.stem}
+            continue
+
+        max_beat = max(b for b, _, _ in hits)
+        span_beats = max(4.0, max_beat + 0.25)
+        density = len(hits) / span_beats                      # hits per beat
+        vels = [float(v) for _, v, _ in hits]
+        spread = _percentile(vels, 0.90) - _percentile(vels, 0.10)
+
+        speed = min(1.0, max(0.0, (density - 0.5) / 3.5))      # 0.5 .. 4 hits/beat
+        spread_norm = min(1.0, max(0.0, spread / 60.0))
+
+        accent = 0.70 + 0.70 * (1.0 - speed) * (0.5 + 0.5 * spread_norm)
+        # timing/jitter scale is TIGHTEN-ONLY (<= 1.0): the engine's microtiming
+        # slack bound is computed from the base template, so a feel may tighten a
+        # pattern toward the grid but must never widen it past that bound.
+        timing = 1.00 - 0.60 * speed
+        jitter = 1.00 - 0.40 * speed
+        by_idx[idx] = {
+            "index": idx,
+            "name": path.stem,
+            "accentDepth": round(accent, 3),
+            "timingScale": round(timing, 3),
+            "jitterScale": round(jitter, 3),
+        }
+
+    ordered = []
+    for i in range(n_patterns):
+        ordered.append(by_idx.get(i, {**identity, "index": i, "name": f"pattern_{i:02d}"}))
+    return ordered
 
 
 def main() -> int:
@@ -346,61 +444,87 @@ def main() -> int:
     parser.add_argument("--header-out", type=Path, default=_DEFAULT_HEADER_OUT)
     parser.add_argument("--max-files", type=int, default=None,
                         help="Cap files per genre (smoke tests).")
+    parser.add_argument("--from-gmd", action="store_true",
+                        help="Recompute the base templates from GMD. Default is to reuse "
+                             "the committed data/groove_templates.json so the tuned base "
+                             "curves cannot drift with the local GMD corpus.")
+    parser.add_argument("--pattern-midi-dir", type=Path, default=_DEFAULT_PATTERN_MIDI_DIR,
+                        help="Committed pattern_XX_*.mid used for per-pattern feel.")
     args = parser.parse_args()
 
-    gmd_root = _validate_under_training(args.gmd_root)
-    info_csv = _find_info_csv(gmd_root)
-    print(f"GMD info.csv: {info_csv}", file=sys.stderr)
+    # ── Base genre templates ────────────────────────────────────────────────
+    # Prefer the committed JSON (authoritative and machine-independent). The GMD
+    # corpus on a given box can differ from the one the base curves were tuned
+    # on; recomputing would silently perturb them. Recompute only with --from-gmd.
+    recompute = args.from_gmd or not args.json_out.is_file()
+    if recompute:
+        gmd_root = _validate_under_training(args.gmd_root)
+        info_csv = _find_info_csv(gmd_root)
+        print(f"GMD info.csv: {info_csv}", file=sys.stderr)
 
-    accs: dict[str, dict] = {name: _new_acc() for name in _GENRE_SOURCES}
-    style_to_genre: dict[str, str] = {}
-    for genre, styles in _GENRE_SOURCES.items():
-        for s in styles:
-            style_to_genre[s] = genre
+        accs: dict[str, dict] = {name: _new_acc() for name in _GENRE_SOURCES}
+        style_to_genre: dict[str, str] = {}
+        for genre, styles in _GENRE_SOURCES.items():
+            for s in styles:
+                style_to_genre[s] = genre
 
-    scanned = 0
-    for midi_path, primary, bpm in _iter_gmd_rows(info_csv):
-        genre = style_to_genre.get(primary)
-        if genre is None:
-            continue
-        if args.max_files is not None and accs[genre]["files"] >= args.max_files:
-            continue
-        hits = _hits_from_midi(midi_path)
-        if not hits:
-            continue
-        _accumulate(hits, bpm, accs[genre])
-        accs[genre]["files"] += 1
-        scanned += 1
-        if scanned % 50 == 0:
-            print(f"  ... {scanned} files", file=sys.stderr)
+        scanned = 0
+        for midi_path, primary, bpm in _iter_gmd_rows(info_csv):
+            genre = style_to_genre.get(primary)
+            if genre is None:
+                continue
+            if args.max_files is not None and accs[genre]["files"] >= args.max_files:
+                continue
+            hits = _hits_from_midi(midi_path)
+            if not hits:
+                continue
+            _accumulate(hits, bpm, accs[genre])
+            accs[genre]["files"] += 1
+            scanned += 1
+            if scanned % 50 == 0:
+                print(f"  ... {scanned} files", file=sys.stderr)
 
-    templates: dict[str, dict] = {}
-    for genre in _GENRE_SOURCES:
-        n = accs[genre]["files"]
-        if n < _MIN_FILES_PER_GENRE:
-            print(f"FAIL: genre {genre!r} has {n} files < {_MIN_FILES_PER_GENRE} minimum",
-                  file=sys.stderr)
-            return 2
-        templates[genre] = _reduce_template(accs[genre])
-        print(f"  {genre}: {n} files, {templates[genre]['hits']} hits", file=sys.stderr)
+        templates: dict[str, dict] = {}
+        for genre in _GENRE_SOURCES:
+            n = accs[genre]["files"]
+            if n < _MIN_FILES_PER_GENRE:
+                print(f"FAIL: genre {genre!r} has {n} files < {_MIN_FILES_PER_GENRE} minimum",
+                      file=sys.stderr)
+                return 2
+            templates[genre] = _reduce_template(accs[genre])
+            print(f"  {genre}: {n} files, {templates[genre]['hits']} hits", file=sys.stderr)
 
-    templates["metal"] = _derive_metal(templates["rock"])
-    templates["punk"] = _derive_punk(templates["rock"])
+        templates["metal"] = _derive_metal(templates["rock"])
+        templates["punk"] = _derive_punk(templates["rock"])
 
-    payload = {
-        "source": "Groove MIDI Dataset (GMD) v1.0.0, CC-BY 4.0",
-        "generator": "training/build_groove_template.py",
-        "grid": "16th-note cells within a 4/4 bar; cell = round((beat mod 4)*4)",
-        "timing_sign": "positive = late (laid back), negative = early (punchy)",
-        "min_files_per_genre": _MIN_FILES_PER_GENRE,
-        "min_hits_per_cell": _MIN_HITS_PER_CELL,
-        "templates": templates,
-    }
-    args.json_out.parent.mkdir(parents=True, exist_ok=True)
-    args.json_out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    print(f"Wrote {args.json_out}", flush=True)
+        payload = {
+            "source": "Groove MIDI Dataset (GMD) v1.0.0, CC-BY 4.0",
+            "generator": "training/build_groove_template.py",
+            "grid": "16th-note cells within a 4/4 bar; cell = round((beat mod 4)*4)",
+            "timing_sign": "positive = late (laid back), negative = early (punchy)",
+            "min_files_per_genre": _MIN_FILES_PER_GENRE,
+            "min_hits_per_cell": _MIN_HITS_PER_CELL,
+            "templates": templates,
+        }
+        args.json_out.parent.mkdir(parents=True, exist_ok=True)
+        args.json_out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        print(f"Wrote {args.json_out}", flush=True)
+    else:
+        templates = json.loads(args.json_out.read_text(encoding="utf-8"))["templates"]
+        print(f"Base templates loaded from {args.json_out} (use --from-gmd to refresh)",
+              file=sys.stderr)
 
-    _emit_header(templates, args.header_out)
+    # ── Per-pattern feel (Phase 37 C1) ──────────────────────────────────────
+    feels = pattern_feel(args.pattern_midi_dir)
+    distinct_acc = len({f["accentDepth"] for f in feels})
+    if distinct_acc < 3:
+        print(f"FAIL: only {distinct_acc} distinct accentDepth values (<3) — the feel "
+              f"table would be degenerate", file=sys.stderr)
+        return 3
+    print(f"pattern feel: {len(feels)} patterns, {distinct_acc} distinct accent depths",
+          file=sys.stderr)
+
+    _emit_header(templates, feels, args.header_out)
     print(f"Wrote {args.header_out}", flush=True)
     return 0
 

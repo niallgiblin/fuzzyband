@@ -21,6 +21,7 @@
  * — it still only reads this fixed-size struct on the audio thread.
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -168,6 +169,53 @@ inline const Template& templateFor(int templateId) noexcept
         case 1:  return kMetal;
         default: return kRock;
     }
+}
+
+/**
+ * @brief Per-pattern feel (Phase 37 C1): a blend applied on top of the genre
+ * template so all 28 patterns do not share one velocity/timing curve.
+ *
+ * Baked in `GrooveTemplateData.h` from the committed pattern MIDI
+ * (`data/pattern_midi`) — machine-independent. Values are tighten-only for
+ * timing/jitter (<= 1.0) so the engine's microtiming slack bound (computed from
+ * the base template) always remains sufficient.
+ */
+struct PatternFeel
+{
+    float accentDepth = 1.0f;   // scales (velocityMul - 1): <1 flatter, >1 deeper
+    float timingScale = 1.0f;   // scales timingMs (<= 1 = tighter to the grid)
+    float jitterScale = 1.0f;   // scales timingJitterMs (<= 1 = less wobble)
+};
+
+/** @brief Direct-index feel lookup (no scan). Out-of-range returns the identity. */
+inline PatternFeel feelFor(int patternIndex) noexcept
+{
+    if (patternIndex < 0 || patternIndex >= data::kPatternFeelCount)
+        return PatternFeel{};
+    return PatternFeel{ data::kPatternAccentDepth[patternIndex],
+                        data::kPatternTimingScale[patternIndex],
+                        data::kPatternJitterScale[patternIndex] };
+}
+
+/**
+ * @brief The genre template with the per-pattern feel blended in.
+ *
+ * Returns a copy so the static cached templates are never mutated. velocityMul
+ * is clamped to [0.6, 1.4] and timingJitterMs to [1.0, 3.0] so a hot feel cannot
+ * clip the loudest accents or turn the humaniser into white noise.
+ */
+inline Template templateForPattern(int patternIndex, int templateId) noexcept
+{
+    Template t = templateFor(templateId);
+    const PatternFeel f = feelFor(patternIndex);
+    for (int i = 0; i < 16; ++i)
+    {
+        t.velocityMul[i] = std::clamp(1.0f + (t.velocityMul[i] - 1.0f) * f.accentDepth,
+                                      0.6f, 1.4f);
+        t.timingMs[i] = t.timingMs[i] * f.timingScale;
+    }
+    t.timingJitterMs = std::clamp(t.timingJitterMs * f.jitterScale, 1.0f, 3.0f);
+    return t;
 }
 
 /**

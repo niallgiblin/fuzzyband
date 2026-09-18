@@ -144,6 +144,7 @@ void PatternPlayer::setGenrePreset(int presetId) noexcept
 {
     preset = Groove::presetFor(presetId);
     grooveTemplate = Groove::templateFor(preset.templateId);
+    currentTemplateId = preset.templateId;
     ghostDensity = preset.ghostDensity;
     // The swing knob is user-owned; preset.defaultSwing is applied by the
     // editor when the user changes genre, so we do not override it here.
@@ -742,6 +743,15 @@ void PatternPlayer::emitCrashHit(juce::MidiBuffer& midi,
     midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, kCrashNote, 0.9f), off);
 }
 
+Groove::Template PatternPlayer::effectiveTemplate() const noexcept
+{
+    // Per-pattern feel is a humanisation layer: with ornaments off, the plain
+    // genre template is returned so humanize=0 stays byte-identical.
+    if (humanizeAmount <= 0.0f)
+        return grooveTemplate;
+    return Groove::templateForPattern(activePatternIndex, currentTemplateId);
+}
+
 FillGrammar::FillScore PatternPlayer::currentFillScore(int fillIndex, double fillBarStart) const noexcept
 {
     FillGrammar::FillContext ctx{};
@@ -785,6 +795,8 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
 
     // One event emitter shared by the generated grammar path and the authored
     // fallback, so both humanise identically and the fallback stays byte-identical.
+    // Per-pattern feel (C1) is baked into tpl (humanize=0 => plain genre template).
+    const Groove::Template tpl = effectiveTemplate();
     const auto emitOne = [&](int note, int authoredVel, float beatOffset,
                              float durationBeats, bool isGhostAuthored) noexcept
     {
@@ -799,16 +811,15 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
             return;
 
         const int grid16 = Groove::grid16Of(beatOffset);
-        const bool isGhost = isGhostAuthored || (authoredVel <= grooveTemplate.ghostThreshold);
+        const bool isGhost = isGhostAuthored || (authoredVel <= tpl.ghostThreshold);
         const int64_t eventBar = static_cast<int64_t>(std::floor(t / 4.0));
 
-        float timeMs = grooveTemplate.timingMs[grid16];
+        float timeMs = tpl.timingMs[grid16];
         if (swing > 0.0f && (grid16 % 4) == 2)
             timeMs += static_cast<float>(swingDelayMs);
         if (isGhost)
-            timeMs += grooveTemplate.ghostTimingMs;
-        timeMs += eventGaussian(eventBar, grid16, note, kSaltDrumTime,
-                                grooveTemplate.timingJitterMs);
+            timeMs += tpl.ghostTimingMs;
+        timeMs += eventGaussian(eventBar, grid16, note, kSaltDrumTime, tpl.timingJitterMs);
 
         const int64_t absSample = sampleCounter + static_cast<int64_t>(std::llround(
             (t - blockStartBeat) * samplesPerBeat
@@ -817,13 +828,12 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
         if (absOff < 0)
             return;
 
-        const float mul = grooveTemplate.velocityMul[grid16] * sectionVelMul;
+        const float mul = tpl.velocityMul[grid16] * sectionVelMul;
         int vel = static_cast<int>(std::round(static_cast<float>(authoredVel) * mul
-            + eventGaussian(eventBar, grid16, note, kSaltDrumVel,
-                            grooveTemplate.velocityJitter)));
+            + eventGaussian(eventBar, grid16, note, kSaltDrumVel, tpl.velocityJitter)));
         if (isGhost)
-            vel = juce::jlimit(static_cast<int>(grooveTemplate.ghostVelocityLo),
-                               static_cast<int>(grooveTemplate.ghostVelocityHi), vel);
+            vel = juce::jlimit(static_cast<int>(tpl.ghostVelocityLo),
+                               static_cast<int>(tpl.ghostVelocityHi), vel);
         else
             vel = applyVelocityHeadroom(vel);
 
@@ -933,6 +943,8 @@ void PatternPlayer::emitExtraOrnaments(juce::MidiBuffer& midi,
     const double barLo = std::floor((beatStart - lateBeats) / 4.0) * 4.0;
     const double barHi = beatEnd + earlyBeats;
 
+    const Groove::Template tpl = effectiveTemplate();   // per-pattern feel (C1)
+
     for (double barStart = barLo; barStart < barHi - 1.0e-9; barStart += 4.0)
     {
         const int64_t eventBar = static_cast<int64_t>(std::floor(barStart / 4.0));
@@ -945,9 +957,9 @@ void PatternPlayer::emitExtraOrnaments(juce::MidiBuffer& midi,
         // the groove rather than on top of it.
         const auto addHit = [&](int note, int vel, int cell, double beatOffset) noexcept
         {
-            const double ms = static_cast<double>(grooveTemplate.timingMs[cell])
+            const double ms = static_cast<double>(tpl.timingMs[cell])
                             + static_cast<double>(eventGaussian(eventBar, cell, note,
-                                  kSaltDrumTime, grooveTemplate.timingJitterMs));
+                                  kSaltDrumTime, tpl.timingJitterMs));
             const double beat = barStart + beatOffset
                               + ms / 1000.0 * (static_cast<double>(bpm) / 60.0);
             const int64_t absSample = sampleCounter + static_cast<int64_t>(std::llround(
@@ -1015,6 +1027,10 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
     double earlyBeats = 0.0, lateBeats = 0.0;
     microtimingSlackBeats(samplesPerBeat, samplesPerMs, swingDelayMs, earlyBeats, lateBeats);
 
+    // Per-pattern feel (C1): grooveTemplate is the genre base; tpl folds in the
+    // active pattern's feel (identity when humanize=0).
+    const Groove::Template tpl = effectiveTemplate();
+
     // The caller may split the block at a bar line. Apply the microtiming slack only
     // on the outer edges of the block so the two halves stay disjoint and no event
     // is emitted twice.
@@ -1037,7 +1053,7 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
 
         // 16th grid cell within the bar — drives the velocity/timing hierarchy.
         const int grid16 = Groove::grid16Of(ev.beatOffset);
-        const bool isGhost = ev.isGhost || (ev.velocity <= grooveTemplate.ghostThreshold);
+        const bool isGhost = ev.isGhost || (ev.velocity <= tpl.ghostThreshold);
 
         // Tier-1 groove grid: when a rendered grid matches the active pattern,
         // use its learned per-step velocity/offset instead of the fixed template.
@@ -1073,13 +1089,13 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
             }
             else
             {
-                timeMs = grooveTemplate.timingMs[grid16];
+                timeMs = tpl.timingMs[grid16];
                 if (swing > 0.0f && (grid16 % 4) == 2)
                     timeMs += static_cast<float>(swingDelayMs);
                 if (isGhost)
-                    timeMs += grooveTemplate.ghostTimingMs;
+                    timeMs += tpl.ghostTimingMs;
                 timeMs += eventGaussian(eventBar, grid16, ev.note, kSaltDrumTime,
-                                        grooveTemplate.timingJitterMs);
+                                        tpl.timingJitterMs);
             }
 
             const int64_t absSample = sampleCounter + static_cast<int64_t>(std::llround(
@@ -1101,13 +1117,13 @@ void PatternPlayer::emitDrumEventsForRange(juce::MidiBuffer& midi,
             }
             else
             {
-                const float mul = grooveTemplate.velocityMul[grid16] * sectionVelMul;
+                const float mul = tpl.velocityMul[grid16] * sectionVelMul;
                 vel = static_cast<int>(std::round(static_cast<float>(ev.velocity) * mul
                                                   + eventGaussian(eventBar, grid16, ev.note, kSaltDrumVel,
-                                                                  grooveTemplate.velocityJitter)));
+                                                                  tpl.velocityJitter)));
                 if (isGhost)
-                    vel = juce::jlimit(static_cast<int>(grooveTemplate.ghostVelocityLo),
-                                       static_cast<int>(grooveTemplate.ghostVelocityHi), vel);
+                    vel = juce::jlimit(static_cast<int>(tpl.ghostVelocityLo),
+                                       static_cast<int>(tpl.ghostVelocityHi), vel);
                 else
                     vel = applyVelocityHeadroom(vel);
             }
@@ -1150,14 +1166,16 @@ void PatternPlayer::emitGhostNotes(juce::MidiBuffer& midi,
     microtimingSlackBeats(samplesPerBeat, samplesPerMs, 0.0, earlyBeats, lateBeats);
     const int64_t slackSamples = static_cast<int64_t>(std::llround(lateBeats * samplesPerBeat)) + 1;
 
+    const Groove::Template tpl = effectiveTemplate();   // per-pattern feel (C1)
+
     const auto emitOneGhost = [&](double barStart, int cell) noexcept {
         if (occupied[cell])
             return;
         const double beat = barStart + static_cast<double>(cell) / 4.0;
         const int64_t eventBar = static_cast<int64_t>(std::floor(barStart / 4.0));
-        const float timeMs = grooveTemplate.ghostTimingMs
+        const float timeMs = tpl.ghostTimingMs
                            + eventGaussian(eventBar, cell, 38, kSaltGhostTime,
-                                           grooveTemplate.timingJitterMs);
+                                           tpl.timingJitterMs);
         // Absolute placement (T9.2) — see emitDrumEventsForRange.
         const int64_t absSample = sampleCounter + static_cast<int64_t>(std::llround(
             (beat - blockStartBeat) * samplesPerBeat
@@ -1166,8 +1184,8 @@ void PatternPlayer::emitGhostNotes(juce::MidiBuffer& midi,
         if (absOff < 0)
             return;
 
-        const float ghostLo = grooveTemplate.ghostVelocityLo;
-        const float ghostHi = grooveTemplate.ghostVelocityHi;
+        const float ghostLo = tpl.ghostVelocityLo;
+        const float ghostHi = tpl.ghostVelocityHi;
         const unsigned h = barHash(static_cast<unsigned>(eventBar) ^ humanizeSeed_,
                                    kSaltGhostVel ^ static_cast<unsigned>(cell));
         const float u = static_cast<float>(h & 0x00FFFFFFu) * (1.0f / 16777216.0f);

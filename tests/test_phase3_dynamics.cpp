@@ -162,6 +162,10 @@ TEST_CASE("T3.3 mean onset error vs the 16th grid is under 2 ms", "[midi][phase3
     // the centred template's residual shape is audible. 2048-sample blocks keep
     // ±2.5σ jitter inside the block (128-sample buffers clamp early hits to 0).
     preparePlayer(player, lib, 2048, 8, 0, Groove::SongSectionId::Chorus);
+    // T3.3 measures the BAKED BASE template's residual shape. Phase 37 C1 adds a
+    // per-pattern feel on top (tightening dense patterns); that layer is tested
+    // separately, so pin this to humanize=0 (base template, as calibrated).
+    player.setHumanize(0.0f);
 
     const double spb = samplesPerBeat();
     const int64_t span = static_cast<int64_t>(std::llround(spb * 32.0));  // 8 bars

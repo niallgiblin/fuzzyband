@@ -1955,3 +1955,60 @@ TEST_CASE("T7.3 fill 18 replaces groove kicks at 3.75 and inherits swing/section
         REQUIRE(meanVel(chorusToms) > meanVel(verseToms) + 1.0);
     }
 }
+
+// ── Phase 37 C1: per-pattern feel applied at render time ─────────────────────
+
+TEST_CASE("C1: per-pattern feel tightens a dense pattern but stays humanised", "[midi][C1]")
+{
+    // Render Blast Beat (pattern 8, the densest) with and without the feel and
+    // compare the timing spread about the 16th grid. C1 must tighten it (smaller
+    // spread) while leaving audible humanisation (not a machine grid).
+    auto renderSpread = [](float humanize)
+    {
+        MidiPatternLibrary lib;
+        PatternPlayer p;
+        p.setPatternLibrary(&lib);
+        p.prepare(48000.0, 2048);
+        p.setRandomSeed(0xC0FFEE);
+        p.snapBpm(120.0f);
+        p.setPatternIndex(8);
+        p.setSection(Groove::SongSectionId::Chorus);
+        p.setGenrePreset(0);
+        p.setStructureSilent(false);
+        p.setSwing(0.0f);
+        p.setHumanize(humanize);
+        p.setBeatGridBassEnabled(false);
+
+        const double spb = 24000.0;
+        const int64_t span = static_cast<int64_t>(spb * 32.0);
+        const auto events = MidiProbe::render(p, static_cast<int>((span + 2047) / 2048), 2048, 0);
+
+        std::vector<double> err;
+        for (const auto& e : events)
+        {
+            if (!e.isNoteOn || e.channel != 10)
+                continue;
+            const double beat = static_cast<double>(e.sample) / spb;
+            const double grid = std::round(beat * 4.0) / 4.0;
+            const double ms = (beat - grid) * (60000.0 / 120.0);
+            if (std::abs(ms) > 25.0)
+                continue;
+            err.push_back(ms);
+        }
+        if (err.size() < 8)
+            return 999.0;
+        double m = 0.0;
+        for (double x : err) m += x;
+        m /= static_cast<double>(err.size());
+        double v = 0.0;
+        for (double x : err) { const double d = x - m; v += d * d; }
+        return std::sqrt(v / static_cast<double>(err.size()));
+    };
+
+    const double base = renderSpread(0.0f);   // baked base template
+    const double felt = renderSpread(1.0f);   // + per-pattern feel
+
+    REQUIRE(base >= 3.0);      // the base template is audibly humanised (T3.3)
+    REQUIRE(felt < base);      // C1 tightens the dense pattern
+    REQUIRE(felt >= 1.0);      // ...but it is still humanised, not a grid
+}

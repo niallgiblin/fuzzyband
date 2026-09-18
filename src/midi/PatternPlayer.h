@@ -345,6 +345,11 @@ private:
      *  returns an authored-equivalent score the emit loop renders by absolute sample. */
     FillGrammar::FillScore currentFillScore(int fillIndex, double fillBarStart) const noexcept;
 
+    /** @brief Genre template with the per-pattern feel blended in (Phase 37 C1).
+     *  Returns the plain genre template when humanize is off, so humanize=0 output
+     *  stays byte-identical to pre-C1. Audio thread; returns a fixed-size POD copy. */
+    Groove::Template effectiveTemplate() const noexcept;
+
     /**
      * @brief Route bass for a range: authored pattern bass, else harmonic fallback.
      *
@@ -514,7 +519,8 @@ private:
     std::array<int64_t, kDrumVoices> drumNoteOffSample{};
 
     // ── Musicality pivot state (Workstream A / B1) ────────────────────────────
-    Groove::Template grooveTemplate;            // velocity hierarchy + microtiming
+    Groove::Template grooveTemplate;            // genre velocity hierarchy + microtiming
+    int currentTemplateId = 0;                  // genre template id (per-pattern feel lookup)
     GrooveGrid grooveGrid;                      // Tier-1 rendered groove (else template)
     Groove::GenrePreset preset;                 // active genre preset (copy)
     Groove::SongSectionId sectionId = Groove::SongSectionId::Verse;

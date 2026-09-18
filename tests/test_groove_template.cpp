@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <set>
 #include <string>
 #include "midi/GrooveTemplate.h"
 #include "midi/MidiPatternLibrary.h"
@@ -130,4 +131,76 @@ TEST_CASE("Groove: pattern count constant matches the library", "[groove][A4]")
 {
     MidiPatternLibrary lib;
     REQUIRE(lib.patternCount() == MidiPatternLibrary::kPatternCount);
+}
+
+// ── Phase 37 C1: per-pattern feel ────────────────────────────────────────────
+
+TEST_CASE("Groove C1: every pattern has a feel and index 0 is the identity", "[groove][C1]")
+{
+    REQUIRE(Groove::data::kPatternFeelCount == MidiPatternLibrary::kPatternCount);
+    REQUIRE(Groove::data::kPatternFeelCount == 28);
+
+    const auto silent = Groove::feelFor(0);
+    REQUIRE(silent.accentDepth == 1.0f);
+    REQUIRE(silent.timingScale == 1.0f);
+    REQUIRE(silent.jitterScale == 1.0f);
+
+    // Out-of-range falls back to the identity (no table overrun).
+    const auto oob = Groove::feelFor(999);
+    REQUIRE(oob.accentDepth == 1.0f);
+    REQUIRE(oob.timingScale == 1.0f);
+}
+
+TEST_CASE("Groove C1: feel table is non-degenerate", "[groove][C1]")
+{
+    std::set<float> accents, timings;
+    for (int i = 0; i < Groove::data::kPatternFeelCount; ++i)
+    {
+        accents.insert(Groove::feelFor(i).accentDepth);
+        timings.insert(Groove::feelFor(i).timingScale);
+    }
+    REQUIRE(accents.size() >= 3);
+    REQUIRE(timings.size() >= 2);
+}
+
+TEST_CASE("Groove C1: dense patterns sit tighter and feel only tightens", "[groove][C1]")
+{
+    // Blast Beat (8) is far denser than Chorus Mid (4): its timing scale must be
+    // at most Chorus Mid's (tighter to the grid).
+    REQUIRE(Groove::feelFor(8).timingScale <= Groove::feelFor(4).timingScale);
+
+    // Tighten-only: the engine's microtiming slack bound is computed from the
+    // base template, so a feel must never widen timing/jitter past 1.0.
+    for (int i = 0; i < Groove::data::kPatternFeelCount; ++i)
+    {
+        const auto f = Groove::feelFor(i);
+        REQUIRE(f.timingScale <= 1.0f);
+        REQUIRE(f.jitterScale <= 1.0f);
+        REQUIRE(f.timingScale > 0.0f);
+        REQUIRE(f.accentDepth >= 0.5f);
+        REQUIRE(f.accentDepth <= 1.5f);
+    }
+}
+
+TEST_CASE("Groove C1: composed template preserves metal tightening and stays in band", "[groove][C1]")
+{
+    // Metal (1) is derived from rock (0) by pulling timing toward the grid, so the
+    // composed metal template must remain at or tighter than rock for every pattern.
+    for (int p : {1, 4, 8, 14})
+    {
+        const auto rock  = Groove::templateForPattern(p, 0);
+        const auto metal = Groove::templateForPattern(p, 1);
+        REQUIRE(Groove::timingMeanMs(metal.timingMs) <= Groove::timingMeanMs(rock.timingMs) + 1.0e-3f);
+        REQUIRE(metal.timingJitterMs <= rock.timingJitterMs + 1.0e-4f);
+    }
+
+    // Composed velocity/timing stay inside the engine's musical bands.
+    for (int p = 0; p < Groove::data::kPatternFeelCount; ++p)
+    {
+        const auto t = Groove::templateForPattern(p, 1);
+        for (int c = 0; c < 16; ++c)
+            REQUIRE((t.velocityMul[c] >= 0.6f && t.velocityMul[c] <= 1.4f));
+        REQUIRE(t.timingJitterMs >= 1.0f);
+        REQUIRE(t.timingJitterMs <= 3.0f);
+    }
 }
