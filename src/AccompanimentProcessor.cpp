@@ -2188,9 +2188,14 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // transition: that section is a DRUM contrast, and the bass must mirror
         // the player (rest when they rest) instead of playing a root/fifth line
         // over it — that was the loud, unmusical transition bass.
-        patternPlayer.setBeatGridBassEnabled(listenBass && !guitarAudible
-                                             && !playTakeReplaying
-                                             && postLockPhase != PostLockPhase::TransitionHold);
+        // 38-03: SOLO never mirrors the lead. When a learned VERSE/CHORUS phrase is
+        // available the replay owns the voice (grid off); otherwise the in-key grid
+        // plays as the fallback (grid on even while the guitarist is audible).
+        const bool soloSectionNow = playOn && std::strcmp(section, "SOLO") == 0;
+        patternPlayer.setBeatGridBassEnabled(
+            (listenBass && !guitarAudible && !playTakeReplaying
+             && postLockPhase != PostLockPhase::TransitionHold)
+            || (soloSectionNow && !playTakeReplaying));
 
         // The fallback keeps the key the guitarist last played (the live tracker
         // reports nothing once they stop), so the harmony line is not stuck on C.
@@ -2227,7 +2232,8 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         const int durationSamples = juce::jmax(1, static_cast<int>(0.85 * samplesPerBeatQ));
         const bool mirrorActive = listenBass && !guitarStopped
             && !riffCaptureActive.load(std::memory_order_acquire)
-            && !phraseLearner.isGridCapturing();
+            && !phraseLearner.isGridCapturing()
+            && !soloSectionNow;   // 38-03: SOLO reuses a learned phrase, not the lead
         const int accentPat = patternPlayer.getActivePatternIndex();
         if (accentPat != lastAccentPatternIdx)
         {
@@ -2247,7 +2253,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             // Step 2: a return to a section name replays the riff captured on
             // its first pass. The replay is authoritative while it plays; the
             // live mirror is suppressed below (see the note in §5.5).
-            const auto* stored = findSectionRiff(playTakeSectionName);
+            const auto* stored = findSectionRiff(playTakeReplayName);
             if (stored != nullptr)
                 emitFrozenRiff(*stored, playTakeOriginMono, numSamples,
                                static_cast<double>(bpmForPlayer), sr,
@@ -2599,6 +2605,7 @@ void AccompanimentProcessor::resetSectionRiffMemory() noexcept
     playTakeActive = false;
     playTakeReplaying = false;
     playTakeSectionName[0] = '\0';
+    playTakeReplayName[0] = '\0';
     playTakeOriginMono = -1;
     playTakeOriginBeat = 0.0;
     clearTransitionMemory();
@@ -2734,7 +2741,24 @@ void AccompanimentProcessor::beginPlaySectionTake(const char* name, int64_t cloc
     phraseLearner.setAutoLockEnabled(false);   // Play never auto-locks the learner
     resetSlotOnsetTracker();
 
-    const PhraseLearner::LearnedRiff* stored = findSectionRiff(playTakeSectionName);
+    // 38-03: SOLO reuses a learned VERSE/CHORUS phrase instead of mirroring the
+    // lead line (a bass echoing a solo is not what a band does). Prefer VERSE,
+    // else CHORUS; when neither exists the SOLO falls back to the in-key
+    // harmonic/authored grid (the mirror stays suppressed in SOLO either way).
+    if (std::strcmp(name, "SOLO") == 0)
+    {
+        if (findSectionRiff("VERSE") != nullptr)       std::strncpy(playTakeReplayName, "VERSE", sizeof(playTakeReplayName) - 1);
+        else if (findSectionRiff("CHORUS") != nullptr) std::strncpy(playTakeReplayName, "CHORUS", sizeof(playTakeReplayName) - 1);
+        else                                            playTakeReplayName[0] = '\0';
+        playTakeReplayName[sizeof(playTakeReplayName) - 1] = '\0';
+    }
+    else
+    {
+        std::strncpy(playTakeReplayName, playTakeSectionName, sizeof(playTakeReplayName) - 1);
+        playTakeReplayName[sizeof(playTakeReplayName) - 1] = '\0';
+    }
+
+    const PhraseLearner::LearnedRiff* stored = findSectionRiff(playTakeReplayName);
     // Every visit keeps capturing in parallel: the replay stays authoritative
     // (the live mirror is suppressed below), but the section memory is replaced
     // with this pass when the section ends. Before this a section was frozen

@@ -2012,3 +2012,32 @@ TEST_CASE("C1: per-pattern feel tightens a dense pattern but stays humanised", "
     REQUIRE(felt < base);      // C1 tightens the dense pattern
     REQUIRE(felt >= 1.0);      // ...but it is still humanised, not a grid
 }
+
+// ── Phase 38-02: ornaments react to the committed playing style ──────────────
+
+TEST_CASE("38-02: ornaments react to the committed playing style", "[midi][ornament][38-02]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.setHumanize(1.0f);
+    player.setGenrePreset(0);
+    player.setSection(Groove::SongSectionId::Verse);
+
+    auto count = [&](int style, bool wantTom)
+    {
+        player.setFillStyle(style);
+        int n = 0;
+        for (int pat : {1, 2, 3, 7, 20})
+            for (int64_t bar = 0; bar < 400; ++bar)
+            {
+                const auto o = player.computeOrnamentation(bar, pat);
+                if (wantTom ? o.extraTom : o.kickDouble) ++n;
+            }
+        return n;
+    };
+    // Single-note runs punctuate with toms; sustain backs off.
+    REQUIRE(count(2, true) > count(3, true));
+    // Palm-mute chugs reinforce with kick doubles; sustain backs off.
+    REQUIRE(count(0, false) > count(3, false));
+}

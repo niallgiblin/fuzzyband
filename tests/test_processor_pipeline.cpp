@@ -4145,3 +4145,50 @@ TEST_CASE("Processor pipeline: the captured riff keeps the picked articulation",
     proc.releaseResources();
 }
 
+
+// ── Phase 38-03: SOLO reuses a learned phrase, never mirrors the lead ────────
+
+TEST_CASE("38-03: SOLO section never mirrors and replays a learned phrase",
+          "[integration][pipeline][bass][solo][38-03]")
+{
+    const double sr = 48000.0;
+    const int block = 512;
+    AccompanimentProcessor proc;
+    proc.prepareToPlay(sr, block);
+    proc.pauseBackgroundInferenceForTests();
+    proc.setCustomSongForm("VERSE:4,SOLO:4");
+    proc.playActive.store(true, std::memory_order_release);
+
+    const int totalBlocks = blocksForBars(sr, block, 12.0);
+    int mirrorInSolo = 0, frozenInSolo = 0, gridInSolo = 0;
+    bool seenVerse = false, inSolo = false;
+
+    for (int i = 0; i < totalBlocks; ++i)
+    {
+        // Loud input: the live mirror WOULD fire if SOLO mirrored the lead.
+        auto buf = makeSineBuffer(block, 110.0, sr, 0.08f);
+        juce::MidiBuffer midi;
+        const int mB = proc.getBassProducerCount(BassVoice::Producer::Mirror);
+        const int fB = proc.getBassProducerCount(BassVoice::Producer::Frozen);
+        const int gB = proc.getBassProducerCount(BassVoice::Producer::GridAuthored)
+                     + proc.getBassProducerCount(BassVoice::Producer::GridHarmonic);
+        proc.processBlock(buf, midi);
+        const auto name = proc.getCurrentSectionName();
+        if (name == "VERSE") seenVerse = true;
+        if (name == "SOLO")
+        {
+            inSolo = true;
+            mirrorInSolo += proc.getBassProducerCount(BassVoice::Producer::Mirror) - mB;
+            frozenInSolo += proc.getBassProducerCount(BassVoice::Producer::Frozen) - fB;
+            gridInSolo   += (proc.getBassProducerCount(BassVoice::Producer::GridAuthored)
+                           + proc.getBassProducerCount(BassVoice::Producer::GridHarmonic)) - gB;
+        }
+    }
+    proc.playActive.store(false, std::memory_order_release);
+
+    REQUIRE(seenVerse);
+    REQUIRE(inSolo);
+    REQUIRE(mirrorInSolo == 0);              // SOLO never mirrors the lead
+    REQUIRE(frozenInSolo + gridInSolo > 0);  // it replays a phrase or falls back in-key
+    proc.releaseResources();
+}

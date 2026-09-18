@@ -174,3 +174,47 @@ TEST_CASE("FillGrammar: breakdown stays sparse and never crashes", "[fill][gramm
         REQUIRE(score.count <= 6);   // <=2 sparse cells (2 notes each) + landing
     }
 }
+
+// ── Phase 38-01: dense fills are tom-forward and crash-land ──────────────────
+
+TEST_CASE("FillGrammar 38-01: dense fills always contain toms", "[fill][grammar][38-01]")
+{
+    const auto isTom = [](uint8_t n) { return n == 41 || n == 45 || n == 48; };
+    for (unsigned s = 0; s < 256; ++s)
+    {
+        const auto score = FillGrammar::buildFill(makeCtx(s, 0.70f, 1 /*Verse*/, 4.0f, 2.5f));
+        int toms = 0;
+        for (int i = 0; i < score.count; ++i)
+            if (isTom(score.events[static_cast<size_t>(i)].note)) ++toms;
+        REQUIRE(toms >= 1);
+    }
+}
+
+TEST_CASE("FillGrammar 38-01: the 4-beat dense fill has a tom cascade and a crash",
+          "[fill][grammar][38-01]")
+{
+    const auto isTom = [](uint8_t n) { return n == 41 || n == 45 || n == 48; };
+    for (unsigned s = 0; s < 128; ++s)
+    {
+        const auto score = FillGrammar::buildFill(makeCtx(s, 0.80f, 2 /*Chorus*/, 4.0f, 3.0f));
+        int toms = 0, crashes = 0;
+        for (int i = 0; i < score.count; ++i)
+        {
+            const uint8_t n = score.events[static_cast<size_t>(i)].note;
+            if (isTom(n)) ++toms;
+            if (n == 49) ++crashes;
+        }
+        REQUIRE(toms >= 3);      // a cascade, not a single accent
+        REQUIRE(crashes >= 1);   // dense fills land a crash
+    }
+}
+
+TEST_CASE("FillGrammar 38-01: quiet sections still never crash", "[fill][grammar][38-01]")
+{
+    for (unsigned s = 0; s < 128; ++s)
+    {
+        const auto score = FillGrammar::buildFill(makeCtx(s, 0.90f, 3 /*Breakdown*/, 4.0f, 3.0f));
+        for (int i = 0; i < score.count; ++i)
+            REQUIRE(score.events[static_cast<size_t>(i)].note != 49);
+    }
+}

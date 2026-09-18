@@ -173,9 +173,11 @@ inline FillScore buildFill(const FillContext& ctx) noexcept
     const auto sec = static_cast<Groove::SongSectionId>(ctx.sectionId);
     const bool quietSection  = (sec == Groove::SongSectionId::Breakdown
                              || sec == Groove::SongSectionId::Outro);
-    const bool brightSection = (sec == Groove::SongSectionId::Chorus
-                             || sec == Groove::SongSectionId::Solo);
-    const bool leadingToms   = (sec == Groove::SongSectionId::Verse);
+
+    // Dense fills are tom-forward (punk feedback 2026-09-18: the authored fills
+    // were tom rolls and the generated ones lost them). The first assembled cell
+    // is forced to a tom cascade so every dense fill reads as a fill, not a groove.
+    const bool tomForward = dense && !quietSection;
 
     // ── Allowed cell vocabulary by tier (fixed order; selection is hash-driven).
     // A quiet section (breakdown/outro) collapses to the sparse set and never
@@ -212,7 +214,9 @@ inline FillScore buildFill(const FillContext& ctx) noexcept
             break;
 
         const unsigned h = mix(ctx.seed, static_cast<unsigned>(i) + 1u);
-        const CellKind kind = list[h % static_cast<unsigned>(listCount)];
+        CellKind kind = list[h % static_cast<unsigned>(listCount)];
+        if (i == 0 && tomForward)
+            kind = CellKind::TomCascade;   // guarantee a tom run in dense fills
 
         if (t + cellSpan(kind) > windowEnd - 1.0e-6f)
             break;   // no room for another cell
@@ -229,10 +233,10 @@ inline FillScore buildFill(const FillContext& ctx) noexcept
 
     if (!lastIsLanding && s.count < kMaxFillEvents)
     {
-        const bool wantCrash = dense && !quietSection
-                            && (brightSection || ((mix(ctx.seed, 7u) & 1u) != 0u));
-        // Verse prefers toms over a crash; keep it to a kick there.
-        if (wantCrash && !leadingToms)
+        // Dense fills always land a crash; sparse/mid land a kick. Quiet sections
+        // (breakdown/outro) never crash — they are leaving space.
+        const bool wantCrash = dense && !quietSection;
+        if (wantCrash)
             push(s, kCrash, 118, 3.75f, 2.0f);
         else
             push(s, kKick, 108, 3.75f, 0.25f);

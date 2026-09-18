@@ -775,6 +775,24 @@ TEST_CASE("bass mirror: offline audit of a supplied DI",
                         (s + 1 < seconds) ? ',' : '\n');
     }
 
+    // Phase 37 analysis: optional note dump for offline audition/assessment.
+    // Writes every drum + bass note-on with its producer provenance so fills,
+    // ornaments and per-section bass behaviour can be inspected exactly.
+    if (const char* dump = std::getenv("MA_DI_DUMP"))
+    {
+        std::ofstream f(std::string(dump) + ".csv");
+        f << "source,sec,sample,channel,note,vel,producer\n";
+        for (const auto& d : drumNotes)
+            f << "drums," << (static_cast<double>(d.sample) / sr) << ","
+              << d.sample << ",10," << d.midi << "," << d.vel << ",\n";
+        for (const auto& n : notes)
+            f << "bass," << (static_cast<double>(n.sample) / sr) << ","
+              << n.sample << ",2," << n.midi << "," << n.vel << ","
+              << producerName(n.producer) << "\n";
+        std::printf("[DI-AUDIT] wrote %s.csv (drums=%zu bass=%zu)\n",
+                    dump, drumNotes.size(), notes.size());
+    }
+
     proc.playActive.store(false, std::memory_order_release);
     proc.setPlayHead(nullptr);
     proc.releaseResources();
@@ -954,6 +972,18 @@ TEST_CASE("bass mirror: offline record-riff capture dump",
         p->setValueNotifyingHost(p->convertTo0to1(0.0f));   // Rock
     if (auto* p = proc.getApvts().getParameter("bpm"))
         p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(bpm)));
+    // Phase 37: reproduce a recorded take's session settings.
+    auto envFloatR = [](const char* name, float fallback) -> float
+    {
+        const char* v = std::getenv(name);
+        return (v != nullptr && *v != '\0') ? static_cast<float>(std::atof(v)) : fallback;
+    };
+    if (auto* p = proc.getApvts().getParameter("genre"))
+        p->setValueNotifyingHost(p->convertTo0to1(envFloatR("MA_RIFF_GENRE", 0.0f)));
+    if (auto* p = proc.getApvts().getParameter("swing"))
+        p->setValueNotifyingHost(p->convertTo0to1(envFloatR("MA_RIFF_SWING", 0.0f)));
+    if (auto* p = proc.getApvts().getParameter("humanize"))
+        p->setValueNotifyingHost(p->convertTo0to1(envFloatR("MA_RIFF_HUMANIZE", 0.35f)));
 
     MovingPlayHead ph;
     ph.bpm = bpm;
@@ -979,6 +1009,8 @@ TEST_CASE("bass mirror: offline record-riff capture dump",
     int64_t lockStart = -1;
     struct Note { double t; int midi; float vel; BassVoice::Producer producer; bool held; };
     std::vector<Note> notes;
+    struct DrumHit { double t; int midi; float vel; };
+    std::vector<DrumHit> drumNotes;
 
     std::printf("[RIFF] === clean-DI record-riff audit ===\n");
     std::printf("[RIFF] contract: mono clean DI only (01-*). Do not feed 02/03 stems.\n");
@@ -999,7 +1031,12 @@ TEST_CASE("bass mirror: offline record-riff capture dump",
         for (const auto meta : midi)
         {
             const auto m = meta.getMessage();
-            if (m.isNoteOn() && m.getChannel() == 2 && m.getVelocity() > 0)
+            if (m.isNoteOn() && m.getChannel() == 10 && m.getVelocity() > 0)
+            {
+                drumNotes.push_back({ static_cast<double>(start + meta.samplePosition) / sr,
+                                      m.getNoteNumber(), m.getFloatVelocity() });
+            }
+            else if (m.isNoteOn() && m.getChannel() == 2 && m.getVelocity() > 0)
             {
                 const int64_t abs = start + meta.samplePosition;
                 BassVoice::Producer prod = BassVoice::Producer::None;
@@ -1068,6 +1105,19 @@ TEST_CASE("bass mirror: offline record-riff capture dump",
 
     proc.playActive.store(false, std::memory_order_release);
     proc.setPlayHead(nullptr);
+    if (const char* dump = std::getenv("MA_RIFF_DUMP"))
+    {
+        std::ofstream f(std::string(dump) + ".csv");
+        f << "source,sec,sample,channel,note,vel,producer\n";
+        for (const auto& d : drumNotes)
+            f << "drums," << d.t << "," << static_cast<int64_t>(d.t * sr) << ",10,"
+              << d.midi << "," << d.vel << ",\n";
+        for (const auto& n : notes)
+            f << "bass," << n.t << "," << static_cast<int64_t>(n.t * sr) << ",2,"
+              << n.midi << "," << n.vel << "," << producerName(n.producer) << "\n";
+        std::printf("[RIFF] wrote %s.csv (drums=%zu bass=%zu)\n", dump, drumNotes.size(), notes.size());
+    }
+
     proc.releaseResources();
     SUCCEED("riff dump ran");
 }

@@ -28,10 +28,10 @@ constexpr int kDropKickPctBreak    = 12;  // breakdown/outro leave space
 constexpr int kMicroFillPct        = 12;  // phrase-end bars only
 
 // B: additive per-bar ornaments (new notes, not modifications).
-constexpr int kExtraTomPct         = 12;  // verse/breakdown/solo empty off-16th
-constexpr int kKickDoublePct       = 10;  // 16th before a beat-1/beat-3 kick
-constexpr int kSnareFlamPct        = 8;   // grace hit before a backbeat snare
-constexpr int kRideBellAccentPct   = 10;  // bell on a phrase downbeat
+constexpr int kExtraTomPct         = 22;  // verse/breakdown/solo empty off-16th
+constexpr int kKickDoublePct       = 16;  // 16th before a beat-1/beat-3 kick
+constexpr int kSnareFlamPct        = 14;  // grace hit before a backbeat snare
+constexpr int kRideBellAccentPct   = 14;  // bell on a phrase downbeat
 
 // Distinct salts so each ornament decision is an independent draw.
 constexpr unsigned kSaltOpenHat      = 0x11u;
@@ -411,6 +411,26 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
             static_cast<int>(std::lround(static_cast<double>(pct) * humanizeAmount)));
     };
 
+    // 38-02: playing-reactive weights from the committed style. The style head is
+    // debounced (a class holds for ~2 s = several bars), so this is constant across
+    // a bar — required for the per-bar ornament decision to stay buffer-size
+    // invariant (T9.2). Palm-mute chugs earn kick doubles, single-note runs earn
+    // tom/flam punctuation, open chords earn bell accents, sustain backs off.
+    float wTom = 1.0f, wKick = 1.0f, wFlam = 1.0f, wBell = 1.0f;
+    switch (fillStyle_)
+    {
+        case 0: wKick = 1.5f; break;
+        case 1: wBell = 1.3f; break;
+        case 2: wTom = 1.5f; wFlam = 1.3f; break;
+        case 3: wTom = 0.5f; wKick = 0.5f; wFlam = 0.5f; wBell = 0.7f; break;
+        default: break;
+    }
+    auto scaledPctR = [this](int pct, float w) noexcept -> int
+    {
+        return juce::jlimit(0, 100, static_cast<int>(std::lround(
+            static_cast<double>(pct) * humanizeAmount * static_cast<double>(w))));
+    };
+
     auto cellTaken = [&](int cell) noexcept -> bool
     {
         if (cell < 0) return true;
@@ -524,7 +544,7 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
         || sectionId == Groove::SongSectionId::Breakdown
         || sectionId == Groove::SongSectionId::Solo)
     {
-        const int pct = scaledPct(kExtraTomPct);
+        const int pct = scaledPctR(kExtraTomPct, wTom);
         if (pct > 0 && barChance(barNumber, kSaltExtraTom, pct))
         {
             const int tomCells[8] = { 1, 3, 5, 7, 9, 11, 13, 15 };
@@ -546,7 +566,7 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
     // 7) B: kick double — a 16th kick immediately before a beat-1/beat-3 kick.
     if (kickCount > 0)
     {
-        const int pct = scaledPct(kKickDoublePct);
+        const int pct = scaledPctR(kKickDoublePct, wKick);
         if (pct > 0 && barChance(barNumber, kSaltKickDouble, pct))
         {
             int candidates[16]; int n = 0;
@@ -571,7 +591,7 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
     // 8) B: snare flam — a grace hit immediately before an authored backbeat.
     if (snareOccupied[4] || snareOccupied[12])
     {
-        const int pct = scaledPct(kSnareFlamPct);
+        const int pct = scaledPctR(kSnareFlamPct, wFlam);
         if (pct > 0 && barChance(barNumber, kSaltFlam, pct))
         {
             const int flamCells[2] = { 4, 12 };
@@ -594,7 +614,7 @@ PatternPlayer::BarOrnamentation PatternPlayer::computeOrnamentation(int64_t barN
     //    fallback when the downbeat is taken). Needs a ride or closed-hat voice.
     if ((barNumber % 4) == 0 && (hasRide || hasClosedHat))
     {
-        const int pct = scaledPct(kRideBellAccentPct);
+        const int pct = scaledPctR(kRideBellAccentPct, wBell);
         if (pct > 0 && barChance(barNumber, kSaltRideBell, pct))
         {
             const int cells[2] = { 0, 8 };

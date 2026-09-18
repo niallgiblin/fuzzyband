@@ -329,6 +329,9 @@ private:
     bool playTakeActive = false;                 // capturing this section (first pass)
     bool playTakeReplaying = false;              // replaying a stored riff (a return)
     char playTakeSectionName[16] {};
+    // 38-03: the section whose stored riff is replayed. Usually == playTakeSectionName,
+    // but SOLO replays a learned VERSE/CHORUS phrase instead of mirroring the lead.
+    char playTakeReplayName[16] {};
     int64_t playTakeOriginMono = -1;             // monotonic replay-loop origin (bar-aligned)
     double playTakeOriginBeat = 0.0;             // transport beat of the section's bar 1
 
