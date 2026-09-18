@@ -434,7 +434,10 @@ private:
         int diagGap  = 10;   // panel -> status row
         int gap      = 9;    // breathing room between groups
         int readoutH = 20;   // the single diagnostic line
-        int shapeH   = 18;   // form-shape readout under the transition slider
+        int shapeH   = 30;   // form-shape pill under the transition slider
+        int headerH  = 24;   // a mode heading (PLAY MODE / RECORD RIFF)
+        int headerGap= 6;    // gap under a mode heading
+        int shapeGap = 4;    // transition row -> form-shape pill
 
         /** Height of everything except the variable-height section list. */
         int fixedHeight() const noexcept;
@@ -455,6 +458,67 @@ private:
     void fitEditorToScreen();
 
     LayoutMetrics metrics;   // set by resized(), consumed by layoutContent()
+
+    /**
+     * @brief A mode heading ("PLAY MODE", "RECORD RIFF"): a moss tick, a bold
+     *        title, and a hairline rule, so the panel reads as two groups rather
+     *        than one stack of label+control rows.
+     */
+    class SectionHeader final : public juce::Component
+    {
+    public:
+        SectionHeader() { setInterceptsMouseClicks(false, false); }
+
+        void setHeader(juce::String text, juce::Font font)
+        {
+            text_ = std::move(text);
+            font_ = std::move(font);
+            repaint();
+        }
+
+        void paint(juce::Graphics&) override;
+
+    private:
+        juce::String text_;
+        juce::Font font_ { juce::FontOptions(13.0f) };
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SectionHeader)
+    };
+
+    /**
+     * @brief The post-lock loop shape drawn as letter chips: A (the locked riff)
+     *        in moss, contrasts B/C/D/E in amber, with a trailing ellipsis for the
+     *        repeat. Replaces the previous debug-looking "A-B-A-C..." text line.
+     */
+    class FormShapeComponent final : public juce::Component,
+                                     public juce::SettableTooltipClient
+    {
+    public:
+        FormShapeComponent() = default;
+
+        void setFonts(juce::Font chip, juce::Font caption)
+        {
+            chipFont_ = std::move(chip);
+            captionFont_ = std::move(caption);
+            repaint();
+        }
+
+        /** @brief @p letters is one char per step, e.g. "ABAC"; drawn as looping. */
+        void setShape(const juce::String& letters)
+        {
+            if (letters == letters_)
+                return;
+            letters_ = letters;
+            repaint();
+        }
+
+        void paint(juce::Graphics&) override;
+
+    private:
+        juce::String letters_;
+        juce::Font chipFont_ { juce::FontOptions(13.0f) };
+        juce::Font captionFont_ { juce::FontOptions(10.0f) };
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FormShapeComponent)
+    };
 
     struct GenreSwingListener final : juce::AudioProcessorParameter::Listener
     {
@@ -482,7 +546,9 @@ private:
 
     juce::Viewport songSectionsViewport;
     std::unique_ptr<SectionListEditor> sectionListEditor;  // editable custom form
+    SectionHeader playModeHeader;                          // "PLAY MODE" heading
 
+    SectionHeader recordRiffHeader;   // "RECORD RIFF" heading above the lock controls
     juce::Label lockBarsLabel{ {}, "LOCK" };
     juce::Slider lockBarsSlider;
 
@@ -492,10 +558,10 @@ private:
     juce::Label transitionSectionsLabel{ {}, "TRANSITION SECTIONS" };
     juce::Slider transitionSectionsSlider;
 
-    // One-line loop-shape readout under the TRANSITION SECTIONS slider:
-    // "A-B-A-C..." etc. Rebuilt from the parameter each UI tick so it follows
-    // both user moves and host automation.
-    juce::Label transitionShapeLabel;
+    // Loop-shape pill under the TRANSITION SECTIONS slider: the post-lock form
+    // as letter chips (A = locked riff, B/C/D/E = contrasts). Rebuilt from the
+    // parameter each UI tick so it follows host automation as well as user moves.
+    FormShapeComponent formShapeComponent;
 
     /**
      * @brief One-line status: a phase dot, the phase/section, and the section

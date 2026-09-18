@@ -323,6 +323,26 @@ static juce::String transitionFormShape(int sections)
     return s + "...";
 }
 
+/**
+ * @brief The same shape as bare letters for the chip readout.
+ *
+ * "ABAB" (one contrast, shown twice so the loop is obvious) or the full cycle
+ * "ABAC" / "ABACAD" / "ABACADAE" with the trailing return to A dropped (the
+ * loop ellipsis implies it).
+ */
+static juce::String transitionFormLetters(int sections)
+{
+    sections = juce::jlimit(1, 4, sections);
+    if (sections == 1)
+        return "ABAB";
+
+    static const char* kContrast = "BCDE";
+    juce::String s = "A";
+    for (int i = 0; i < sections; ++i)
+        s << kContrast[i] << "A";
+    return s.dropLastCharacters(1);
+}
+
 AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     : AudioProcessorEditor(&p)
     , audioProcessorRef(p)
@@ -425,6 +445,12 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     songSectionsViewport.setScrollBarThickness(8);
     content.addAndMakeVisible(songSectionsViewport);
 
+    // Mode heading over the song-form list (the editable section rows are the
+    // Play-mode form; without a heading they read as controls for whatever is
+    // above them).
+    playModeHeader.setHeader("Play mode", lookAndFeel.displayFont(13.0f));
+    content.addAndMakeVisible(playModeHeader);
+
     playButton.setComponentID("play");
     playButton.setClickingTogglesState(true);
     playButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff4a7a3a));
@@ -474,6 +500,11 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     if (auto* genreParam = apvts.getParameter("genre"))
         genreParam->addListener(&genreSwingListener);
 
+    // Mode heading over the recorded-riff controls (lock hold + post-lock
+    // transition grammar).
+    recordRiffHeader.setHeader("Record riff", lookAndFeel.displayFont(13.0f));
+    content.addAndMakeVisible(recordRiffHeader);
+
     // Generative groove lock: hold length.
     lockBarsLabel.setJustificationType(juce::Justification::centredLeft);
     lockBarsLabel.setFont(lookAndFeel.labelFont(12.0f));
@@ -515,14 +546,11 @@ AccompanimentEditor::AccompanimentEditor(AccompanimentProcessor& p)
     content.addAndMakeVisible(transitionSectionsLabel);
     content.addAndMakeVisible(transitionSectionsSlider);
 
-    // Form-shape readout: one short line under the slider showing the loop the
-    // selected contrast count produces (A-B-A-B..., A-B-A-C...). Set from the
-    // timer so it tracks host automation as well as user moves.
-    transitionShapeLabel.setJustificationType(juce::Justification::centredLeft);
-    transitionShapeLabel.setFont(lookAndFeel.monoFont(11.0f));
-    transitionShapeLabel.setColour(juce::Label::textColourId, juce::Colour(FuzzybandPalette::moss));
-    transitionShapeLabel.setTooltip("Loop shape after the riff lock: the locked riff (A) returns between each contrast section (B, C, D, E), and the sequence repeats.");
-    content.addAndMakeVisible(transitionShapeLabel);
+    // Loop-shape pill: the post-lock form as letter chips (A = locked riff,
+    // B/C/D/E = contrast sections). Set from the timer so it tracks host
+    // automation as well as user moves.
+    formShapeComponent.setFonts(lookAndFeel.monoFont(13.0f), lookAndFeel.labelFont(10.0f));
+    content.addAndMakeVisible(formShapeComponent);
 
     // ── One-line status: phase dot + text, section progress on the same row ──
     statusLabel.setJustificationType(juce::Justification::centredLeft);
@@ -698,11 +726,13 @@ void AccompanimentEditor::timerCallback()
     statusDot.setDotColour(statusColour);
     sectionProgressComponent.setProgress(bar, tot, rem, frac);
 
-    // ── Form-shape readout: the loop the selected contrast count produces ────
+    // ── Loop-shape pill: the form the selected contrast count produces ───────
     int shapeSections = 2;
     if (auto* raw = audioProcessorRef.getApvts().getRawParameterValue("transitionSections"))
         shapeSections = juce::jlimit(1, 4, juce::roundToInt(raw->load()));
-    transitionShapeLabel.setText(transitionFormShape(shapeSections), juce::dontSendNotification);
+    formShapeComponent.setShape(transitionFormLetters(shapeSections));
+    formShapeComponent.setTooltip("Loop after the lock: " + transitionFormShape(shapeSections)
+                                  + "  A is the locked riff; B/C/D/E are contrast sections.");
 
     // ── DAW-style scope: copy ring + playhead, repaint ───────────────────────
     std::array<float, AccompanimentProcessor::kScopeSize> scopeCopy{};
@@ -826,6 +856,100 @@ void AccompanimentEditor::StatusDot::paint(juce::Graphics& g)
     g.fillEllipse(b.reduced(b.getWidth() * 0.28f));
 }
 
+void AccompanimentEditor::SectionHeader::paint(juce::Graphics& g)
+{
+    auto b = getLocalBounds();
+
+    // Measure the title so the rule starts right after it for either heading.
+    // (Font::getStringWidth is deprecated in JUCE 8, so use TextLayout.)
+    juce::AttributedString as(text_.toUpperCase());
+    as.setFont(font_);
+    juce::TextLayout layout;
+    layout.createLayout(as, 1000.0f);
+    const int textW = juce::roundToInt(std::ceil(layout.getWidth()));
+
+    // Slim moss tick anchors the group; the title sits next to it.
+    g.setColour(juce::Colour(FuzzybandPalette::moss));
+    g.fillRoundedRectangle((float) b.getX(), (float) b.getCentreY() - 7.0f,
+                           3.0f, 14.0f, 1.5f);
+
+    g.setFont(font_);
+    g.drawFittedText(text_.toUpperCase(), b.withTrimmedLeft(11).withWidth(textW + 4),
+                     juce::Justification::centredLeft, 1);
+
+    // Hairline rule out to the right edge.
+    const float ruleX = (float) (b.getX() + 11 + textW + 10);
+    if (ruleX < (float) b.getRight())
+    {
+        g.setColour(juce::Colour(0x446a9a50));
+        g.drawLine(ruleX, (float) b.getCentreY(), (float) b.getRight(),
+                   (float) b.getCentreY(), 1.0f);
+    }
+}
+
+void AccompanimentEditor::FormShapeComponent::paint(juce::Graphics& g)
+{
+    const auto bounds = getLocalBounds();
+
+    const int chipH = juce::jlimit(14, 20, bounds.getHeight() - 6);
+    const int chipW = chipH + 2;
+    const int n = letters_.length();
+    constexpr int kPadX = 10;
+    constexpr int kCaptionW = 38;
+    constexpr int kSepW = 12;
+
+    // Size the pill to its content so a 1-contrast shape does not sit in a wide
+    // empty box. It is left-aligned under the slider it belongs to.
+    const int neededW = kPadX + kCaptionW + n * (chipW + kSepW) + kPadX;
+    const juce::Rectangle<int> pill(bounds.getX(), bounds.getY(),
+                                    juce::jmin(bounds.getWidth(), neededW),
+                                    bounds.getHeight());
+
+    g.setColour(juce::Colour(0xcc0e1a0c));
+    g.fillRoundedRectangle(pill.toFloat(), 6.0f);
+    g.setColour(juce::Colour(0x556a9a50));
+    g.drawRoundedRectangle(pill.toFloat().reduced(0.5f), 6.0f, 1.0f);
+
+    auto content = pill.reduced(kPadX, 3);
+
+    // "LOOP" caption, then one chip per step.
+    g.setColour(juce::Colour(FuzzybandPalette::inkMuted));
+    g.setFont(captionFont_);
+    g.drawFittedText("LOOP", content.removeFromLeft(kCaptionW), juce::Justification::centredLeft, 1);
+
+    if (letters_.isEmpty())
+        return;
+
+    const int chipY = content.getCentreY() - chipH / 2;
+    int x = content.getX() + 4;
+
+    for (int i = 0; i < n; ++i)
+    {
+        const juce::juce_wchar c = letters_[i];
+        const bool home = (c == 'A');
+        const juce::Colour col = home ? juce::Colour(FuzzybandPalette::moss)
+                                      : juce::Colour(FuzzybandPalette::amber);
+
+        const juce::Rectangle<int> chip(x, chipY, chipW, chipH);
+        g.setColour(col.withAlpha(0.20f));
+        g.fillRoundedRectangle(chip.toFloat(), 4.0f);
+        g.setColour(col);
+        g.setFont(chipFont_.withHeight((float) chipH * 0.66f));
+        g.drawFittedText(juce::String::charToString(c), chip, juce::Justification::centred, 1);
+        x += chipW;
+
+        // Interpunct between steps, loop ellipsis after the last one.
+        g.setColour(juce::Colour(FuzzybandPalette::inkMuted));
+        g.setFont(captionFont_);
+        const bool last = (i + 1 == n);
+        const juce::String sep = last ? juce::String::fromUTF8("\xe2\x80\xa6")   // …
+                                      : juce::String::fromUTF8("\xc2\xb7");  // ·
+        g.drawFittedText(sep, juce::Rectangle<int>(x, chipY, kSepW, chipH),
+                         juce::Justification::centred, 1);
+        x += kSepW;
+    }
+}
+
 void AccompanimentEditor::SectionProgressComponent::paint(juce::Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
@@ -866,11 +990,12 @@ void AccompanimentEditor::SectionProgressComponent::paint(juce::Graphics& g)
 
 int AccompanimentEditor::LayoutMetrics::fixedHeight() const noexcept
 {
-    // The six group gaps and six label+control rows, the form-shape readout, then
-    // the diagnostics: gap to the status row, the status row itself, a gap, the
-    // scope, a 4px pad and the single engine readout line.
-    return 6 * gap + 6 * rowH
-         + shapeH
+    // The six group gaps and six label+control rows, the two mode headings and
+    // the form-shape pill, then the diagnostics: gap to the status row, the status
+    // row itself, a gap, the scope, a 4px pad and the single engine readout line.
+    return 6 * rowH + 6 * gap
+         + 2 * headerH + 2 * headerGap
+         + shapeGap + shapeH
          + diagGap + statusH + gap + scopeH + 4 + readoutH;
 }
 
@@ -887,6 +1012,10 @@ AccompanimentEditor::metricsForBodyHeight(int bodyH, int listContent) noexcept
     compact.diagGap  = 8;
     compact.gap      = 8;
     compact.readoutH = 19;
+    compact.headerH  = 20;
+    compact.headerGap= 4;
+    compact.shapeH   = 26;
+    compact.shapeGap = 3;
 
     LayoutMetrics withoutScope;   // defaults: full sizes, scope collapsed
 
@@ -1037,12 +1166,20 @@ void AccompanimentEditor::layoutContent(juce::Rectangle<int> bounds)
     humanizeSlider.setBounds(row);
     r.removeFromTop(metrics.gap);
 
+    // ── PLAY MODE: the editable song form ────────────────────────────────────
+    playModeHeader.setBounds(r.removeFromTop(metrics.headerH));
+    r.removeFromTop(metrics.headerGap);
+
     auto listArea = r.removeFromTop(sectionsH);
     songSectionsViewport.setBounds(listArea);
     if (sectionListEditor)
         sectionListEditor->setSize(juce::jmax(1, songSectionsViewport.getMaximumVisibleWidth()),
                                    juce::jmax(listArea.getHeight(), sectionListEditor->getHeightHint()));
     r.removeFromTop(metrics.gap);
+
+    // ── RECORD RIFF: lock hold + post-lock transition grammar ────────────────
+    recordRiffHeader.setBounds(r.removeFromTop(metrics.headerH));
+    r.removeFromTop(metrics.headerGap);
 
     row = r.removeFromTop(metrics.rowH);
     lockBarsLabel.setBounds(row.removeFromLeft(kRowLabelW));
@@ -1058,9 +1195,10 @@ void AccompanimentEditor::layoutContent(juce::Rectangle<int> bounds)
     transitionSectionsLabel.setBounds(row.removeFromLeft(kRowLabelW));
     transitionSectionsSlider.setBounds(row);
 
-    // The loop shape sits directly under the slider it describes, indented past
-    // the label column so it reads as part of that control.
-    transitionShapeLabel.setBounds(r.removeFromTop(metrics.shapeH).withTrimmedLeft(kRowLabelW));
+    // The loop-shape pill sits directly under the slider it describes, indented
+    // past the label column so it reads as part of that control.
+    r.removeFromTop(metrics.shapeGap);
+    formShapeComponent.setBounds(r.removeFromTop(metrics.shapeH).withTrimmedLeft(kRowLabelW));
 
     const int userBottom = r.getY();
     userPolicyArea = juce::Rectangle<int>(kEditorMargin, userTop,
