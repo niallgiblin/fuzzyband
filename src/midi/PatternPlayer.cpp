@@ -742,6 +742,22 @@ void PatternPlayer::emitCrashHit(juce::MidiBuffer& midi,
     midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, kCrashNote, 0.9f), off);
 }
 
+FillGrammar::FillScore PatternPlayer::currentFillScore(int fillIndex, double fillBarStart) const noexcept
+{
+    FillGrammar::FillContext ctx{};
+    const int bar = static_cast<int>(std::floor(fillBarStart / 4.0));
+    ctx.seed = static_cast<unsigned>(bar)
+             ^ (static_cast<unsigned>(activePatternIndex) * 2654435761u);
+    ctx.rmsEnergy = fillEnergy_;
+    ctx.onsetDensityPerBeat = fillDensity_;
+    ctx.sectionId = static_cast<int>(sectionId);
+    ctx.styleIndex = fillStyle_;
+    ctx.fillLengthBeats = (fillIndex == 17) ? 1.0f : (fillIndex == 18) ? 2.0f : 4.0f;
+    ctx.precedingPatternIdx = activePatternIndex;
+    ctx.barNumber = bar;
+    return FillGrammar::buildFill(ctx);
+}
+
 void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
                                 int numSamples,
                                 double beatStart,
@@ -754,7 +770,6 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
     if (fillPatternIndex < 17 || fillPatternIndex > 19)
         return;
 
-    const MidiPattern& fill = library->getPattern(fillPatternIndex);
     const MidiPattern& groove = library->getPattern(activePatternIndex);
     const double samplesPerBeat = (60.0 / juce::jmax(1.0f, bpm)) * sampleRate;
     const double samplesPerMs = sampleRate / 1000.0;
@@ -768,20 +783,23 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
     const int64_t slackSamples = static_cast<int64_t>(std::llround(lateBeats * samplesPerBeat)) + 1;
     (void) earlyBeats;
 
-    for (const auto& ev : fill.drumEvents)
+    // One event emitter shared by the generated grammar path and the authored
+    // fallback, so both humanise identically and the fallback stays byte-identical.
+    const auto emitOne = [&](int note, int authoredVel, float beatOffset,
+                             float durationBeats, bool isGhostAuthored) noexcept
     {
-        const double t = barStart + static_cast<double>(ev.beatOffset);
+        const double t = barStart + static_cast<double>(beatOffset);
         if (t < windowStart - 1.0e-9)
-            continue;
+            return;
 
         // T7.3: skip the fill's terminal crash when the incoming bar already
         // crashes on its downbeat (same ±20 ms window as T1.6).
-        if (ev.note == kCrashNote && ev.beatOffset >= 3.5f
+        if (note == kCrashNote && beatOffset >= 3.5f
             && patternCrashesNear(groove, barStart + 4.0))
-            continue;
+            return;
 
-        const int grid16 = Groove::grid16Of(ev.beatOffset);
-        const bool isGhost = ev.isGhost || (ev.velocity <= grooveTemplate.ghostThreshold);
+        const int grid16 = Groove::grid16Of(beatOffset);
+        const bool isGhost = isGhostAuthored || (authoredVel <= grooveTemplate.ghostThreshold);
         const int64_t eventBar = static_cast<int64_t>(std::floor(t / 4.0));
 
         float timeMs = grooveTemplate.timingMs[grid16];
@@ -789,7 +807,7 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
             timeMs += static_cast<float>(swingDelayMs);
         if (isGhost)
             timeMs += grooveTemplate.ghostTimingMs;
-        timeMs += eventGaussian(eventBar, grid16, ev.note, kSaltDrumTime,
+        timeMs += eventGaussian(eventBar, grid16, note, kSaltDrumTime,
                                 grooveTemplate.timingJitterMs);
 
         const int64_t absSample = sampleCounter + static_cast<int64_t>(std::llround(
@@ -797,11 +815,11 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
             + static_cast<double>(timeMs) * samplesPerMs));
         const int absOff = placeEvent(absSample, numSamples, slackSamples);
         if (absOff < 0)
-            continue;
+            return;
 
         const float mul = grooveTemplate.velocityMul[grid16] * sectionVelMul;
-        int vel = static_cast<int>(std::round(static_cast<float>(ev.velocity) * mul
-            + eventGaussian(eventBar, grid16, ev.note, kSaltDrumVel,
+        int vel = static_cast<int>(std::round(static_cast<float>(authoredVel) * mul
+            + eventGaussian(eventBar, grid16, note, kSaltDrumVel,
                             grooveTemplate.velocityJitter)));
         if (isGhost)
             vel = juce::jlimit(static_cast<int>(grooveTemplate.ghostVelocityLo),
@@ -809,8 +827,8 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
         else
             vel = applyVelocityHeadroom(vel);
 
-        int outNote = juce::jlimit(0, 127, static_cast<int>(ev.note));
-        float durBeats = ev.durationBeats;
+        const int outNote = juce::jlimit(0, 127, note);
+        float durBeats = durationBeats;
         if (outNote == kHatOpen && durBeats < 1.0f)
             durBeats = 1.0f;
         const int durSamps = juce::jmax(
@@ -819,6 +837,26 @@ void PatternPlayer::emitBarFill(juce::MidiBuffer& midi,
         midi.addEvent(juce::MidiMessage::noteOn(kDrumChannel, outNote,
                                                 static_cast<float>(vel) / 127.0f),
                       absOff);
+    };
+
+    if (humanizeAmount > 0.0f)
+    {
+        // Phase 37 A1: a generated fill from the deterministic grammar. The score
+        // is a pure function of the bar context, so the render stays buffer-size
+        // invariant (T9.2) and repeatable across bounces.
+        const FillGrammar::FillScore score = currentFillScore(fillPatternIndex, barStart);
+        for (int i = 0; i < score.count; ++i)
+        {
+            const auto& e = score.events[static_cast<size_t>(i)];
+            emitOne(e.note, e.velocity, e.beatOffset, e.durationBeats, e.isGhost);
+        }
+    }
+    else
+    {
+        // Authored fallback (patterns 17/18/19). Byte-identical to pre-A1 output.
+        const MidiPattern& fill = library->getPattern(fillPatternIndex);
+        for (const auto& ev : fill.drumEvents)
+            emitOne(ev.note, ev.velocity, ev.beatOffset, ev.durationBeats, ev.isGhost);
     }
 }
 

@@ -17,6 +17,7 @@
 #include "GrooveTemplate.h"
 #include "GrooveGrid.h"
 #include "BassVoice.h"
+#include "FillGrammar.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -263,6 +264,16 @@ public:
     float getGuitarEnergy() const noexcept { return guitarEnergy; }
 
     /**
+     * @brief Fill-grammar context (Phase 37 A1). Set per block on the audio
+     *        thread from the same signals the selector uses. `energy` is the raw
+     *        input RMS, `density` the guitar onset density (attacks/beat), and
+     *        `style` the committed playing-style class (-1 .. 3).
+     */
+    void setFillEnergy(float rms) noexcept { fillEnergy_ = juce::jlimit(0.0f, 1.0f, rms); }
+    void setFillDensity(float attacksPerBeat) noexcept { fillDensity_ = juce::jlimit(0.0f, 8.0f, attacksPerBeat); }
+    void setFillStyle(int style) noexcept { fillStyle_ = style; }
+
+    /**
      * @brief Map a long-window RMS onto the bidirectional energy multiplier.
      *        Silence sits at 0.94 (below unity); a hot signal reaches 1.20.
      *        T3.2: the input must be a *swell* window, not a per-block RMS.
@@ -330,6 +341,10 @@ private:
                             double beatEnd,
                             int sampleOffsetBase) noexcept;
 
+    /** @brief Build the generated fill for a bar (Phase 37 A1). Pure/deterministic;
+     *  returns an authored-equivalent score the emit loop renders by absolute sample. */
+    FillGrammar::FillScore currentFillScore(int fillIndex, double fillBarStart) const noexcept;
+
     /**
      * @brief Route bass for a range: authored pattern bass, else harmonic fallback.
      *
@@ -373,7 +388,6 @@ private:
                      double beatEnd,
                      int fillPatternIndex,
                      double fillBarStart) noexcept;
-
     /** Emit a crash cymbal hit with a scheduled note-off (no hanging cymbal). */
     void emitCrashHit(juce::MidiBuffer& midi,
                       int numSamples,
@@ -506,6 +520,11 @@ private:
     Groove::SongSectionId sectionId = Groove::SongSectionId::Verse;
     float swing = 0.0f;                         // 0..1 (A2.3)
     float humanizeAmount = 1.0f;                // 0..1 ornament scale (T4.3; tests default full)
+
+    // Fill-grammar context (Phase 37 A1). Written per block on the audio thread.
+    float fillEnergy_ = 0.0f;                   // raw input RMS [0,1]
+    float fillDensity_ = 0.0f;                  // guitar onset density (attacks/beat)
+    int   fillStyle_ = -1;                      // committed style -1..3
     float sectionVelMul = 1.0f;                 // preset section multiplier (A3.1)
     float ghostDensity = 0.0f;                  // 0..1 (A3.2)
     float guitarEnergy = 1.0f;                  // guitarist-energy dynamic (drums + bass)

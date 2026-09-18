@@ -1708,6 +1708,11 @@ TEST_CASE("Processor pipeline: play mode phrases grooves, re-seeds per section i
     AccompanimentProcessor proc;
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
+    // Authored fills (patterns 17/18/19) as the fill-content reference for this
+    // arming/overlay contract test; the generated A1 grammar is covered by the
+    // [midi][fill][A1] PatternPlayer tests. humanize=0 selects the authored path.
+    if (auto* hp = proc.getApvts().getParameter("humanize"))
+        hp->setValueNotifyingHost(0.0f);
 
     proc.setCustomSongForm("INTRO:9,VERSE:4,VERSE:4");
     proc.playActive.store(true, std::memory_order_release);
@@ -1811,6 +1816,9 @@ TEST_CASE("Processor pipeline: Record A/B last-bar fills do not overlay the inco
     AccompanimentProcessor proc;
     proc.prepareToPlay(sr, block);
     proc.pauseBackgroundInferenceForTests();
+    // Authored fills as the content reference (see the note in the Play test above).
+    if (auto* hp = proc.getApvts().getParameter("humanize"))
+        hp->setValueNotifyingHost(0.0f);
     if (auto* p = proc.getApvts().getParameter("lockBars"))
         p->setValueNotifyingHost(0.0f);
     if (auto* p = proc.getApvts().getParameter("transitionBars"))

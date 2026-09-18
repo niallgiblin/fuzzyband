@@ -941,6 +941,13 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         humanize = juce::jlimit(0.0f, 1.0f, rawHumanize->load());
     patternPlayer.setHumanize(humanize);
 
+    // Fill-grammar context (Phase 37 A1): the same signals the selector uses.
+    // displayStyle is atomic and written on the inference thread; reading it here
+    // and storing the copy on the audio thread keeps this race-free.
+    patternPlayer.setFillEnergy(rms);
+    patternPlayer.setFillDensity(fv.onsetDensityPerBeat);
+    patternPlayer.setFillStyle(displayStyle.load(std::memory_order_relaxed));
+
     // Bass octave transposition: -12 / 0 / +12 semitones on the bass output.
     // The raw APVTS value is the choice index (0, 1, 2) for "-12 / 0 / +12".
     int bassTranspose = 0;

@@ -249,6 +249,7 @@ TEST_CASE("armBarFill 17 emits toms on beat 4 independent of block size", "[midi
         player.snapBpm(120.0f);
         player.setStructureSilent(false);
         player.setPatternIndex(1);
+        player.setHumanize(0.0f);   // authored fill 17 fallback (A1 grammar off)
         player.armBarFill(17);
 
         std::vector<int64_t> samples;
@@ -331,6 +332,7 @@ TEST_CASE("armBarFill 19 fromNextBar defers until the next bar downbeat", "[midi
     player.snapBpm(120.0f);
     player.setStructureSilent(false);
     player.setPatternIndex(1);
+    player.setHumanize(0.0f);   // authored fill 19 fallback (A1 grammar off)
 
     auto isTom = [](int note) {
         return note == 41 || note == 43 || note == 45 || note == 47 || note == 48;
@@ -381,6 +383,7 @@ TEST_CASE("armBarFill 17 fromNextBar lands beat-4 toms on the next bar", "[midi]
     player.snapBpm(120.0f);
     player.setStructureSilent(false);
     player.setPatternIndex(1);
+    player.setHumanize(0.0f);   // authored fill 17 fallback (A1 grammar off)
 
     auto isTom = [](int note) {
         return note == 41 || note == 43 || note == 45 || note == 47 || note == 48;
@@ -424,6 +427,114 @@ TEST_CASE("armBarFill 17 fromNextBar lands beat-4 toms on the next bar", "[midi]
     REQUIRE(armed);
     REQUIRE(tomsBar0Beat4 == 0);
     REQUIRE(tomsBar1Beat4 >= 1);
+}
+
+// ── Phase 37 A1: generated fill grammar ──────────────────────────────────────
+
+TEST_CASE("A1: generated fill is buffer-invariant and deterministic", "[midi][fill][A1]")
+{
+    MidiPatternLibrary lib;
+    auto render = [&](int block)
+    {
+        PatternPlayer p;
+        p.setPatternLibrary(&lib);
+        p.prepare(48000.0, block);
+        p.setRandomSeed(7);
+        p.snapBpm(120.0f);
+        p.setStructureSilent(false);
+        p.setPatternIndex(1);
+        p.setHumanize(1.0f);            // generated path
+        p.setFillEnergy(0.7f);
+        p.setFillDensity(2.5f);
+        p.setSection(Groove::SongSectionId::Verse);
+        p.armBarFillAtBeat(19, 0.0);    // full-bar fill at bar 0
+        const int64_t span = 2048 * 188; // ~4 bars, divisible by 128/512/2048
+        return MidiProbe::render(p, static_cast<int>(span / block), block, 0);
+    };
+    const auto a = render(128);
+    const auto b = render(512);
+    const auto c = render(2048);
+    const auto d = render(512);
+    REQUIRE_FALSE(a.empty());
+    REQUIRE(MidiProbe::fingerprint(a) == MidiProbe::fingerprint(b));
+    REQUIRE(MidiProbe::fingerprint(a) == MidiProbe::fingerprint(c));
+    REQUIRE(MidiProbe::fingerprint(b) == MidiProbe::fingerprint(d));
+}
+
+TEST_CASE("A1: generated fill lands the phrase before the next downbeat", "[midi][fill][A1]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.setRandomSeed(11);
+    player.snapBpm(120.0f);
+    player.setStructureSilent(false);
+    player.setPatternIndex(1);
+    player.setHumanize(1.0f);
+    player.setFillEnergy(0.7f);      // dense
+    player.setFillDensity(2.5f);
+    player.setSection(Groove::SongSectionId::Verse);
+    player.armBarFillAtBeat(19, 0.0);
+
+    constexpr double kSamplesPerBeat = 24000.0;
+    constexpr int block = 512;
+    int inWindow = 0, landing = 0;
+    int64_t pos = 0;
+    while (pos < 96000)
+    {
+        juce::MidiBuffer midi;
+        player.process(midi, block, pos);
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (!msg.isNoteOn() || msg.getChannel() != 10)
+                continue;
+            const double beat = static_cast<double>(pos + meta.samplePosition) / kSamplesPerBeat;
+            if (beat >= 0.0 && beat < 4.0) ++inWindow;
+            if (beat >= 3.5 && beat < 4.0) ++landing;
+        }
+        pos += block;
+    }
+    REQUIRE(inWindow > 0);
+    REQUIRE(landing >= 1);   // the phrase always lands into the downbeat
+}
+
+TEST_CASE("A1: humanize=0 falls back to the authored fill", "[midi][fill][A1]")
+{
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.prepare(48000.0, 512);
+    player.snapBpm(120.0f);
+    player.setStructureSilent(false);
+    player.setPatternIndex(1);
+    player.setHumanize(0.0f);        // authored path
+    player.armBarFillAtBeat(17, 0.0);
+
+    constexpr double kSamplesPerBeat = 24000.0;
+    constexpr int block = 512;
+    bool tomAt3 = false, tomAt325 = false;
+    int64_t pos = 0;
+    while (pos < 96000)
+    {
+        juce::MidiBuffer midi;
+        player.process(midi, block, pos);
+        for (const auto meta : midi)
+        {
+            const auto msg = meta.getMessage();
+            if (!msg.isNoteOn() || msg.getChannel() != 10)
+                continue;
+            if (msg.getNoteNumber() != 48 && msg.getNoteNumber() != 45)
+                continue;
+            const double beat = static_cast<double>(pos + meta.samplePosition) / kSamplesPerBeat;
+            if (std::abs(beat - 3.0) < 0.1)  tomAt3 = true;
+            if (std::abs(beat - 3.25) < 0.1) tomAt325 = true;
+        }
+        pos += block;
+    }
+    REQUIRE(tomAt3);
+    REQUIRE(tomAt325);
 }
 
 // ── Musicality pivot: bass engine (A1) ───────────────────────────────────────
@@ -1481,6 +1592,56 @@ TEST_CASE("B: additive ornaments never fire on Silent and scale with humanize",
         }
     REQUIRE(full > 0);
     REQUIRE(half <= full);
+}
+
+TEST_CASE("B: additive ornaments fire at the shipped default humanize (0.35)",
+          "[midi][ornament][B]")
+{
+    // The APVTS default is 0.35, not 1.0, and it is NOT mode-gated: Record and
+    // Play both go through the same PatternPlayer emission. This locks that the
+    // additions are reachable at the real shipped setting (and in the Record-mode
+    // section mapping: LOUD -> Chorus, else Verse).
+    MidiPatternLibrary lib;
+    PatternPlayer player;
+    player.setPatternLibrary(&lib);
+    player.setHumanize(0.35f);
+
+    int extraTom = 0, kickDouble = 0, snareFlam = 0, rideBell = 0;
+
+    // VERSE (Record SOFT/SILENT mapping) — all four are permitted here.
+    player.setSection(Groove::SongSectionId::Verse);
+    for (int pat : {1, 2, 3, 7, 10, 20})
+        for (int64_t bar = 0; bar < 2000; ++bar)
+        {
+            const auto o = player.computeOrnamentation(bar, pat);
+            extraTom += o.extraTom;
+            kickDouble += o.kickDouble;
+            snareFlam += o.snareFlam;
+            rideBell += o.rideBellAccent;
+        }
+
+    REQUIRE(extraTom >= 1);
+    REQUIRE(kickDouble >= 1);
+    REQUIRE(snareFlam >= 1);
+    REQUIRE(rideBell >= 1);
+
+    // CHORUS (Record LOUD mapping): extraTom is intentionally section-gated off,
+    // but the three non-section-gated additions still fire.
+    player.setSection(Groove::SongSectionId::Chorus);
+    int chorusTom = 0, chorusKick = 0, chorusFlam = 0, chorusBell = 0;
+    for (int pat : {4, 5, 14, 21})
+        for (int64_t bar = 0; bar < 2000; ++bar)
+        {
+            const auto o = player.computeOrnamentation(bar, pat);
+            chorusTom += o.extraTom;
+            chorusKick += o.kickDouble;
+            chorusFlam += o.snareFlam;
+            chorusBell += o.rideBellAccent;
+        }
+    REQUIRE(chorusTom == 0);      // by design
+    REQUIRE(chorusKick >= 1);
+    REQUIRE(chorusFlam >= 1);
+    REQUIRE(chorusBell >= 1);
 }
 
 TEST_CASE("T5.3: a ringing mirror owns the bass; the grid resumes after its gate", "[midi][bass][t5.3]")
