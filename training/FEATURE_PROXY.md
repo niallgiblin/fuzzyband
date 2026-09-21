@@ -90,7 +90,7 @@ Each source MIDI row expands to **3 training rows** via `_INTENSITY_VARIANTS = (
 - **Y** is recomputed per variant via `_oracle_label(..., policy_intensity=pi)` so labels stay aligned with adjusted BPM near the **120** / **160** thresholds
 - Intensity **0.0** → **-20** BPM, **0.5** → **0**, **1.0** → **+20**
 
-Breakdown class **6** override still uses **raw** BPM `< 110` (not adjusted). Cross-ref runtime packing in [`docs/ONNX_IO.md`](../docs/ONNX_IO.md).
+Breakdown class **6** override still uses **raw** BPM `< 110` (not adjusted). Cross-ref runtime packing in `PatternRules::adjustedBpm`.
 
 ### Rule oracle (classes 0-5)
 
@@ -137,6 +137,6 @@ are never overridden to Breakdown.
 
 ## References
 
-- [`docs/ONNX_IO.md`](../docs/ONNX_IO.md) - frozen **`X` / `Y`** contract
+- `src/inference/pattern_rules.h` - frozen **`X` / `Y`** runtime contract
 - [`src/midi/MidiPatternLibrary.h`](../src/midi/MidiPatternLibrary.h) - seven pattern slots
 - [`training/prep_midi.py`](prep_midi.py) - **`_events_from_file`** (import-only for Phase 17; **do not edit** `prep_midi.py`)

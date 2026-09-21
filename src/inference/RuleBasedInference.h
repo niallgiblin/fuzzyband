@@ -10,7 +10,8 @@
 /**
  * @brief Rule-based pattern selection from structure state and BPM bands.
  *
- * Used when ML inference is disabled; see `ARCHITECTURE.md` for the feature pipeline.
+ * Used when ML inference is disabled; see @ref FeatureVector for the feature
+ * pipeline that feeds it.
  */
 class RuleBasedInference final : public IInference
 {

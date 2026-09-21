@@ -11,7 +11,7 @@
  *
  * **Mono only.** Stem bounces (drums/bass) are often stereo — reject them with a
  * clear error so agent audits cannot silently skip or analyse the wrong file.
- * The plugin input contract is clean DI on stem `01-*` (see `RULES.md`).
+ * The plugin input contract is clean DI on stem `01-*`.
  */
 
 #include <cstdint>

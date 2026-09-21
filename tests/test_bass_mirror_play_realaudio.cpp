@@ -8,7 +8,7 @@
  * counters. This drives the real plugin over the real recordings and measures
  * how many bass note-ons came from each BassVoice producer, plus the attack
  * detector's rise-candidate outcome histogram. See `docs/BASS_MIRRORING.md` §6
- * and `RULES.md` §7.
+ * for the analysis method.
  *
  * Offline agent harness (env-gated):
  *   MA_DI_WAV  + MA_DI_BPM   → Play-mode DI audit   ([di] tag)

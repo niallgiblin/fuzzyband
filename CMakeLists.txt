@@ -434,7 +434,7 @@ if(MA_BUILD_TESTS)
     # ── Orphan-test guard ──────────────────────────────────────────────────────
     # Fail configuration if any tests/*.cpp is not compiled into a test target.
     # This closes the recurring "all-green-but-broken" trap where a test file
-    # silently stops being built (see docs/DATA_STRATEGY.md Phase 2). Tests that
+    # silently stops being built. Tests that
     # are only built under a feature flag (e.g. ONNX-gated) are exempted below.
     set(MA_CONDITIONAL_TEST_FILES
         test_onnx_latency_benchmark.cpp      # only linked when MA_ENABLE_ONNX=ON

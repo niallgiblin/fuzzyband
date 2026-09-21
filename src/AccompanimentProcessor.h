@@ -33,7 +33,7 @@
  * @brief Main plugin processor: onset/tempo, energy/structure, rule-based inference, @ref PatternPlayer.
  *
  * Real-time work happens in @ref processBlock; inference runs on a dedicated background thread with a
- * lock-free feature queue (see `ARCHITECTURE.md`).
+ * lock-free feature queue.
  */
 class AccompanimentProcessor final : public juce::AudioProcessor
 {

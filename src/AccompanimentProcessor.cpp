@@ -1813,7 +1813,7 @@ void AccompanimentProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                              || hopAbs - lastMirrorAttackHopAbs
                                     > static_cast<int64_t>(mirrorPitchWindow)))
                 {
-                    // Legato pitch follow (RULES.md §7.1.5): a held/legato change
+                    // Legato pitch follow: a held/legato change
                     // with no fresh pick retunes the held note once the fixed-hop
                     // pitch estimate agrees for a few hops (~30 ms). Hop-counted,
                     // not block-counted, so it is buffer-size invariant.
