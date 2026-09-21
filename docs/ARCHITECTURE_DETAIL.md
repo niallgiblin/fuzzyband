@@ -1,5 +1,5 @@
 > **Canonical evidence base.** Every claim carries a `file:line` citation into the working tree
-> at v1.0.3 (`5d5f410`). The short, readable version is [`/ARCHITECTURE.md`](../ARCHITECTURE.md).
+> at v1.0.3 (`d1fc62a`). The short, readable version is [`/ARCHITECTURE.md`](../ARCHITECTURE.md).
 > Sections §6 (doc-vs-code contradictions) and §8 (undocumented but important) are the most
 > valuable parts.
 
@@ -822,7 +822,7 @@ jump detection (`:1245-1259`) superseded them.
 
 ## 9. Uncertainty and limits of this review
 
-1. **No build, no test run.** Every statement is static reading of the tree at `5d5f410`. I did not
+1. **No build, no test run.** Every statement is static reading of the tree at `d1fc62a`. I did not
    compile, run `ctest`, or profile. Real-time cost claims (§8.1) are derived from loop bounds and
    window sizes, not measurement — the FFT count (~40) and MAC count (~2.1 M) are arithmetic from
    `MelSpectrogramExtractor.cpp:123-145`.

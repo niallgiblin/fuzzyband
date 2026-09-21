@@ -8,7 +8,7 @@ what was tried, what worked, what failed or was reverted, and what had to be att
 [`PITFALLS_AND_INVARIANTS.md`](PITFALLS_AND_INVARIANTS.md) ·
 [`BASS_MIRRORING.md`](BASS_MIRRORING.md) · [`TEST_AUDIT.md`](TEST_AUDIT.md) · [`DOCS_INDEX.md`](DOCS_INDEX.md)
 
-**Repository:** `/Users/ng/projects/fuzzyband` · **Audited at HEAD:** `5d5f410` (2026-09-14, CMake
+**Repository:** `/Users/ng/projects/fuzzyband` · **Audited at HEAD:** `d1fc62a` (2026-09-14, CMake
 `VERSION 1.0.3`) · **Commits on `main`:** 326 · **Commit date span:** 2026-04-16 → 2026-09-14.
 
 > **Read §0.3 before citing any version number.** The CHANGELOG was backfilled in bulk for early
@@ -55,17 +55,17 @@ Where these disagree it is called out inline and collected in §6.
 - **Git history starts at Phase 7.** The oldest commit is `0c306ca` (2026-04-16, "docs: map existing
   codebase"). Phases 1–6 have no commit history and no phase directories
   (`RETROSPECTIVE.md:127`: "Early phases (1–6) lack per-plan phase directories").
-- **CHANGELOG versions 0.9.0–0.9.16 were written retrospectively in one commit**: `0f225f6`
+- **CHANGELOG versions 0.9.0–0.9.16 were written retrospectively in one commit**: `47a3c8c`
   (2026-08-19, CMake `0.9.16`, message "Data Improvements P0"). Verified by
-  `git log -S"## [0.9.N]" -- CHANGELOG.md`. Similarly `0.9.29`–`0.9.31` were introduced by `d74edb7`
-  (2026-08-31, CMake `0.9.33`), and `0.9.45` by `773038a` (2026-09-02, CMake `0.9.47`).
+  `git log -S"## [0.9.N]" -- CHANGELOG.md`. Similarly `0.9.29`–`0.9.31` were introduced by `b903500`
+  (2026-08-31, CMake `0.9.33`), and `0.9.45` by `57b3ccc` (2026-09-02, CMake `0.9.47`).
   **There is no per-build commit for any 0.9.0–0.9.16 change**; those version numbers are a
   reconstruction of the v0.8.x-era work.
 - **CHANGELOG has missing headings and gaps**; see §6.3.
 - `docs/PLAYABILITY_REVIEW.md` was committed in `5385856` ("Musicality Phase 0", 2026-09-10) —
   i.e. the review and the remediation plan were both landed in the same commit as the fix work began.
 - `.MDignore/PROTOTYPE_PLAN.md`, `TRIAGE.md`, `SIMPLIFY.md`, `CHANGES_PLAN.md`, `ML_REPORT.md` were
-  moved out of the repo root into `.MDignore/` by `d74edb7` (2026-08-31) — the diff for that commit
+  moved out of the repo root into `.MDignore/` by `b903500` (2026-08-31) — the diff for that commit
   shows `CHANGES_PLAN.md | 146 -`, `SIMPLIFY.md | 1041 -`, `ML_REPORT.md | 704 -`,
   `PROTOTYPE_PLAN.md | 480 -`, `TRIAGE.md | 292 -` removed from the root.
 
@@ -103,16 +103,16 @@ PALM_MUTE / OPEN_CHORD / SINGLE_NOTE / SUSTAIN / SILENCE (`:15-24`); own-guitar 
 
 ### Era 1 — v0.1.0 "Phase 1 rule-based MVP" (2026-04-16 → 2026-04-17)
 
-- **Version:** CMake `0.1.0`, added in `de0304d` (2026-04-16, "phase 1.7"); surfaced in the UI by
-  `e1bfffd` (2026-04-19, "Add version to UI") while still `0.1.0`.
+- **Version:** CMake `0.1.0`, added in `9e4c1ab` (2026-04-16, "phase 1.7"); surfaced in the UI by
+  `3131a9a` (2026-04-19, "Add version to UI") while still `0.1.0`.
 - **Milestone record:** shipped 2026-04-17, phases 1–8, requirements SCAF/ONSET/ENERGY/MIDI/OUT/
   INFER/STAB/DOCS (`MILESTONES.md:101-124`; `ROADMAP.md:16-35`).
-- **Commits (all Phase 7–8):** `0c306ca` map codebase, `3198b11` 07-01 per-state tagger hold times,
-  `551678a` 07-02 BPM-adaptive durations, `dbac738` 07-03 processor hardening, `9c62cc3` 07-04 debug
-  metrics, `b4ba1ee` 07-05 verification templates/TSan, `de0304d` version bump, `e45daa4` backlog
-  999.1, `46213ea` jam-tuned thresholds, `6df67c7` STAB-01..04 evidence, `a6aba0b`, `de1c908`
-  (CR-01 + WR-01..06 review fixes), `bed11a5`, `32547b3`, `55c62d9`, `18846e6`, `bd0d49e`, `7fc112b`,
-  `caddac0`, `1c154a4`, `cf8abe5`, `377d651` (archive v0.1.0).
+- **Commits (all Phase 7–8):** `0c306ca` map codebase, `47ebf7e` 07-01 per-state tagger hold times,
+  `0567664` 07-02 BPM-adaptive durations, `bfd7bee` 07-03 processor hardening, `158bcc3` 07-04 debug
+  metrics, `b4ba1ee` 07-05 verification templates/TSan, `9e4c1ab` version bump, `e45daa4` backlog
+  999.1, `5583c43` jam-tuned thresholds, `6df67c7` STAB-01..04 evidence, `a6aba0b`, `fb92040`
+  (CR-01 + WR-01..06 review fixes), `5a442d6`, `e0153e9`, `55c62d9`, `4ab3f41`, `bd0d49e`, `aea2809`,
+  `2d00c90`, `1c154a4`, `cf8abe5`, `377d651` (archive v0.1.0).
 
 **Built.** JUCE 8 VST3 + AU CMake build; GitHub Actions macOS CI; `OnsetDetector` (spectral flux, IOI
 median, BPM clamp 80–220); `EnergyAnalyser` (RMS 100 ms, spectral centroid, HF flux); `StructureTagger`
@@ -135,20 +135,20 @@ median, BPM clamp 80–220); `EnergyAnalyser` (RMS 100 ms, spectral centroid, HF
 
 ### Era 2 — v0.2.0 "Phase 2 ML + Generative" (2026-04-16 → 2026-04-17)
 
-- **Version:** **no `0.2.0` CMake version ever existed.** CMake went `0.1.0` (`de0304d`, 2026-04-16)
-  → `0.3.0` (`01a7c14`, 2026-04-19). The milestone is dated 2026-04-17 in
+- **Version:** **no `0.2.0` CMake version ever existed.** CMake went `0.1.0` (`9e4c1ab`, 2026-04-16)
+  → `0.3.0` (`2002b78`, 2026-04-19). The milestone is dated 2026-04-17 in
   `PROJECT.md:34`, `MILESTONES.md:83`, `RETROSPECTIVE.md:77`.
 - **Phases 9–16**, 18 plan summaries (`MILESTONES.md:85`).
 
 **Built.** Optional ONNX runtime with frozen `docs/ONNX_IO.md` contract and an audio-thread CI guard
-(`ONNX-01–03`); YIN pitch estimator + bass root routing (`PITCH-01–04`, `97fd2ac`, `2815a13`);
-ML structure path + rule fallback (`STRUC-01–03`, `936a6e1`, `a1730bf`, `fcb835f`); generative bass
-with `BassMidiValidator` + rank/select + degradation (`GBASS-01–03`, `521a01f`, `c9e092e`, `00df73f`,
-`e54568f`, `3898394`, `d83e97a`, `738909d`, `cb89d54`); APVTS policy params (`genre`, `intensity`,
+(`ONNX-01–03`); YIN pitch estimator + bass root routing (`PITCH-01–04`, `def37d5`, `e66c8c6`);
+ML structure path + rule fallback (`STRUC-01–03`, `b03582c`, `45cb0fc`, `45e2472`); generative bass
+with `BassMidiValidator` + rank/select + degradation (`GBASS-01–03`, `cdff3e0`, `0fe7bfe`, `5c50b3f`,
+`2adb40d`, `3898394`, `c9cf6c0`, `5790fb6`, `48837f4`); APVTS policy params (`genre`, `intensity`,
 `variation`, `structureBlend`, `generativeBassMode`) + `PolicyPatternMapper` + editor (`PUI-01–03`,
-`7a46e6d`, `ff40e87`); Python training stub + `validate_onnx_contract.py` (`PYTR-01–03`, `e18100d`,
-`51a6df9`, `d1675eb`); Terraform S3 + GitHub OIDC + promote/download scripts (`CLOUD-01–02`,
-`ea96d68`, `b145992`, `f7e6252`, `491f36c`, `98ebb70`).
+`dcc5ddd`, `4cf87de`); Python training stub + `validate_onnx_contract.py` (`PYTR-01–03`, `7568cfd`,
+`f6b37ac`, `d1675eb`); Terraform S3 + GitHub OIDC + promote/download scripts (`CLOUD-01–02`,
+`ae1a706`, `06b60c6`, `f7e6252`, `f6a5d4e`, `7e160b6`).
 
 **Failed / reversed approaches.**
 - **Cloud pivot reversed.** `v0.1.0-ROADMAP.md:158`: "M2 direction is under revision… Likely shift from
@@ -161,10 +161,10 @@ with `BassMidiValidator` + rank/select + degradation (`GBASS-01–03`, `521a01f`
   `ROADMAP.md:51`; recorded as an inefficiency in `RETROSPECTIVE.md:93`.
 - **Onset robustness sidecar (2026-04-17, four review fixes).** `7862657` WR-01 instantaneous attack
   on the peak-RMS envelope tracker; `7212604` WR-02 evict-first circular buffer in the rolling-mean
-  threshold; `99867ae` WR-03 wrap `ioiRingWrite` into `[0,15]` to prevent signed overflow; `8d2892f`
+  threshold; `34801d5` WR-03 wrap `ioiRingWrite` into `[0,15]` to prevent signed overflow; `9ab406c`
   WR-04 guard `makeBassInference()` with `MA_ENABLE_ONNX`. Feature work: `4610524` band-limited
-  adaptive flux threshold + 16-slot IOI ring; `a5c47ca` relative SILENT threshold via peak-RMS
-  envelope; `b14bdcd` 8-onset warmup tests + noise-immunity test. **These four WR fixes are themselves
+  adaptive flux threshold + 16-slot IOI ring; `f20a701` relative SILENT threshold via peak-RMS
+  envelope; `f6f7c0f` 8-onset warmup tests + noise-immunity test. **These four WR fixes are themselves
   re-fixes of the "stale artefact / unbounded buffer" class that recurred in Era 11.**
 
 **ONNX silent-fallback hazard identified here.** `PITFALLS.md:41` and `:173`: a shape/opset mismatch
@@ -175,23 +175,23 @@ throws at `Run()`, `catch(...)` "silently swallows", the plugin falls back to ru
 
 ### Era 3 — v0.3.0 "Real ML Training Pipeline" (2026-04-17 → 2026-04-20)
 
-- **Version:** `0.3.0` at `01a7c14` (2026-04-19, "v0.3.0").
+- **Version:** `0.3.0` at `2002b78` (2026-04-19, "v0.3.0").
 - **Phases 17–20**, 10 plans with summaries (`MILESTONES.md:62-79`).
 
-**Built.** `training/download_gmd.py` (TFDS-pinned GMD + SHA-256 manifest, `172d23f`); `FEATURE_PROXY.md`
-(`e58511e`, `dfc0917`); `build_dataset.py` with grouped split + histogram gate (`6c2e1ba`, `0348b5c`);
-`PatternNet` 5→32→16→7 MLP + `PatternOnnxExport` with baked normalisation (`8aa3002`, `5884e2a`);
-`BassNet` 7→32→16→4 on synthetic E2/A2/B1 (`763b908`); `install-model-local.sh` (`30f49fc`);
+**Built.** `training/download_gmd.py` (TFDS-pinned GMD + SHA-256 manifest, `6ecf1c7`); `FEATURE_PROXY.md`
+(`371e47b`, `8496bd9`); `build_dataset.py` with grouped split + histogram gate (`3964bba`, `4005f4f`);
+`PatternNet` 5→32→16→7 MLP + `PatternOnnxExport` with baked normalisation (`6f0bf86`, `ffd269f`);
+`BassNet` 7→32→16→4 on synthetic E2/A2/B1 (`ba30999`); `install-model-local.sh` (`22f5702`);
 `20-VERIFICATION.md` Reaper smoke checklist (`f906936`, `5ac7fbc`).
 
 **Failures fixed inside the era (all env/training-shape fights).**
-- `04ab7c5` add `importlib-resources` for TFDS; `94b7fb4` locate GMD zip under TFDS hashed downloads
-  filename; `3b9ea68` patch TFDS `DatasetInfo` for protobuf 6+ upb `FieldDescriptor`.
-- `5884e2a` WR-001: BatchNorm broken at batch size 1 → **LayerNorm in `PatternNet`**.
-- `b3e3fb2` WR-002: weighted validation CE did not match training.
-- `74dab70` WR-001: `BassOnnxExport` batch-1 guard; `fd5396d` skip the guard during JIT trace
+- `4c99bf4` add `importlib-resources` for TFDS; `1cd04d9` locate GMD zip under TFDS hashed downloads
+  filename; `059e394` patch TFDS `DatasetInfo` for protobuf 6+ upb `FieldDescriptor`.
+- `ffd269f` WR-001: BatchNorm broken at batch size 1 → **LayerNorm in `PatternNet`**.
+- `a49640e` WR-002: weighted validation CE did not match training.
+- `33b75aa` WR-001: `BassOnnxExport` batch-1 guard; `c05ba88` skip the guard during JIT trace
   (TracerWarning).
-- `f18cf1f`, `79216e8`, `4d3ab4e` code-review passes.
+- `f18cf1f`, `79216e8`, `058255c` code-review passes.
 
 **Deliberate scaffold that became a liability.** `PITFALLS.md:150`: bass training set
 `Y[:, 1] = X[:, 5]` — "the model is literally learning to echo back the input pitch root. This is
@@ -210,25 +210,25 @@ pipeline — flagged as a correctness liability in `MUSICALITY_ROCK_PIVOT_PLAN.m
 
 ### Era 4 — v0.4.0 "ML Playability & Simplification" (2026-04-28 → 2026-04-29)
 
-- **Versions:** CMake `0.3.8` (`d9ba044`, 2026-04-28) → `0.4.0` (`4d946f0`) → … → `0.4.10`
-  (`bbea3f8`, 2026-04-29) → `0.4.18` (`31a598c`, 2026-05-03).
+- **Versions:** CMake `0.3.8` (`12f5f6f`, 2026-04-28) → `0.4.0` (`3683a5c`) → … → `0.4.10`
+  (`9d88374`, 2026-04-29) → `0.4.18` (`31a598c`, 2026-05-03).
 - **Phases 21–26**, 13 plans, 15 requirements (`MILESTONES.md:36-58`).
 
 **Built (phase by phase).**
-- 21 C++ Type Foundation: `StructureState` → 3-value SILENT/SOFT/LOUD (`f71008f`); pure-RMS
+- 21 C++ Type Foundation: `StructureState` → 3-value SILENT/SOFT/LOUD (`2a2bd54`); pure-RMS
   `computeDesiredState`; `StructureHoldSmoother` 3-state + `policyGenreIndex` removed from
-  `FeatureVector` (`b6841e2`); inference/editor updates (`582bcdf`); tests rewritten (`d9ba044`);
-  `b6b7a2e` blocking refs fixed + bump to v0.4.0.
-- 22 ONNX Contract + Stubs: `4fb481b` regenerate stubs + validator; `32e8519` rewrite ONNX contract
-  docs; `4d946f0` CI contract validation + enabled-build smoke.
+  `FeatureVector` (`9c422f9`); inference/editor updates (`44b967a`); tests rewritten (`12f5f6f`);
+  `c74ac12` blocking refs fixed + bump to v0.4.0.
+- 22 ONNX Contract + Stubs: `a352d62` regenerate stubs + validator; `8526824` rewrite ONNX contract
+  docs; `3683a5c` CI contract validation + enabled-build smoke.
 - 23 C++ Inference Layer: `OnnxInference` on the new contract, `OnnxStructureInference` reads
   normalisation from the graph, `excludeIndex` / `patternRejectionCount` ML rejection.
-- 24 UI Simplification: `6387e18` **remove genre/variation/`PolicyPatternMapper` atomically**;
-  `1e99ed6` session backward-compat test + v0.4.4; `6623df2` plan.
-- 25 Training Data Pipeline: `64ca72d` Lakh scripts + 3-class `FEATURE_PROXY.md` (DATA-07/08/09).
-- 26 Retrain + Validate: `05f3b8b` bass/structure datasets + WIP absorption; `d52c006` absorb Phase 23
-  WIP (INF-01/02 C++, contract stubs); `e2e9ea3` retrain three ONNX heads; `aa8a80d` rebuild v0.4.7
-  with models + inference-name label; `ed2423c` PVAL-01 jam testimonial.
+- 24 UI Simplification: `28ac7e6` **remove genre/variation/`PolicyPatternMapper` atomically**;
+  `43817cc` session backward-compat test + v0.4.4; `6623df2` plan.
+- 25 Training Data Pipeline: `fbc117f` Lakh scripts + 3-class `FEATURE_PROXY.md` (DATA-07/08/09).
+- 26 Retrain + Validate: `34900e9` bass/structure datasets + WIP absorption; `2129ebe` absorb Phase 23
+  WIP (INF-01/02 C++, contract stubs); `2787b95` retrain three ONNX heads; `aa8a80d` rebuild v0.4.7
+  with models + inference-name label; `5444bef` PVAL-01 jam testimonial.
 
 **Failures / reverts.**
 - **Genre-param removal was the highest-risk change** and was explicitly guarded:
@@ -257,7 +257,7 @@ pipeline — flagged as a correctness liability in `MUSICALITY_ROCK_PIVOT_PLAN.m
   (`.planning/milestones/v0.5.0-REQUIREMENTS.md`). There is **no `v0.5.0-ROADMAP.md`**.
 
 **Phase 27 — documentation** (2026-04-29): `a01acd4` context + research stub; `631f94a`;
-`994e424` review (README ONNX wording, CONTRIBUTING `IInference` cite); `299e1e9`, `8f73b65`.
+`fdb4068` review (README ONNX wording, CONTRIBUTING `IInference` cite); `299e1e9`, `8f73b65`.
 Pre-FX placement story: plugin must sit **before** fuzz/amp (`rhythmic-coherence/02-*.md:11-16`),
 matching "Roland GK, BIAS, every commercial guitar-to-MIDI converter"; post-fuzz the failure modes were
 "onset attack compressed / YIN odd-order harmonics confuse F0 / RMS 4–6 dB swing / centroid locked into
@@ -265,16 +265,16 @@ harmonic cloud / HF flux constant noise floor" (`02:25-31`), and post-fuzz "won'
 will be unreliable, pitch will drift, dynamics will be flat" (`02:62-64`).
 
 **Phase 28 — beat tracker + bass sequencer** (`28-01/28-02`, 2026-04-29):
-`1fe46c0` context; `ce0b006` WR-02 chronological IOI ring for tempo-lock consistency;
-`bbea3f8` WR-01 sorted bounded defers for generative bass steps.
+`1fe46c0` context; `32f5ef1` WR-02 chronological IOI ring for tempo-lock consistency;
+`9d88374` WR-01 sorted bounded defers for generative bass steps.
 
 **Preceding quick tasks (2026-04-20 → 2026-04-27, before Phase 28's BeatTracker work).**
-`1f30640`/`2a5e068`/`4a12185` on 2026-04-20 (quick 260420-421: octave fold in `medianIoiBpm`, EMA
-smoothing on `PatternPlayer::setBpm`, pitch-stability gate + 2-bar bass root hold); `59ee3d9`/`09a92c4`
+`26e9a1c`/`b4164c5`/`da8773a` on 2026-04-20 (quick 260420-421: octave fold in `medianIoiBpm`, EMA
+smoothing on `PatternPlayer::setBpm`, pitch-stability gate + 2-bar bass root hold); `ff88bd4`/`66c8e2c`
 on 2026-04-27 (quick 260427-t42: `snapToBarStart`, 4-onset count-in gate, 2-bar drum hold, v0.3.4);
-`1c02d3e`/`da6b2ad` on 2026-04-27 (quick 260427-t43: **BPM lock-in after 8 consistent IOIs, 5-BPM
+`f31302c`/`da6b2ad` on 2026-04-27 (quick 260427-t43: **BPM lock-in after 8 consistent IOIs, 5-BPM
 quantization, 80 ms refractory**, v0.3.8 — the 5-BPM quantisation was reverted three days later, §2.5);
-`64732d7` (quick 260427 bass-pitch-class tracking, v0.3.7).
+`5faf11a` (quick 260427 bass-pitch-class tracking, v0.3.7).
 
 **Phase 28 FAILED UAT (2026-04-30).** `.planning/phases/28-beat-tracker-bass-sequencer/28-UAT.md`:
 `total: 4 / passed: 1 / issues: 3`, all `major`:
@@ -291,12 +291,12 @@ only `step = 0` qualified → "sounds like a buzzy clicking on the root note").
 
 **Three fix rounds for the Phase 28 fallout (.planning/debug/).**
 - `drums-gate-tempo-regression.md` (**resolved**, v0.4.11): symptom "drums rarely/never come in; tempo
-  wrong by >5 BPM"; "Regressed after phase 28 commits (`bbea3f8`, `ce0b006`) — BeatTracker + IOI ring
+  wrong by >5 BPM"; "Regressed after phase 28 commits (`9d88374`, `32f5ef1`) — BeatTracker + IOI ring
   changes". Root cause: `kPlaybackConfidenceStart=0.50` never reached with noisy flux;
   `onsetDetector.isTempoLocked()` existed but "is NOT used"; `medianIoiBpm()` rounded to the nearest
   5 BPM giving ±2.5 BPM error. Fix: lower to 0.25, add `|| onsetDetector.isTempoLocked()` at
   `AccompanimentProcessor.cpp:477`, and **remove** `bpm = std::round(bpm/5.0f)*5.0f` — i.e. the
-  5-BPM quantisation added in `1c02d3e` (v0.3.8) was **reverted 3 days later**.
+  5-BPM quantisation added in `f31302c` (v0.3.8) was **reverted 3 days later**.
 - `phase-28-uat-failures.md` (**resolved**, v0.4.12): explicitly names the prior fix as its base
   ("kPlaybackConfidenceStart 0.50→0.25, `isTempoLocked` fallback, remove 5-BPM rounding") — a repeat
   pass. New root cause: autocorrelation normalisation `fabs(acc)/(W-lag)` biases toward higher BPM
@@ -313,9 +313,9 @@ only `step = 0` qualified → "sounds like a buzzy clicking on the root note").
   file exists for prior matching sessions."
 
 **Phase 29 — Runtime coordination (C++)** — 2026-06-02/03, CMake `0.6.0`–`0.6.3`:
-`e48b44a` rescope audit; `1ed3e9e` / `4f1cb9b` / `bfe495c` shared `PatternPlayer::GrooveCommit`
-(drum pattern + generated bass cross the boundary as one payload); `793e272` / `718397f` / `895ccf4`
-four directional transition fills through the shared commit path; `6f52994` phase closed.
+`e48b44a` rescope audit; `1ed3e9e` / `e18147e` / `7cb325a` shared `PatternPlayer::GrooveCommit`
+(drum pattern + generated bass cross the boundary as one payload); `793e272` / `856b5ed` / `a811d7c`
+four directional transition fills through the shared commit path; `87f6224` phase closed.
 UAT passed 8/8, security verified 0 open threats (`STATE.md:80`).
 
 **Phase 30 — ML retrain (12-feature input): SUPERSEDED, never started.**
@@ -323,9 +323,9 @@ UAT passed 8/8, security verified 0 open threats (`STATE.md:80`).
 (`STATE.md:74-76`; `ROADMAP.md:203-206`).
 
 **Phase 31 — Architecture Deepening** (2026-05-03, CMake `0.5.0`):
-`b3e4d8b` plan; `f8a1d61`/`1799def`/`3a183a7` `PatternRules` header-only extraction (ARCH-03);
-`798848e`/`d8ba9a2` `TempoStabiliser` with deadband/hold hysteresis (ARCH-04);
-`f8018ae`/`b0bfb65` `PlaybackGate` + `GateDecision` (ARCH-01); `55c8d55`/`055fbf2` `StablePitchTracker`
+`b3e4d8b` plan; `2f14c68`/`d567007`/`244c8ed` `PatternRules` header-only extraction (ARCH-03);
+`72a71ef`/`bf0b293` `TempoStabiliser` with deadband/hold hysteresis (ARCH-04);
+`369583d`/`eaa22f0` `PlaybackGate` + `GateDecision` (ARCH-01); `53ebe3c`/`70bed68` `StablePitchTracker`
 + **version 0.5.0** (ARCH-02); `31a598c` "code cleanse".
 
 **Phase 31 review fixes were committed to an unmerged branch.** Branch
@@ -341,32 +341,32 @@ state), `6719b07` + `1e21166` (WR-01 `applyExclusion` wraps within the state-com
 
 ### Era 6 — v0.6.0 "ML Correctness & Evaluation" (2026-05-11 → 2026-06-02)
 
-- **Versions:** CMake `0.5.0` (`4abe0b0`) → `0.5.1` (`6199c3d`) → `0.5.2` (`04871ee`) → `0.5.3`
+- **Versions:** CMake `0.5.0` (`9770037`) → `0.5.1` (`5d6a3ad`) → `0.5.2` (`7bc9b0a`) → `0.5.3`
   (`13b73c2`) → `0.5.6` (audit time) → `0.6.0` (`e48b44a`, 2026-06-02).
 - **Source design doc:** `.MDignore/CHANGES_PLAN.md` "Areas 1–5"; findings from
   `.MDignore/ML_REPORT.md` (**"Version: v0.5.0 / Date: 2026-05-11"**).
 - **Phases 32–36**, 16 plans, 16+ requirements (`MILESTONES.md:3-27`).
 
 **Built.**
-- **32 Training Label Correction** (2026-05-12): `f118ef8` replace quantile-bin labels with a rule
-  oracle + Breakdown heuristic; `eaa2144` apply oracle labelling to `build_lakh_dataset.py`, tensor key
-  `scores` → `Y`; `8db085a` remove quantile recomputation from `merge_datasets.py`; `86bb339`
-  `FEATURE_PROXY.md` retire quantile bins; `03bdc37` oracle unit tests; `1c9bbd8` retrain + promote
-  `assets/accompaniment_model.onnx`; `fd9123a` exempt classes 0/6 from the DATA-06 gate; `97c3ff8`
+- **32 Training Label Correction** (2026-05-12): `d91556e` replace quantile-bin labels with a rule
+  oracle + Breakdown heuristic; `70052a1` apply oracle labelling to `build_lakh_dataset.py`, tensor key
+  `scores` → `Y`; `1d305c5` remove quantile recomputation from `merge_datasets.py`; `a096f86`
+  `FEATURE_PROXY.md` retire quantile bins; `2ed14e9` oracle unit tests; `0d44bc6` retrain + promote
+  `assets/accompaniment_model.onnx`; `a06a3e4` exempt classes 0/6 from the DATA-06 gate; `0629c9a`
   guard `class_f1` index bounds; `441e577`, `e387c1c`, `b2828d7`.
-- **33 Model Quality Gates** (2026-05-13): `80cf287` bass MSE gate + per-step metrics + per-step
-  velocity-error/pitch-offset `validation.json`; `2eb18a9` structure dual gate + `structure_norm_stats.json`;
-  `bf68b80` `StructureOnnxExport` baked-normalisation wrapper; `4abe0b0` wire `train_structure.py`
-  export through `from_norm_stats`; `fc70543` contract tests + promote; `80d2262`, `9cbcdf1`,
+- **33 Model Quality Gates** (2026-05-13): `0b6e934` bass MSE gate + per-step metrics + per-step
+  velocity-error/pitch-offset `validation.json`; `eece3da` structure dual gate + `structure_norm_stats.json`;
+  `e35f9f8` `StructureOnnxExport` baked-normalisation wrapper; `9770037` wire `train_structure.py`
+  export through `from_norm_stats`; `7bfec7a` contract tests + promote; `80d2262`, `9cbcdf1`,
   `3f1f155`, `7209b69`.
-- **34 Domain Gap & Feature Capture** (2026-05-13): `16dea44` runtime `feature_capture.v1` JSONL +
-  debug toggle; `e5e5bfa` offline capture evaluator (rule vs ONNX accuracy, confusion matrices,
-  disagreement); `9ca4051` captured-vs-proxy gap analyzer + quantitative `FEATURE_PROXY.md` verdicts;
-  `6199c3d` merge.
+- **34 Domain Gap & Feature Capture** (2026-05-13): `71e6e9c` runtime `feature_capture.v1` JSONL +
+  debug toggle; `740645d` offline capture evaluator (rule vs ONNX accuracy, confusion matrices,
+  disagreement); `8fd1334` captured-vs-proxy gap analyzer + quantitative `FEATURE_PROXY.md` verdicts;
+  `5d6a3ad` merge.
 - **35 Inference Path Consistency** and **36 ONNX Evaluation & Default Readiness**: **no phase-numbered
-  commits exist in `git log`.** Related work landed in `04871ee` (2026-05-20, docs: ROADMAP/STATE,
+  commits exist in `git log`.** Related work landed in `7bc9b0a` (2026-05-20, docs: ROADMAP/STATE,
   `ARCHITECTURE.md` +115, `docs/RUNTIME_ARCHITECTURE.md`, `docs/MODULARITY_AND_BLOAT_REVIEW.md`,
-  `docs/CPP_JUCE_AUDIO_BEST_PRACTICES_AUDIT.md`) and `d3978d3` (2026-05-20, "Audit fixes":
+  `docs/CPP_JUCE_AUDIO_BEST_PRACTICES_AUDIT.md`) and `6bac989` (2026-05-20, "Audit fixes":
   `AccompanimentProcessor`, `OnnxBassInference`, `OnnxInference`, `OnnxStructureInference`).
   `35-VERIFICATION.md` / `36-VERIFICATION.md` exist on disk but are **untracked** (`.planning/` is
   gitignored).
@@ -386,7 +386,7 @@ state), `6719b07` + `1e21166` (WR-01 `applyExclusion` wraps within the state-com
   class-discard defect.
 - v0.1.0-era docs and `CHANGELOG.md` both reference `.gsd/STATE.md` / `.gsd/ROADMAP.md` (e.g.
   `CHANGELOG.md:3`) — `.gsd` is a symlink to a local GSD project store, not repo content.
-- Post-close: `9d8ed74` (2026-06-09, CMake `0.7.8`) "remove tempo changing".
+- Post-close: `fd5a772` (2026-06-09, CMake `0.7.8`) "remove tempo changing".
 
 ---
 
@@ -397,13 +397,13 @@ state), `6719b07` + `1e21166` (WR-01 `applyExclusion` wraps within the state-com
   ML-driven structure detection, and musically distinct grooves — without replacing ML with manual
   controls."
 
-**Commits (all 2026-06-03 unless noted):** `e685806` `TempoStabiliser::warmStart(float bpm)` (0.6.4);
-`101c70c` soft-lock EMA drift on `OnsetDetector` α=0.03 + remove hard freeze (0.6.5); `cc75389` BPM
-save/restore through the silence-reset cascade (0.6.6); `d72683f` E2E groove-variety test ≥3 distinct
-grooves (0.6.7); `afca7e4` integrate `diversifyPattern()`; `b276b44`, `e117fc8` S02 structure stability,
-`c117c23` full suite 581 assertions/132 cases, `b0b1bf0` phrase-breath hold 2.0 s → 3.0 s,
-`a1150a8` M002 S01–S03 (BPM foundation, structure expansion, sub-bass energy); `53166ea` M002 S04
-half-time LOUD routing, widened SOFT window, 8 s gate hold (0.7.2); `9d8ed74` (2026-06-09) remove tempo
+**Commits (all 2026-06-03 unless noted):** `6b3847e` `TempoStabiliser::warmStart(float bpm)` (0.6.4);
+`5d9ad62` soft-lock EMA drift on `OnsetDetector` α=0.03 + remove hard freeze (0.6.5); `1dbcac7` BPM
+save/restore through the silence-reset cascade (0.6.6); `f9cc6e3` E2E groove-variety test ≥3 distinct
+grooves (0.6.7); `efd5583` integrate `diversifyPattern()`; `f9dfffd`, `a4b454a` S02 structure stability,
+`cb2039f` full suite 581 assertions/132 cases, `e952c4a` phrase-breath hold 2.0 s → 3.0 s,
+`2ddd96c` M002 S01–S03 (BPM foundation, structure expansion, sub-bass energy); `dc3e7d6` M002 S04
+half-time LOUD routing, widened SOFT window, 8 s gate hold (0.7.2); `fd5a772` (2026-06-09) remove tempo
 changing (0.7.8).
 
 **Failures / inconsistencies.**
@@ -422,19 +422,19 @@ changing (0.7.8).
 
 ### Era 8 — v0.8.0–v0.8.4: the unified mel-CNN prototype (2026-06-28 → 2026-06-29)
 
-- **Versions:** `0.8.0` (`04dd3bc`, "prototype") → `0.8.1` (`f6033db`) → `0.8.2` (`ea6042b`) →
-  `0.8.3` (`30d7044`, `016a5b1`, `2478af3`, `6021df2`, `afe13bb`) → `0.8.4` (`4f905f8`).
+- **Versions:** `0.8.0` (`66bb66f`, "prototype") → `0.8.1` (`4b01c6c`) → `0.8.2` (`d3a59ae`) →
+  `0.8.3` (`5253bcd`, `8038e9b`, `c4c0545`, `d2e06e2`, `3f61d44`) → `0.8.4` (`b8b07fe`).
 - **Then a ~6.5-week commit gap** (2026-06-29 → 2026-08-14).
 
-**Commits:** `516f769` "close to prototype", `04dd3bc` "prototype", `7257ddc` "simple prototype",
-`fddf403` "tests", `1406c0c` "fix tests", `f6033db` "Wave 1+3: Training pipeline +
-`MetalGrooveInference` ONNX integration", `45ee32b` "Wave 3: Mel queue integration — wired
-end-to-end", `b99958d`, `ea6042b` "Wave 4: Docs + `MetalGrooveInference` unit tests", `5f0b42a`
-"Cleanup — remove stale ONNX assets + old recordings", `016a5b1` "Fix ONNX Runtime rpath — absolute
-dylib path for plugin loading", `2478af3` "Remove intensity slider, fix bass root to C2 (audible
-range)", `6021df2` "Reactive bass + playing-style display", `afe13bb` "**RiffMirror** — learning bass
-that mirrors your riff after one repeat", `30d7044` "Fix bass — immediate trigger, quarter-note
-fallback", `4f905f8` "Fix bass note duration — **0.9 beat legato** (was 0.25 = 16th-note blip)".
+**Commits:** `9655e49` "close to prototype", `66bb66f` "prototype", `ce2630a` "simple prototype",
+`fddf403` "tests", `886ee86` "fix tests", `4b01c6c` "Wave 1+3: Training pipeline +
+`MetalGrooveInference` ONNX integration", `5c3ed2e` "Wave 3: Mel queue integration — wired
+end-to-end", `b99958d`, `d3a59ae` "Wave 4: Docs + `MetalGrooveInference` unit tests", `2b6a153`
+"Cleanup — remove stale ONNX assets + old recordings", `8038e9b` "Fix ONNX Runtime rpath — absolute
+dylib path for plugin loading", `c4c0545` "Remove intensity slider, fix bass root to C2 (audible
+range)", `d2e06e2` "Reactive bass + playing-style display", `3f61d44` "**RiffMirror** — learning bass
+that mirrors your riff after one repeat", `5253bcd` "Fix bass — immediate trigger, quarter-note
+fallback", `b8b07fe` "Fix bass note duration — **0.9 beat legato** (was 0.25 = 16th-note blip)".
 
 **Parked planning docs driving this era (all later `.MDignore/`, no dates except SIMPLIFY):**
 - `TRIAGE.md` ("v0.7.11 Prototype Fixes") — BeatTracker wired but never called: "`BeatTracker::pushFluxSample()`
@@ -461,7 +461,7 @@ fallback", `4f905f8` "Fix bass note duration — **0.9 beat legato** (was 0.25 =
     fill head; two competing fill-export designs offered.
 
 **What actually happened (code evidence).**
-- `BeatTracker` **was** deleted — but not until `40cc331` (2026-08-14, CMake `0.8.12`), which removes
+- `BeatTracker` **was** deleted — but not until `58c3dde` (2026-08-14, CMake `0.8.12`), which removes
   `src/analysis/BeatTracker.cpp` (204 lines) and `BeatTracker.h` (67 lines) and adds
   `src/analysis/PhraseLearner.cpp` (286 lines).
 - `PitchEstimator` and `PhraseLearner` **survive** in the tree (they are used at HEAD in
@@ -469,30 +469,30 @@ fallback", `4f905f8` "Fix bass note duration — **0.9 beat legato** (was 0.25 =
   executed and pitch tracking returned.
 - `StructureState` remains 3-value SILENT/SOFT/LOUD — the **second** time 4-state was collapsed to 3
   (the first was v0.4.0 Phase 21).
-- `016a5b1` fixed the ONNX Runtime rpath — the exact class of defect that produced **silent rule-based
+- `8038e9b` fixed the ONNX Runtime rpath — the exact class of defect that produced **silent rule-based
   fallback** (`PITFALLS.md:41,173`).
 
 ---
 
 ### Era 9 — v0.8.12 → v0.9.44: retrofit changelog, data work, subgenres (2026-08-14 → 2026-09-02)
 
-- **Versions:** `0.8.12` (`40cc331`) → `0.9.16`–`0.9.19` (2026-08-19) → `0.9.26` (`f54b058`) →
-  `0.9.27` (`297a796`) → `0.9.33` (`d74edb7`) → `0.9.44` (`fb32a15`) → `0.9.47` (`773038a`) →
-  `0.9.48` (`1ac82d2`).
+- **Versions:** `0.8.12` (`58c3dde`) → `0.9.16`–`0.9.19` (2026-08-19) → `0.9.26` (`3e23e70`) →
+  `0.9.27` (`cedd70d`) → `0.9.33` (`b903500`) → `0.9.44` (`8ccce0e`) → `0.9.47` (`57b3ccc`) →
+  `0.9.48` (`07a9bf5`).
 
 | Commit | Date | CMake | What |
 |---|---|---|---|
-| `40cc331` | 2026-08-14 | 0.8.12 | "clean up": delete `BeatTracker.{h,cpp}`; add `PhraseLearner.cpp`; `AccompanimentProcessor` +144; `MelSpectrogramExtractor` |
-| `0f225f6` | 2026-08-19 | 0.9.16 | "Data Improvements P0" — **also writes CHANGELOG 0.9.0–0.9.16 retrospectively** |
-| `b118ad2` | 2026-08-19 | 0.9.17 | "Data Improvement P1" — writes CHANGELOG 0.9.17 |
-| `cc7536f` / `f7d5644` | 2026-08-19 | 0.9.18 | "Data improvement P2/P3" (P3 writes the unnumbered "Data Improvement P3" section) |
-| `90e41e8` | 2026-08-19 | 0.9.19 | "Data Improvement P4" |
-| `f54b058` | 2026-08-21 | 0.9.26 | style-head training, click track, groove variety, riff-lock progress UI |
-| `297a796` | 2026-08-26 | 0.9.27 | "Debugging mode state confusion" — `StructureTagger.h`, several tests, README +302 |
-| `d74edb7` | 2026-08-31 | 0.9.33 | "rock retrain" — adds `assets/style_cnn.onnx`, retrains `metal_groove.onnx`; **moves 9 planning/teaching docs into `.MDignore/`**; writes CHANGELOG 0.9.29–0.9.31; adds `pages.yml`, `release.yml` |
-| `fb32a15` | 2026-09-02 | 0.9.44 | "Diversify outputs" — adds `assets/groove_renderer.onnx` + fonts, release workflow, website |
-| `773038a` | 2026-09-02 | 0.9.47 | "Add subgenres and stress test" — 13 genres; writes CHANGELOG 0.9.45 |
-| `1ac82d2` | 2026-09-02 | 0.9.48 | "Bug fixes and stress test update" — writes CHANGELOG 0.9.48 |
+| `58c3dde` | 2026-08-14 | 0.8.12 | "clean up": delete `BeatTracker.{h,cpp}`; add `PhraseLearner.cpp`; `AccompanimentProcessor` +144; `MelSpectrogramExtractor` |
+| `47a3c8c` | 2026-08-19 | 0.9.16 | "Data Improvements P0" — **also writes CHANGELOG 0.9.0–0.9.16 retrospectively** |
+| `66ccaca` | 2026-08-19 | 0.9.17 | "Data Improvement P1" — writes CHANGELOG 0.9.17 |
+| `4168f62` / `4b1622b` | 2026-08-19 | 0.9.18 | "Data improvement P2/P3" (P3 writes the unnumbered "Data Improvement P3" section) |
+| `66cd57f` | 2026-08-19 | 0.9.19 | "Data Improvement P4" |
+| `3e23e70` | 2026-08-21 | 0.9.26 | style-head training, click track, groove variety, riff-lock progress UI |
+| `cedd70d` | 2026-08-26 | 0.9.27 | "Debugging mode state confusion" — `StructureTagger.h`, several tests, README +302 |
+| `b903500` | 2026-08-31 | 0.9.33 | "rock retrain" — adds `assets/style_cnn.onnx`, retrains `metal_groove.onnx`; **moves 9 planning/teaching docs into `.MDignore/`**; writes CHANGELOG 0.9.29–0.9.31; adds `pages.yml`, `release.yml` |
+| `8ccce0e` | 2026-09-02 | 0.9.44 | "Diversify outputs" — adds `assets/groove_renderer.onnx` + fonts, release workflow, website |
+| `57b3ccc` | 2026-09-02 | 0.9.47 | "Add subgenres and stress test" — 13 genres; writes CHANGELOG 0.9.45 |
+| `07a9bf5` | 2026-09-02 | 0.9.48 | "Bug fixes and stress test update" — writes CHANGELOG 0.9.48 |
 
 **The retrospective narrative inside `CHANGELOG.md:911-1015` (versions 0.9.0–0.9.13) describes the
 v0.8.x-era bass/tempo battle:** bass root a major third off (E2 vs C2), drop-C below the YIN band,
@@ -523,21 +523,21 @@ same bass behaviour, and one bundled quick task that was later judged a false pa
 
 | Commit | Date | CMake | What |
 |---|---|---|---|
-| `1ac82d2` | 2026-09-02 | 0.9.48 | Record-mode **A-B-A-C-A** (was A-B-C-A); Play stops after the form |
-| `1d36e47` | 2026-09-04 14:17 | 0.9.50 | "**Fix bass regression**" — unify every lock/transition/listen schedule onto `clockSample = patternPlayer.previewResolvedHostSample(rawHostPos, numSamples)` (comment: "This is the same bug class fixed for the scope playhead in v0.9.31"); add `riffLoopActive`; `PhraseLearner::rewindRiffToDownbeat()`; publish `sectionPhase/Bar/BarsTotal/BarsRemaining/Progress`; CHANGELOG 0.9.50 (deterministic record-riff loop + **new Stop button**) |
-| `5fea0d8` | 2026-09-04 14:20 | 0.9.51 | "**Remove button**" — the Stop button added three minutes earlier is deleted ("It did the same thing as Forget … did not pause or resume") |
-| `5db5028` | 2026-09-04 14:29 | 0.9.53 | "symbol fix" — renumbers the entry to 0.9.52 and adds 0.9.53 (ASCII `Style: -` placeholder) |
-| `a898b06` | 2026-09-04 15:04 | 0.9.54 | "**Still chasing bass regression**" — `PhraseLearner` silence reset (`rms < 0.003f`) suppressed while `holdActive_`; fixes "LOCKED RIFF DOESN'T PERSIST" on a breath |
-| `bb487e7` | 2026-09-07 | 0.9.56 | "cleanup" — delete `build-phase10/`, CI/CONTRIBUTING/README |
-| `546ed38` | 2026-09-08 | 0.9.56 | add **failing** tests for pinned contrast slots (quick 260908-kk2; PLAN only, no SUMMARY) |
-| `cdf4bac` | 2026-09-08 | 0.9.60 | "Fix record mode transition logic" — **removed** the RMS-delta `transitionEvent` and the 4-bar `autoChangeReady` timer |
+| `07a9bf5` | 2026-09-02 | 0.9.48 | Record-mode **A-B-A-C-A** (was A-B-C-A); Play stops after the form |
+| `2e82e7c` | 2026-09-04 14:17 | 0.9.50 | "**Fix bass regression**" — unify every lock/transition/listen schedule onto `clockSample = patternPlayer.previewResolvedHostSample(rawHostPos, numSamples)` (comment: "This is the same bug class fixed for the scope playhead in v0.9.31"); add `riffLoopActive`; `PhraseLearner::rewindRiffToDownbeat()`; publish `sectionPhase/Bar/BarsTotal/BarsRemaining/Progress`; CHANGELOG 0.9.50 (deterministic record-riff loop + **new Stop button**) |
+| `6f16835` | 2026-09-04 14:20 | 0.9.51 | "**Remove button**" — the Stop button added three minutes earlier is deleted ("It did the same thing as Forget … did not pause or resume") |
+| `ab18952` | 2026-09-04 14:29 | 0.9.53 | "symbol fix" — renumbers the entry to 0.9.52 and adds 0.9.53 (ASCII `Style: -` placeholder) |
+| `7ab08c9` | 2026-09-04 15:04 | 0.9.54 | "**Still chasing bass regression**" — `PhraseLearner` silence reset (`rms < 0.003f`) suppressed while `holdActive_`; fixes "LOCKED RIFF DOESN'T PERSIST" on a breath |
+| `2a74e8c` | 2026-09-07 | 0.9.56 | "cleanup" — delete `build-phase10/`, CI/CONTRIBUTING/README |
+| `d07f6ca` | 2026-09-08 | 0.9.56 | add **failing** tests for pinned contrast slots (quick 260908-kk2; PLAN only, no SUMMARY) |
+| `ad55168` | 2026-09-08 | 0.9.60 | "Fix record mode transition logic" — **removed** the RMS-delta `transitionEvent` and the 4-bar `autoChangeReady` timer |
 | — | 2026-09-08 | 0.9.61 | quick 260908-m7z: DAW record clock handoff (frozen→rolling snaps to host timeline, no click/groove dump, ignore small position blips) |
-| `7caacc5` (0.9.60), `cf88acd` (0.9.62) | 2026-09-09 | 0.9.60→0.9.62 | slice 1 (`i70`): exclusive `EnginePhase`; Record A is a 64-slot `riffA` piano roll; return-to-A loads the snapshot |
-| `ddfaee8` (0.9.62), `ac576f8` (0.9.63) | 2026-09-09 | 0.9.62→0.9.63 | slice 2 (`itt`): unified listen bass mixer; **"Library `bassEvents` are not mixed into the live path"**; B/C holes gone; late picks emit now; guitar stop cuts locked bass |
-| `e566f61`, `0680160` | 2026-09-09 | 0.9.64 | slice 3 (`jjx`): Play hybrid drums inside the section pool; argmax constrained to pool; sticky 2-bar hold; no hash rotation |
-| `6f638fc`, `85a5e62` (0.9.64); `c3bfc21`, `07375c2` (0.9.65) | 2026-09-09 | 0.9.64→0.9.65 | slice 4 (`jtf`): on-grid fills 17/18/19 in beat time; crash only when armed; fills on the outgoing last bar |
-| `85a697f`, `bbf1f9e` | 2026-09-09 | 0.9.66 | slice 5 (`kpq`): Record B contrast home; learn `riffB`; freeze on B; A never overwritten |
-| `d90bc3e`, `d68c9d5` | 2026-09-09 | 0.9.67 | slice 6 (`l6u`): **disconnect `GrooveRenderer` from the live path**; template humanize only; renderer kept compiling for a later milestone |
+| `86e3351` (0.9.60), `9d7ec26` (0.9.62) | 2026-09-09 | 0.9.60→0.9.62 | slice 1 (`i70`): exclusive `EnginePhase`; Record A is a 64-slot `riffA` piano roll; return-to-A loads the snapshot |
+| `b4da398` (0.9.62), `3176cd2` (0.9.63) | 2026-09-09 | 0.9.62→0.9.63 | slice 2 (`itt`): unified listen bass mixer; **"Library `bassEvents` are not mixed into the live path"**; B/C holes gone; late picks emit now; guitar stop cuts locked bass |
+| `ca5f7d6`, `0680160` | 2026-09-09 | 0.9.64 | slice 3 (`jjx`): Play hybrid drums inside the section pool; argmax constrained to pool; sticky 2-bar hold; no hash rotation |
+| `03893c6`, `093da6c` (0.9.64); `b476149`, `07375c2` (0.9.65) | 2026-09-09 | 0.9.64→0.9.65 | slice 4 (`jtf`): on-grid fills 17/18/19 in beat time; crash only when armed; fills on the outgoing last bar |
+| `8ef28f0`, `bbf1f9e` | 2026-09-09 | 0.9.66 | slice 5 (`kpq`): Record B contrast home; learn `riffB`; freeze on B; A never overwritten |
+| `58b3baf`, `d68c9d5` | 2026-09-09 | 0.9.67 | slice 6 (`l6u`): **disconnect `GrooveRenderer` from the live path**; template humanize only; renderer kept compiling for a later milestone |
 
 **Failures and re-attempts in this era.**
 - **The bundled quick task `260909-gxy` was a false pass.** `itt-PLAN.md:78`: "Previous quick
@@ -550,9 +550,9 @@ same bass behaviour, and one bundled quick task that was later judged a false pa
   1/3` is timing-flaky (1/3 runs failed on this machine); not changed here."
 - **Slice 4 self-inflicted regression:** `jtf-SUMMARY.md:76-78` — arming fill 17 at beat 3.989 expired
   immediately, producing "zero beat-4 toms"; fixed via `fromNextBar`.
-- **`cdf4bac` deleted the two reactivity short-circuits and never restored them.** `PLAYABILITY_REVIEW.md:73-75`:
+- **`ad55168` deleted the two reactivity short-circuits and never restored them.** `PLAYABILITY_REVIEW.md:73-75`:
   "The two triggers that used to short-circuit the hold (`|rmsDelta| > 0.6` and a 4-bar auto-change
-  timer) were deleted in `cdf4bac` (v0.9.57–v0.9.60) and never restored. `rmsDelta` is still computed
+  timer) were deleted in `ad55168` (v0.9.57–v0.9.60) and never restored. `rmsDelta` is still computed
   and published (`AccompanimentProcessor.cpp:566,668`) but nothing reads it." This is the origin of the
   ~6.5 s response latency defect (§2.7 of the review).
 - **Stale installed binary.** `PLAYABILITY_REVIEW.md:11-26`: the playtest that produced the review was
@@ -602,16 +602,16 @@ T2.2 together", `:905-909`), traceability matrix §2.1–§2.23 → tasks → te
 | Commit | CMake | Content |
 |---|---|---|
 | `5385856` | 0.9.67 | "Musicality Phase 0" — lands `PLAYABILITY_REVIEW.md` + `IMPLEMENTATION_PLAN.md` |
-| `3dd067a` | 0.9.68 | Phase 1 rendering correctness: T1.1 deferred drum note-offs, T1.2 seek/silence/bypass release, T1.3 mid-block sample base, T1.4 learned-bass octave fold, T1.5 ghost threshold 62, T1.6 armed crash on a beat |
-| `d0bb9c5` | 0.9.69 | Phase 2: **T2.1** monotonic `hostSampleTime` lock schedules with bar phase latched once at engage; **T2.2** seek/loop-wrap re-anchor preserving remaining lock; T2.3 rename |
-| `7ab05a9` | 0.9.70 | Phase 3: T3.1 velocity headroom + soft knee; T3.2 bidirectional `guitarEnergy`; T3.3 mean-centred groove templates; T3.4 deterministic humanisation (per-event hash on bar/grid16/voice/salt) |
-| `a729e66` | 0.9.71 | Phase 4: T4.1 Play rotation via `pickPoolPattern`; T4.2 mel variety draw re-enabled; T4.3 `humanize` param default 0.35, `rideSwitch` default 0; T4.4 idle shows pattern 0 |
+| `9d55b87` | 0.9.68 | Phase 1 rendering correctness: T1.1 deferred drum note-offs, T1.2 seek/silence/bypass release, T1.3 mid-block sample base, T1.4 learned-bass octave fold, T1.5 ghost threshold 62, T1.6 armed crash on a beat |
+| `bd9dc32` | 0.9.69 | Phase 2: **T2.1** monotonic `hostSampleTime` lock schedules with bar phase latched once at engage; **T2.2** seek/loop-wrap re-anchor preserving remaining lock; T2.3 rename |
+| `1b86b85` | 0.9.70 | Phase 3: T3.1 velocity headroom + soft knee; T3.2 bidirectional `guitarEnergy`; T3.3 mean-centred groove templates; T3.4 deterministic humanisation (per-event hash on bar/grid16/voice/salt) |
+| `b023a1d` | 0.9.71 | Phase 4: T4.1 Play rotation via `pickPoolPattern`; T4.2 mel variety draw re-enabled; T4.3 `humanize` param default 0.35, `rideSwitch` default 0; T4.4 idle shows pattern 0 |
 | `7984394` | 0.9.72 | **Post-implementation review of Phases 0–4** + defect fixes R1–R6 |
-| `310fc7b` | 0.9.73 | Phase 5 bass musicality: T5.1 reconnect authored bass via `emitBassRange`; T5.2 frozen-riff note lengths (onset vs sustain per 16th, 90 % gate); T5.3 grid bass retrigger over a ringing mirror |
-| `8e27a05` | 0.9.74 | Phase 6 reactivity: T6.1 1-bar hold + beat-level gesture fast path; T6.2 same-riff cut-short; T6.3 B-listen rotates and can lock; T6.4 guitar-stop no longer kills a lock; T6.5 any RMS decrease arms the next rise |
-| `ee15307` | 0.9.75 | Phase 7 fills: T7.1 Record fill seed; T7.2 last-bar origin via `armBarFillAtBeat`; T7.3 fills replace the groove and inherit feel |
-| `620d62b` | 0.9.76 | Phase 8: T8.1 dead code removal; T8.2 races (`lastLoopValue` per-instance member, triple-buffered UI snapshot, learned-bass queue drops newest); T8.3 swing notify; **T8.4 skipped** (optional, data-dependent); T8.5 docs; T8.6 deferred |
-| `1217d70` | 1.0.0 | Phase 9 verification and acceptance |
+| `98da272` | 0.9.73 | Phase 5 bass musicality: T5.1 reconnect authored bass via `emitBassRange`; T5.2 frozen-riff note lengths (onset vs sustain per 16th, 90 % gate); T5.3 grid bass retrigger over a ringing mirror |
+| `e838486` | 0.9.74 | Phase 6 reactivity: T6.1 1-bar hold + beat-level gesture fast path; T6.2 same-riff cut-short; T6.3 B-listen rotates and can lock; T6.4 guitar-stop no longer kills a lock; T6.5 any RMS decrease arms the next rise |
+| `a99df29` | 0.9.75 | Phase 7 fills: T7.1 Record fill seed; T7.2 last-bar origin via `armBarFillAtBeat`; T7.3 fills replace the groove and inherit feel |
+| `1dee5ab` | 0.9.76 | Phase 8: T8.1 dead code removal; T8.2 races (`lastLoopValue` per-instance member, triple-buffered UI snapshot, learned-bass queue drops newest); T8.3 swing notify; **T8.4 skipped** (optional, data-dependent); T8.5 docs; T8.6 deferred |
+| `c472bcc` | 1.0.0 | Phase 9 verification and acceptance |
 
 **Failures the remediation itself produced or exposed.**
 - **`T9.2` was documented as unmet and it was true.** `IMPLEMENTATION_PLAN.md:972` (R1): "the render was
@@ -632,7 +632,7 @@ T2.2 together", `:905-909`), traceability matrix §2.1–§2.23 → tasks → te
 - `docs/PHASE9_ACCEPTANCE.md` T9.4 then lists Stations A–H as "suite green" but requires a human pass
   on the installed v1.0.0 binary.
 
-**v1.0.1 (`db31dd7`, 2026-09-11) — review of Phases 5–9, three real defects, one severe.**
+**v1.0.1 (`ba4310f`, 2026-09-11) — review of Phases 5–9, three real defects, one severe.**
 - **R7 frozen-riff phase was one bar out at most buffer sizes**: `latchLockClock` used `fmod`, which
   always snaps *backwards*; a detect block starting just before a bar line moved the riff origin back a
   whole bar, so the locked riff entered on bar 2 not bar 1 — and the offset depended on host buffer
@@ -657,7 +657,7 @@ T2.2 together", `:905-909`), traceability matrix §2.1–§2.23 → tasks → te
 
 ### Era 12 — v1.0.2 → v1.0.3 (2026-09-14) — current HEAD
 
-**`e463847` — CMake 1.0.2, "Responsiveness testing".** Two problem clusters:
+**`6387c6b` — CMake 1.0.2, "Responsiveness testing".** Two problem clusters:
 1. **Editor did not fit the screen.** "a fixed 520×1100 window whose layout needed 968px, opened on a
    956px laptop desktop, and had no scrollbar of its own — so the bottom of the UI (scope,
    BPM/State/Pattern/Style readouts) was unreachable" (`CHANGELOG.md:52-56`). Fix: `ContentComponent`
@@ -672,7 +672,7 @@ T2.2 together", `:905-909`), traceability matrix §2.1–§2.23 → tasks → te
    "SECTIONS" headings removed; BPM/State/Pattern/Style collapsed to `120.0 bpm · SILENT · P23 · Open
    Chord`; copy shortened and casing unified.
 
-**`5d5f410` — CMake 1.0.3, "Mirroring choices fix" (HEAD).** The bass mirror had **drifted back** to
+**`d1fc62a` — CMake 1.0.3, "Mirroring choices fix" (HEAD).** The bass mirror had **drifted back** to
 sounding like a root/harmony line:
 - Diagnosis (`CHANGELOG.md:7-12`): "It was not a pitch problem: the mirror was firing on every attack,
   but the authored/harmonic grid line was playing **on top of it** — in a 12-bar 8th-note test, 128
@@ -706,17 +706,17 @@ file:line or commit where the claim is verifiable.
 |---|---|---|
 | Pre-v0.9.0 (v0.8.x) | 20+ authored `MidiPattern.bassEvents` lines written but "`PatternPlayer` never reads `pattern.bassEvents`" — grep shows writes only | `MUSICALITY_ROCK_PIVOT_PLAN.md:32,34` |
 | **Fix 1 — v0.9.0 A1** | `emitBassRange()` wired; "the 20+ authored bass lines that were written but never emitted (Finding 1) now play, transposed to the guitarist's tracked root" | `CHANGELOG.md:1023-1027` |
-| **Regressed — v0.9.63** | `ac576f8`: "Library `bassEvents` are not mixed into the live path"; `emitBassRange` becomes declaration + definition with **no call site** | `CHANGELOG.md:361-366`; `PLAYABILITY_REVIEW.md:268-287` |
+| **Regressed — v0.9.63** | `3176cd2`: "Library `bassEvents` are not mixed into the live path"; `emitBassRange` becomes declaration + definition with **no call site** | `CHANGELOG.md:361-366`; `PLAYABILITY_REVIEW.md:268-287` |
 | Test enshrined it | `REQUIRE(bassNotes.count(45) == 0); REQUIRE(bassNotes.count(47) == 0);` — "library +5 must not leak" | `PLAYABILITY_REVIEW.md:289-296` (`tests/test_pattern_player.cpp:453-456`) |
 | Documentation lied | `PatternPlayer.h:228-229` still claimed "A1.1: authored bass lines … play when present" | `PLAYABILITY_REVIEW.md:298` |
-| **Fix 2 — v0.9.73 T5.1** | `310fc7b`: "authored bass lines play again… a pattern's `bassEvents` transpose to the live root instead of being skipped for a harmonic root drone" | `CHANGELOG.md:221-224` |
-| **Fix 3 — v1.0.3** | `5d5f410`: harmony/grid bass gated behind `mirrorVoiceEndSample_` so it no longer retriggers over mirrored notes; 512 → 120 note-ons for 128 attacks | `CHANGELOG.md:5-24` |
+| **Fix 2 — v0.9.73 T5.1** | `98da272`: "authored bass lines play again… a pattern's `bassEvents` transpose to the live root instead of being skipped for a harmonic root drone" | `CHANGELOG.md:221-224` |
+| **Fix 3 — v1.0.3** | `d1fc62a`: harmony/grid bass gated behind `mirrorVoiceEndSample_` so it no longer retriggers over mirrored notes; 512 → 120 note-ons for 128 attacks | `CHANGELOG.md:5-24` |
 
 ### 2.2 Bass mirror / live-bass audibility — **at least eight separate fixes**
 
 | Version | Commit | Symptom | Fix |
 |---|---|---|---|
-| 0.9.4–0.9.5 | (CHANGELOG written in `0f225f6`) | learner locked onto hum/noise and mirrored it endlessly; SILENT flicker | gate learner on SILENT; adaptive noise floor; raise silent cap 0.03→0.06 (`CHANGELOG.md:938-957`) |
+| 0.9.4–0.9.5 | (CHANGELOG written in `47a3c8c`) | learner locked onto hum/noise and mirrored it endlessly; SILENT flicker | gate learner on SILENT; adaptive noise floor; raise silent cap 0.03→0.06 (`CHANGELOG.md:938-957`) |
 | 0.9.6 | | Bass always low E — drop-C 65.4 Hz below the YIN band (`sr/75`) | extend estimator to ~55 Hz, accept gate 50 Hz (`CHANGELOG.md:925-935`) |
 | 0.9.8 | | Bass root a major third off: offset folded onto E2=40, not C2=36; ±6 wrap pushed pc ≥ 7 down an octave; riff looped at `totalBeats + 0.5` | fold onto C2=36, return pc ∈ [0,11], bar-align the learned loop (`CHANGELOG.md:873-909`) |
 | 0.9.10 | | The 0.9.8 detector `rms > prev × 1.2` "never fired on real playing" — palm-mute chugs smooth to a few-% swing over the 100 ms window | new detector: sharp rise following a recent decay (`CHANGELOG.md:819-835`) |
@@ -724,47 +724,47 @@ file:line or commit where the claim is verifiable.
 | 0.9.12 | | Sparse staccato: the lock fires on the first repeat, so the learned pattern is a 2-note slice | run the live mirror in the Locked state too (1.7 → 10–17 notes/s) (`CHANGELOG.md:771-793`) |
 | 0.9.13 | | Follow-mode bass stopped mirroring once the groove lock engaged | mirror suppressed only for non-matching (solo) attacks; pattern growth to 16 notes (`CHANGELOG.md:748-769`) |
 | 0.9.45 | | Locked-riff bass stuck on the recorded riff through a transition; Play played the riff note-for-note out of key | drop the hold on transition; snap to section harmony (`CHANGELOG.md:515-536`) |
-| **0.9.50** | `1d36e47` | "Fix bass regression" — bass re-entry off the audible drum downbeat (clock source mismatch; comment: "the same bug class fixed for the scope playhead in v0.9.31") | one `clockSample` for every schedule + `rewindRiffToDownbeat()` |
-| **0.9.54** | `a898b06` | "Still chasing bass regression" — "LOCKED RIFF DOESN'T PERSIST" (a ~2 s quiet window wiped the frozen riff mid-lock) | suppress the silence reset while `holdActive_` (`PhraseLearner.cpp:370-380`) |
+| **0.9.50** | `2e82e7c` | "Fix bass regression" — bass re-entry off the audible drum downbeat (clock source mismatch; comment: "the same bug class fixed for the scope playhead in v0.9.31") | one `clockSample` for every schedule + `rewindRiffToDownbeat()` |
+| **0.9.54** | `7ab08c9` | "Still chasing bass regression" — "LOCKED RIFF DOESN'T PERSIST" (a ~2 s quiet window wiped the frozen riff mid-lock) | suppress the silence reset while `holdActive_` (`PhraseLearner.cpp:370-380`) |
 | **0.9.59** | | Mirror ~one RMS-window behind the pick | quantize the mirror to the nearest 16th (`CHANGELOG.md:406-417`) |
-| **0.9.63** | `ac576f8` | "unified listen bass mixer" — simultaneously fixed B/C holes and **broke the authored bass** (§2.1) | one engine, mirror first then grid root |
-| **1.0.3** | `5d5f410` | Mirror buried under the fixed harmony line (512 note-ons for 128 attacks); "bass machine-gun" (~4 attacks per sustained note) | mirror owns the voice via `mirrorVoiceEndSample_`; 0.02 s onset envelope; latched edge + trough clear |
+| **0.9.63** | `3176cd2` | "unified listen bass mixer" — simultaneously fixed B/C holes and **broke the authored bass** (§2.1) | one engine, mirror first then grid root |
+| **1.0.3** | `d1fc62a` | Mirror buried under the fixed harmony line (512 note-ons for 128 attacks); "bass machine-gun" (~4 attacks per sustained note) | mirror owns the voice via `mirrorVoiceEndSample_`; 0.02 s onset envelope; latched edge + trough clear |
 
 ### 2.3 Bass note duration / stuck notes / retrigger-every-16th
 
 | Version | Commit | Symptom | Fix |
 |---|---|---|---|
-| 0.8.3 | `30d7044` | Bass not immediately triggered; no fallback | immediate trigger + quarter-note fallback |
-| 0.8.4 | `4f905f8` | Bass note was 0.25 beats = "16th-note blip" | 0.9-beat legato |
+| 0.8.3 | `5253bcd` | Bass not immediately triggered; no fallback | immediate trigger + quarter-note fallback |
+| 0.8.4 | `b8b07fe` | Bass note was 0.25 beats = "16th-note blip" | 0.9-beat legato |
 | 0.9.1 | | "multi-pitch bass … could leave a note stuck on: the single deferred note-off slot emitted `noteOff` for the last note played instead of the note whose note-off was due → a harsh constant drone" | monophonic `emitBassNote` closes the previous note; `bassNoteOffMidi` tracks the pending note (`CHANGELOG.md:1004-1012`) |
 | 0.9.12 | | (retraction) "There is no single 0.9-beat legato on every bass path" | three different gates documented (`CHANGELOG.md:785-789`) |
-| 0.9.73 | `310fc7b` | T5.2: a held chord was eight 16th retriggers | capture onset vs sustain per 16th; trigger only onsets with a 90 % gate (`CHANGELOG.md:225-228`) |
-| **1.0.1** | `db31dd7` | R9: at 2048 samples "the whole riff became a single 64-sixteenth note and the locked bass played one note" (9/5/1 onsets) | tail window becomes the last 20 % of the 16th (53/52/49 onsets) |
-| **1.0.3** | `5d5f410` | "bass machine-gun" — ~4 attacks per sustained note; a single pick mirrored as 2–3 notes | fast onset envelope + edge latched across the gate + `clearsFloor` trough test |
+| 0.9.73 | `98da272` | T5.2: a held chord was eight 16th retriggers | capture onset vs sustain per 16th; trigger only onsets with a 90 % gate (`CHANGELOG.md:225-228`) |
+| **1.0.1** | `ba4310f` | R9: at 2048 samples "the whole riff became a single 64-sixteenth note and the locked bass played one note" (9/5/1 onsets) | tail window becomes the last 20 % of the 16th (53/52/49 onsets) |
+| **1.0.3** | `d1fc62a` | "bass machine-gun" — ~4 attacks per sustained note; a single pick mirrored as 2–3 notes | fast onset envelope + edge latched across the gate + `clearsFloor` trough test |
 
 ### 2.4 Drum timing / drum note-offs / choked cymbals
 
 | Version | Commit | Symptom | Fix |
 |---|---|---|---|
-| 0.3.6 | `963ae81` | "fixed drum timing and bass blips" (no CHANGELOG entry; content is model/asset rebuild) | — |
-| 0.9.68 | `3dd067a` | T1.1: `jmin(numSamples - 1, off + durSamps)` — "every drum note is released within its onset block (3–46 ms) rather than after its authored duration"; every cymbal choked; open hats inherit the closed-hat `dur = 0.25f`; "The delivered artefact changes with buffer size" | per-note deferred drum note-off table; open hats ≥ 1-beat gate (`CHANGELOG.md:301-303`; `PLAYABILITY_REVIEW.md:81-113`) |
+| 0.3.6 | `edb3ba7` | "fixed drum timing and bass blips" (no CHANGELOG entry; content is model/asset rebuild) | — |
+| 0.9.68 | `9d55b87` | T1.1: `jmin(numSamples - 1, off + durSamps)` — "every drum note is released within its onset block (3–46 ms) rather than after its authored duration"; every cymbal choked; open hats inherit the closed-hat `dur = 0.25f`; "The delivered artefact changes with buffer size" | per-note deferred drum note-off table; open hats ≥ 1-beat gate (`CHANGELOG.md:301-303`; `PLAYABILITY_REVIEW.md:81-113`) |
 | 0.9.72 | `7984394` | R3: "A retrigger could beat a natural note end depending on whether both landed in one block" | `scheduleDrumNoteOff` releases at the true sample when it falls at or before the re-trigger |
-| 0.9.75 | `ee15307` | T7.3: pattern 21 + fill 18 "flams two kicks at beat 3.75" | fills mute the groove from window start and inherit feel (`CHANGELOG.md:189-193`) |
-| **1.0.1** | `db31dd7` | Residual: "the click note-off lands on the detecting block boundary"; frozen-riff drum events 512 vs 2048 diverged (13/10/6 → 57/57/54 bass notes; drum events now identical) | bar-aligned lock origin; test corrections |
+| 0.9.75 | `a99df29` | T7.3: pattern 21 + fill 18 "flams two kicks at beat 3.75" | fills mute the groove from window start and inherit feel (`CHANGELOG.md:189-193`) |
+| **1.0.1** | `ba4310f` | Residual: "the click note-off lands on the detecting block boundary"; frozen-riff drum events 512 vs 2048 diverged (13/10/6 → 57/57/54 bass notes; drum events now identical) | bar-aligned lock origin; test corrections |
 
 ### 2.5 Tempo / BPM stability
 
 | Version | Commit | Symptom | Fix |
 |---|---|---|---|
-| 0.3.8 | `1c02d3e` | (quick 260427-t43) tempo jitter | BPM lock-in after 8 consistent IOIs + **5-BPM grid quantization** + 80 ms refractory |
-| 0.3.7-era | `1f30640` | octave error in `medianIoiBpm` (quick 260420-421) | octave fold |
-| 0.3.7-era | `2a5e068` | BPM jumps | exponential smoothing on `PatternPlayer::setBpm` (α=0.1) |
-| 0.4.11 | (no commit; `.planning/debug/drums-gate-tempo-regression.md`) | drums rarely/never come in; wrong by >5 BPM; "Regressed after phase 28 commits (`bbea3f8`, `ce0b006`)" | `kPlaybackConfidenceStart` 0.50→0.25; use `onsetDetector.isTempoLocked()`; **remove the 5-BPM rounding added in `1c02d3e`** |
+| 0.3.8 | `f31302c` | (quick 260427-t43) tempo jitter | BPM lock-in after 8 consistent IOIs + **5-BPM grid quantization** + 80 ms refractory |
+| 0.3.7-era | `26e9a1c` | octave error in `medianIoiBpm` (quick 260420-421) | octave fold |
+| 0.3.7-era | `b4164c5` | BPM jumps | exponential smoothing on `PatternPlayer::setBpm` (α=0.1) |
+| 0.4.11 | (no commit; `.planning/debug/drums-gate-tempo-regression.md`) | drums rarely/never come in; wrong by >5 BPM; "Regressed after phase 28 commits (`9d88374`, `32f5ef1`)" | `kPlaybackConfidenceStart` 0.50→0.25; use `onsetDetector.isTempoLocked()`; **remove the 5-BPM rounding added in `f31302c`** |
 | 0.4.12 | (`.planning/debug/phase-28-uat-failures.md`) | BPM ~20 too fast; autocorrelation normalisation `fabs(acc)/(W-lag)` biased +15–25 BPM; no octave disambiguation | octave disambiguation in `BeatTracker::recompute()` mirroring `OnsetDetector::medianIoiBpm():96-101` |
 | 0.4.14–0.4.18 | (`.planning/debug/accompaniment-groove-stability.md`) | five releases in one day: 0.4.14 stopped after 1–2 s → **0.4.15 locked at 200 BPM** → **0.4.16 "No accompaniment at all; not a single hit" (self-inflicted regression from the tempo-alias fix)** → 0.4.17 playable but "tempo is sometimes wrong and changes too easily" → 0.4.18 4-BPM deadband + 2 s BPM latch |
-| 0.6.4–0.6.6 | `e685806`, `101c70c`, `cc75389` | BPM not recovered after a reset; hard freeze rejected genuine changes | `TempoStabiliser::warmStart(bpm)`; soft-lock EMA α=0.03 (drift propagates over ~3–5 s); BPM save/restore through the silence-reset cascade |
-| **Phase 28 UAT** | (`.planning/phases/28-*/28-UAT.md`, 2026-04-30) | "about 20bpm too fast"; beat gate never fully opens into a phrase | UAT rejected 1/4; BeatTracker **deprecated** and later deleted (`40cc331`) |
-| 0.7.8 | `9d8ed74` | tempo changing | "remove tempo changing" (session/DAW tempo becomes authoritative) |
+| 0.6.4–0.6.6 | `6b3847e`, `5d9ad62`, `1dbcac7` | BPM not recovered after a reset; hard freeze rejected genuine changes | `TempoStabiliser::warmStart(bpm)`; soft-lock EMA α=0.03 (drift propagates over ~3–5 s); BPM save/restore through the silence-reset cascade |
+| **Phase 28 UAT** | (`.planning/phases/28-*/28-UAT.md`, 2026-04-30) | "about 20bpm too fast"; beat gate never fully opens into a phrase | UAT rejected 1/4; BeatTracker **deprecated** and later deleted (`58c3dde`) |
+| 0.7.8 | `fd5a772` | tempo changing | "remove tempo changing" (session/DAW tempo becomes authoritative) |
 | 0.7.0 limitation | `CHANGELOG.md:1106` | "BPM control through synthetic test signals is unreliable with the current 2048-sample FFT onset detector" | accepted limitation |
 | v0.9-era | `MUSICALITY_ROCK_PIVOT_PLAN.md:36` | the whole onset-detection BPM path removed | "The old onset-detection BPM path (`OnsetDetector`, `TempoStabiliser`) no longer exists in `src/analysis/`" |
 | 1.0.x | `README.md:103` | — | "Tempo: the DAW is the drummer's click" — host tempo only |
@@ -776,28 +776,28 @@ file:line or commit where the claim is verifiable.
 | — | `.planning/debug/*` (0.4.11/0.4.12) | flux threshold / normalisation / octave | see §2.5 |
 | 0.9.10 | | `rms > prev × 1.2` "never fired on real playing … so the learner recorded ~1 attack per 6 s" | sharp rise following a recent decay (`CHANGELOG.md:819-828`) |
 | 0.9.11 | | pitch-confidence gate starved the learner; YIN confidence bimodal on distorted palm-mute | gate attacks on RMS transient only (`CHANGELOG.md:799-807`) |
-| 0.9.74 | `8e27a05` | T6.5: "Any RMS decrease arms the next rise (was a 3% drop), so a 200 BPM 16th pulse train records ~4 attacks/beat" | any decrease arms the rise (`CHANGELOG.md:215-217`) |
-| **1.0.1** | `db31dd7` | R9: per-slot envelope measured over the last quarter of the **block**, not the 16th → 9/5/1 onsets at 128/512/2048 | last 20 % of the 16th → 53/52/49 |
-| **1.0.3** | `5d5f410` | 0.1 s window cannot resolve a 125 ms 16th; detector leaned on a stale-state artefact and fired ~4×/note | dedicated 0.02 s `getOnsetRmsEnergy()`; edge latched across the gate; trough-clearing requirement |
+| 0.9.74 | `e838486` | T6.5: "Any RMS decrease arms the next rise (was a 3% drop), so a 200 BPM 16th pulse train records ~4 attacks/beat" | any decrease arms the rise (`CHANGELOG.md:215-217`) |
+| **1.0.1** | `ba4310f` | R9: per-slot envelope measured over the last quarter of the **block**, not the 16th → 9/5/1 onsets at 128/512/2048 | last 20 % of the 16th → 53/52/49 |
+| **1.0.3** | `d1fc62a` | 0.1 s window cannot resolve a 125 ms 16th; detector leaned on a stale-state artefact and fired ~4×/note | dedicated 0.02 s `getOnsetRmsEnergy()`; edge latched across the gate; trough-clearing requirement |
 
 ### 2.7 Plugin UI crash / editor defects
 
 | Version | Commit | Symptom | Fix |
 |---|---|---|---|
-| 0.9.15 | (CHANGELOG written in `0f225f6`) | "REAPER crashed when pressing the track's FX button" — `setSize()` in the constructor fires `resized()` before `sectionListEditor` exists → null deref on `getHeightHint()` | guard the pointer in `resized()`; add an `[editor]` construction smoke test "so this class of regression is caught" (`CHANGELOG.md:711-720`) |
-| 0.9.17 | `b118ad2` | section-list combo boxes "drew no text" — the custom LookAndFeel's `drawComboBox` replaced the base implementation without drawing the label | draw the selected text (`CHANGELOG.md:688-698`) |
+| 0.9.15 | (CHANGELOG written in `47a3c8c`) | "REAPER crashed when pressing the track's FX button" — `setSize()` in the constructor fires `resized()` before `sectionListEditor` exists → null deref on `getHeightHint()` | guard the pointer in `resized()`; add an `[editor]` construction smoke test "so this class of regression is caught" (`CHANGELOG.md:711-720`) |
+| 0.9.17 | `66ccaca` | section-list combo boxes "drew no text" — the custom LookAndFeel's `drawComboBox` replaced the base implementation without drawing the label | draw the selected text (`CHANGELOG.md:688-698`) |
 | 2026-08-19 | (`.planning/debug/reaper-vst3-ui-crash.md:29,50`) | "Historical SIGSEGV 2026-08-19 in `AccompanimentEditor::resized()`" — recorded as "the v0.9.15 class of bug" | the doc eliminates the null-deref hypothesis (`:35-37`) and warns of "a residual editor `resized()` crash once the plugin actually loads" |
 | 2026-08-26 | same doc `:63-65` | VST3 editor **never opens** in REAPER — JUCE VST3 packaging rewrites `Contents/Resources/moduleinfo.json` **after** codesign, invalidating the ad-hoc seal; macOS refuses the load | re-sign install + build bundles in place; CMake `POST_BUILD` re-sign; dlopen OK; REAPER relaunch pending |
 | 0.4.0 risk | `PITFALLS.md:64-83` | partial `genre` param removal crashes the editor on construction (`genreAttachment` binding a nonexistent parameter) | removed atomically across 4 files (Phase 24) |
-| 1.0.2 | `e463847` | editor needed 968 px inside a 520×1100 window on a 956 px desktop with no scrollbar → bottom of UI unreachable | Viewport + metric tiers + `fitEditorToScreen()` + resize floor 900→460 |
+| 1.0.2 | `6387c6b` | editor needed 968 px inside a 520×1100 window on a 956 px desktop with no scrollbar → bottom of UI unreachable | Viewport + metric tiers + `fitEditorToScreen()` + resize floor 900→460 |
 
 ### 2.8 ONNX model fallback (silent rule-based masquerade)
 
 | Occurrence | Evidence | Mitigation |
 |---|---|---|
 | `Run()` throws; `catch(...)` "silently swallows" and falls back to rule-based inference with "no error in the log" | `PITFALLS.md:41`; repeated for opset drift `PITFALLS.md:173` | — |
-| 0.8.3 rpath bug: `tryLoadModel()` fails silently when the ORT dylib path is stale | `016a5b1`; `IMPLEMENTATION_PLAN.md:67-68` | absolute dylib path |
-| Phase 12 structure ONNX swallowed `Ort::Exception` | `fcb835f` "log `Ort::Exception` in `OnnxStructureInference`" | log it |
+| 0.8.3 rpath bug: `tryLoadModel()` fails silently when the ORT dylib path is stale | `8038e9b`; `IMPLEMENTATION_PLAN.md:67-68` | absolute dylib path |
+| Phase 12 structure ONNX swallowed `Ort::Exception` | `45e2472` "log `Ort::Exception` in `OnnxStructureInference`" | log it |
 | T0.3/T0.1 in the remediation: "a silent rule-based fallback can never masquerade as working ML again"; stale installed binary (0.9.62 vs 0.9.67) | `IMPLEMENTATION_PLAN.md:96-98`, `:52-68` | ONNX-availability guard + version-string check + integration test on `getActiveInferenceName()` |
 | Current code: `makeInference()` has `jassertfalse` on load failure and a comment that "a failed load used to fall through silently, so a stale ONNX Runtime dylib looked like a working ML build" | `src/AccompanimentProcessor.cpp:26-33` | jassert + integration assertion |
 | ONNX error counters were only surfaced by quick task `260520-dy1` (v0.5.3), with the recorded limitation "The ONNX-specific branches were compiled only insofar as headers and disabled stubs participate in the default build" | `260520-dy1-SUMMARY.md:28` | editor error counter |
@@ -810,50 +810,50 @@ file:line or commit where the claim is verifiable.
 |---|---|---|---|
 | 0.9.2 | | Frozen transport → transport-jump detector fired every block, wiping the pending pattern change (`activePatternIndex` stuck on 0) and re-firing the same bass note at block rate ("harsh constant drone") | detect a frozen host position and run an internal beat clock (`CHANGELOG.md:988-1002`) |
 | 0.9.31 | | Scope playhead used the plugin's own counter while drums quantized to the DAW transport | compute the playhead from the resolved host clock (`CHANGELOG.md:538-545`) |
-| 0.9.61 | `cdf4bac`-era, quick `260908-m7z` | hitting Record/Play in the DAW treated the first moving playhead sample as a seek → click/count-in state dumped, metronome left the bar grid | snap to the host timeline on frozen→rolling, ignore small blips (`CHANGELOG.md:385-395`) |
-| 0.9.69 | `d0bb9c5` | "A DAW loop shorter than `lockBars` used to wedge the lock forever and silence the frozen bass for part of every pass" — the emitter forbade negative placement and expiry was measured in absolute samples | monotonic `hostSampleTime` frame, bar phase latched once at engage, seek/loop-wrap re-anchor (`CHANGELOG.md:289-297`; `PLAYABILITY_REVIEW.md:117-163`) |
-| **1.0.1** | `db31dd7` | R8: "Every bar-aligned DAW loop wrap re-phased the riff" — `reanchorLockClockOnJump` re-latched unconditionally, dropping one onset per loop | a jump landing on the same bar phase is a no-op; only an off-grid seek re-latches |
+| 0.9.61 | `ad55168`-era, quick `260908-m7z` | hitting Record/Play in the DAW treated the first moving playhead sample as a seek → click/count-in state dumped, metronome left the bar grid | snap to the host timeline on frozen→rolling, ignore small blips (`CHANGELOG.md:385-395`) |
+| 0.9.69 | `bd9dc32` | "A DAW loop shorter than `lockBars` used to wedge the lock forever and silence the frozen bass for part of every pass" — the emitter forbade negative placement and expiry was measured in absolute samples | monotonic `hostSampleTime` frame, bar phase latched once at engage, seek/loop-wrap re-anchor (`CHANGELOG.md:289-297`; `PLAYABILITY_REVIEW.md:117-163`) |
+| **1.0.1** | `ba4310f` | R8: "Every bar-aligned DAW loop wrap re-phased the riff" — `reanchorLockClockOnJump` re-latched unconditionally, dropping one onset per loop | a jump landing on the same bar phase is a no-op; only an off-grid seek re-latches |
 | 1.0.1 residual | `CHANGELOG.md:139-143` | loop-wrapped Record 128 vs 2048 differed by one kick note-off (~1.8 k samples) on the wrap flush | pre-existing, not fixed |
 
 ### 2.10 Bass pitch / register (octave) errors
 
 | Version | Commit | Symptom | Fix |
 |---|---|---|---|
-| 0.3.6→0.3.7 | `64732d7` (quick 260427) | Stability tracked in **absolute MIDI** space; YIN octave-flips reset the counter, and `setBassSemitoneOffset` "is never called"; `rounded - 40` put the bass in the wrong register | pitch-class comparison + ±6-semitone mapping |
+| 0.3.6→0.3.7 | `5faf11a` (quick 260427) | Stability tracked in **absolute MIDI** space; YIN octave-flips reset the counter, and `setBassSemitoneOffset` "is never called"; `rounded - 40` put the bass in the wrong register | pitch-class comparison + ±6-semitone mapping |
 | 0.9.6 | | Drop-C C2 = 65.4 Hz below the YIN low cap 75 Hz → no pitch ever detected → always E2 = 40 | extend band to ~55 Hz, accept gate 50 Hz, map C→36 |
 | 0.9.7 | | APVTS raw choice value is the **index**; a stray normalized multiply collapsed Punk/Metal/Sludge to Metal and broke +12 | use the index directly |
 | 0.9.8 | | Offset folded onto E2 = 40 instead of C2 = 36: guitar C → bass E, E → G♯, G → B₁; ±6 wrap pushed pc ≥ 7 an octave down | fold onto C2 = 36; return pc ∈ [0,11] |
-| 0.9.68 | `3dd067a` | T1.4: a hard clamp collapsed C/C#/D/D# onto E1 with the ±12 transpose control | learned-bass octave fold |
+| 0.9.68 | `9d55b87` | T1.4: a hard clamp collapsed C/C#/D/D# onto E1 with the ±12 transpose control | learned-bass octave fold |
 | 1.0.x | `PLAYABILITY_REVIEW.md:545-568` | §2.15 "The bass octave control produces wrong pitch classes" | T1.4 / P2 item 12 |
 
 ### 2.11 Buffer-size-dependent rendering (a recurring *class*, fixed four times)
 
 | Version | Commit | Measured defect | Fix |
 |---|---|---|---|
-| 0.9.68 | `3dd067a` | drum note-offs capped at the block boundary; delivered artefact changed with buffer size | deferred drum note-off table |
-| 0.9.69 | `d0bb9c5` | lock/transition schedules measured in absolute host samples; buffer-dependent phase | monotonic clock + single bar-phase latch |
+| 0.9.68 | `9d55b87` | drum note-offs capped at the block boundary; delivered artefact changed with buffer size | deferred drum note-off table |
+| 0.9.69 | `bd9dc32` | lock/transition schedules measured in absolute host samples; buffer-dependent phase | monotonic clock + single bar-phase latch |
 | **0.9.72** | `7984394` | R1: "55 of 130 note-ons moved between 128 and 2048 (25 by ±1 sample from a `std::floor` …, ~20 by 0.5–7 ms from the `jlimit(0, numSamples-1, …)` microtiming clamp)"; R2 ornaments keyed to block-start bar; R4 grid bass anticipating its beat; R5 first event dropped; R6 "No changelog entries for 0.9.68–0.9.71" | index-enumerated occurrences placed at absolute samples; per-event-bar ornaments; one-sided pocket clamp; `placeEvent` clamps to 0 only in the first block |
-| **1.0.1** | `db31dd7` | R7 riff phase offset 0 slots @128 vs 16 slots @512/2048; R9 onset capture 9/5/1 | `fmod` → forward snap only when the block genuinely straddles the line; tail window = last 20 % of the 16th |
-| **1.0.3** | `5d5f410` | `EnergyAnalyser` onset window had to be "fixed in time, so it does not change with the host buffer size" (`EnergyAnalyser.h`) | dedicated fixed 0.02 s onset window |
+| **1.0.1** | `ba4310f` | R7 riff phase offset 0 slots @128 vs 16 slots @512/2048; R9 onset capture 9/5/1 | `fmod` → forward snap only when the block genuinely straddles the line; tail window = last 20 % of the 16th |
+| **1.0.3** | `d1fc62a` | `EnergyAnalyser` onset window had to be "fixed in time, so it does not change with the host buffer size" (`EnergyAnalyser.h`) | dedicated fixed 0.02 s onset window |
 | Residual | `IMPLEMENTATION_PLAN.md:1019-1021`; `CHANGELOG.md:139-143` | lock onset + transition start still scheduled on the first block past the musical instant; fill arming differs at 128 | accepted residual |
 
 ### 2.12 Control-surface churn (added then removed, sometimes within minutes)
 
 | Control | Added | Removed | Evidence |
 |---|---|---|---|
-| **Stop button** | v0.9.50, `1d36e47` (2026-09-04 14:17) | v0.9.51/0.9.52, `5fea0d8` (14:20) — "It did the same thing as Forget … did not pause or resume" | `CHANGELOG.md:495-497`, `:477-479` |
-| Tempo knob (rotary BPM) | Phase 1 | v0.9.16 (`0f225f6`) | `CHANGELOG.md:703-708` |
-| Bass-octave dropdown, song-form preset dropdown, Loop checkbox, RMS/Centroid/HF-flux/noise-floor readouts | Phases 7/14 | v0.9.30 (`773038a`-era) | `CHANGELOG.md:558-563` |
-| Intensity slider | — | v0.8.3, `2478af3` | commit message |
-| `genre` APVTS param, `variation`, `PolicyPatternMapper` | v0.2.0 Phase 14 (`7a46e6d`) | v0.4.0 Phase 24, `6387e18` | `CHANGELOG.md:1133` |
+| **Stop button** | v0.9.50, `2e82e7c` (2026-09-04 14:17) | v0.9.51/0.9.52, `6f16835` (14:20) — "It did the same thing as Forget … did not pause or resume" | `CHANGELOG.md:495-497`, `:477-479` |
+| Tempo knob (rotary BPM) | Phase 1 | v0.9.16 (`47a3c8c`) | `CHANGELOG.md:703-708` |
+| Bass-octave dropdown, song-form preset dropdown, Loop checkbox, RMS/Centroid/HF-flux/noise-floor readouts | Phases 7/14 | v0.9.30 (`57b3ccc`-era) | `CHANGELOG.md:558-563` |
+| Intensity slider | — | v0.8.3, `c4c0545` | commit message |
+| `genre` APVTS param, `variation`, `PolicyPatternMapper` | v0.2.0 Phase 14 (`dcc5ddd`) | v0.4.0 Phase 24, `28ac7e6` | `CHANGELOG.md:1133` |
 
 ### 2.13 "Dead code that was written but never reached the live path" (recurring, ≥6 instances)
 
 | Component | Status | Evidence |
 |---|---|---|
 | `emitBassRange` / `emitPatternBass` | no call site; test asserted they must not play | `PLAYABILITY_REVIEW.md:279-296` |
-| `snapBassToSectionHarmony` | no call site | `PLAYABILITY_REVIEW.md:711` (removed in T8.1, `620d62b`) |
-| `pickPoolPattern`, `barsPerGrooveForSection` | "never called" — the entire diversity engine unreachable in the play path | `PLAYABILITY_REVIEW.md:236-247`, `:715` (wired by T4.1, `a729e66`) |
+| `snapBassToSectionHarmony` | no call site | `PLAYABILITY_REVIEW.md:711` (removed in T8.1, `1dee5ab`) |
+| `pickPoolPattern`, `barsPerGrooveForSection` | "never called" — the entire diversity engine unreachable in the play path | `PLAYABILITY_REVIEW.md:236-247`, `:715` (wired by T4.1, `b023a1d`) |
 | `diversifyPatternForGenre` / `diversifyPatternForStyle` | ran only when `playSectionIndex < 0`; in Play always ≥ 0 | `PLAYABILITY_REVIEW.md:236-240` |
 | `rmsDelta` | "computed, published, never consumed" — the "react now" input | `PLAYABILITY_REVIEW.md:74-75`, `:716` |
 | `setMirrorWhileHeld` / `releaseForTransition` | "no-op stubs, zero callers, still documented in CHANGELOG 0.9.59" | `PLAYABILITY_REVIEW.md:714` |
@@ -863,7 +863,7 @@ file:line or commit where the claim is verifiable.
 | `BeatTracker::pushFluxSample()` | "**never called**" in the v0.7.x prototype | `TRIAGE.md:20-35` |
 | `OnnxBassInference` | "Dead code (proposals overwritten by `RuleBasedBass`)" | `SIMPLIFY.md:50-51` |
 | `OnnxStructureInference` | "Broken (5-state vs 3-state index mismatch)" | `SIMPLIFY.md:50` |
-| `static bool lastLoopValue` | function-local `static` mutated from the audio thread, **shared by all plugin instances** — a data race | `PLAYABILITY_REVIEW.md:717` (fixed T8.2, `620d62b`) |
+| `static bool lastLoopValue` | function-local `static` mutated from the audio thread, **shared by all plugin instances** — a data race | `PLAYABILITY_REVIEW.md:717` (fixed T8.2, `1dee5ab`) |
 | Non-atomic UI reads of lock state | UI read `riffA`/`riffB`/`enginePhase` while the audio thread wrote them → possible torn 64-slot snapshot | `PLAYABILITY_REVIEW.md:718` (fixed T8.2) |
 
 ---
@@ -897,7 +897,7 @@ file:line or commit where the claim is verifiable.
    (1.0.2 Viewport + metric tiers + `fitEditorToScreen()` + `checkSizeConstraint`);
    `.planning/debug/reaper-vst3-ui-crash.md:63-65` (CMake `POST_BUILD` re-sign).
 6. **Lock/transition schedules run on the monotonic clock with one bar-phase latch.**
-   Evidence: `CHANGELOG.md:289-297` (T2.1/T2.2); commit `1d36e47` (single `clockSample` for every
+   Evidence: `CHANGELOG.md:289-297` (T2.1/T2.2); commit `2e82e7c` (single `clockSample` for every
    schedule; comment "the same bug class fixed for the scope playhead in v0.9.31"); `CHANGELOG.md:118-123`
    (R8 no-op re-anchor).
 7. **Authored per-pattern bass lines reach the output, transposed to the live root.**
@@ -905,7 +905,7 @@ file:line or commit where the claim is verifiable.
    `CHANGELOG.md:16-24` (1.0.3 gating so harmony cannot retrigger over the mirror).
 8. **The mirror owns the monophonic bass voice while the guitarist is picking.**
    Evidence: `CHANGELOG.md:16-24` (`mirrorVoiceEndSample_`); `CHANGELOG.md:35-38` (per-note mirror tests:
-   128 attacks → 120 notes, alternating pitch contour one note per attack); commit `5d5f410`.
+   128 attacks → 120 notes, alternating pitch contour one note per attack); commit `d1fc62a`.
 9. **A locked/frozen riff stores note lengths, so a held chord is O(1) notes, not eight 16ths.**
    Evidence: `CHANGELOG.md:225-228` (T5.2 onset/sustain stamping, 90 % gate); `docs/PHASE9_ACCEPTANCE.md`
    ("frozen riff `O(1)` notes, `maxGate >= 4`"); `CHANGELOG.md:124-130` (1.0.1 onset-capture recovery).
@@ -953,13 +953,13 @@ file:line or commit where the claim is verifiable.
 ## 4. Failed approaches that should not be repeated
 
 1. **Beat tracking as a continuous in-plugin BPM chase.** Tried three times: v0.1.0 IOI median
-   (`ONSET-01–04`), `BeatTracker` (autocorrelation + DP, Phase 28, `bbea3f8`/`ce0b006`), naive
+   (`ONSET-01–04`), `BeatTracker` (autocorrelation + DP, Phase 28, `9d88374`/`32f5ef1`), naive
    improvement of `BeatTracker` (0.4.11/0.4.12). UAT rejected Phase 28 1/4; `SIMPLIFY.md` proposed
-   deleting `BeatTracker`; it was deleted in `40cc331`; `9d8ed74` "remove tempo changing"; the final
+   deleting `BeatTracker`; it was deleted in `58c3dde`; `fd5a772` "remove tempo changing"; the final
    design is host/DAW tempo with no chase (`README.md:103`). Model-dependent continuous BPM inference
    was also explicitly considered and rejected in favour of autocorrelation+DP
    (`rhythmic-coherence/03:121`).
-2. **"Fix the tempo by quantizing to a 5-BPM grid."** Added in `1c02d3e` (v0.3.8) and **reverted three
+2. **"Fix the tempo by quantizing to a 5-BPM grid."** Added in `f31302c` (v0.3.8) and **reverted three
    days later** because it introduced up to ±2.5 BPM error and then drift
    (`.planning/debug/drums-gate-tempo-regression.md:33,41-42`; confirmed removed in
    `phase-28-uat-failures.md:14,99`).
@@ -979,7 +979,7 @@ file:line or commit where the claim is verifiable.
    locked drums to patterns `{1,2,7}`, so "LOUD and BREAKDOWN patterns (4, 5, 6) are never selected"
    (`TRIAGE.md:174-208`).
 7. **Quantile-bin training labels.** Ordinal activity quantiles are "not a direct semantic mapping to
-   pattern names" (`ML_REPORT.md:487-496`); replaced by the rule oracle in Phase 32 (`f118ef8`).
+   pattern names" (`ML_REPORT.md:487-496`); replaced by the rule oracle in Phase 32 (`d91556e`).
 8. **Clamping the spectral-centroid std to `1e-8`.** Made "live inference effectively random"
    (`CHANGELOG.md:742-744`; `MUSICALITY_ROCK_PIVOT_PLAN.md:45,166`); required per-feature std floors
    (~1 kHz centroid, 1e-3 others) and a re-export. This is the canonical proxy/normalisation trap
@@ -1003,8 +1003,8 @@ file:line or commit where the claim is verifiable.
     rejected)**" (`rhythmic-coherence/05:123,130-132`). Note: `05:164,172-174` still describes
     scaled-down first-bar velocity — an unresolved internal contradiction in that research doc.
 15. **Reusing a single dB/page-wide `genre` parameter as the UI's whole navigation model.** Added
-    v0.2.0, removed v0.4.0, re-added in a different form as 13 genre presets in v0.9.47 (`773038a`)
-    and then removed from pattern-choice authority in Play (`e566f61`, 0.9.64: "Genre/style rewrite
+    v0.2.0, removed v0.4.0, re-added in a different form as 13 genre presets in v0.9.47 (`57b3ccc`)
+    and then removed from pattern-choice authority in Play (`ca5f7d6`, 0.9.64: "Genre/style rewrite
     does not run in Play").
 16. **Unmerged review-fix work on a side branch.** Phase 31's WR-01..WR-04 fixes landed only on
     `origin/claude/wonderful-payne-cfe667` (2026-05-03) and are not ancestors of `main`; the same
@@ -1020,76 +1020,76 @@ file:line or commit where the claim is verifiable.
 
 | Date | CMake | First commit | Message |
 |---|---|---|---|
-| 2026-04-16 | 0.1.0 | `de0304d` | phase 1.7 (also `e1bfffd` "Add version to UI", 2026-04-19) |
-| 2026-04-19 | 0.3.0 | `01a7c14` | v0.3.0 |
-| 2026-04-20 | 0.3.1 | `521c1d1` | bump version + version-bump rule in CLAUDE.md |
-| 2026-04-20 | 0.3.2 | `d850e69` | fuzzyband rebrand + LookAndFeel |
-| 2026-04-20 | (still 0.3.0) | `9090d56` | user testing |
-| 2026-04-27 | 0.3.3 | `59ee3d9` | `snapToBarStart` + count-in/hold members |
-| 2026-04-27 | 0.3.4 | `09a92c4` | wire count-in gate, 2-bar drum hold |
-| 2026-04-27 | 0.3.5 | `27eeecb` | require beat-spaced onsets for count-in gate |
-| 2026-04-27 | 0.3.6 | `963ae81` | fixed drum timing and bass blips |
-| 2026-04-27 | 0.3.7 | `64732d7` | pitch-class bass root + register |
-| 2026-04-28 | 0.3.8 | `d9ba044` | 3-value StructureState tests |
-| 2026-04-28 | 0.4.0 | `4d946f0` | ONNX contract validation CI |
+| 2026-04-16 | 0.1.0 | `9e4c1ab` | phase 1.7 (also `3131a9a` "Add version to UI", 2026-04-19) |
+| 2026-04-19 | 0.3.0 | `2002b78` | v0.3.0 |
+| 2026-04-20 | 0.3.1 | `1287103` | bump version + version-bump rule in CLAUDE.md |
+| 2026-04-20 | 0.3.2 | `bc22053` | fuzzyband rebrand + LookAndFeel |
+| 2026-04-20 | (still 0.3.0) | `565fde3` | user testing |
+| 2026-04-27 | 0.3.3 | `ff88bd4` | `snapToBarStart` + count-in/hold members |
+| 2026-04-27 | 0.3.4 | `66c8e2c` | wire count-in gate, 2-bar drum hold |
+| 2026-04-27 | 0.3.5 | `8038129` | require beat-spaced onsets for count-in gate |
+| 2026-04-27 | 0.3.6 | `edb3ba7` | fixed drum timing and bass blips |
+| 2026-04-27 | 0.3.7 | `5faf11a` | pitch-class bass root + register |
+| 2026-04-28 | 0.3.8 | `12f5f6f` | 3-value StructureState tests |
+| 2026-04-28 | 0.4.0 | `3683a5c` | ONNX contract validation CI |
 | 2026-04-28 | 0.4.1 | `6623df2` | Phase 24 plan |
-| 2026-04-28 | 0.4.3 | `6387e18` | atomic genre/variation removal |
-| 2026-04-29 | 0.4.4 | `d52c006` | absorb Phase 23 WIP |
-| 2026-04-29 | 0.4.5 | `05f3b8b` | Phase 26-01 datasets |
-| 2026-04-29 | 0.4.6 | `e2e9ea3` | retrain three ONNX heads |
-| 2026-04-29 | 0.4.7 | `ce0b006` | chronological IOI ring (28 WR-02) |
-| 2026-04-29 | 0.4.10 | `bbea3f8` | sorted bounded defers (28 WR-01) |
+| 2026-04-28 | 0.4.3 | `28ac7e6` | atomic genre/variation removal |
+| 2026-04-29 | 0.4.4 | `2129ebe` | absorb Phase 23 WIP |
+| 2026-04-29 | 0.4.5 | `34900e9` | Phase 26-01 datasets |
+| 2026-04-29 | 0.4.6 | `2787b95` | retrain three ONNX heads |
+| 2026-04-29 | 0.4.7 | `32f5ef1` | chronological IOI ring (28 WR-02) |
+| 2026-04-29 | 0.4.10 | `9d88374` | sorted bounded defers (28 WR-01) |
 | 2026-05-03 | 0.4.18 | `31a598c` | code cleanse |
-| 2026-05-13 | 0.5.0 | `4abe0b0` | Phase 33-03 baked normalization export |
-| 2026-05-13 | 0.5.1 | `6199c3d` | executor worktree merge |
-| 2026-05-20 | 0.5.2 | `04871ee` | docs |
+| 2026-05-13 | 0.5.0 | `9770037` | Phase 33-03 baked normalization export |
+| 2026-05-13 | 0.5.1 | `5d6a3ad` | executor worktree merge |
+| 2026-05-20 | 0.5.2 | `7bc9b0a` | docs |
 | 2026-05-22 | 0.5.3 | `13b73c2` | Libraries Summary |
 | 2026-06-02 | 0.6.0 | `e48b44a` | Phase 29-01 runtime rescope |
 | 2026-06-02 | 0.6.1 | `1ed3e9e` | 29-02 shared groove commit |
-| 2026-06-03 | 0.6.2–0.6.3 | `793e272`, `6f52994` | 29-03 directional fills; phase close |
-| 2026-06-03 | 0.6.4 | `e685806` | `TempoStabiliser::warmStart` |
-| 2026-06-03 | 0.6.5 | `101c70c` | soft-lock EMA α=0.03; remove hard freeze |
-| 2026-06-03 | 0.6.6 | `cc75389` | BPM save/restore through silence reset |
-| 2026-06-03 | 0.6.7 | `d72683f` | E2E groove-variety test |
-| 2026-06-03 | 0.7.2 | `53166ea` | M002 S04 half-time LOUD routing |
-| 2026-06-09 | 0.7.8 | `9d8ed74` | remove tempo changing |
-| 2026-06-28 | 0.8.0 | `04dd3bc` | prototype |
-| 2026-06-28 | 0.8.1 | `f6033db` | training pipeline + `MetalGrooveInference` ONNX |
-| 2026-06-28 | 0.8.2 | `ea6042b` | docs + unit tests |
-| 2026-06-29 | 0.8.3 | `30d7044`/`016a5b1`/`2478af3`/`6021df2`/`afe13bb` | rpath fix, C2 bass root, reactive bass, RiffMirror |
-| 2026-06-29 | 0.8.4 | `4f905f8` | bass note duration 0.9-beat legato |
-| 2026-08-14 | 0.8.12 | `40cc331` | clean up (delete `BeatTracker`, add `PhraseLearner.cpp`) |
-| 2026-08-19 | 0.9.16 | `0f225f6` | Data Improvements P0 (**writes CHANGELOG 0.9.0–0.9.16**) |
-| 2026-08-19 | 0.9.17 | `b118ad2` | Data Improvement P1 |
-| 2026-08-19 | 0.9.18 | `cc7536f`, `f7d5644` | P2, P3 |
-| 2026-08-19 | 0.9.19 | `90e41e8` | P4 |
-| 2026-08-21 | 0.9.26 | `f54b058` | style-head training, click track, groove variety, riff-lock progress |
-| 2026-08-26 | 0.9.27 | `297a796` | Debugging mode state confusion |
-| 2026-08-31 | 0.9.33 | `d74edb7` | rock retrain (adds `style_cnn.onnx`; parks planning docs) |
-| 2026-09-02 | 0.9.44 | `fb32a15` | Diversify outputs (`groove_renderer.onnx`, fonts, release CI) |
-| 2026-09-02 | 0.9.47 | `773038a` | Add subgenres + stress test |
-| 2026-09-02 | 0.9.48 | `1ac82d2` | Bug fixes + stress-test update (A-B-A-C-A) |
-| 2026-09-04 | 0.9.50 | `1d36e47` | Fix bass regression (clock unify, Stop button) |
-| 2026-09-04 | 0.9.51 | `5fea0d8` | Remove button |
-| 2026-09-04 | 0.9.53 | `5db5028` | symbol fix (renumber to 0.9.52 + ASCII placeholder) |
-| 2026-09-04 | 0.9.54 | `a898b06` | Still chasing bass regression |
-| 2026-09-07 | 0.9.56 | `bb487e7` | cleanup |
-| 2026-09-08 | 0.9.56 | `546ed38` | failing tests for pinned contrast slots |
-| 2026-09-08 | 0.9.60 | `cdf4bac` | Fix record mode transition logic |
-| 2026-09-09 | 0.9.60 → 0.9.62 | `7caacc5` (0.9.60), `cf88acd` (0.9.62) | slice 1: `EnginePhase`, `riffA` snapshot |
-| 2026-09-09 | 0.9.62 → 0.9.63 | `ddfaee8` (0.9.62), `ac576f8` (0.9.63) | slice 2: unified listen bass mixer |
-| 2026-09-09 | 0.9.64 | `e566f61`, `0680160` | slice 3: Play hybrid drums |
-| 2026-09-09 | 0.9.64 → 0.9.65 | `6f638fc`, `85a5e62` (0.9.64); `c3bfc21`, `07375c2` (0.9.65) | slice 4: on-grid fills, crash only when armed |
-| 2026-09-09 | 0.9.66 | `85a697f`, `bbf1f9e` | slice 5: Record B contrast + freeze |
-| 2026-09-09 | 0.9.67 | `d90bc3e`, `d68c9d5` | slice 6: GrooveRenderer disconnected |
+| 2026-06-03 | 0.6.2–0.6.3 | `793e272`, `87f6224` | 29-03 directional fills; phase close |
+| 2026-06-03 | 0.6.4 | `6b3847e` | `TempoStabiliser::warmStart` |
+| 2026-06-03 | 0.6.5 | `5d9ad62` | soft-lock EMA α=0.03; remove hard freeze |
+| 2026-06-03 | 0.6.6 | `1dbcac7` | BPM save/restore through silence reset |
+| 2026-06-03 | 0.6.7 | `f9cc6e3` | E2E groove-variety test |
+| 2026-06-03 | 0.7.2 | `dc3e7d6` | M002 S04 half-time LOUD routing |
+| 2026-06-09 | 0.7.8 | `fd5a772` | remove tempo changing |
+| 2026-06-28 | 0.8.0 | `66bb66f` | prototype |
+| 2026-06-28 | 0.8.1 | `4b01c6c` | training pipeline + `MetalGrooveInference` ONNX |
+| 2026-06-28 | 0.8.2 | `d3a59ae` | docs + unit tests |
+| 2026-06-29 | 0.8.3 | `5253bcd`/`8038e9b`/`c4c0545`/`d2e06e2`/`3f61d44` | rpath fix, C2 bass root, reactive bass, RiffMirror |
+| 2026-06-29 | 0.8.4 | `b8b07fe` | bass note duration 0.9-beat legato |
+| 2026-08-14 | 0.8.12 | `58c3dde` | clean up (delete `BeatTracker`, add `PhraseLearner.cpp`) |
+| 2026-08-19 | 0.9.16 | `47a3c8c` | Data Improvements P0 (**writes CHANGELOG 0.9.0–0.9.16**) |
+| 2026-08-19 | 0.9.17 | `66ccaca` | Data Improvement P1 |
+| 2026-08-19 | 0.9.18 | `4168f62`, `4b1622b` | P2, P3 |
+| 2026-08-19 | 0.9.19 | `66cd57f` | P4 |
+| 2026-08-21 | 0.9.26 | `3e23e70` | style-head training, click track, groove variety, riff-lock progress |
+| 2026-08-26 | 0.9.27 | `cedd70d` | Debugging mode state confusion |
+| 2026-08-31 | 0.9.33 | `b903500` | rock retrain (adds `style_cnn.onnx`; parks planning docs) |
+| 2026-09-02 | 0.9.44 | `8ccce0e` | Diversify outputs (`groove_renderer.onnx`, fonts, release CI) |
+| 2026-09-02 | 0.9.47 | `57b3ccc` | Add subgenres + stress test |
+| 2026-09-02 | 0.9.48 | `07a9bf5` | Bug fixes + stress-test update (A-B-A-C-A) |
+| 2026-09-04 | 0.9.50 | `2e82e7c` | Fix bass regression (clock unify, Stop button) |
+| 2026-09-04 | 0.9.51 | `6f16835` | Remove button |
+| 2026-09-04 | 0.9.53 | `ab18952` | symbol fix (renumber to 0.9.52 + ASCII placeholder) |
+| 2026-09-04 | 0.9.54 | `7ab08c9` | Still chasing bass regression |
+| 2026-09-07 | 0.9.56 | `2a74e8c` | cleanup |
+| 2026-09-08 | 0.9.56 | `d07f6ca` | failing tests for pinned contrast slots |
+| 2026-09-08 | 0.9.60 | `ad55168` | Fix record mode transition logic |
+| 2026-09-09 | 0.9.60 → 0.9.62 | `86e3351` (0.9.60), `9d7ec26` (0.9.62) | slice 1: `EnginePhase`, `riffA` snapshot |
+| 2026-09-09 | 0.9.62 → 0.9.63 | `b4da398` (0.9.62), `3176cd2` (0.9.63) | slice 2: unified listen bass mixer |
+| 2026-09-09 | 0.9.64 | `ca5f7d6`, `0680160` | slice 3: Play hybrid drums |
+| 2026-09-09 | 0.9.64 → 0.9.65 | `03893c6`, `093da6c` (0.9.64); `b476149`, `07375c2` (0.9.65) | slice 4: on-grid fills, crash only when armed |
+| 2026-09-09 | 0.9.66 | `8ef28f0`, `bbf1f9e` | slice 5: Record B contrast + freeze |
+| 2026-09-09 | 0.9.67 | `58b3baf`, `d68c9d5` | slice 6: GrooveRenderer disconnected |
 | 2026-09-10 | 0.9.67 | `5385856` | Musicality Phase 0 (review + remediation plan) |
-| 2026-09-10 | 0.9.68–0.9.71 | `3dd067a`, `d0bb9c5`, `7ab05a9`, `a729e66` | Phases 1–4 |
+| 2026-09-10 | 0.9.68–0.9.71 | `9d55b87`, `bd9dc32`, `1b86b85`, `b023a1d` | Phases 1–4 |
 | 2026-09-10 | 0.9.72 | `7984394` | review of Phases 0–4 (R1–R6) |
-| 2026-09-11 | 0.9.73–0.9.76 | `310fc7b`, `8e27a05`, `ee15307`, `620d62b` | Phases 5–8 |
-| 2026-09-11 | 1.0.0 | `1217d70` | Phase 9 acceptance |
-| 2026-09-11 | 1.0.1 | `db31dd7` | review of Phases 5–9 (R7–R9) |
-| 2026-09-14 | 1.0.2 | `e463847` | Responsiveness testing (editor fits screen, UI de-generated) |
-| 2026-09-14 | 1.0.3 | `5d5f410` | **HEAD** — Mirroring choices fix |
+| 2026-09-11 | 0.9.73–0.9.76 | `98da272`, `e838486`, `a99df29`, `1dee5ab` | Phases 5–8 |
+| 2026-09-11 | 1.0.0 | `c472bcc` | Phase 9 acceptance |
+| 2026-09-11 | 1.0.1 | `ba4310f` | review of Phases 5–9 (R7–R9) |
+| 2026-09-14 | 1.0.2 | `6387c6b` | Responsiveness testing (editor fits screen, UI de-generated) |
+| 2026-09-14 | 1.0.3 | `d1fc62a` | **HEAD** — Mirroring choices fix |
 
 ---
 
@@ -1100,28 +1100,28 @@ file:line or commit where the claim is verifiable.
 | # | Contradiction | Sources |
 |---|---|---|
 | 1 | `STAB-02` (CPU < 15% @ 256 samples) marked **fail 2026-04-16** vs marked **complete** | `.MDignore/Phase 1 TODO.md:75` vs `.planning/milestones/v0.1.0-REQUIREMENTS.md:57` (both cite `07-05-CPU-PROFILE.md`) |
-| 2 | CHANGELOG `[1.0.0-rc]` heading vs CMake `VERSION 1.0.0` | `CHANGELOG.md:148` vs `1217d70:CMakeLists.txt:4` |
+| 2 | CHANGELOG `[1.0.0-rc]` heading vs CMake `VERSION 1.0.0` | `CHANGELOG.md:148` vs `c472bcc:CMakeLists.txt:4` |
 | 3 | `CHANGELOG.md:1112` says "Plugin version 0.5.6 in `CMakeLists.txt`" inside the `[0.6.7]` block, while the file's top entries are 1.0.x | `CHANGELOG.md:1110-1112` |
-| 4 | Milestone label `M001` vs commit messages `M002 S01-S03` / `M002 S04` | `STATE.md:3-4` vs commits `a1150a8`, `53166ea` |
+| 4 | Milestone label `M001` vs commit messages `M002 S01-S03` / `M002 S04` | `STATE.md:3-4` vs commits `2ddd96c`, `dc3e7d6` |
 | 5 | `STATE.md` still says "Phase: S01 (tempo-stability) — ready to execute", all slices `pending`, while `CHANGELOG.md [0.7.0]` documents S01–S04 as implemented | `STATE.md:36-47` vs `CHANGELOG.md:1077-1108` |
 | 6 | `docs/MUSICALITY_ROCK_PIVOT_PLAN.md:5` says "Date: **2025**" while its own status line says v0.9.0 and every other artifact is 2026 | `docs/MUSICALITY_ROCK_PIVOT_PLAN.md:4-5` |
 | 7 | `README.md:1` says "fuzzyband … — **v0.9.29**" at HEAD 1.0.3 | `README.md:1` vs `CMakeLists.txt:4` |
-| 8 | `CHANGELOG.md` entry numbers lag CMake versions repeatedly (e.g. `0.9.45` introduced by `773038a` which is CMake `0.9.47`; `0.9.29`–`0.9.31` introduced by `d74edb7` which is CMake `0.9.33`) | `git log --format` + git version map (§5) |
+| 8 | `CHANGELOG.md` entry numbers lag CMake versions repeatedly (e.g. `0.9.45` introduced by `57b3ccc` which is CMake `0.9.47`; `0.9.29`–`0.9.31` introduced by `b903500` which is CMake `0.9.33`) | `git log --format` + git version map (§5) |
 | 9 | `rhythmic-coherence/05-COORDINATION-AND-CONTEXT.md` both rejects velocity scaling (`:123`, `:194`) and describes scaled-down first-bar velocity (`:164`, `:172-174`) | that file |
-| 10 | `drums-gate-tempo-regression.md` and `phase-28-uat-failures.md` are dated 2026-04-30 but their fixes are versioned 0.4.11/0.4.12, while CMake at the time was already **0.4.10** (`bbea3f8`, 2026-04-29) and jumped to **0.4.18** by 2026-05-03 — versions 0.4.11–0.4.17 have **no commits on `main`** | debug docs vs commit version map |
+| 10 | `drums-gate-tempo-regression.md` and `phase-28-uat-failures.md` are dated 2026-04-30 but their fixes are versioned 0.4.11/0.4.12, while CMake at the time was already **0.4.10** (`9d88374`, 2026-04-29) and jumped to **0.4.18** by 2026-05-03 — versions 0.4.11–0.4.17 have **no commits on `main`** | debug docs vs commit version map |
 | 11 | The `accompaniment-groove-stability.md` evidence block is not chronological (15:49 entries appear after 16:06 entries) | `.planning/debug/accompaniment-groove-stability.md:73-108` |
 | 12 | `Phase 1 TODO.md` records a `0.3.6→0.3.7` bump for the bass-pitch-class quick task, but the same day also has `0.3.4` (t42) and `0.3.8` (t43) — the ordering is unclear | `260427-bass-pitch-class-tracking/PLAN.md`, `260427-t42-*`, `260427-t43-*` |
 | 13 | Phase 35 and 36 are marked complete in `ROADMAP.md:265-266` (2026-05-25 / 2026-06-02) but have **no phase-numbered commits** and no `v0.5.4`/`v0.5.5` CMake steps | `ROADMAP.md` vs `git log` |
-| 14 | The `.MDignore` location implies `CHANGES_PLAN.md` / `ML_REPORT.md` / `PROTOTYPE_PLAN.md` / `TRIAGE.md` / `SIMPLIFY.md` are deliberately excluded from repo context, yet they are the only record of the v0.7.x/v0.8.0 prototype era | `d74edb7` diff; `.MDignore/` |
+| 14 | The `.MDignore` location implies `CHANGES_PLAN.md` / `ML_REPORT.md` / `PROTOTYPE_PLAN.md` / `TRIAGE.md` / `SIMPLIFY.md` are deliberately excluded from repo context, yet they are the only record of the v0.7.x/v0.8.0 prototype era | `b903500` diff; `.MDignore/` |
 
 ### 6.2 Unclear / unverified
 
-- **What `0.8.5`–`0.8.11` were.** No commits exist between `4f905f8` (2026-06-29, `0.8.4`) and
-  `40cc331` (2026-08-14, `0.8.12`). **Unclear.**
+- **What `0.8.5`–`0.8.11` were.** No commits exist between `b8b07fe` (2026-06-29, `0.8.4`) and
+  `58c3dde` (2026-08-14, `0.8.12`). **Unclear.**
 - **What `0.9.20`–`0.9.25`, `0.9.28`, `0.9.32`, `0.9.34`–`0.9.43`, `0.9.46`, `0.9.49`–`0.9.50`,
   `0.9.52`, `0.9.55`, `0.9.57`–`0.9.59` were.** Several are referenced in the CHANGELOG narrative but
   the CMake versions either jump over them or the numbers were re-assigned after the fact (see the
-  `5db5028` renumbering of 0.9.51 → 0.9.52). **Unclear which build numbers existed.**
+  `ab18952` renumbering of 0.9.51 → 0.9.52). **Unclear which build numbers existed.**
 - **Whether v0.5.0 ever shipped.** No `v0.5.0-ROADMAP.md`, no close artifact, requirements unchecked —
   yet `ML_REPORT.md:3` labels the codebase "v0.5.0" on 2026-05-11 and `v0.7.0-CONTEXT.md:244` refers to
   a "baseline v0.5.3 recording". **Unclear.**
@@ -1134,7 +1134,7 @@ file:line or commit where the claim is verifiable.
   files were modified" and that "the review doc lives in the Desktop docs folder"
   (`IMPLEMENTATION_PLAN.md:5`), yet a copy is committed in `5385856`. Whether the two are identical is
   **unclear**.
-- **`v0.9.51` vs `v0.9.52`/`v0.9.53`.** `5fea0d8` added a `[0.9.51]` entry; `5db5028` rewrote the top
+- **`v0.9.51` vs `v0.9.52`/`v0.9.53`.** `6f16835` added a `[0.9.51]` entry; `ab18952` rewrote the top
   heading to `[0.9.53]` and moved the previous text to `[0.9.52]`. No `0.9.51` build is documented.
 - **Test-suite counts** are inconsistent across documents (e.g. 227+56 in the review,
   268+77 at 1.0.0-rc, 269+79 at 1.0.3) — these are snapshots, not contradictions, but should not be
@@ -1148,9 +1148,9 @@ file:line or commit where the claim is verifiable.
   section and ends "v0.9.26 (versioned build per workflow)."
 - **Unnumbered section** "Data Improvement P3" at `CHANGELOG.md:652` (explicitly says "no version bump",
   but CMake did bump to `0.9.18` in the same batch).
-- **Versions 0.9.0–0.9.16 are retrospective** (all introduced by `0f225f6`, 2026-08-19).
+- **Versions 0.9.0–0.9.16 are retrospective** (all introduced by `47a3c8c`, 2026-08-19).
 - **0.9.17 entry content** ("Slimmer editor UI") does not match its commit message ("Data Improvement
-  P1"), and vice versa for `0f225f6` ("Data Improvements P0" writes the 0.9.0–0.9.16 editor/bass
+  P1"), and vice versa for `47a3c8c` ("Data Improvements P0" writes the 0.9.0–0.9.16 editor/bass
   narrative).
 
 ---
@@ -1169,12 +1169,12 @@ file:line or commit where the claim is verifiable.
 | 7 Creative Companion | 2026-06-02 → 06-09 | 0.6.4 → 0.6.7, 0.7.2, 0.7.8 | Stable tempo/structure, groove vocabulary | M001/M002 label mismatch; synthetic-signal BPM unreliable (accepted) |
 | 8 v0.8.x prototype | 2026-06-28 → 06-29 | 0.8.0 → 0.8.4 | Unified mel-CNN + RiffMirror | Wrong-signal style classifier; BeatTracker never called; 10 s structure lag; ORT rpath → silent fallback |
 | 9 v0.8.12–0.9.44 | 2026-08-14 → 09-02 | 0.8.12 → 0.9.48 | Data honesty, subgenres, rock retrain | CHANGELOG 0.9.0–0.9.16 written retrospectively; missing headings; `1e-8` centroid std still random |
-| 10 0.9.48–0.9.67 | 2026-09-02 → 09-09 | 0.9.48 → 0.9.67 | Stress-test-driven fixes; 6 wiring-repair slices | `260909-gxy` false pass (tests weakened); Stop added then removed in 3 minutes; `cdf4bac` deleted reactivity triggers; stale installed binary |
+| 10 0.9.48–0.9.67 | 2026-09-02 → 09-09 | 0.9.48 → 0.9.67 | Stress-test-driven fixes; 6 wiring-repair slices | `260909-gxy` false pass (tests weakened); Stop added then removed in 3 minutes; `ad55168` deleted reactivity triggers; stale installed binary |
 | 11 0.9.67 → 1.0.0-rc/1.0.1 | 2026-09-10 → 09-11 | 0.9.67 → 1.0.1 | Playability Review remediation (23 defects) | T9.2 unmet (55/130 notes moved); R1–R6 and R7–R9; 3 tests had enshrined regressions |
 | 12 1.0.2–1.0.3 | 2026-09-14 | 1.0.2, 1.0.3 | Editor fits screen; mirror owns the bass voice | Mirror buried by harmony line (512 vs 128 note-ons); machine-gun bass; Play drum reactivity + idle P0 still open |
 
 ---
 
-*Compiled from the repository at HEAD `5d5f410` (2026-09-14, CMake `VERSION 1.0.3`) on a clean working
+*Compiled from the repository at HEAD `d1fc62a` (2026-09-14, CMake `VERSION 1.0.3`) on a clean working
 tree. Every non-obvious claim above is traceable to a file:line or a commit hash; nothing has been
 invented. Items that could not be established are marked **unclear** in §6.*

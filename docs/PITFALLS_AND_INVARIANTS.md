@@ -5,7 +5,7 @@ to hand to a coding agent so it does not re-derive the same wrong conclusions.
 It records (a) the traps that keep catching this project, and (b) the behaviours
 that work and must not be broken.
 
-**Audited at:** v1.0.3, commit `5d5f410`, 2026-09-14.
+**Audited at:** v1.0.3, commit `d1fc62a`, 2026-09-14.
 **Companion docs:** [`CONTEXT_HANDOFF.md`](CONTEXT_HANDOFF.md),
 [`BASS_MIRRORING.md`](BASS_MIRRORING.md), [`TEST_AUDIT.md`](TEST_AUDIT.md),
 [`PROJECT_TIMELINE.md`](PROJECT_TIMELINE.md).
@@ -146,7 +146,7 @@ removed API (`mirrorWhileHeld_`). See [`BASS_MIRRORING.md`](BASS_MIRRORING.md).
 ### 2.3 Public API removed while docs still describe it
 
 `setMirrorWhileHeld` / `mirrorWhileHeld_` / `releaseForTransition` were declared
-stubs and removed (0.9.59, then `cf88acd`), and the Phase 8 dead-code sweep lists
+stubs and removed (0.9.59, then `9d7ec26`), and the Phase 8 dead-code sweep lists
 them for deletion. `grep` finds no trace. Yet `CHANGELOG` and older docs still
 reference them, and the *contract* they encoded (mirror while held) is still
 argued about in code comments.

@@ -3,7 +3,7 @@
 **Status:** implemented at v1.0.14. See §5.4/§5.5 for the shipped algorithm and
 `docs/BASS_MIRRORING.md` §9 for the as-built summary (including the
 `stampLearnerGridSlots` end-boundary fix the buffer-invariance test exposed).
-**Written at:** v1.0.13 (`6463cdc`), after a long debugging session on the bass
+**Written at:** v1.0.13 (`9b24533`), after a long debugging session on the bass
 mirror. Read `docs/CONTEXT_HANDOFF.md` and `docs/PITFALLS_AND_INVARIANTS.md`
 first — this document assumes them and only adds what changed.
 
@@ -50,20 +50,20 @@ So the plumbing to know *when* a section starts exists; the plumbing to
 
 ## 3. What the previous session did (context you must not undo)
 
-Nine commits, `a32543b..6463cdc`. All unit (287) and integration (85) tests pass
+Nine commits, `b297da6..9b24533`. All unit (287) and integration (85) tests pass
 at v1.0.13. Each fix has a guard test. Read the tests before touching the areas.
 
 | Commit | What it fixed | Guard test |
 |---|---|---|
-| `a32543b` | Extracted **`BassVoice`** (`src/midi/BassVoice.{h,cpp}`): the one monophonic bass voice, producer arbitration + per-note provenance. | `tests/test_bass_voice.cpp` |
-| `da59833` | **Mirror is host-buffer-size invariant.** The attack detector ran once per host block, so at a large buffer it saw ~1 value/second. Now `EnergyAnalyser` records the onset envelope at a fixed ~10.7 ms hop and the processor drives `PhraseLearner` per hop. | `bass mirror: the emitted mirror is host-buffer-size invariant` (sweeps 64→4096) |
-| `10cc4e3` | **Learner starvation latch.** The learner was fed only when the slow structure tagger was not SILENT; a quiet passage made it SILENT, which starved the learner, which kept it SILENT — and the harmony line leaked under the player. Now fed whenever armed. | `bass mirror: the transition mirrors a different live riff` |
-| `e034ee7` | Added the **offline DI audit** (`MA_DI_WAV`, see §7) — the instrument that compares emitted MIDI to what was played. | — |
-| `2586d05` | **Recovered the dropped picks.** `clearsFloor` in `AttackDetector` rejected ~68 % of a real DI's rise edges. Relaxed to relative-only + added a broadband-transient gate (flux > absolute floor). | `test_attack_detector`, `test_bass_mirror_play_realaudio` |
-| `6177d27` | **Transition mirrors live.** The contrast-section B-lock was freezing the bass onto a sparse snapshot. Now the drums commit to the contrast section and the bass mirrors (`PhraseLearner::setLiveMirrorWhenLocked`). | `bass mirror: the transition mirrors a different live riff` |
-| `991ce5a` | **Removed the T6.2 same-riff transition cut-short** (user decision). The transition always runs its selected bars. | — |
+| `b297da6` | Extracted **`BassVoice`** (`src/midi/BassVoice.{h,cpp}`): the one monophonic bass voice, producer arbitration + per-note provenance. | `tests/test_bass_voice.cpp` |
+| `479c182` | **Mirror is host-buffer-size invariant.** The attack detector ran once per host block, so at a large buffer it saw ~1 value/second. Now `EnergyAnalyser` records the onset envelope at a fixed ~10.7 ms hop and the processor drives `PhraseLearner` per hop. | `bass mirror: the emitted mirror is host-buffer-size invariant` (sweeps 64→4096) |
+| `4677fcf` | **Learner starvation latch.** The learner was fed only when the slow structure tagger was not SILENT; a quiet passage made it SILENT, which starved the learner, which kept it SILENT — and the harmony line leaked under the player. Now fed whenever armed. | `bass mirror: the transition mirrors a different live riff` |
+| `a982dc3` | Added the **offline DI audit** (`MA_DI_WAV`, see §7) — the instrument that compares emitted MIDI to what was played. | — |
+| `dd7c27b` | **Recovered the dropped picks.** `clearsFloor` in `AttackDetector` rejected ~68 % of a real DI's rise edges. Relaxed to relative-only + added a broadband-transient gate (flux > absolute floor). | `test_attack_detector`, `test_bass_mirror_play_realaudio` |
+| `a6b5bc4` | **Transition mirrors live.** The contrast-section B-lock was freezing the bass onto a sparse snapshot. Now the drums commit to the contrast section and the bass mirrors (`PhraseLearner::setLiveMirrorWhenLocked`). | `bass mirror: the transition mirrors a different live riff` |
+| `b3ead01` | **Removed the T6.2 same-riff transition cut-short** (user decision). The transition always runs its selected bars. | — |
 | `6933466` | **Stopped sustain over-firing.** `kRiseVsPrev` 1.08 → 1.20 (a real pick rises >20 % in one hop; a sustain ripple does not). | `test_attack_detector` freeze test |
-| `6463cdc` | **Sustain release on decay** (`BassVoice::setInputLevel`, release at 25 % of attack level) + **widened Rock section pools** 4 → 5-7 patterns. | buffer sweep + `distinct drum patterns` (audit) |
+| `9b24533` | **Sustain release on decay** (`BassVoice::setInputLevel`, release at 25 % of attack level) + **widened Rock section pools** 4 → 5-7 patterns. | buffer sweep + `distinct drum patterns` (audit) |
 
 ### Measured outcomes (for regression baselines)
 
@@ -332,7 +332,7 @@ From `docs/PITFALLS_AND_INVARIANTS.md` — the ones that bite this feature:
 ## 10. Suggested order of work
 
 1. Read `docs/BASS_MIRRORING.md` (whole), `docs/PITFALLS_AND_INVARIANTS.md`,
-   `ARCHITECTURE.md`, and this session's commits (`git log a32543b..HEAD`).
+   `ARCHITECTURE.md`, and this session's commits (`git log b297da6..HEAD`).
 2. Confirm `PhraseLearner::loadPattern` locks (or add a `replayPattern`).
 3. Implement the cache + capture + replay behind a **default-off flag** first, so
    Play behaviour is unchanged until you opt in.

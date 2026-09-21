@@ -4,7 +4,7 @@
 project. It has been "fixed" at **0.8.4, 0.9.8, 0.9.10, 0.9.11, 0.9.12, 0.9.13,
 0.9.59, 1.0.1 and 1.0.3** — at least nine times — and the user still reports that bass
 does not mirror.
-**Audited at:** v1.0.3, commit `5d5f410` ("Mirroring choices fix"), 2026-09-14.
+**Audited at:** v1.0.3, commit `d1fc62a` ("Mirroring choices fix"), 2026-09-14.
 All `file:line` citations below are valid at that commit.
 **Companion docs:** [`PITFALLS_AND_INVARIANTS.md`](PITFALLS_AND_INVARIANTS.md),
 [`TEST_AUDIT.md`](TEST_AUDIT.md), [`CONTEXT_HANDOFF.md`](CONTEXT_HANDOFF.md).
@@ -121,25 +121,25 @@ from the host block.**
 
 | Ver | Commit / date | Diagnosis at the time | Change |
 |---|---|---|---|
-| 0.8.4 | `afe13bb` | — | Introduced `RiffMirror`: learning bass that mirrors after one repeat |
-| 0.8.4 | `4f905f8`, `30d7044` | Bass blips (0.25-beat) | 0.9-beat legato, immediate trigger |
-| 0.9.8 | (pre-`0f225f6`) | Bass didn't follow root | Detector `rms > prev × 1.2` |
-| 0.9.10 | (pre-`0f225f6`) | **`rms > prev × 1.2` never fired on real playing** — the 100 ms RMS window smooths chugs to a few-% swing → ~1 attack / 6 s | New rule: "sharp rise *following a recent decay*" |
-| 0.9.11 | (pre-`0f225f6`) | **Pitch-confidence gate starved the learner** — YIN confidence on distorted palm-mute is bimodal (≈0 at attacks) | Attacks gated on RMS transient **only**, never pitch confidence. Added immediate mirror |
-| 0.9.12 | (pre-`0f225f6`) | Immediate mirror only ran *pre-lock*; the lock fires on first repeat and plays a skeletal 2-note slice | Live mirror now runs in `Locked` too |
-| 0.9.13 | (pre-`0f225f6`) | Play mode mirrored but follow mode didn't — lock suppressed the mirror | `mirrorWhileHeld_`; suppress mirror only for solo licks |
-| 0.9.26 | `f54b058` | — | `state_ != Locked && !userCapturing_ && !gridCapturing_` |
-| 0.9.59 | `cdf4bac` | Record-transition bass | `(state_ != Locked \|\| mirrorWhileHeld_)` |
+| 0.8.4 | `3f61d44` | — | Introduced `RiffMirror`: learning bass that mirrors after one repeat |
+| 0.8.4 | `b8b07fe`, `5253bcd` | Bass blips (0.25-beat) | 0.9-beat legato, immediate trigger |
+| 0.9.8 | (pre-`47a3c8c`) | Bass didn't follow root | Detector `rms > prev × 1.2` |
+| 0.9.10 | (pre-`47a3c8c`) | **`rms > prev × 1.2` never fired on real playing** — the 100 ms RMS window smooths chugs to a few-% swing → ~1 attack / 6 s | New rule: "sharp rise *following a recent decay*" |
+| 0.9.11 | (pre-`47a3c8c`) | **Pitch-confidence gate starved the learner** — YIN confidence on distorted palm-mute is bimodal (≈0 at attacks) | Attacks gated on RMS transient **only**, never pitch confidence. Added immediate mirror |
+| 0.9.12 | (pre-`47a3c8c`) | Immediate mirror only ran *pre-lock*; the lock fires on first repeat and plays a skeletal 2-note slice | Live mirror now runs in `Locked` too |
+| 0.9.13 | (pre-`47a3c8c`) | Play mode mirrored but follow mode didn't — lock suppressed the mirror | `mirrorWhileHeld_`; suppress mirror only for solo licks |
+| 0.9.26 | `3e23e70` | — | `state_ != Locked && !userCapturing_ && !gridCapturing_` |
+| 0.9.59 | `ad55168` | Record-transition bass | `(state_ != Locked \|\| mirrorWhileHeld_)` |
 | 0.9.59 | (same release) | — | **`setMirrorWhileHeld` declared a stub and removed** |
-| 0.9.63 | `ac576f8` | Mirror and grid layered | "Unified listen bass mixer" |
-| 0.9.67 | `d90bc3e` | — | `GrooveRenderer` disconnected from live path |
-| 1.0.1 | `db31dd7` | Riff phase / loop wrap / onset capture | — |
-| 1.0.3 | `5d5f410` | **Mirror fired on every attack but the grid line played on top** — 128 attacks produced 512 bass ons; the monophonic voice kept retriggering | Mirror owns the voice; grid gated on `mirrorVoiceEndSample_`. Onset window 0.1 s → 0.02 s |
-| — | `cf88acd` | — | **`mirrorWhileHeld_` removed again** — back to `state_ != State::Locked` (`PhraseLearner.cpp:691`) |
+| 0.9.63 | `3176cd2` | Mirror and grid layered | "Unified listen bass mixer" |
+| 0.9.67 | `58b3baf` | — | `GrooveRenderer` disconnected from live path |
+| 1.0.1 | `ba4310f` | Riff phase / loop wrap / onset capture | — |
+| 1.0.3 | `d1fc62a` | **Mirror fired on every attack but the grid line played on top** — 128 attacks produced 512 bass ons; the monophonic voice kept retriggering | Mirror owns the voice; grid gated on `mirrorVoiceEndSample_`. Onset window 0.1 s → 0.02 s |
+| — | `9d7ec26` | — | **`mirrorWhileHeld_` removed again** — back to `state_ != State::Locked` (`PhraseLearner.cpp:691`) |
 | 1.0.6 | — | **Harmony played during audible sustains.** On `data/raw/sustain/sustain.wav`, a 30 s window with the guitar audible 41 % of the time produced **7 mirror notes vs 25 harmony notes** — "no attack detected" was being treated as a gap, so any sustain/legato phrase (or missed detection) opened the harmony | Grid/harmony gated on guitar **SILENCE** (`!guitarAudible`), not on attack absence; live mirror notes are **held** until the guitar stops; the fallback remembers the last played key |
 
-Two commits are literally named for the churn: `1d36e47 "Fix bass regression"`
-and `a898b06 "Still chasing bass regression"` (2026-09-04).
+Two commits are literally named for the churn: `2e82e7c "Fix bass regression"`
+and `7ab08c9 "Still chasing bass regression"` (2026-09-04).
 
 ### The cycle, abstracted
 
@@ -157,7 +157,7 @@ addresses only one of them:
     too strict on a *real* distorted signal (1.0.3 — **this is where we are**)
 - **Mode B — path arbitration.** Something else owns the bass voice: the lock
   (0.9.12, 0.9.13), the grid/harmony line (1.0.3), or a removed API
-  (`mirrorWhileHeld_`, 0.9.59 / `cf88acd`).
+  (`mirrorWhileHeld_`, 0.9.59 / `9d7ec26`).
 
 **Diagnosing "bass doesn't mirror" therefore always requires answering two
 questions separately:** (1) is `result.trigger` firing? (2) if it is, is the note
@@ -207,8 +207,8 @@ construction. See [`TEST_AUDIT.md`](TEST_AUDIT.md) §4.
 ### 4.3 Two sources of truth for the mirror, one of them repeatedly deleted
 
 `PhraseLearner.cpp:691` gates the live mirror on `state_ != State::Locked`.
-`mirrorWhileHeld_` was added at `cdf4bac` to relax that, then removed at
-`cf88acd`. The 0.9.59 changelog calls `setMirrorWhileHeld` "a stub", and the
+`mirrorWhileHeld_` was added at `ad55168` to relax that, then removed at
+`9d7ec26`. The 0.9.59 changelog calls `setMirrorWhileHeld` "a stub", and the
 Phase 8 dead-code sweep (T8.1) lists it for deletion. So the *documented contract*
 ("bass mirrors while held") and the *code* (mirror suppressed when locked) have
 disagreed, in both directions, more than once.
@@ -284,7 +284,7 @@ symptom is not simply "the phase is not one of those two".
 
 Auto-lock is disabled in Play (`PhraseLearner.cpp:707` + `:361` comment), so in
 Play the learner should stay in `Learning` and keep mirroring live. Confirm this
-is still true after the `cf88acd` removal — a leftover `Locked` state from a
+is still true after the `9d7ec26` removal — a leftover `Locked` state from a
 prior Record session would swap the bass to the frozen loop.
 
 - **Experiment:** assert `phraseLearner.isLocked() == false` throughout a Play
@@ -569,7 +569,7 @@ The locked-frozen playback was already grid-placed.
 
 ## 14. The pre-0.9.62 era also machine-gunned; legato pitch-follow (1.0.19)
 
-Built `cdf4bac` (v0.9.60, the live-mirror Record A era the history points at) and
+Built `ad55168` (v0.9.60, the live-mirror Record A era the history points at) and
 dumped note on/off on the same DI:
 
 | build | Record-A bass | note length |

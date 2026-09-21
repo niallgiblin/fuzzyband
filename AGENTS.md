@@ -242,7 +242,7 @@ A JUCE 8 VST3/AU plugin for macOS that listens to a guitarist's audio input and 
 - **Local mutable state:** BPM history, FFT buffers, beat position tracking in `PatternPlayer`
 - **JUCE APVTS:** Plugin parameter state (saved/loaded with session)
 ## Key Abstractions
-- Purpose: Tempo is **host-authoritative** — read from the DAW playhead (`getBpm()`, `getTimeInSamples()`, `getIsPlaying()||getIsRecording()`), falling back to the APVTS `bpm` parameter and then 120 (`AccompanimentProcessor.cpp:803-823`). There is no in-plugin BPM chasing: `BeatTracker` was tried (Phase 28), rejected by UAT, and deleted in `40cc331`. `snapBpm()` is now unreachable.
+- Purpose: Tempo is **host-authoritative** — read from the DAW playhead (`getBpm()`, `getTimeInSamples()`, `getIsPlaying()||getIsRecording()`), falling back to the APVTS `bpm` parameter and then 120 (`AccompanimentProcessor.cpp:803-823`). There is no in-plugin BPM chasing: `BeatTracker` was tried (Phase 28), rejected by UAT, and deleted in `58c3dde`. `snapBpm()` is now unreachable.
 - Location: `AccompanimentProcessor.cpp` (BPM resolution); no `OnsetDetector` exists
 - Pattern: host playhead → cached BPM → `previewResolvedHostSample()` for the transport-frame clock
 - Purpose: Extracts three complementary audio descriptors for state classification

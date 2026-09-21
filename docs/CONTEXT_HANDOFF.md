@@ -4,7 +4,7 @@
 model picking up this codebase cold. It states what the project is, what is
 actually built, what is verified, what is broken, and what must not be touched.
 
-**Audited at:** commit `5d5f410` ("Mirroring choices fix"), 2026-09-14,
+**Audited at:** commit `d1fc62a` ("Mirroring choices fix"), 2026-09-14,
 `CMakeLists.txt` `VERSION 1.0.3`. Working tree clean. 326 commits,
 2026-04-16 → 2026-09-14.
 
@@ -159,7 +159,7 @@ An agent that trusts the existing docs will waste hours. Verified contradictions
 | `GrooveCommit` carries inference decisions to the audio thread | `RUNTIME_ARCHITECTURE.md` | Enqueued (`:624`), then **drained and discarded** (`:1205-1209`) — intentional (T4.1) |
 | Plugin is v0.9.29 | `README.md:1` | 1.0.3 |
 | Milestone status in `.gsd/STATE.md` | `CHANGELOG.md:3` | `.gsd/` is stale and untracked; `.planning/` is authoritative |
-| `BeatTracker` | `RUNTIME_ARCHITECTURE.md` | Deleted in `40cc331` |
+| `BeatTracker` | `RUNTIME_ARCHITECTURE.md` | Deleted in `58c3dde` |
 | Project is a "sludge metal" pivot, M002–M005 | `.gsd/PROJECT.md` | Abandoned direction; docs referenced (`SLUDGE_METAL_DOMAIN_AUDIT.md`) do not exist |
 
 **Rule of thumb: trust `src/`, `CMakeLists.txt`, `tests/` and `git log`. Treat

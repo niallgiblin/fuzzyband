@@ -1,6 +1,6 @@
 # Architecture — fuzzyband (MetalAccompaniment)
 
-**Verified against source at v1.0.3 (`5d5f410`).** Every statement here was read
+**Verified against source at v1.0.3 (`d1fc62a`).** Every statement here was read
 out of `src/`, not out of the older docs. Where the previous version of this file
 was wrong, the correction is noted.
 

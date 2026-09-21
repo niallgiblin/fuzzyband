@@ -1,4 +1,4 @@
-> **Canonical.** Read-only audit of the test suite at v1.0.3 (`5d5f410`), 2026-09-14. Both
+> **Canonical.** Read-only audit of the test suite at v1.0.3 (`d1fc62a`), 2026-09-14. Both
 > binaries were executed: 269 unit + 79 integration cases, 89,235 assertions, 0 failures,
 > 0 `[!mayfail]`. This file is the authority on what the suite does and does not cover.
 > See also [`CONTEXT_HANDOFF.md`](CONTEXT_HANDOFF.md) and [`PITFALLS_AND_INVARIANTS.md`](PITFALLS_AND_INVARIANTS.md).
@@ -286,7 +286,7 @@ verify and what it does **not**.
   differ across block sizes** and therefore compares only the (note,velocity)
   bag — the test titled "humanisation is block-size invariant" does not verify
   timing.
-- The commit that fixed buffer invariance (`db31dd7`, "riff phase, loop-wrap
+- The commit that fixed buffer invariance (`ba4310f`, "riff phase, loop-wrap
   re-phase, onset capture") records the residual
   deviations in its own message: *"fill arming differs at 128 (T7.2 follow-up),
   3 of ~55 bass notes between 512 and 2048 (capture edge), click note-off and
@@ -362,7 +362,7 @@ verify and what it does **not**.
   whole suite (its only test mention is a comment at `test_phrase_learner.cpp:48`).
 - Every test feeds the learner through a **test-local `RmsWindow`** class
   (`tests/test_phrase_learner.cpp:52-80`, `tests/test_golden_signal.cpp:105-133`)
-  that duplicates the analyser. The newest commit (`5d5f410`) changed both
+  that duplicates the analyser. The newest commit (`d1fc62a`) changed both
   copies from a 0.1 s to a 0.02 s window to track a source change — evidence the
   duplication must be manually kept in sync.
 - Worse, `test_phrase_learner.cpp:73` **omits the production 1.0 clamp**
@@ -487,7 +487,7 @@ changed behaviour**. The most significant:
 
 ### 5.1 The newest commit reversed a behavioural contract and rewrote the tests
 
-Commit `5d5f410` "Mirroring choices fix" (2026-09-14, HEAD) changed four test
+Commit `d1fc62a` "Mirroring choices fix" (2026-09-14, HEAD) changed four test
 files and made these semantic reversals:
 
 - `tests/test_pattern_player.cpp:1309` (T5.3). **Before**: the test required the
@@ -511,7 +511,7 @@ files and made these semantic reversals:
 
 ### 5.2 A test weakened in the "Responsiveness testing" commit
 
-Commit `e463847` relaxed the editor smoke assertion:
+Commit `6387c6b` relaxed the editor smoke assertion:
 `REQUIRE(ed->getHeight() >= 760)` → `REQUIRE(ed->getHeight() >= 460)`
 (`tests/test_processor_pipeline.cpp:1671-1673`), justified by the comment "The
 default height is clamped to the display ... so only the resize floor is
@@ -521,7 +521,7 @@ in the same commit is tagged `[integration][editor]` and **never runs in CI**
 
 ### 5.3 A test weakened in the loop-wrap/onset fix
 
-Commit `db31dd7` changed `tests/test_phase2_clock.cpp:189-218` and
+Commit `ba4310f` changed `tests/test_phase2_clock.cpp:189-218` and
 `tests/test_processor_pipeline.cpp:603-611, 2804-2814` to measure from
 `getRiffAPlayOriginSample()` instead of the detecting block boundary. The test
 changes are legitimate (the old oracle was wrong), but they were made in the
@@ -789,7 +789,7 @@ binaries are built and published without running the suite.
    behaviours, not a lower bound on confidence.
 8. Several "known limitation" comments record exactly the residual defects a
    future regression would reintroduce, yet assert them as acceptable
-   (`db31dd7` message; `test_phase3_dynamics.cpp:238-241`;
+   (`ba4310f` message; `test_phase3_dynamics.cpp:238-241`;
    `test_baseline_capture.cpp:209-213`; `test_processor_pipeline.cpp:1485-1512`).
 
 **Highest-value additions, in priority order**
@@ -841,7 +841,7 @@ All 35 `tests/*.cpp`, `tests/fixtures/MidiProbe.h`, `tests/fixtures/README.md`,
 generated `build/CTestTestfile.cmake` and per-case registration files, and the
 relevant `src/` headers/sources for `AccompanimentProcessor`, `PhraseLearner`,
 `EnergyAnalyser`, `PlaybackGate`, `PatternPlayer`, `GrooveRenderer`,
-`MetalGrooveInference`, `StructureTagger`, and both CI fix commits `5d5f410`,
-`e463847`, `db31dd7`.
+`MetalGrooveInference`, `StructureTagger`, and both CI fix commits `d1fc62a`,
+`6387c6b`, `ba4310f`.
 
 *No file under `src/` or `tests/` was modified.*

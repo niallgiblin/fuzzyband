@@ -1,6 +1,6 @@
 # Documentation Index
 
-**Last rewritten:** 2026-09-14, at v1.0.3 (`5d5f410`).
+**Last rewritten:** 2026-09-14, at v1.0.3 (`d1fc62a`).
 
 This index tells you which document is authoritative for what. Read it before
 opening anything else at random — this repository has 577 markdown files, and a
