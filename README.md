@@ -4,6 +4,8 @@ Fuzzyband is a guitar plugin that listens to your playing inside a DAW and emits
 
 It locks to your DAWs set tempo and using both rules-based logic and machine learning it reacts to your playing live, learns your phrasing and acts on-the-fly much like a real drummer and bassist you are improvising with.
 
+Demo video: [https://www.youtube.com/watch?v=fv9Rx1gKaZM](url)
+
 ---
 
 ## Download
