@@ -126,8 +126,13 @@ def test_emit_header_shape(tmp_path: Path) -> None:
     templates["metal"]["_derived_from"] = "rock"
     templates["punk"]["_derived_from"] = "rock"
 
+    feels = [
+        {"accentDepth": 1.0, "timingScale": 1.0, "jitterScale": 1.0}
+        for _ in range(4)
+    ]
+
     out = tmp_path / "GrooveTemplateData.h"
-    bgt._emit_header(templates, out)
+    bgt._emit_header(templates, feels, out)
     text = out.read_text(encoding="utf-8")
 
     assert "#pragma once" in text
@@ -136,6 +141,11 @@ def test_emit_header_shape(tmp_path: Path) -> None:
         assert f"k{name}VelocityMul[16]" in text
         assert f"k{name}TimingMs[16]" in text
         assert f"k{name}GhostThreshold" in text
+    # Per-pattern feel arrays (Phase 37 C1) are emitted at the feels length.
+    assert "kPatternFeelCount = 4" in text
+    assert "kPatternAccentDepth[kPatternFeelCount]" in text
+    assert "kPatternTimingScale[kPatternFeelCount]" in text
+    assert "kPatternJitterScale[kPatternFeelCount]" in text
     # Each 16-element array literal has exactly 16 float entries.
     for line in text.splitlines():
         if "VelocityMul[16]" in line or "TimingMs[16]" in line:
