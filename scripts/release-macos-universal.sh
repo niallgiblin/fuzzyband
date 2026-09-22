@@ -101,11 +101,19 @@ echo "release-macos-universal: ONNX soname = $SONAME"
 
 # The product name inside every JUCE bundle binary (matches PRODUCT_NAME in CMakeLists).
 PRODUCT="fuzzyband"
-declare -A FORMATS=(
-  ["VST3"]="${PRODUCT}.vst3"
-  ["AU"]="${PRODUCT}.component"
-  ["Standalone"]="${PRODUCT}.app"
-)
+
+# Map a JUCE format dir to its bundle name. Deliberately a `case` rather than a
+# `declare -A` associative array: the macOS GitHub runner (and stock macOS) ships
+# bash 3.2, which lacks associative arrays, and under `set -u` a `[VST3]` subscript
+# is read as an unset variable and aborts. See the release workflow's Package step.
+format_bundle_name() {
+  case "$1" in
+    VST3)       echo "${PRODUCT}.vst3" ;;
+    AU)         echo "${PRODUCT}.component" ;;
+    Standalone) echo "${PRODUCT}.app" ;;
+    *)          echo "release-macos-universal: unknown format: $1" >&2; return 1 ;;
+  esac
+}
 
 # ── Per-arch self-containment (steps 1-4) ───────────────────────────────────────
 selfcontain() {
@@ -192,7 +200,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 
 for fmt in VST3 AU Standalone; do
-  merge_universal "$fmt" "${FORMATS[$fmt]}"
+  merge_universal "$fmt" "$(format_bundle_name "$fmt")"
 done
 
 # Guard: we must actually have produced something (an empty package is a silent failure).
