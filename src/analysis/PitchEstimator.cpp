@@ -14,7 +14,7 @@
 
 namespace
 {
-constexpr float kHzToMidi(float hz)
+float kHzToMidi(float hz)
 {
     return 69.0f + 12.0f * std::log2(hz / 440.0f);
 }
