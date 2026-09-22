@@ -78,7 +78,7 @@ brew install onnxruntime
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
   -DONNXRUNTIME_ROOT=/opt/homebrew/opt/onnxruntime
 cmake --build build --config Release --parallel
-ctest  --test-dir build --output-on-failure --config Release
+ctest  --test-dir build --output-on-failure -C Release
 ```
 
 Install into your user plug-in folders (Reaper and most hosts scan these):

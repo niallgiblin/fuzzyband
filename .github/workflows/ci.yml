@@ -41,16 +41,16 @@ jobs:
         run: cmake --build build --config Release --parallel
 
       - name: Run unit tests
-        run: ctest --test-dir build --output-on-failure --config Release -L unit
+        run: ctest --test-dir build --output-on-failure -C Release -L unit
 
       - name: Run integration tests
-        run: ctest --test-dir build --output-on-failure --config Release -L integration
+        run: ctest --test-dir build --output-on-failure -C Release -L integration
 
       - name: Run E2E tests
-        run: ctest --test-dir build --output-on-failure --config Release -L e2e
+        run: ctest --test-dir build --output-on-failure -C Release -L e2e
 
       - name: Run ONNX tests
-        run: ctest --test-dir build --output-on-failure --config Release -L onnx
+        run: ctest --test-dir build --output-on-failure -C Release -L onnx
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -74,7 +74,6 @@ jobs:
             --json-out /tmp/readiness_eval.json
 
       - name: ONNX contract validation (Phase 22)
-        if: always()
         run: |
           python3 scripts/build_minimal_structure_onnx.py
           python3 scripts/build_minimal_bass_onnx.py
