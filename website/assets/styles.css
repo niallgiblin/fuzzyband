@@ -247,6 +247,11 @@ pre code { background: none; border: none; padding: 0; }
 .product-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
 .product-head h3 { margin: 0; font-size: 24px; }
 .product-tag { margin: 0 0 6px; }
+.product-manual { margin: 8px 0 0; }
+.feedback {
+  margin: 28px 0 40px;
+  color: var(--muted);
+}
 .panel-sub {
   border: 1px solid var(--line);
   border-radius: 8px;

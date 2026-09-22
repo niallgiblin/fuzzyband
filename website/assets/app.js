@@ -16,8 +16,9 @@
       name: "fuzzyband",
       repo: "niallgiblin/fuzzyband",
       assetTag: /fuzzyband/i,
-      tagline: "AI rock/metal drum + bass accompaniment for guitarists",
+      tagline: "Rock/metal drum + bass accompaniment for guitarists",
       desc: "Play clean DI guitar into it; it listens and writes drum + bass MIDI in real time, locked to your project tempo. Layer any other effects/plugins in the chain afterwards like you regularly would. Requires setting up drum and bass tracks and wiring them to guitar track.",
+      manual: "https://github.com/niallgiblin/fuzzyband/blob/main/USER_MANUAL.md",
       buildCmd: [
         "git clone https://github.com/niallgiblin/fuzzyband.git && cd fuzzyband",
         "cmake -B build -DCMAKE_BUILD_TYPE=Release \\",
@@ -188,6 +189,7 @@
       </div>
       <p class="muted product-tag">${esc(product.tagline)}</p>
       <p class="muted">${esc(product.desc)}</p>
+      ${product.manual ? `<p class="product-manual"><a href="${esc(product.manual)}" target="_blank" rel="noopener">User manual</a></p>` : ""}
       ${err ? "" : (latest ? `<div class="grid">${body}</div>` : body)}
       ${buildBlock}
       ${historyBlock}
