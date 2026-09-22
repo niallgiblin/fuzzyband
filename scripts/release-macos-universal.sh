@@ -13,7 +13,7 @@
 # command, which would break the instant the user moves the bundle. This script, per arch:
 #
 #   1. rewrites the ONNX load command to @rpath/<soname>,
-#   2. adds the @executable_path/../Frameworks rpath,
+#   2. adds @loader_path/../Frameworks and drops the absolute ONNXRUNTIME_ROOT rpath,
 #   3. copies that arch's real ONNX dylib into Contents/Frameworks and sets its own id,
 #   4. creates the unversioned compat symlink,
 # then lipo-merges both archs into one fat bundle and ad-hoc signs it.
@@ -134,11 +134,19 @@ selfcontain() {
   local frame="$bundle/Contents/Frameworks"
   mkdir -p "$frame"
 
-  # Rewrite the absolute ONNX path -> @rpath/<soname> and add the Frameworks rpath.
+  # Rewrite the absolute ONNX path -> @rpath/<soname> and point rpath at this bundle.
+  # @executable_path is the host (REAPER), so a plugin never finds Contents/Frameworks
+  # that way. @loader_path is the plugin binary. The link step also leaves
+  # ONNXRUNTIME_ROOT as an absolute LC_RPATH, which does not exist on a user's machine.
   # The signature-invalidation warning is expected; we re-sign the finished universal
   # bundle at the end.
   install_name_tool -change "$dep" "@rpath/$soname" "$bin" 2>/dev/null || true
-  install_name_tool -add_rpath "@executable_path/../Frameworks" "$bin" 2>/dev/null || true
+  install_name_tool -add_rpath "@loader_path/../Frameworks" "$bin" 2>/dev/null || true
+  otool -l "$bin" | awk '/cmd LC_RPATH/{c=1} c && /^ *path /{print $2; c=0}' | while IFS= read -r rp; do
+    case "$rp" in
+      /*) install_name_tool -delete_rpath "$rp" "$bin" 2>/dev/null || true ;;
+    esac
+  done
 
   # Embed this arch's ONNX dylib and give it an @rpath id so nested deps resolve.
   cp -f "$onnx_src" "$frame/$soname"

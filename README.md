@@ -14,11 +14,10 @@ Download available here: [niallgiblin.github.io/fuzzyband](https://niallgiblin.g
 - **Windows** (x64) — VST3 + Standalone
 - **Linux** (x64) — VST3 + Standalone
 
-NB: macOS may report the vst3 build as unsigned. Right-click the plugin and give permission to open, or clear the
-quarantine flag in the terminal:
+NB: macOS may report the vst3 build as unsigned. Either use AU or clear the quarantine flag in the terminal:
 
 ```bash
-xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/fuzzyband.vst3
+xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/fuzzyband.vst3 /Library/Audio/Plug-Ins/VST3/fuzzyband.vst3
 ```
 
 ---
@@ -214,7 +213,7 @@ the model to recognise the authored patterns, and tunes the human feel.
 | Procedural renders (`training/scripts/render_pattern_kit.py`) | the 28-class training audio — a GM kit rendered from the authored MIDI, 3 takes per class, mono 44.1 kHz |
 | Guitar takes recorded on the project's own gear                 | the 5-class perception corpus (palm mute, open chord, single note, sustain, silence)                      |
 | Groove MIDI Dataset v1.0.0 (Magenta)                            | per-genre velocity hierarchy and microtiming for the humanisation, plus the 48-fill bank                  |
-| Lakh **`lmd_matched`** + tagtraum CD2 MSD tags          | per-genre pattern popularity priors, used only to*order* section pools                                  |
+| Lakh**`lmd_matched`** + tagtraum CD2 MSD tags                 | per-genre pattern popularity priors, used only to*order* section pools                                  |
 
 Three things are worth being explicit about:
 

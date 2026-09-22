@@ -391,6 +391,12 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    /** Height of the input waveform and beat-count scope. */
+    int getInputScopeHeight() const noexcept
+    {
+        return scopeComponent.isVisible() ? scopeComponent.getHeight() : 0;
+    }
+
 private:
     void timerCallback() override;
     void applyGenreDefaultSwing() noexcept;
@@ -430,7 +436,7 @@ private:
     {
         int rowH     = 44;   // one label + control row
         int statusH  = 26;   // status row: dot + text + section progress
-        int scopeH   = 0;    // waveform scope (0 collapses it)
+        int scopeH   = 0;    // waveform + beat-count scope; every tier keeps this > 0
         int diagGap  = 10;   // panel -> status row
         int gap      = 9;    // breathing room between groups
         int readoutH = 20;   // the single diagnostic line

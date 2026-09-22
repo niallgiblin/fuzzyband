@@ -1614,6 +1614,12 @@ TEST_CASE("Editor panel fits a laptop-height window without clipping", "[integra
         CHECK(viewed->getHeight() <= panel->getHeight());
         for (auto* c : viewed->getChildren())
             CHECK(c->getBottom() <= viewed->getHeight());
+        // The input waveform and 1–4 beat counts must still be on screen. A
+        // previous tier hid that scope so this height would not scroll, which
+        // is how it disappeared from the v1.1.0 window.
+        auto* editor = dynamic_cast<AccompanimentEditor*>(ed.get());
+        REQUIRE(editor != nullptr);
+        CHECK(editor->getInputScopeHeight() >= 48);
 
         // Shrinking further must scroll, not drop controls: the panel keeps its
         // content height and the viewport becomes scrollable.

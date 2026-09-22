@@ -1006,9 +1006,15 @@ AccompanimentEditor::metricsForBodyHeight(int bodyH, int listContent) noexcept
     // whole panel (including the section list) genuinely fits the height we were
     // given, so "does it need to scroll?" stays monotonic in the window height —
     // a taller window never suddenly needs a scrollbar the shorter one did not.
+    //
+    // The waveform / beat-count scope stays in every tier. Dropping it to zero
+    // so a short window would not scroll made the visualizer vanish on the
+    // height a laptop DAW actually opens at (~800px), with no scrollbar to
+    // show that anything was missing.
     LayoutMetrics compact;
     compact.rowH     = 40;
     compact.statusH  = 24;
+    compact.scopeH   = 56;
     compact.diagGap  = 8;
     compact.gap      = 8;
     compact.readoutH = 19;
@@ -1017,13 +1023,24 @@ AccompanimentEditor::metricsForBodyHeight(int bodyH, int listContent) noexcept
     compact.shapeH   = 26;
     compact.shapeGap = 3;
 
-    LayoutMetrics withoutScope;   // defaults: full sizes, scope collapsed
+    // Fits the 6-section default form in an 800px window with the scope shown.
+    LayoutMetrics fitted;
+    fitted.rowH      = 42;
+    fitted.statusH   = 26;
+    fitted.scopeH    = 64;
+    fitted.diagGap   = 8;
+    fitted.gap       = 8;
+    fitted.readoutH  = 20;
+    fitted.headerH   = 22;
+    fitted.headerGap = 4;
+    fitted.shapeH    = 26;
+    fitted.shapeGap  = 4;
 
-    LayoutMetrics full = withoutScope;
-    full.scopeH = 80;             // the scope is a readout, so it shrinks first
+    LayoutMetrics full;
+    full.scopeH = 80;
 
-    if (bodyH >= full.fixedHeight() + listContent)         return full;
-    if (bodyH >= withoutScope.fixedHeight() + listContent)  return withoutScope;
+    if (bodyH >= full.fixedHeight() + listContent)   return full;
+    if (bodyH >= fitted.fixedHeight() + listContent) return fitted;
     return compact;
 }
 
@@ -1218,8 +1235,6 @@ void AccompanimentEditor::layoutContent(juce::Rectangle<int> bounds)
 
     r.removeFromTop(metrics.gap);
 
-    // The scope is the first thing to give up its space when the window is
-    // short: it is a readout, not a control.
     scopeComponent.setVisible(metrics.scopeH > 0);
     scopeComponent.setBounds(r.removeFromTop(metrics.scopeH));
 
