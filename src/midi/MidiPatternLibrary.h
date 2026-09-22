@@ -5,6 +5,7 @@
  * @brief constexpr-friendly MIDI pattern definitions for drums and bass.
  */
 
+#include <cstdint>
 #include <string>
 #include <vector>
 

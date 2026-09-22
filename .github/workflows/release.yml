@@ -196,7 +196,7 @@ jobs:
           $paths = @()
 
           # VST3: copy the ONNX DLL beside the .vst3 module (Contents/x86_64-win/).
-          $vst = "MetalAccompaniment_artefacts/Release/VST3/fuzzyband.vst3"
+          $vst = "build/MetalAccompaniment_artefacts/Release/VST3/fuzzyband.vst3"
           if (Test-Path $vst) {
             Get-ChildItem -Recurse -Filter "fuzzyband.vst3" $vst |
               ForEach-Object { Copy-Item $dllSrc $_.DirectoryName -Force }
@@ -204,7 +204,7 @@ jobs:
           }
 
           # Standalone: copy the ONNX DLL beside the .exe.
-          $standalone = "MetalAccompaniment_artefacts/Release/Standalone"
+          $standalone = "build/MetalAccompaniment_artefacts/Release/Standalone"
           if (Test-Path $standalone) {
             $exe = Get-ChildItem -Recurse -Filter "*.exe" $standalone | Select-Object -First 1
             if ($exe) { Copy-Item $dllSrc $exe.DirectoryName -Force }
@@ -252,7 +252,7 @@ jobs:
           sudo apt-get install -y \
             libasound2-dev libx11-dev libxext-dev libxrandr-dev \
             libxinerama-dev libxcursor-dev libfreetype-dev \
-            libxkbcommon-dev libgl1-mesa-dev libfontconfig1-dev
+            libxkbcommon-dev libgl1-mesa-dev libfontconfig1-dev libcurl4-openssl-dev
 
       - name: Download ONNX Runtime (linux-x64)
         run: |
@@ -286,7 +286,7 @@ jobs:
           [ -n "$ONNX_SO" ] || { echo "no libonnxruntime.so in $ONNXRUNTIME_ROOT/lib"; exit 1; }
           BASENAME="$(basename "$ONNX_SO")"
 
-          VST_ROOT="MetalAccompaniment_artefacts/Release/VST3/fuzzyband.vst3"
+          VST_ROOT="build/MetalAccompaniment_artefacts/Release/VST3/fuzzyband.vst3"
           MOD_DIR="$(find "$VST_ROOT" -type f -name '*.vst3' -printf '%h\n' 2>/dev/null | head -1)"
           [ -n "$MOD_DIR" ] || MOD_DIR="$VST_ROOT/Contents/x86_64-linux"
           mkdir -p "$MOD_DIR"
@@ -296,7 +296,7 @@ jobs:
           ln -sf "$BASENAME" "$MOD_DIR/libonnxruntime.so"
 
           # Standalone: drop the .so beside the binary too, and include it in the tarball.
-          STANDALONE="MetalAccompaniment_artefacts/Release/Standalone"
+          STANDALONE="build/MetalAccompaniment_artefacts/Release/Standalone"
           TAR_PATHS=("$VST_ROOT")
           if [ -d "$STANDALONE" ]; then
             BIN="$(find "$STANDALONE" -type f -executable 2>/dev/null | head -1)"
