@@ -63,15 +63,17 @@ jobs:
       # ── ONNX Runtime (per arch; not shipped as a universal dylib) ─────────────
       - name: Download ONNX Runtime (arm64)
         run: |
-          mkdir -p /opt/onnx-arm64
+          mkdir -p "$RUNNER_TEMP/onnx-arm64"
           curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-osx-arm64-${ONNX_VERSION}.tgz" -o /tmp/onnx-arm64.tgz
-          tar xzf /tmp/onnx-arm64.tgz -C /opt/onnx-arm64
+          tar xzf /tmp/onnx-arm64.tgz -C "$RUNNER_TEMP/onnx-arm64"
+          echo "ONNX_ARM64_ROOT=$RUNNER_TEMP/onnx-arm64/onnxruntime-osx-arm64-${ONNX_VERSION}" >> "$GITHUB_ENV"
 
       - name: Download ONNX Runtime (x86_64)
         run: |
-          mkdir -p /opt/onnx-x64
+          mkdir -p "$RUNNER_TEMP/onnx-x64"
           curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-osx-x86_64-${ONNX_VERSION}.tgz" -o /tmp/onnx-x64.tgz
-          tar xzf /tmp/onnx-x64.tgz -C /opt/onnx-x64
+          tar xzf /tmp/onnx-x64.tgz -C "$RUNNER_TEMP/onnx-x64"
+          echo "ONNX_X64_ROOT=$RUNNER_TEMP/onnx-x64/onnxruntime-osx-x86_64-${ONNX_VERSION}" >> "$GITHUB_ENV"
 
       - name: Configure + build (arm64)
         run: |
@@ -80,7 +82,7 @@ jobs:
             -DMA_BUILD_STANDALONE=ON \
             -DMA_ENABLE_ONNX=ON \
             -DMA_BUILD_TESTS=OFF \
-            -DONNXRUNTIME_ROOT=/opt/onnx-arm64/onnxruntime-osx-arm64-${ONNX_VERSION}
+            -DONNXRUNTIME_ROOT="$ONNX_ARM64_ROOT"
           cmake --build build-arm64 --config Release --parallel
 
       - name: Configure + build (x86_64)
@@ -90,7 +92,7 @@ jobs:
             -DMA_BUILD_STANDALONE=ON \
             -DMA_ENABLE_ONNX=ON \
             -DMA_BUILD_TESTS=OFF \
-            -DONNXRUNTIME_ROOT=/opt/onnx-x64/onnxruntime-osx-x86_64-${ONNX_VERSION}
+            -DONNXRUNTIME_ROOT="$ONNX_X64_ROOT"
           cmake --build build-x86_64 --config Release --parallel
 
       # ── Merge to a self-contained universal package (lipos + embeds ONNX) ─────
@@ -99,8 +101,8 @@ jobs:
           ./scripts/release-macos-universal.sh \
             --arm-art "build-arm64/MetalAccompaniment_artefacts/Release" \
             --x64-art "build-x86_64/MetalAccompaniment_artefacts/Release" \
-            --onnx-lib "/opt/onnx-arm64/onnxruntime-osx-arm64-${ONNX_VERSION}/lib" \
-            --x64-onnx-lib "/opt/onnx-x64/onnxruntime-osx-x86_64-${ONNX_VERSION}/lib" \
+            --onnx-lib "$ONNX_ARM64_ROOT/lib" \
+            --x64-onnx-lib "$ONNX_X64_ROOT/lib" \
             --out dist/macos
 
       - name: Verify universal binaries
@@ -253,10 +255,10 @@ jobs:
 
       - name: Download ONNX Runtime (linux-x64)
         run: |
-          mkdir -p /opt/onnx
+          mkdir -p "$RUNNER_TEMP/onnx"
           curl -sL "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/onnxruntime-linux-x64-${ONNX_VERSION}.tgz" -o /tmp/onnx.tgz
-          tar xzf /tmp/onnx.tgz -C /opt/onnx
-          echo "ONNXRUNTIME_ROOT=/opt/onnx/onnxruntime-linux-x64-${ONNX_VERSION}" >> "$GITHUB_ENV"
+          tar xzf /tmp/onnx.tgz -C "$RUNNER_TEMP/onnx"
+          echo "ONNXRUNTIME_ROOT=$RUNNER_TEMP/onnx/onnxruntime-linux-x64-${ONNX_VERSION}" >> "$GITHUB_ENV"
 
       - name: Configure + build
         run: |
