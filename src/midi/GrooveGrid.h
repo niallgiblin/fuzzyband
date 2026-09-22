@@ -19,6 +19,7 @@
  */
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 
 namespace GrooveGridUtil

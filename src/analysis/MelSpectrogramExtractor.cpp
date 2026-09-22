@@ -27,7 +27,7 @@ MelSpectrogramExtractor::MelSpectrogramExtractor()
     // Hann window
     window.resize(kFftSize);
     for (int i = 0; i < kFftSize; ++i)
-        window[static_cast<size_t>(i)] = 0.5f * (1.0f - std::cos(2.0f * M_PI * i / (kFftSize - 1)));
+        window[static_cast<size_t>(i)] = 0.5f * (1.0f - std::cos(2.0f * juce::MathConstants<float>::pi * i / (kFftSize - 1)));
 
     // Spectra rolling buffer: kTimeFrames × (kFftSize/2 + 1) = 32 × 1025
     const int numBins = kFftSize / 2 + 1;
