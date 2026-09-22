@@ -102,9 +102,9 @@ echo "release-macos-universal: ONNX soname = $SONAME"
 # The product name inside every JUCE bundle binary (matches PRODUCT_NAME in CMakeLists).
 PRODUCT="fuzzyband"
 declare -A FORMATS=(
-  [VST3]="${PRODUCT}.vst3"
-  [AU]="${PRODUCT}.component"
-  [Standalone]="${PRODUCT}.app"
+  ["VST3"]="${PRODUCT}.vst3"
+  ["AU"]="${PRODUCT}.component"
+  ["Standalone"]="${PRODUCT}.app"
 )
 
 # ── Per-arch self-containment (steps 1-4) ───────────────────────────────────────
