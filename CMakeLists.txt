@@ -575,6 +575,13 @@ target_link_libraries(MetalAccompanimentExportPatterns PRIVATE
     juce::juce_core
 )
 
+# JUCE enables libcurl by default on Linux; this tool does no networking, so keep
+# it consistent with the plugin/test targets and avoid an unlinked libcurl dep.
+target_compile_definitions(MetalAccompanimentExportPatterns PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+
 # JUCE's VST3 helper writes moduleinfo.json AFTER the bundle is codesigned,
 # which invalidates the seal. macOS then refuses to load the plugin in a
 # signed host (REAPER): "library load disallowed by system policy".

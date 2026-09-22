@@ -13,6 +13,7 @@
 
 #include <array>
 #include <climits>
+#include <cstddef>
 #include <cstdint>
 
 #include "AttackDetector.h"
@@ -161,30 +162,30 @@ public:
     /** @brief Whether 16th slot @p i is occupied (0..63). */
     bool getGridSlotOccupied(int i) const noexcept
     {
-        return i >= 0 && i < kGridSlots && gridSlots_[static_cast<size_t>(i)].occupied;
+        return i >= 0 && i < kGridSlots && gridSlots_[static_cast<std::size_t>(i)].occupied;
     }
 
     /** @brief Bass MIDI for 16th slot @p i, or -1 when empty/invalid. */
     int getGridSlotMidi(int i) const noexcept
     {
-        if (i < 0 || i >= kGridSlots || !gridSlots_[static_cast<size_t>(i)].occupied)
+        if (i < 0 || i >= kGridSlots || !gridSlots_[static_cast<std::size_t>(i)].occupied)
             return -1;
-        return gridSlots_[static_cast<size_t>(i)].midiNote;
+        return gridSlots_[static_cast<std::size_t>(i)].midiNote;
     }
 
     /** @brief True when slot @p i was stamped as a re-attack (T5.2). */
     bool getGridSlotOnset(int i) const noexcept
     {
-        return i >= 0 && i < kGridSlots && gridSlots_[static_cast<size_t>(i)].occupied
-            && gridSlots_[static_cast<size_t>(i)].onset;
+        return i >= 0 && i < kGridSlots && gridSlots_[static_cast<std::size_t>(i)].occupied
+            && gridSlots_[static_cast<std::size_t>(i)].onset;
     }
 
     /** @brief Coalesced gate in 16ths for slot @p i, or 0 when empty/sustain. */
     uint8_t getGridSlotGate(int i) const noexcept
     {
-        if (i < 0 || i >= kGridSlots || !gridSlots_[static_cast<size_t>(i)].occupied)
+        if (i < 0 || i >= kGridSlots || !gridSlots_[static_cast<std::size_t>(i)].occupied)
             return 0;
-        return gridSlots_[static_cast<size_t>(i)].gate16;
+        return gridSlots_[static_cast<std::size_t>(i)].gate16;
     }
 
     /** True when pattern is locked and bass is actively playing. */
@@ -219,7 +220,7 @@ public:
     int getPatternNote(int index) const noexcept
     {
         return (locked_ && index >= 0 && index < patternLen_)
-            ? pattern_[static_cast<size_t>(index)].midiNote : -1;
+            ? pattern_[static_cast<std::size_t>(index)].midiNote : -1;
     }
 
     /**
@@ -293,7 +294,7 @@ public:
         for (int i = 0; i < n; ++i)
         {
             const int idx = (attackWrite_ - 1 - i + kMaxAttacks) % kMaxAttacks;
-            if (attacks_[static_cast<size_t>(idx)].sample >= cutoff)
+            if (attacks_[static_cast<std::size_t>(idx)].sample >= cutoff)
                 ++count;
         }
         return count;
@@ -324,7 +325,7 @@ public:
         for (int i = 0; i < n; ++i)
         {
             const int idx = (attackWrite_ - 1 - i + kMaxAttacks) % kMaxAttacks;
-            const int64_t s = attacks_[static_cast<size_t>(idx)].sample;
+            const int64_t s = attacks_[static_cast<std::size_t>(idx)].sample;
             if (s < cutoff)
                 break;  // ring is chronological (newest first)
             if (prev >= 0)
