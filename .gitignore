@@ -52,11 +52,6 @@ training/**/*.pth
 # Doxygen (optional local HTML)
 docs/doxygen/html/
 
-# Terraform (Phase 16 — local state backend config + plugin dir)
-.terraform/
-backend.hcl
-infra/.terraform/
-
 # CMake
 CMakeCache.txt
 CMakeFiles/

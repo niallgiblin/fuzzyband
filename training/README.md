@@ -159,8 +159,6 @@ Example (replace dirs with your `training/artifacts/...` run folders):
 
 The script always runs `scripts/validate_onnx_contract.py --pattern … --bass …` before copying. Optional **`--copy-stats`** copies `norm_stats.json` / `bass_norm_stats.json` from the artifact dirs into `assets/` when present; the plugin does not load these — they are audit-only reproducibility sidecars (see Phase 20 context).
 
-**Ops / cloud paths (not required for milestone close):** `scripts/promote-model.sh` uploads versioned artifacts and `current.json`; `scripts/download-model.sh` fetches into `assets/` when `MODEL_BUCKET` is set; see `infra/README.md` for bucket and OIDC wiring.
-
 ## Data Improvement Phase 3 — honest data foundation
 
 Implements `docs/DATA_STRATEGY.md` §5. See `docs/LABEL_TAXONOMY.md` and
